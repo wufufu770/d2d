@@ -22,7 +22,7 @@ async function launchPi() {
     ui: { notify: (m) => { notifyLog.push(m); console.log('[pi]', m.slice(0, 120)) } },
   })
   // 保持存活驱动链式调度
-  setTimeout(() => process.exit(0), 40 * 60_000)
+  setTimeout(() => process.exit(0), 120 * 60_000)
   return res
 }
 
@@ -38,7 +38,7 @@ async function launchDsh() {
   await plugin.apply(ctx, {})
   const inv = { rawInput: `${TARGET} ${SCOPE} ${INST}`, signal: new AbortController().signal }
   const res = await cmds['pentest'].handler(inv)
-  setTimeout(() => process.exit(0), 40 * 60_000)
+  setTimeout(() => process.exit(0), 120 * 60_000)
   return res
 }
 
