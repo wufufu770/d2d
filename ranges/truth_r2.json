@@ -1,0 +1,54 @@
+{
+ "config": {
+  "round": 2,
+  "port": 8202,
+  "internal_port": 13202,
+  "classes": [
+   "backup_disclosure",
+   "cmd_injection",
+   "robots_key_header_flag",
+   "sqli_error",
+   "ssrf_internal",
+   "xss_reflected"
+  ],
+  "decoys": [
+   "version_banner"
+  ],
+  "key": "kr2-61684",
+  "flags": {
+   "FLAG_A": "FLAG{r2-ch41n}",
+   "FLAG_B": "FLAG{r2-tr4v}",
+   "FLAG_C": "FLAG{r2-ssrf}"
+  },
+  "admin_token": "tok_r2_7412",
+  "api_path": "/api/user",
+  "dl_path": "/download",
+  "admin_path": "/admin",
+  "hint_in_comment": true,
+  "robots_present": true
+ },
+ "truth": {
+  "round": 2,
+  "port": 8202,
+  "classes": [
+   "backup_disclosure",
+   "cmd_injection",
+   "robots_key_header_flag",
+   "sqli_error",
+   "ssrf_internal",
+   "xss_reflected"
+  ],
+  "flags": [
+   {
+    "id": "FLAG_A",
+    "value": "FLAG{r2-ch41n}",
+    "class": "robots_key_header_flag"
+   },
+   {
+    "id": "FLAG_C",
+    "value": "FLAG{r2-ssrf}",
+    "class": "ssrf_internal"
+   }
+  ]
+ }
+}

@@ -1,0 +1,54 @@
+{
+ "config": {
+  "round": 6,
+  "port": 8206,
+  "internal_port": 13206,
+  "classes": [
+   "backup_disclosure",
+   "cmd_injection",
+   "open_redirect",
+   "path_traversal",
+   "robots_key_header_flag",
+   "sqli_error"
+  ],
+  "decoys": [
+   "fake_admin_401"
+  ],
+  "key": "kr6-93942",
+  "flags": {
+   "FLAG_A": "FLAG{r6-ch41n}",
+   "FLAG_B": "FLAG{r6-tr4v}",
+   "FLAG_C": "FLAG{r6-ssrf}"
+  },
+  "admin_token": "tok_r6_9476",
+  "api_path": "/svc8/user",
+  "dl_path": "/files2/get",
+  "admin_path": "/manage6",
+  "hint_in_comment": true,
+  "robots_present": true
+ },
+ "truth": {
+  "round": 6,
+  "port": 8206,
+  "classes": [
+   "backup_disclosure",
+   "cmd_injection",
+   "open_redirect",
+   "path_traversal",
+   "robots_key_header_flag",
+   "sqli_error"
+  ],
+  "flags": [
+   {
+    "id": "FLAG_A",
+    "value": "FLAG{r6-ch41n}",
+    "class": "robots_key_header_flag"
+   },
+   {
+    "id": "FLAG_B",
+    "value": "FLAG{r6-tr4v}",
+    "class": "path_traversal"
+   }
+  ]
+ }
+}
