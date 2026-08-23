@@ -9,6 +9,7 @@ async function launchPi() {
   const { createJiti } = await import('/home/wff/p2p/pi/node_modules/@earendil-works/pi-coding-agent/node_modules/jiti/lib/jiti.mjs')
   const jiti = createJiti(import.meta.url)
   globalThis.__p2pChildProcess = await import('node:child_process')
+  globalThis.__p2pFs = await import('node:fs')
   const mod = await jiti.import('/home/wff/p2p/home/.pi/agent/extensions/pentest/index.ts')
   const cmds = {}, tools = {}
   const notifyLog = []
@@ -29,6 +30,7 @@ async function launchPi() {
 async function launchDsh() {
   const plugin = await import('/home/wff/d2d/plugin/pentest-dsh/index.js')
   globalThis.__p2pChildProcess = await import('node:child_process')
+  globalThis.__p2pFs = await import('node:fs')
   const cmds = {}, gates = []
   const ctx = {
     on: (e, f) => gates.push({ e, f }),
