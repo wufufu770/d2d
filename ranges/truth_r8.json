@@ -1,0 +1,62 @@
+{
+ "config": {
+  "round": 8,
+  "port": 8208,
+  "internal_port": 13208,
+  "classes": [
+   "backup_disclosure",
+   "cmd_injection",
+   "path_traversal",
+   "robots_key_header_flag",
+   "sqli_error",
+   "ssrf_internal",
+   "xss_reflected"
+  ],
+  "decoys": [
+   "fake_admin_401",
+   "version_banner"
+  ],
+  "key": "kr8-33487",
+  "flags": {
+   "FLAG_A": "FLAG{r8-ch41n}",
+   "FLAG_B": "FLAG{r8-tr4v}",
+   "FLAG_C": "FLAG{r8-ssrf}"
+  },
+  "admin_token": "tok_r8_9344",
+  "api_path": "/api/user",
+  "dl_path": "/download",
+  "admin_path": "/manage5",
+  "hint_in_comment": true,
+  "robots_present": false
+ },
+ "truth": {
+  "round": 8,
+  "port": 8208,
+  "classes": [
+   "backup_disclosure",
+   "cmd_injection",
+   "path_traversal",
+   "robots_key_header_flag",
+   "sqli_error",
+   "ssrf_internal",
+   "xss_reflected"
+  ],
+  "flags": [
+   {
+    "id": "FLAG_A",
+    "value": "FLAG{r8-ch41n}",
+    "class": "robots_key_header_flag"
+   },
+   {
+    "id": "FLAG_B",
+    "value": "FLAG{r8-tr4v}",
+    "class": "path_traversal"
+   },
+   {
+    "id": "FLAG_C",
+    "value": "FLAG{r8-ssrf}",
+    "class": "ssrf_internal"
+   }
+  ]
+ }
+}

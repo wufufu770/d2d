@@ -1,0 +1,23 @@
+# 依赖与宿主工具(可重装)
+dsh/
+node_modules/
+home/.dsh/profiles/
+
+# 会话与运行时产物
+home/.dsh/sessions/
+graphd/kuzu_db*
+graphd/graphd.log
+*.log
+*.jsonl
+nohup.out
+__pycache__/
+checkpoints/
+evidence/
+experience.json
+END
+%2Fdev%2Fnull
+
+# 凭证
+*.key
+*.pem
+.env

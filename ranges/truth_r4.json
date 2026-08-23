@@ -1,0 +1,58 @@
+{
+ "config": {
+  "round": 4,
+  "port": 8204,
+  "internal_port": 13204,
+  "classes": [
+   "auth_bypass_debug",
+   "backup_disclosure",
+   "cmd_injection",
+   "idor",
+   "open_redirect",
+   "robots_key_header_flag",
+   "ssrf_internal",
+   "xss_reflected"
+  ],
+  "decoys": [
+   "fake_admin_401"
+  ],
+  "key": "kr4-76928",
+  "flags": {
+   "FLAG_A": "FLAG{r4-ch41n}",
+   "FLAG_B": "FLAG{r4-tr4v}",
+   "FLAG_C": "FLAG{r4-ssrf}"
+  },
+  "admin_token": "tok_r4_7575",
+  "api_path": "/api/user",
+  "dl_path": "/download",
+  "admin_path": "/admin",
+  "hint_in_comment": false,
+  "robots_present": true
+ },
+ "truth": {
+  "round": 4,
+  "port": 8204,
+  "classes": [
+   "auth_bypass_debug",
+   "backup_disclosure",
+   "cmd_injection",
+   "idor",
+   "open_redirect",
+   "robots_key_header_flag",
+   "ssrf_internal",
+   "xss_reflected"
+  ],
+  "flags": [
+   {
+    "id": "FLAG_A",
+    "value": "FLAG{r4-ch41n}",
+    "class": "robots_key_header_flag"
+   },
+   {
+    "id": "FLAG_C",
+    "value": "FLAG{r4-ssrf}",
+    "class": "ssrf_internal"
+   }
+  ]
+ }
+}
