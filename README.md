@@ -13,6 +13,9 @@ dsh (--profile headless)
 ```
 
 - **三环**：广度发现环(n实例×业务链) / 深度攻击环(三层递进) / 创造探索环(假设反转)
+- **角色素材库**：`roles/*.json`(侦察通才/认证绕过专精/注入专精/攻击链构造师/红队理论家/开发者视角)——Role 是全局模板，worker 是临时演员；deep 环按 open 信号类型与角色 signal_affinity 择优选角，creative 按唤醒次数交替双人格
+- **Handoff 制度**：每个 worker 有专属 `runs/<eng>/artifacts/<worker-id>/` 产物目录，收工必写 evidence.md + handoff.md；后继成员 brief 注入上游 handoff 文件引用(防电话游戏)
+- **协调日志**：调度器单写入者，`runs/<eng>/run-log.jsonl` 追加式记录 dispatch/terminal/wake/close 全事件流
 - **持久化**：AgentIdentity checkpoint，worker 失忆零进度损失
 - **门控**：engagement scope 从图解析(跨进程有效) + graphd 写操作 URL 启发式 + token 认证
 - **经验沉淀**：ExperienceWeight 拉普拉斯先验 prior=(wins+1)/(hits+2)，复用计数回写
