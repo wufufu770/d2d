@@ -25,6 +25,16 @@ const evalProfile = () => {
 }
 
 const wipeRuntime = async () => {
+  // 清档前快照 findings(FAIL 取证不丢)
+  try {
+    const rows = await q('MATCH (f:Finding) RETURN f')
+    if (rows.length) {
+      const { mkdirSync, writeFileSync } = await import('node:fs')
+      const dir = '/home/wff/d2d/evidence/range-snapshots'
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(`${dir}/${WHICH}-${Date.now()}.json`, JSON.stringify(rows, null, 1))
+    }
+  } catch {}
   for (const lbl of ['Engagement','Finding','Hypothesis','Endpoint','AgentIdentity','Signal_'])
     await q(`MATCH (n:${lbl}) DETACH DELETE n`)
 }
