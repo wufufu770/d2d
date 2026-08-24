@@ -3,8 +3,9 @@
 import { execSync, spawn } from 'node:child_process'
 import { rmSync } from 'node:fs'
 
+const D2D_ROOT = process.env.D2D ?? '/home/wff/d2d'
 const WHICH = process.argv[2]
-const PROFILE = process.argv[3] ?? '/home/wff/ranges/profiles/vuln-bank.json'
+const PROFILE = process.argv[3] ?? `${D2D_ROOT}/ranges/profiles/vuln-bank.json`
 const TARGET = process.env.R_TARGET ?? 'http://127.0.0.1:5000'
 const SCOPE = process.env.R_SCOPE ?? '127.0.0.1'
 const PORT = WHICH === 'pi' ? '8765' : '8766'
