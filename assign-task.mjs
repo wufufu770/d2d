@@ -11,7 +11,7 @@ const ctx = {
 await plugin.apply(ctx, {})
 
 const inv = {
-  rawInput: 'http://876a6de9f37c822f0815e51e.http-ctf2.dasctf.com 876a6de9f37c822f0815e51e.http-ctf2.dasctf.com 3',
+  rawInput: process.argv[2] ?? process.env.R_TARGET ?? (() => { console.error('用法: node assign-task.mjs <target> [scope] [instances]'); process.exit(1) })(),
   signal: new AbortController().signal,
 }
 const res = await registered.commands['pentest'].handler(inv)

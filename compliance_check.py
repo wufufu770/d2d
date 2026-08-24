@@ -15,7 +15,8 @@ def check(port, label):
     rings = [r["r"] for r in rows]
     disc = sum(1 for r in rows if r["r"]=="discovery")
     add("三环-发现环n实例", disc >= 2, f"discovery workers={disc}")
-    add("三环-三类齐全", len(set(rings)) >= 2, f"rings={set(rings)}")
+    add("三环-至少双环激活", len(set(rings)) >= 2, f"rings={set(rings)}")
+    add("三环-三类齐全", len(set(rings)) >= 3, f"rings={set(rings)}")
     # 2 图共享状态: 六类节点齐
     counts = {}
     for n in ["Signal_","Endpoint","Finding","Hypothesis","ExperienceWeight","AgentIdentity"]:
@@ -32,7 +33,8 @@ def check(port, label):
     has_f = any(str(i).startswith("fail:") for i in ids)
     add("经验沉淀", len(ids)>0 and (has_s or has_f), f"total={len(ids)} succ={has_s} fail={has_f}")
     # 5 防卡死/反思唤醒: 创造环出现过 或 exhausted 收尾
-    creative = sum(1 for r in rows if r.get("r")=="creative")
+    arows = q(port, "MATCH (a:AgentIdentity) RETURN a.ring AS r")
+    creative = sum(1 for r in arows if r.get("r")=="creative")
     eng = q(port, "MATCH (e:Engagement) RETURN e.status AS s")
     st = eng[0]["s"] if eng else "?"
     add("防卡死/反思唤醒", creative>0 or st in ("completed","exhausted"), f"creative={creative} status={st}")

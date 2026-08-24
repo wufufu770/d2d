@@ -1,5 +1,6 @@
 // R1 发射器: 同时给 pi 与 dsh 布置同一靶场
 import { rmSync } from 'node:fs'
+const D2D_ROOT = process.env.D2D ?? '/home/wff/d2d'
 try { rmSync('/tmp/jiti', { recursive: true, force: true }); } catch {}
 const TARGET = process.env.R_TARGET ?? 'http://127.0.0.1:8080'
 const SCOPE = process.env.R_SCOPE ?? '127.0.0.1'
@@ -28,7 +29,7 @@ async function launchPi() {
 }
 
 async function launchDsh() {
-  const plugin = await import('/home/wff/d2d/plugin/pentest-dsh/index.js')
+  const plugin = await import(`${D2D_ROOT}/plugin/pentest-dsh/index.js`)
   globalThis.__p2pChildProcess = await import('node:child_process')
   globalThis.__p2pFs = await import('node:fs')
   const cmds = {}, gates = []
