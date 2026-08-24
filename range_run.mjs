@@ -29,17 +29,22 @@ const wipeRuntime = async () => {
     await q(`MATCH (n:${lbl}) DETACH DELETE n`)
 }
 
-const launchRound = (attempt) => new Promise((resolve) => {
+const launchRound = (attempt) => {
   rmSync('/tmp/jiti', { recursive: true, force: true })
   const env = { ...process.env, R_TARGET: TARGET, R_SCOPE: SCOPE }
   const p = spawn('node', ['round-launch.mjs', WHICH], {
     cwd: '/home/wff/d2d', env,
-    stdio: ['ignore', `pipe`, 'pipe'],
+    stdio: ['ignore', 'ignore', 'ignore'],
+    detached: true,
   })
-  p.stdout.on('data', d => process.stdout.write(`[launch] ${d}`))
-  p.stderr.on('data', d => process.stdout.write(d))
-  p.on('close', resolve)
-})
+  globalThis.__launcherPid = p.pid
+}
+const killLauncher = () => {
+  const pid = globalThis.__launcherPid
+  if (!pid) return
+  try { process.kill(-pid, 'SIGKILL') } catch {}
+  try { process.kill(pid, 'SIGKILL') } catch {}
+}
 
 const waitTerminal = async () => {
   const deadline = Date.now() + 75 * 60_000
@@ -59,6 +64,7 @@ for (let i = 1; i <= MAX_ATTEMPTS; i++) {
   await wipeRuntime()
   await launchRound(i)
   const terminal = await waitTerminal()
+  killLauncher()
   const ev = evalProfile()
   console.log(`[${WHICH}] 终态=${terminal} 覆盖=${ev.covered}(${ev.coverage_pct}%) artifacts=${ev.artifacts} FP=${ev.false_positives.length} PASS=${ev.PASS}`)
   if (ev.PASS) { console.log(`\n[${WHICH}] ✅ PASS @第${i}轮`); process.exit(0) }
