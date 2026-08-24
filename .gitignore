@@ -28,3 +28,6 @@ gen_range.py
 range-fixture.py
 eval_round.py
 ranges/
+
+# Team-Run 运行时(协调日志/成员产物)
+runs/
