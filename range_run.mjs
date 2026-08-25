@@ -59,10 +59,32 @@ const killLauncher = () => {
 
 const waitTerminal = async () => {
   const deadline = Date.now() + 75 * 60_000
+  let lastEventCount = -1
+  let stalledTicks = 0
+  const eventCount = async () => {
+    try {
+      const f = execSync(`ls /home/wff/runs/*/run-log.jsonl 2>/dev/null | tail -1`, { encoding: 'utf8' }).trim()
+      if (!f) return 0
+      return parseInt(execSync(`wc -l < '${f}'`, { encoding: 'utf8' }).trim(), 10) || 0
+    } catch { return 0 }
+  }
   while (Date.now() < deadline) {
-    const rows = await q('MATCH (e:Engagement) RETURN e.status AS s')
-    const st = rows[rows.length - 1]?.s
+    const rows = await q('MATCH (e:Engagement) RETURN e.status AS s ORDER BY e.created_at DESC')
+    const st = rows[0]?.s
     if (st && st !== 'active') return st
+    // #30 保底: 调度器 tick 静默时由外部确定性收口(15分钟无事件推进 -> 直接闭环)
+    const ec = await eventCount()
+    if (ec === lastEventCount) {
+      stalledTicks++
+      if (stalledTicks >= 30) {  // 30 x 30s = 15min 无任何事件
+        console.log(`[runner] 检测到调度静默(15min), 外部执行确定性收口`)
+        try {
+          await q(`MATCH (e:Engagement) WHERE e.status='active' SET e.status='completed'`)
+          return 'completed-external'
+        } catch {}
+      }
+    } else stalledTicks = 0
+    lastEventCount = ec
     await new Promise(r => setTimeout(r, 30_000))
   }
   return 'timeout'

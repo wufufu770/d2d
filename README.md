@@ -53,3 +53,20 @@ python3 compliance_check.py    # 架构合规审计(三环/图/门控是否真�
 | 图端口 | 8765 | 8766 |
 | 插件语言 | TypeScript(jiti) | JavaScript |
 | 共享信息 | **无** —— 两套独立经验库，各自迭代 |
+
+## 实现状态(声明即契约 —— 与 compliance_check.py 机读检查项对应)
+
+| 声明 | 状态 | 验证途径 |
+|---|---|---|
+| 三环并行 + 图共享状态 | ✅ 实装 | compliance_check Check1/2 |
+| 角色素材库(6角色+信号亲和选角) | ✅ 实装 | run-log role 字段 |
+| Handoff 产物制度 | ✅ 实装(Wave0 后) | runs/<eng>/artifacts/ |
+| run-log 单写者协调日志 | ✅ 实装(Wave0 后) | runs/<eng>/run-log.jsonl |
+| AgentIdentity checkpoint 写入 | ✅ 实装(Wave0 后) | Check3 |
+| checkpoint 继任者恢复注入 | ⏳ 计划中(方向5) | — |
+| scope 门控(worker 进程级) | ✅ 实装 | tools/pre-execute 拦截 |
+| scope 门控(连接层) | ⏳ proxygate 已建成未接线 | packages/tools/proxygate.mjs |
+| 垃圾洞清单机械门 | ✅ 实装 | tests/test_graphd_gates.py |
+| PII 机械脱敏 | ✅ 实装(P5) | /write/finding 打码 |
+| 验证器环(Finding 独立重放) | ⏳ 计划中(方向2) | — |
+| 经验库防投毒(host token) | ✅ 实装 | graphd 双 token |
