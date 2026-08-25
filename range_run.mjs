@@ -99,8 +99,13 @@ const waitTerminal = async () => {
           const r = await q(`MATCH (a:AgentIdentity) WHERE a.status <> 'running' RETURN count(a) AS c`)
           terms = Number(r[0]?.c ?? 0)
         } catch {}
-        if (terms >= 2) {
-          console.log(`[runner] 检测到调度静默(15min)+已有终态(${terms}), 外部执行确定性收口`)
+        let fcount = 0
+        try {
+          const r2 = await q(`MATCH (f:Finding) RETURN count(f) AS c`)
+          fcount = Number(r2[0]?.c ?? 0)
+        } catch {}
+        if (terms >= 2 && fcount >= 5) {
+          console.log(`[runner] 检测到调度静默(15min)+终态${terms}+findings${fcount}, 外部执行确定性收口`)
           try {
             await q(`MATCH (e:Engagement) WHERE e.status='active' SET e.status='completed'`)
             return 'completed-external'
