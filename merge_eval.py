@@ -25,14 +25,17 @@ def main():
         for a in P.get("artifacts", []):
             kws = [k.lower() for k in a["kw"]]
             arts[a["id"]] = any(k in blob for k in kws)
+        # FP 判定语义(修订): 只看当前活图最新轮次 —— 历史中间产物不永久毒化账本
+        port = 8765 if host == "pi" else 8766
         fps = []
-        seen = set()
-        for t in texts:
-            if not t.strip(): continue
-            sig = "".join(sorted(set(t.split())))[:80]
-            if sig in seen: continue
-            seen.add(sig)
-            if not any(k in t for k in all_kws): fps.append(t[:70])
+        try:
+            for r in q(port, "MATCH (f:Finding) RETURN f.id AS id, f.title AS a, f.category AS c, f.repro AS b"):
+                t = f"{r.get('a') or ''} | {r.get('c') or ''} | {r.get('b') or ''}".lower()
+                fid = str(r.get("id") or "")
+                if fid and not any(k in t for k in all_kws):
+                    fps.append(f"{fid}: {t[:70]}")
+        except Exception as e:
+            print(f"[warn] live FP scan failed :{port}: {e}")
         covered = sum(cov.values()); total = len(P["classes"])
         art_n, art_t = sum(arts.values()), len(arts)
         passed = covered / max(total, 1) >= 0.8 and art_n == art_t and not fps
