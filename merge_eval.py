@@ -35,7 +35,7 @@ def main():
                 if fid and not any(k in t for k in all_kws):
                     fps.append(f"{fid}: {t[:70]}")
         except Exception as e:
-            print(f"[warn] live FP scan failed :{port}: {e}")
+            print(f"[warn] live FP scan failed :{port}: {e}", file=sys.stderr)
         covered = sum(cov.values()); total = len(P["classes"])
         art_n, art_t = sum(arts.values()), len(arts)
         passed = covered / max(total, 1) >= 0.8 and art_n == art_t and not fps
