@@ -26,6 +26,21 @@ const evalProfile = () => {
   return JSON.parse(out)
 }
 
+const seedHypotheses = async () => {
+  // 种子持久化: 每轮清图后重播定向假设(<profile>.seeds.json)
+  try {
+    const seedFile = PROFILE.replace(/\.json$/, '.seeds.json')
+    const { readFileSync } = await import('node:fs')
+    const seeds = JSON.parse(readFileSync(seedFile, 'utf8'))
+    for (const s of seeds) {
+      await fetch(`http://127.0.0.1:${PORT}/write/hypothesis`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...s, id: `seed-${Math.random().toString(36).slice(2, 8)}` }),
+      })
+    }
+    console.log(`[seeds] 重播 ${seeds.length} 条定向假设`)
+  } catch {}
+}
 const wipeRuntime = async () => {
   // 清档前快照 findings(FAIL 取证不丢)
   try {
@@ -96,6 +111,7 @@ for (let i = 1; i <= MAX_ATTEMPTS; i++) {
   console.log(`\n===== [${WHICH}] 第${i}轮 =====`)
   if (hints) process.env.P2P_GAP_HINTS = hints
   await wipeRuntime()
+  await seedHypotheses()
   await launchRound(i)
   const terminal = await waitTerminal()
   killLauncher()
