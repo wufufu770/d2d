@@ -8,7 +8,8 @@ const WHICH = process.argv[2]
 const PROFILE = process.argv[3] ?? `${D2D_ROOT}/ranges/profiles/vuln-bank.json`
 const TARGET = process.env.R_TARGET ?? 'http://127.0.0.1:5000'
 const SCOPE = process.env.R_SCOPE ?? '127.0.0.1'
-const PORT = WHICH === 'pi' ? '8765' : '8766'
+// 多车道: LANE_GRAPHD 覆盖默认端口映射(并行 attempt 分片)
+const PORT = process.env.LANE_GRAPHD ?? (WHICH === 'pi' ? '8765' : '8766')
 const MAX_ATTEMPTS = 3
 
 const q = async (cypher) => {
@@ -63,7 +64,7 @@ const waitTerminal = async () => {
   let stalledTicks = 0
   const eventCount = async () => {
     try {
-      const f = execSync(`ls /home/wff/runs/*/run-log.jsonl 2>/dev/null | tail -1`, { encoding: 'utf8' }).trim()
+      const f = execSync(`ls -t ${process.env.P2P_RUNS_DIR ?? '/home/wff/runs'}/*/run-log.jsonl 2>/dev/null | head -1`, { encoding: 'utf8' }).trim()
       if (!f) return 0
       return parseInt(execSync(`wc -l < '${f}'`, { encoding: 'utf8' }).trim(), 10) || 0
     } catch { return 0 }
