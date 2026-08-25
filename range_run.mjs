@@ -93,11 +93,20 @@ const waitTerminal = async () => {
     if (ec === lastEventCount) {
       stalledTicks++
       if (stalledTicks >= 30) {  // 30 x 30s = 15min 无任何事件
-        console.log(`[runner] 检测到调度静默(15min), 外部执行确定性收口`)
+        // #31 守卫: discovery 首轮天然安静, 只有已出现过 worker 终态才允许外部收口
+        let terms = 0
         try {
-          await q(`MATCH (e:Engagement) WHERE e.status='active' SET e.status='completed'`)
-          return 'completed-external'
+          const r = await q(`MATCH (a:AgentIdentity) WHERE a.status <> 'running' RETURN count(a) AS c`)
+          terms = Number(r[0]?.c ?? 0)
         } catch {}
+        if (terms >= 2) {
+          console.log(`[runner] 检测到调度静默(15min)+已有终态(${terms}), 外部执行确定性收口`)
+          try {
+            await q(`MATCH (e:Engagement) WHERE e.status='active' SET e.status='completed'`)
+            return 'completed-external'
+          } catch {}
+        }
+        stalledTicks = 10  // 未满足则重置部分预算, 避免无限累积
       }
     } else stalledTicks = 0
     lastEventCount = ec
