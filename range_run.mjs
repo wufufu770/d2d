@@ -12,9 +12,15 @@ const SCOPE = process.env.R_SCOPE ?? '127.0.0.1'
 const PORT = process.env.LANE_GRAPHD ?? (WHICH === 'pi' ? '8765' : '8766')
 const MAX_ATTEMPTS = 3
 
+const _tokFile = PORT === '8766'
+  ? process.env.D2D ?? '/home/wff/d2d' + '/graphd/.host-token'
+  : (process.env.P2P_GRAPHD_DIR ?? '/home/wff/d2d/graphd-laneB') + '/.host-token'
+let _tok = ''
+try { _tok = require('node:fs').readFileSync(_tokFile, 'utf8').trim() } catch {}
 const q = async (cypher) => {
   const res = await fetch(`http://127.0.0.1:${PORT}/query`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(_tok ? { 'X-Auth': _tok } : {}) },
     body: JSON.stringify({ cypher }),
   })
   return (await res.json()).rows ?? []
