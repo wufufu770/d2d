@@ -19,7 +19,10 @@ async function launchPi() {
     registerCommand: (n, d) => (cmds[n] = d),
     registerTool: () => {},
   }
-  await mod.default(fakePi)
+  // 薄壳导出 apply(pi); 兼容旧单体 default 导出
+  const applyFn = mod.apply ?? mod.default
+  await applyFn(fakePi)
+  // 门控注册需要 ctx.on —— 薄壳通过 adapter.registerGate(pi, handler) 已调用 fakePi.on ✓
   const res = await cmds['pentest'].handler(`${TARGET} ${SCOPE} ${INST}`, {
     ui: { notify: (m) => { notifyLog.push(m); console.log('[pi]', m.slice(0, 120)) } },
   })
