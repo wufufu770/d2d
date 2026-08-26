@@ -19,8 +19,17 @@ def main():
         blob = "\n".join(texts)
         cov = {}
         for cls, spec in P["classes"].items():
-            kws = [k.lower() for k in spec["kw"]] + [cls.lower()]
-            cov[cls] = any(k in blob for k in kws)
+            kws = [k.lower() for k in spec.get("kw",[])] + [cls.lower()]
+            must = [m.lower() for m in spec.get("must_repro_contains",[])]
+            if must:
+                # 严格模式: 需要至少一个 finding 同时满足 kw 匹配且 repro 含 must 串
+                hit = False
+                for t in texts:
+                    if any(k in t for k in kws) and all(m in t for m in must):
+                        hit = True; break
+                cov[cls] = hit
+            else:
+                cov[cls] = any(k in blob for k in kws)
         arts = {}
         for a in P.get("artifacts", []):
             kws = [k.lower() for k in a["kw"]]
