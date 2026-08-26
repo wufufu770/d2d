@@ -45,7 +45,7 @@ const seedHypotheses = async () => {
       })
     }
     console.log(`[seeds] 重播 ${seeds.length} 条定向假设`)
-  } catch {}
+  } catch (e) { console.error(`[seeds] 失败:`, e?.message) }
 }
 const wipeRuntime = async () => {
   // 清档前快照 findings(FAIL 取证不丢)

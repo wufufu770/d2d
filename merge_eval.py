@@ -58,7 +58,7 @@ def main():
         texts = []
         # 历史快照(支持字符串化 dict)
         import ast
-        for f in sorted(glob.glob(f"/home/wff/d2d/evidence/range-snapshots/{host}-*.json")):
+        for f in sorted(glob.glob(f"{os.environ.get('D2D', '/home/wff/d2d')}/evidence/range-snapshots/{host}-*.json")):
             try:
                 for r in json.load(open(f)):
                     fv = r.get("f", r)

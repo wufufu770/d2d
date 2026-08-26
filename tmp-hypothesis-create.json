@@ -1,0 +1,10 @@
+POST http://127.0.0.1:8767/write/hypothesis
+Content-Type: application/json
+
+{
+  "id": "hyp-actuator-devtools-creative",
+  "text": "开发者视角: Spring Boot 开发者通常保留 actuator 端点用于调试。crAPI 后端极可能暴露 /actuator, /actuator/env(含敏感配置), /actuator/heapdump(内存转储含 JWT secret/DB密码), /actuator/configprops, /actuator/mappings(完整 API 路由表)。生产环境忘记关闭 actuator 是最常见疏漏",
+  "strategy": "creative",
+  "status": "open",
+  "priority": "HIGH"
+}

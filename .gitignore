@@ -37,3 +37,12 @@ headers.txt
 homepage.html
 index.html
 robots.txt
+# N0: 工作产物与敏感凭证预检
+headers.txt
+homepage.html
+index.html
+robots.txt
+*.http
+evidence/
+graphs/
+graphd-lane*/
