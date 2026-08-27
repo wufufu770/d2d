@@ -52,4 +52,8 @@ quarantine-dir.html
 suspicious_errors.yml
 traversal-test
 evidence.md
+evidence*.md
+handoff*.md
+handoff-*/
+tmp-*.json
 cookies.txt
