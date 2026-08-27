@@ -93,8 +93,9 @@ python3 compliance_check.py    # 架构合规审计(三环/图/门控是否真�
 | vuln-bank (本地) | ✅ PASS | SQLi/BOLA/SSRF/JWT/竞态/LLM注入 全谱系 |
 | dvws-node (本地) | ✅ PASS | 92% + 4/4 artifacts + 0FP |
 | VAmPI (本地) | ✅ PASS | dsh 16/19 + 4/4 + 0FP |
-| DVS (本地) | 🔄 迭代中 | 34类 深度覆盖 |
-| crAPI (在线, OWASP 官方托管) | 🔄 迭代中 | OWASP API Top10 真实大厂漏洞原型 |
+| DVS (本地) | ✅ PASS | 35/41 (85%) + 4/4 artifacts + 0FP |
+| AspGoat (本地, ASP.NET) | 🔄 迭代中 | 19 类实验室 |
+| crAPI (在线, OWASP 官方托管) | 🔄 迭代中 | OWASP API Top10: JWT alg:none接管/BOLA信用卡/SSRF内网泄露 已发现 |
 
 ## 控制组与晋升策略
 
