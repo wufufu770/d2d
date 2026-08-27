@@ -262,12 +262,16 @@ class Handler(BaseHTTPRequestHandler):
             params = req.get("params") or {}
             if not cypher:
                 return self._send(400, {"error": "empty cypher"})
-            # V-05: /query 只读白名单 — 仅 MATCH/RETURN/WITH 开头，拒 DML/DDL（ExperienceWeight 写已由 host 门保护）
+            # V-05r: 只读白名单仅对 worker token —— host token 是调度器合法写通道
+            # (AgentIdentity/Engagement/ExperienceWeight MERGE 均经 /query；worker 写走 /write/*)
             import re as _ro
-            if not _ro.match(r"^(MATCH|RETURN|WITH|CALL)\b", cypher):
-                return self._send(403, {"ok": False, "error": "/query is read-only (MATCH/RETURN/WITH/CALL only); use /write/* for mutations"})
-            if _ro.search(r"\b(CREATE|MERGE|SET|DELETE|DROP|DETACH)\b", cypher):
-                return self._send(403, {"ok": False, "error": "/query is read-only: mutation keywords forbidden"})
+            _host_tok = os.environ.get("P2P_HOST_TOKEN", "")
+            _is_host = bool(_host_tok) and self.headers.get("X-Auth", "") == _host_tok
+            if not _is_host:
+                if not _ro.match(r"^(MATCH|RETURN|WITH|CALL)\b", cypher):
+                    return self._send(403, {"ok": False, "error": "/query is read-only for workers (MATCH/RETURN/WITH/CALL only); use /write/* for mutations"})
+                if _ro.search(r"\b(CREATE|MERGE|SET|DELETE|DROP|DETACH)\b", cypher):
+                    return self._send(403, {"ok": False, "error": "/query is read-only for workers: mutation keywords forbidden"})
             with _lock:
                 try:
                     conn = kuzu.Connection(db())
