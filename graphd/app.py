@@ -73,6 +73,32 @@ def redact_pii(s):
     s, k = _p.subn(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}", "[REDACTED:email]", s); n += k
     return s, n
 
+
+def finding_gates(cypher: str) -> tuple[bool, str]:
+    """I-009: 三个门提取为模块级纯函数 — 空标题 / DDL / 垃圾清单
+    返回 (ok, err)：ok True 表示通过，False 表示被门拦截，err 为拦截原因
+    供 tests/test_graphd_gates.py import 实测，防复刻正则漏检（如 junk NameError）
+    """
+    import re as _re
+    # DDL 禁令 — schema 固定，运行期禁止建/删表（最优先，与 Finding 无关）
+    if _re.search(r"\b(CREATE|DROP)\s+(NODE\s+|REL\s+)?TABLE", cypher, _re.I):
+        return False, "DDL forbidden at runtime (schema is fixed)"
+    # Finding 相关门：仅当涉及 Finding CREATE 时检查
+    if "Finding" in cypher and "CREATE" in cypher.upper():
+        # 空标题门
+        m = _re.search(r"title\s*:", cypher + " ")
+        if m:
+            tail = cypher[m.end():].lstrip()[:2]
+            if tail[0:1] in (")", ",") or tail in ('""', "''"):
+                return False, "Finding.title must be non-empty"
+        # 垃圾洞清单门
+        t = _re.search(r"title\s*:\s*[\"'](.*?)[\"']", cypher)
+        if t:
+            tv = t.group(1).lower()
+            if any(j in tv for j in JUNK_PATTERNS):
+                return False, f"garbage-listed finding rejected: {tv[:60]}"
+    return True, ""
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -195,26 +221,11 @@ class Handler(BaseHTTPRequestHandler):
             if not self._auth("host"):
                 return self._send(403, {"ok": False, "error": "ExperienceWeight mutations require host token"})
         cypher_raw = req.get("cypher", "")
-        # 缺陷#21: Finding 数据质量门 —— 无标题的 Finding 一律拒收(模板垃圾防线)
-        if "Finding" in cypher_raw and "CREATE" in cypher_raw.upper():
-            import re as _t
-            m = _t.search(r"title\s*:", cypher_raw + " ")
-            if m:
-                tail = cypher_raw[m.end():].lstrip()[:2]
-                if tail[0:1] in (")", ",") or tail in ('""', "''"):
-                    return self._send(400, {"ok": False, "error": "Finding.title must be non-empty"})
-        # 缺陷#24: 垃圾洞清单机械门 —— 与 SKILL.md 铁律同源的拒绝模式
-        if "Finding" in cypher_raw and "CREATE" in cypher_raw.upper():
-            import re as _g
-            t = _g.search(r"title\s*:\s*[\"'](.*?)[\"']", cypher_raw)
-            if t:
-                tv = t.group(1).lower()
-                if any(j in tv for j in JUNK_PATTERNS):
-                    return self._send(400, {"ok": False, "error": "garbage-listed finding rejected: " + tv[:60]})
-        # 缺陷#18: DDL 禁令 —— schema 固定, 运行期禁止建/删表(worker 漂移防线)
-        import re as _ddl
-        if _ddl.search(r"\b(CREATE|DROP)\s+(NODE\s+|REL\s+)?TABLE", cypher_raw, _ddl.I):
-            return self._send(403, {"ok": False, "error": "DDL forbidden at runtime (schema is fixed)"})
+        # I-009: 三个门已提取为 finding_gates 纯函数，单点调用（防复刻漏检）
+        ok, err = finding_gates(cypher_raw)
+        if not ok:
+            code = 403 if "DDL" in err else 400
+            return self._send(code, {"ok": False, "error": err})
         # 纵深防御: 写操作中的 URL host 必须在活跃 scope 内
         import re as _re
         if _re.search(r"\b(CREATE|SET|MERGE|DELETE)\b", cypher_raw):

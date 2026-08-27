@@ -1,40 +1,25 @@
 #!/usr/bin/env python3
-"""graphd 机械门负例集 — 不起服务, 直接对门逻辑做单元级断言。
-门逻辑在 app.py 的 do_POST 内联, 此处以等价正则复刻并锁定行为(防再次双重转义死门)。
+"""graphd 机械门负例集 — 直接 import 实现，防复刻漏检（I-009）。
 """
 import re
 import pytest
+from graphd.app import finding_gates, JUNK_PATTERNS
 
-# ---- 与 graphd/app.py 保持同步的门规则 ----
-EMPTY_TITLE = re.compile(r"title\s*:")
-DDL = re.compile(r"\b(CREATE|DROP)\s+(NODE\s+|REL\s+)?TABLE", re.I)
-JUNK = ["no rate limit", "missing rate limit", "lack of rate limiting",
-        "rate limiting disabled", "限速缺失", "未限速",
-        "security header", "安全头", "cors configuration",
-        "sourcemap", "版本号指纹", "self-xss", "tls warning"]
-TITLE_RE = re.compile(r"title\s*:\s*[\"'](.*?)[\"']")
-
+# ---- 与 graphd/app.py 单点真源对接，不复刻正则 ----
 
 def empty_title_rejected(cypher: str) -> bool:
-    m = EMPTY_TITLE.search(cypher + " ")
-    if not m or "Finding" not in cypher or "CREATE" not in cypher.upper():
-        return False
-    tail = cypher[m.end():].lstrip()[:2]
-    return tail[0:1] in (")", ",") or tail in ('""', "''")
+    ok, err = finding_gates(cypher)
+    return not ok and "must be non-empty" in err
 
 
 def ddl_rejected(cypher: str) -> bool:
-    return bool(DDL.search(cypher))
+    ok, err = finding_gates(cypher)
+    return not ok and "DDL" in err
 
 
 def junk_rejected(cypher: str) -> bool:
-    if "Finding" not in cypher or "CREATE" not in cypher.upper():
-        return False
-    t = TITLE_RE.search(cypher)
-    if not t:
-        return False
-    tv = t.group(1).lower()
-    return any(j in tv for j in JUNK)
+    ok, err = finding_gates(cypher)
+    return not ok and "garbage-listed" in err
 
 
 # ---- #21 空标题门 ----
@@ -51,10 +36,14 @@ def test_real_title_passes_empty_gate():
     assert not empty_title_rejected('CREATE (f:Finding {id:"a", title:"XSS in search", s:1})')
 
 def test_regex_is_alive_not_double_escaped():
-    """锁定历史缺陷: 双重转义的 title\\\\s* 永不匹配"""
-    dead = re.compile(r"title\\s*:")
-    assert not dead.search("CREATE (f:Finding {title:''})")
-    assert EMPTY_TITLE.search("CREATE (f:Finding {title:''})")
+    """锁定历史缺陷: 双重转义的 title\\s* 永不匹配 — 现以真函数验证"""
+    ok, _ = finding_gates("CREATE (f:Finding {id:\"x\", title:\"\", severity:\"low\"})")
+    assert not ok
+    # 正常标题应通过
+    ok2, _ = finding_gates("CREATE (f:Finding {id:\"x\", title:\"XSS in search\", severity:\"low\"})")
+    assert ok2
+    # 确保 JUNK_PATTERNS 未 NameError
+    assert isinstance(JUNK_PATTERNS, list) and len(JUNK_PATTERNS) > 0
 
 # ---- #18 DDL 禁令 ----
 @pytest.mark.parametrize("cypher", [
@@ -104,3 +93,11 @@ def test_out_of_scope_url_in_write_rejected():
 
 def test_in_scope_url_passes():
     assert not url_scope_violation("SET (e:Engagement {target:'http://127.0.0.1:8081/'})")
+
+# ---- I-009 新增：直接验证 finding_gates 本体 ----
+def test_finding_gates_import_is_real():
+    """确保 finding_gates 为真实现而非复刻，且 JUNK_PATTERNS 引用正确（NameError 类回归）"""
+    ok, err = finding_gates('CREATE (f:Finding {id:"x", title:"Missing security header X", severity:"low"})')
+    assert not ok and "garbage-listed" in err
+    ok2, err2 = finding_gates('CREATE (f:Finding {id:"x", title:"Normal finding", severity:"low"})')
+    assert ok2 and err2 == ""
