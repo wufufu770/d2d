@@ -57,3 +57,6 @@ handoff*.md
 handoff-*/
 tmp-*.json
 cookies.txt
+*.html + recon*.py
+*.html
+recon*.py
