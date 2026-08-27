@@ -64,6 +64,15 @@ JUNK_PATTERNS = ["no rate limit", "missing rate limit", "lack of rate limiting",
                  "security header", "安全头", "cors configuration",
                  "sourcemap", "版本号指纹", "self-xss", "tls warning"]
 
+def redact_pii(s):
+    """I-014: PII 脱敏扩展至 Signal/Hypothesis — 模块级复用"""
+    import re as _p
+    n = 0
+    s, k = _p.subn(r"\b\d{17}[\dXx]\b", "[REDACTED:idcard]", s); n += k
+    s, k = _p.subn(r"\b1[3-9]\d{9}\b", "[REDACTED:phone]", s); n += k
+    s, k = _p.subn(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}", "[REDACTED:email]", s); n += k
+    return s, n
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -135,18 +144,10 @@ class Handler(BaseHTTPRequestHandler):
                         sev = str(req.get("severity") or "medium").lower()
                         if sev not in ("critical", "high", "medium", "low", "info"):
                             return self._send(400, {"ok": False, "error": f"invalid severity: {sev}"})
-                        # P5(审查): PII 机械脱敏 —— 身份证/手机号/邮箱入库存前打码
-                        import re as _pii
-                        def _redact(s):
-                            n = 0
-                            s, k = _pii.subn(r"\b\d{17}[\dXx]\b", "[REDACTED:idcard]", s); n += k
-                            s, k = _pii.subn(r"\b1[3-9]\d{9}\b", "[REDACTED:phone]", s); n += k
-                            s, k = _pii.subn(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}", "[REDACTED:email]", s); n += k
-                            return s, n
                         pii_hits = 0
                         for fld in ("title", "repro", "evidence_dir"):
                             if req.get(fld):
-                                req[fld], k = _redact(str(req[fld])); pii_hits += k
+                                req[fld], k = redact_pii(str(req[fld])); pii_hits += k
                         tl = title.lower().strip()
                         if tl in ("test", "t", "x"):
                             return self._send(400, {"ok": False, "error": "placeholder finding rejected"})
@@ -163,20 +164,26 @@ class Handler(BaseHTTPRequestHandler):
                                         "cat": str(req.get("category") or "vuln"),
                                         "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat())})
                     elif self.path == "/write/signal":
+                        # I-014: Signal.evidence 脱敏
+                        _ev_raw = str(req.get("evidence") or "")[:2000]
+                        _ev_raw, _ = redact_pii(_ev_raw)
                         conn.execute(
                             "CREATE (s:Signal_ {id:$id, type:$t, weight:$w, status:$st, evidence:$ev, ts:$ts, ring:$ring})",
                             parameters={"id": str(req.get("id") or f"s-{int(time.time()*1000)}"),
                                         "t": str(req.get("type") or "unknown"),
                                         "w": float(req.get("weight") or 1.0),
                                         "st": str(req.get("status") or "open"),
-                                        "ev": str(req.get("evidence") or "")[:2000],
+                                        "ev": _ev_raw,
                                         "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat()),
                                         "ring": str(req.get("ring") or "discovery")})
                     else:
+                        # I-014: Hypothesis.text 脱敏
+                        _txt_raw = str(req.get("text") or "")[:1500]
+                        _txt_raw, _ = redact_pii(_txt_raw)
                         conn.execute(
                             "CREATE (h:Hypothesis {id:$id, text:$txt, strategy:$strat, status:'open', ts:$ts})",
                             parameters={"id": str(req.get("id") or f"h-{int(time.time()*1000)}"),
-                                        "txt": str(req.get("text") or "")[:1500],
+                                        "txt": _txt_raw,
                                         "strat": str(req.get("strategy") or "inversion"),
                                         "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat())})
                 except Exception as e:
@@ -236,8 +243,9 @@ class Handler(BaseHTTPRequestHandler):
                                 for h in hosts:
                                     if not any(h == a or h.endswith("." + a) for a in allowed):
                                         return self._send(403, {"error": f"scope violation at graphd layer: {h}"})
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            # I-007: fail-closed — scope 校验自身故障时拒绝写入而非放行
+                            return self._send(503, {"ok": False, "error": f"scope check failed (fail-closed): {str(e)[:120]}"})
         if self.path == "/query":
             cypher = req.get("cypher", "").strip()
             params = req.get("params") or {}
