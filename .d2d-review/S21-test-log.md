@@ -1513,3 +1513,377 @@ tick2 done
 [pentest] worker eng-mtbwimf8-discovery-454z[discovery] exit=0
 [pentest] worker eng-mtbwimf8-discovery-kyvp[discovery] exit=0
 [pentest] 三环空闲无进展 → 自动反思唤醒(1/3)。失败: 
+=== 2026-08-28T03:31:19+08:00 100s tick ===
+2026-08-28T03:31:00+08:00 | load=5.10 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbwimf8-discovery-kyvp[discovery] exit=0 [pentest] 三环空闲无进展
+  "info_disclosure": false
+ },
+ "artifacts": "1/2",
+ "artifact_detail": {
+  "ART-xss-dom": true,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-discovery-8gcj[discovery] exit=0 
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 2/10 20% 1/2 FP0 PASS=False
+uncovered: ['sqli', 'idor', 'ssrf', 'xxe', 'auth_bypass', 'ssti']
+[pentest] worker eng-mtbwimf8-discovery-454z[discovery] exit=0
+[pentest] worker eng-mtbwimf8-discovery-kyvp[discovery] exit=0
+[pentest] 三环空闲无进展 → 自动反思唤醒(1/3)。失败: 
+
+=== 2026-08-28T03:38:01+08:00 100s tick ===
+2026-08-28T03:37:41+08:00 | load=5.19 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbwimf8-discovery-kyvp[discovery] exit=0 [pentest] 三环空闲无进展
+  "info_disclosure": false
+ },
+ "artifacts": "1/2",
+ "artifact_detail": {
+  "ART-xss-dom": true,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-discovery-hd1t[discovery] exit=null [pentest] 三环空闲
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 4/10 40% 2/2 FP0 PASS=False
+uncovered: ['idor', 'ssrf', 'auth_bypass', 'ssti', 'access_control', 'info_disclosure']
+[pentest] worker eng-mtbwimf8-discovery-kyvp[discovery] exit=0
+[pentest] 三环空闲无进展 → 自动反思唤醒(1/3)。失败: 
+[pentest] worker eng-mtbwimf8-creative-xv6y[creative] exit=0
+[pentest] 假设待消费(1条open) → 创造环第2次唤醒验证/反驳
+
+=== 2026-08-28T03:44:44+08:00 100s tick ===
+2026-08-28T03:44:23+08:00 | load=4.53 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbwimf8-creative-xv6y[creative] exit=0 [pentest] 假设待消费(1条o
+  "info_disclosure": false
+ },
+ "artifacts": "2/2",
+ "artifact_detail": {
+  "ART-xss-dom": true,
+  "ART-sqli-login": true
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-creative-fv2q[creative] exit=0 [pentest] 假设待消费(6条o
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 6/10 60% 2/2 FP3 PASS=False
+uncovered: ['idor', 'ssrf', 'auth_bypass', 'info_disclosure']
+[pentest] 假设待消费(1条open) → 创造环第2次唤醒验证/反驳
+[pentest] worker eng-mtbwimf8-creative-1xj3[creative] exit=0
+[pentest] 假设待消费(6条open) → 创造环第3次唤醒验证/反驳
+
+=== 2026-08-28T03:51:26+08:00 100s tick ===
+2026-08-28T03:51:05+08:00 | load=4.12 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbwimf8-creative-1xj3[creative] exit=0 [pentest] 假设待消费(6条o
+  "ART-xss-dom": true,
+  "ART-sqli-login": true
+ },
+ "false_positives": [
+  "find-default-admin",
+  "find-captcha-leak",
+  "find-memories-leak"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-creative-fv2q[creative] exit=0 [pentest] 假设待消费(6条o
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 7/10 70% 2/2 FP3 PASS=False
+fps: ['find-default-admin', 'find-captcha-leak', 'find-memories-leak']
+uncovered: ['idor', 'auth_bypass', 'info_disclosure']
+
+=== 2026-08-28T03:58:08+08:00 100s tick ===
+2026-08-28T03:57:47+08:00 | load=5.73 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbwimf8-creative-kmpl[creative] exit=0 [pentest] 假设待消费(6条o
+  "ART-xss-dom": true,
+  "ART-sqli-login": true
+ },
+ "false_positives": [
+  "find-default-admin",
+  "find-captcha-leak",
+  "find-memories-leak"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-creative-fv2q[creative] exit=0 [pentest] 假设待消费(6条o
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 7/10 70% 2/2 FP3 PASS=False
+fps: ['find-default-admin', 'find-captcha-leak', 'find-memories-leak']
+uncovered: ['idor', 'auth_bypass', 'info_disclosure']
+[pentest] 假设待消费(6条open) → 创造环第3次唤醒验证/反驳
+[pentest] worker eng-mtbwimf8-creative-kmpl[creative] exit=0
+[pentest] 假设待消费(6条open) → 创造环第4次唤醒验证/反驳
+
+=== 2026-08-28T04:04:51+08:00 100s tick ===
+2026-08-28T04:04:29+08:00 | load=4.14 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbwimf8-creative-kmpl[creative] exit=0 [pentest] 假设待消费(6条o
+  "ART-xss-dom": true,
+  "ART-sqli-login": true
+ },
+ "false_positives": [
+  "find-default-admin",
+  "find-captcha-leak",
+  "find-memories-leak"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-creative-yhqj[creative] exit=0 [pentest] 假设待消费(6条o
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 7/10 70% 2/2 FP5 PASS=False
+uncovered: ['idor', 'auth_bypass', 'info_disclosure']
+[pentest] worker eng-mtbwimf8-creative-1xj3[creative] exit=0
+[pentest] 假设待消费(6条open) → 创造环第3次唤醒验证/反驳
+[pentest] worker eng-mtbwimf8-creative-kmpl[creative] exit=0
+[pentest] 假设待消费(6条open) → 创造环第4次唤醒验证/反驳
+
+=== 2026-08-28T04:11:33+08:00 100s tick ===
+2026-08-28T04:11:10+08:00 | load=3.92 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 假设待消费(6条open) → 创造环第4次唤醒验证/反驳 [pentest] worker eng-mtbwimf8-creative-o
+ },
+ "false_positives": [
+  "find-default-admin",
+  "find-captcha-leak",
+  "find-memories-leak",
+  "find-jwt-none-alg-bypass",
+  "find-ftp-nullbyte-source-leak"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-creative-mzv4[creative] exit=0 [pentest] 假设待消费(6条o
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+=== 2026-08-28T04:18:16+08:00 100s tick ===
+2026-08-28T04:17:52+08:00 | load=3.79 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 规划器: 3 条计划已生成(最高分 9) [pentest] 自动调度: 深度环启动 (4 高权重信号) 
+ },
+ "false_positives": [
+  "find-default-admin",
+  "find-captcha-leak",
+  "find-memories-leak",
+  "find-jwt-none-alg-bypass",
+  "find-ftp-nullbyte-source-leak"
+ ],
+ "PASS": false
+}
+laneB 7/10 70% 2/2 FP5 PASS=False
+uncovered: ['idor', 'auth_bypass', 'info_disclosure']
+[pentest] worker eng-mtbwimf8-creative-oyuw[creative] exit=0
+[pentest] 规划器: 3 条计划已生成(最高分 9)
+[pentest] 自动调度: 深度环启动 (4 高权重信号)
+
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-creative-mzv4[creative] exit=0 [pentest] 假设待消费(6条o
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+=== 2026-08-28T04:24:58+08:00 100s tick ===
+2026-08-28T04:24:34+08:00 | load=4.59 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 规划器: 3 条计划已生成(最高分 9) [pentest] 自动调度: 深度环启动 (4 高权重信号) 
+ },
+ "false_positives": [
+  "find-default-admin",
+  "find-captcha-leak",
+  "find-memories-leak",
+  "find-jwt-none-alg-bypass",
+  "find-ftp-nullbyte-source-leak"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-creative-mzv4[creative] exit=0 [pentest] 假设待消费(6条o
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 7/10 70% 2/2 FP5 PASS=False
+uncovered: ['idor', 'auth_bypass', 'info_disclosure']
+[pentest] worker eng-mtbwimf8-creative-oyuw[creative] exit=0
+[pentest] 规划器: 3 条计划已生成(最高分 9)
+[pentest] 自动调度: 深度环启动 (4 高权重信号)
+
+=== 2026-08-28T04:31:40+08:00 100s tick ===
+2026-08-28T04:31:16+08:00 | load=4.98 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 规划器: 3 条计划已生成(最高分 9.5) [pentest] 自动调度: 深度环启动 (8 高权重信号) 
+ "false_positives": [
+  "find-default-admin",
+  "find-captcha-leak",
+  "find-memories-leak",
+  "find-jwt-none-alg-bypass",
+  "find-ftp-nullbyte-source-leak",
+  "find-jwt-none-bypass-002"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-creative-pp9q[creative] exit=0 [pentest] 假设待消费(6条o
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 9/10 90% 2/2 FP6 PASS=False
+fps: ['find-default-admin', 'find-captcha-leak', 'find-memories-leak', 'find-jwt-none-alg-bypass', 'find-ftp-nullbyte-source-leak', 'find-jwt-none-bypass-002']
+uncovered: ['info_disclosure']
+[pentest] worker eng-mtbwimf8-deep-5x4s[deep] exit=0
+[pentest] 规划器: 3 条计划已生成(最高分 9.5)
+[pentest] 自动调度: 深度环启动 (8 高权重信号)
+
+=== 2026-08-28T04:38:23+08:00 100s tick ===
+2026-08-28T04:37:58+08:00 | load=5.61 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 规划器: 3 条计划已生成(最高分 9.5) [pentest] 自动调度: 深度环启动 (8 高权重信号) 
+ "false_positives": [
+  "find-default-admin",
+  "find-captcha-leak",
+  "find-memories-leak",
+  "find-jwt-none-alg-bypass",
+  "find-ftp-nullbyte-source-leak",
+  "find-jwt-none-bypass-002"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbwimf8-creative-pp9q[creative] exit=0 [pentest] 假设待消费(6条o
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 9/10 90% 2/2 FP6 PASS=False
+fps: ['find-default-admin', 'find-captcha-leak', 'find-memories-leak', 'find-jwt-none-alg-bypass', 'find-ftp-nullbyte-source-leak', 'find-jwt-none-bypass-002']
+uncovered: ['info_disclosure']
+[pentest] worker eng-mtbwimf8-deep-5x4s[deep] exit=0
+[pentest] 规划器: 3 条计划已生成(最高分 9.5)
+[pentest] 自动调度: 深度环启动 (8 高权重信号)
+
+=== 2026-08-28T04:45:05+08:00 100s tick ===
+2026-08-28T04:44:38+08:00 | load=3.27 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 自动调度: 深度环启动 (8 高权重信号) { kind : success , text : engagement eng-mtbwimf
+ "false_positives": [
+  "find-default-admin",
+  "find-captcha-leak",
+  "find-memories-leak",
+  "find-jwt-none-alg-bypass",
+  "find-ftp-nullbyte-source-leak",
+  "find-jwt-none-bypass-002",
+  "find-jwt-none-bypass-verified-001",
+  "find-password-hash-leak-verified-001",
+  "find-security-answers-leak-verified-001"
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] 唤醒耗尽仍无发现: 关闭为 exhausted 并标记 NEED_INPUT { kind : success , text : engag
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": true
+}
+
+laneB 9/10 90% 2/2 FP10 PASS=False
+uncovered: ['info_disclosure']
+[pentest] 规划器: 3 条计划已生成(最高分 9.5)
+[pentest] 自动调度: 深度环启动 (8 高权重信号)
+{"kind":"success","text":"engagement eng-mtbwimf8 终态(active), 调度闭环结束"}
+
+laneB 10/10 100% 2/2 FP0 PASS=True
+fps: []
+uncovered: []
+laneC 12/12 100% 4/4 FP0 PASS=True
+fps: []
