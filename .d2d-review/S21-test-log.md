@@ -439,3 +439,1077 @@ laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  lo
   "find-overall-discovery",
 laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-discovery-6bix[discovery] exit=0 [pentest] 假设待消费(4 (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
 
+=== 2026-08-27T23:06:37+08:00 100s tick ===
+2026-08-27T23:05:19+08:00 | load=4.68 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 规划器: 3 条计划已生成(最高分 5) [pentest] 自动调度: 深度环启动 (4 高权重信号) 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-discovery-6bix[discovery] exit=0 [pentest] 假设待消费(4 (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:08:17+08:00 100s tick ===
+2026-08-27T23:07:01+08:00 | load=4.78 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 规划器: 3 条计划已生成(最高分 5) [pentest] 自动调度: 深度环启动 (4 高权重信号) 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-a3dw[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:09:58+08:00 100s tick ===
+2026-08-27T23:08:41+08:00 | load=2.97 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-deep-82q6[deep] exit=0 [pentest] 假设待消费(6条open) → 创
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-a3dw[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+7/10 70% 1/2 FP18 PASS=False
+laneB 8767
+6/12 50% 3/4 FP0 PASS=False
+laneC 8768
+tick done
+2026-08-27T23:07:01+08:00 | load=4.78 mem=% kuzu=1 lanes=1
+2026-08-27T23:08:41+08:00 | load=2.97 mem=% kuzu=1 lanes=2
+2026-08-27T23:10:21+08:00 | load=3.10 mem=% kuzu=1 lanes=2
+=== 2026-08-27T23:11:39+08:00 100s tick ===
+2026-08-27T23:10:21+08:00 | load=3.10 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-deep-82q6[deep] exit=0 [pentest] 假设待消费(6条open) → 创
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-a3dw[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+7/10 70% 1/2 FP18 PASS=False uncovered=['xss', 'ssti', 'nosql_injection']
+6/12 50% 3/4 FP0 PASS=False uncovered=['bola', 'bfla', 'broken_authentication']
+tick done
+=== 2026-08-27T23:13:19+08:00 100s tick ===
+2026-08-27T23:12:03+08:00 | load=3.76 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-deep-82q6[deep] exit=0 [pentest] 假设待消费(6条open) → 创
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-a3dw[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:15:00+08:00 100s tick ===
+2026-08-27T23:13:44+08:00 | load=3.88 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-deep-82q6[deep] exit=0 [pentest] 假设待消费(6条open) → 创
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-a3dw[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+7/10 70% 1/2 FP18 PASS=False
+6/12 50% 3/4 FP0 PASS=False
+tick done
+=== 2026-08-27T23:16:41+08:00 100s tick ===
+2026-08-27T23:15:25+08:00 | load=4.09 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-deep-82q6[deep] exit=0 [pentest] 假设待消费(6条open) → 创
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-a3dw[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:18:21+08:00 100s tick ===
+2026-08-27T23:17:07+08:00 | load=4.21 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-deep-82q6[deep] exit=0 [pentest] 假设待消费(6条open) → 创
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-a3dw[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:20:02+08:00 100s tick ===
+2026-08-27T23:18:48+08:00 | load=4.18 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-2moy[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-a3dw[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:21:43+08:00 100s tick ===
+2026-08-27T23:20:29+08:00 | load=2.22 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-2moy[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:23:24+08:00 100s tick ===
+2026-08-27T23:22:10+08:00 | load=4.38 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-2moy[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+7/10 70% 1/2 FP18 PASS=False
+6/12 50% 3/4 FP0 PASS=False
+tick done
+wff      1721371  0.2  1.7 9875276 70864 ?       Sl   22:27   0:08 node round-launch.mjs dsh
+wff      1727288  0.1  2.2 9884232 89384 ?       Sl   22:38   0:04 node round-launch.mjs dsh
+=== 2026-08-27T23:25:05+08:00 100s tick ===
+2026-08-27T23:23:52+08:00 | load=4.92 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-2moy[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 7/10 70% 1/2 FP18 PASS=False uncovered=['xss', 'ssti', 'nosql_injection']
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick done
+=== 2026-08-27T23:26:45+08:00 100s tick ===
+2026-08-27T23:25:33+08:00 | load=3.84 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-2moy[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:28:26+08:00 100s tick ===
+2026-08-27T23:27:15+08:00 | load=5.01 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-2moy[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 7/10 70% 1/2 FP18 PASS=False
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick done
+=== 2026-08-27T23:30:07+08:00 100s tick ===
+2026-08-27T23:28:56+08:00 | load=3.80 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 假设待消费(6条open) → 创造环第2次唤醒验证/反驳 [pentest] worker eng-mtbma5pu-creative-0
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:31:47+08:00 100s tick ===
+2026-08-27T23:30:38+08:00 | load=5.30 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-0h0u[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:33:28+08:00 100s tick ===
+2026-08-27T23:32:18+08:00 | load=2.15 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-0h0u[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:35:09+08:00 100s tick ===
+2026-08-27T23:33:58+08:00 | load=2.76 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-0h0u[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:36:49+08:00 100s tick ===
+2026-08-27T23:35:39+08:00 | load=4.22 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-0h0u[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:38:30+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-b1zu[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:40:11+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-b1zu[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-wf82[creative] exit=0 [pentest] 假设待消费(6条o (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:41:51+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-b1zu[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:43:32+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-b1zu[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:45:13+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-b1zu[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:46:54+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-b1zu[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:48:34+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-b1zu[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:50:15+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-b1zu[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:51:56+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-rohz[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+9/10 90% 2/2 FP18 PASS=False uncovered=['nosql_injection']
+6/12 50% 3/4 FP0 PASS=False uncovered=['bola', 'bfla', 'broken_authentication']
+400s tick done
+=== 2026-08-27T23:53:36+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-rohz[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:55:17+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-rohz[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:56:58+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbma5pu-creative-rohz[creative] exit=0 [pentest] 假设待消费(6条o
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-27T23:58:38+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 假设待消费(6条open) → 创造环第5次唤醒验证/反驳 { kind : success , text : engagement eng
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+9/10 90% 2/2 FP18 PASS=False
+6/12 50% 3/4 FP0 PASS=False
+tick2 done
+=== 2026-08-28T00:00:19+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 假设待消费(6条open) → 创造环第5次唤醒验证/反驳 { kind : success , text : engagement eng
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-hyw0[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:02:00+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 假设待消费(6条open) → 创造环第5次唤醒验证/反驳 { kind : success , text : engagement eng
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-ldld[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:03:40+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 假设待消费(6条open) → 创造环第5次唤醒验证/反驳 { kind : success , text : engagement eng
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-ldld[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:05:21+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证器环: 独立重放全部候选 Finding... [pentest] 验证完成: 9/21 通过重放, 其余隔离 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-ldld[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:07:02+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] worker eng-mtbmoil0-creative-ldld[creative] exit=null [pentest] 假设待消费( (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+9/10 90% 2/2 FP18 PASS=False fps=['find-002-csrf-samesite', 'find-005-llm-exposed']
+6/12 50% 3/4 FP0 PASS=False fps=[]
+tick3 done
+=== 2026-08-28T00:08:43+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 假设待消费(6条open) → 创造环第5次唤醒验证/反驳 { kind : success , text : engagement eng (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:10:24+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证器环: 独立重放全部候选 Finding... [pentest] 验证完成: 0/4 通过重放, 其余隔离  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:12:04+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:13:45+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 9/10 90% 2/2 FP18 PASS=False
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick4 done
+=== 2026-08-28T00:15:26+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:17:07+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:18:47+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:20:28+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 9/10 90% 2/2 FP18 PASS=False uncovered=['nosql_injection']
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick5 done
+=== 2026-08-28T00:22:09+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:23:49+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:25:30+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:27:11+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 9/10 90% 2/2 FP18 PASS=False
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick6 done
+=== 2026-08-28T00:28:52+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:30:33+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:32:13+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:33:54+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:35:35+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:37:16+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 9/10 90% 2/2 FP18 PASS=False
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick7 done
+=== 2026-08-28T00:38:57+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:40:38+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:42:18+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:43:59+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 9/10 90% 2/2 FP18 PASS=False
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick8 done
+=== 2026-08-28T00:45:40+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:47:21+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:49:02+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:50:43+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 9/10 90% 2/2 FP18 PASS=False
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick9 done
+wff      1721371  0.1  2.0 9885260 80544 ?       Sl   8月27   0:11 node round-launch.mjs dsh
+wff      1727288  0.0  2.1 9882328 85208 ?       Sl   8月27   0:07 node round-launch.mjs dsh
+=== 2026-08-28T00:52:23+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:54:04+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:55:45+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:57:26+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T00:59:07+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 9/10 90% 2/2 FP18 PASS=False
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick10 done
+=== 2026-08-28T01:00:47+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T01:02:28+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T01:04:09+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T01:05:49+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+laneB 9/10 90% 2/2 FP18 PASS=False
+laneC 6/12 50% 3/4 FP0 PASS=False
+tick11 done
+=== 2026-08-28T01:07:30+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+python3: can't open file '/home/wff/d2d/eval_profile.py': [Errno 2] No such file or directory
+laneC 8768 crapi-online health:{"ok": true, "db": "/tmp/d2d-laneC/graph log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀  (no profile /home/wff/d2d/ranges/profiles/crapi-online.json)
+
+=== 2026-08-28T01:10:39+08:00 100s tick ===
+2026-08-27T23:37:21+08:00 | load=4.45 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 验证完成: 9/21 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+ "false_positives": [
+  "find-002-csrf-samesite",
+  "find-005-llm-exposed",
+  "f-1787816228925",
+  "find-006-lfi-path-traversal",
+  "find-007-dvs-env-leak",
+  "find-010-dvs-openapi-exposed",
+  "find-011-dvs-html-comment-leak",
+  "find-csrf-transfer-replay",
+  "find-overall-discovery",
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] 验证完成: 0/4 通过重放, 其余隔离 [pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": false,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+=== 2026-08-28T01:17:20+08:00 100s tick ===
+2026-08-28T01:17:20+08:00 | load=6.03 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:
+  "info_disclosure": false
+ },
+ "artifacts": "0/2",
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:
+ "artifacts": "0/4",
+ "artifact_detail": {
+  "ART-bola-other-order": false,
+  "ART-jwt-forge": false,
+  "ART-otp-bypass": false,
+  "ART-mass-admin": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+1/10 10% 0/2 FP2 PASS=False uncovered=['xss', 'sqli', 'idor']
+1/12 8% 3/4 FP0 PASS=False uncovered=['bola', 'bfla', 'mass_assignment']
+400s round2 tick done
+=== 2026-08-28T01:24:03+08:00 100s tick ===
+2026-08-28T01:24:02+08:00 | load=4.15 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbs7p7k-discovery-81c2[discovery] exit=0 [pentest] worker 
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbs7qti-discovery-mfdo[discovery] exit=0 [pentest] worker 
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": false,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+laneB 1/10 10% 0/2 FP2 PASS=False
+laneC 4/12 33% 3/4 FP0 PASS=False
+tick done
+=== 2026-08-28T01:30:44+08:00 100s tick ===
+2026-08-28T01:30:43+08:00 | load=5.90 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbs7qti-discovery-ogra[discovery] exit=0 [pentest] 三环空闲无进展
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": false,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+=== 2026-08-28T01:37:26+08:00 100s tick ===
+2026-08-28T01:37:25+08:00 | load=5.13 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] 规划器: 3 条计划已生成(最高分 6) [pentest] 自动调度: 深度环启动 (1 高权重信号) 
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+laneB 1/10 10% 0/2 FP2 PASS=False
+laneC 7/12 58% 4/4 FP0 PASS=False
+tick done
+=== 2026-08-28T01:44:09+08:00 100s tick ===
+2026-08-28T01:44:06+08:00 | load=4.40 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] 规划器: 3 条计划已生成(最高分 6) [pentest] 自动调度: 深度环启动 (1 高权重信号) 
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+laneB 1/10 10% 0/2 FP2 PASS=False
+laneC 7/12 58% 4/4 FP0 PASS=False
+tick done
+=== 2026-08-28T01:50:50+08:00 100s tick ===
+2026-08-28T01:50:48+08:00 | load=5.36 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] 规划器: 3 条计划已生成(最高分 6) [pentest] 自动调度: 深度环启动 (1 高权重信号) 
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+laneB 1/10 10% 0/2 FP2 PASS=False
+laneC 7/12 58% 4/4 FP0 PASS=False
+tick done
+=== 2026-08-28T01:57:32+08:00 100s tick ===
+2026-08-28T01:57:28+08:00 | load=3.13 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] 规划器: 1 条计划已生成(最高分 4) [pentest] 自动调度: 深度环启动 (1 高权重信号) 
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+laneB 1/10 10% 0/2 FP2 PASS=False
+laneC 7/12 58% 4/4 FP0 PASS=False
+tick done
+[pentest] worker eng-mtbs7p7k-discovery-81c2[discovery] exit=0
+[pentest] worker eng-mtbs7p7k-discovery-riiv[discovery] exit=0
+[pentest] 验证器环: 独立重放全部候选 Finding...
+[pentest] 验证完成: 0/0 通过重放, 其余隔离
+[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀
+{"kind":"success","text":"engagement eng-mtbs7p7k 终态(completed), 调度闭环结束"}
+=== 2026-08-28T02:04:14+08:00 100s tick ===
+2026-08-28T02:04:10+08:00 | load=5.05 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] 规划器: 1 条计划已生成(最高分 4) [pentest] 自动调度: 深度环启动 (1 高权重信号) 
+ "artifacts": "4/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+laneB 1/10 10% 0/2 FP2 PASS=False uncovered=['xss', 'sqli', 'idor', 'ssrf', 'xxe', 'auth_bypass', 'ssti', 'nosql_injection', 'access_control']
+laneC 8/12 67% 4/4 FP1 PASS=False
+400s round2 tick done
+wff      1869178  0.1  1.4 9883468 57988 ?       Sl   01:13   0:05 node round-launch.mjs dsh
+wff      1869220  0.1  1.6 9884592 64328 ?       Sl   01:13   0:05 node round-launch.mjs dsh
+=== 2026-08-28T02:10:56+08:00 100s tick ===
+2026-08-28T02:10:50+08:00 | load=1.81 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbs7qti-deep-p5f6[deep] exit=0 [pentest] 自动调度: 深度环启动 (2 高权
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [
+  "finding-nosql-error-disclosure"
+ ],
+ "PASS": false
+}
+
+=== 2026-08-28T02:17:38+08:00 100s tick ===
+2026-08-28T02:17:30+08:00 | load=1.90 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbs7qti-deep-p5f6[deep] exit=0 [pentest] 自动调度: 深度环启动 (2 高权
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [
+  "finding-nosql-error-disclosure",
+  "finding-community-email-disclosure"
+ ],
+ "PASS": false
+}
+
+=== 2026-08-28T02:24:20+08:00 100s tick ===
+2026-08-28T02:24:11+08:00 | load=3.86 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbs7qti-deep-1nal[deep] exit=0 [pentest] 假设待消费(6条open) → 创
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [
+  "finding-nosql-error-disclosure",
+  "finding-community-email-disclosure",
+  "finding-account-takeover-complete-chain"
+ ],
+ "PASS": false
+
+=== 2026-08-28T02:31:01+08:00 100s tick ===
+2026-08-28T02:30:51+08:00 | load=2.49 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbs7qti-deep-1nal[deep] exit=0 [pentest] 假设待消费(6条open) → 创
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [
+  "finding-nosql-error-disclosure",
+  "finding-community-email-disclosure",
+  "finding-account-takeover-complete-chain"
+ ],
+ "PASS": false
+
+=== 2026-08-28T02:37:43+08:00 100s tick ===
+2026-08-28T02:37:33+08:00 | load=6.13 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [
+  "f-1787851313344",
+  "f-1787851318820"
+ ],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] worker eng-mtbs7qti-creative-mu16[creative] exit=0 [pentest] 假设待消费(6条o
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": true
+ },
+ "false_positives": [
+  "finding-nosql-error-disclosure",
+  "finding-community-email-disclosure",
+  "finding-account-takeover-complete-chain"
+ ],
+ "PASS": false
+
+=== 2026-08-28T02:44:25+08:00 100s tick ===
+2026-08-28T02:44:13+08:00 | load=2.23 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] 目标闭环(连续两轮稳定): 执行经验沉淀 { kind : success , text : engagement eng-mtbs7p7k
+  "info_disclosure": false
+ },
+ "artifacts": "0/2",
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:[pentest] watch: fetch failed { kind : success , text : engagement eng-mtbs7qti 
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+=== 2026-08-28T02:51:07+08:00 100s tick ===
+2026-08-28T02:50:53+08:00 | load=2.51 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:{ kind : error , text : graphd: /query is read-only (MATCH/RETURN/WITH/CALL only
+  "info_disclosure": false
+ },
+ "artifacts": "0/2",
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:{ kind : error , text : graphd: /query is read-only (MATCH/RETURN/WITH/CALL only
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+=== 2026-08-28T02:57:49+08:00 100s tick ===
+2026-08-28T02:57:33+08:00 | load=1.05 mem=% kuzu=1 lanes=3
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:{ kind : error , text : graphd: /query is read-only (MATCH/RETURN/WITH/CALL only
+  "info_disclosure": false
+ },
+ "artifacts": "0/2",
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:{ kind : error , text : graphd: /query is read-only (MATCH/RETURN/WITH/CALL only
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+=== 2026-08-28T03:04:31+08:00 100s tick ===
+2026-08-28T03:04:13+08:00 | load=3.20 mem=% kuzu=1 lanes=2
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:{ kind : error , text : graphd: /query is read-only (MATCH/RETURN/WITH/CALL only
+  "info_disclosure": false
+ },
+ "artifacts": "0/2",
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:{ kind : error , text : graphd: /query is read-only (MATCH/RETURN/WITH/CALL only
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+laneB 0/10 0% 0/2 FP0 PASS=False
+fps: []
+uncovered: ['xss', 'sqli', 'idor', 'ssrf', 'xxe', 'auth_bypass', 'ssti', 'nosql_injection', 'access_control', 'info_disclosure']
+laneC 7/12 58% 3/4 FP0 PASS=False
+fps: []
+uncovered: ['bfla', 'excessive_data_exposure', 'broken_authentication', 'unrestricted_resource_consumption']
+tick done
+=== 2026-08-28T03:11:13+08:00 100s tick ===
+2026-08-28T03:10:54+08:00 | load=4.54 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:{ kind : error , text : graphd: /query is read-only (MATCH/RETURN/WITH/CALL only
+  "info_disclosure": false
+ },
+ "artifacts": "0/2",
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:{ kind : error , text : graphd: /query is read-only (MATCH/RETURN/WITH/CALL only
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+=== 2026-08-28T03:17:54+08:00 100s tick ===
+2026-08-28T03:17:36+08:00 | load=5.40 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:
+  "info_disclosure": false
+ },
+ "artifacts": "0/2",
+ "artifact_detail": {
+  "ART-xss-dom": false,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+laneB 2/10 20% 1/2 FP0 PASS=False
+fps: []
+uncovered: ['sqli', 'idor', 'ssrf', 'xxe', 'auth_bypass', 'ssti', 'access_control', 'info_disclosure']
+laneC 7/12 58% 3/4 FP0 PASS=False
+fps: []
+uncovered: ['bfla', 'excessive_data_exposure', 'broken_authentication', 'unrestricted_resource_consumption']
+tick done
+=== 2026-08-28T03:24:37+08:00 100s tick ===
+2026-08-28T03:24:18+08:00 | load=5.93 mem=% kuzu=1 lanes=1
+laneB 8767 juice-shop-online health:{"ok": true, "db": "/tmp/d2d-laneB/graph  log:[pentest] worker eng-mtbwimf8-discovery-kyvp[discovery] exit=0 [pentest] 三环空闲无进展
+  "info_disclosure": false
+ },
+ "artifacts": "1/2",
+ "artifact_detail": {
+  "ART-xss-dom": true,
+  "ART-sqli-login": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+laneC 8768 crapi health:{"ok": true, "db": "/tmp/d2d-laneC/graph  log:
+ "artifacts": "3/4",
+ "artifact_detail": {
+  "ART-bola-other-order": true,
+  "ART-jwt-forge": true,
+  "ART-otp-bypass": true,
+  "ART-mass-admin": false
+ },
+ "false_positives": [],
+ "PASS": false
+}
+
+laneB 2/10 20% 1/2 FP0 PASS=False
+uncovered: ['sqli', 'idor', 'ssrf', 'xxe', 'auth_bypass', 'ssti']
+laneC 10/12 83% 4/4 FP0 PASS=True
+uncovered: ['unrestricted_resource_consumption', 'idor']
+tick2 done
+[pentest] worker eng-mtbwimf8-discovery-454z[discovery] exit=0
+[pentest] worker eng-mtbwimf8-discovery-kyvp[discovery] exit=0
+[pentest] 三环空闲无进展 → 自动反思唤醒(1/3)。失败: 
