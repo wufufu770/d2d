@@ -20,7 +20,7 @@ command -v dsh >/dev/null || { c_err "未找到 dsh CLI —— 请先安装 @dee
 command -v python3 >/dev/null || { c_err "需要 python3"; exit 1; }
 python3 -c "import kuzu" 2>/dev/null || {
   c_info "安装 kuzu (graphd 依赖)"
-  pip3 install --user kuzu || pip3 install --break-system-packages kuzu
+  pip3 install --user -r "$D2D_DIR/requirements.txt" 2>/dev/null || pip3 install --user -r "requirements.txt" 2>/dev/null || pip3 install --user kuzu || pip3 install --break-system-packages -r "$D2D_DIR/requirements.txt" 2>/dev/null || pip3 install --break-system-packages -r requirements.txt 2>/dev/null || pip3 install --break-system-packages kuzu
 }
 
 # 1) 获取代码（供应链钉版：pin 到 commit + sha256 校验，D2D_REF 可覆盖追新）
