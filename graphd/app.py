@@ -196,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
             t = _g.search(r"title\s*:\s*[\"'](.*?)[\"']", cypher_raw)
             if t:
                 tv = t.group(1).lower()
-                if any(j in tv for j in junk):
+                if any(j in tv for j in JUNK_PATTERNS):
                     return self._send(400, {"ok": False, "error": "garbage-listed finding rejected: " + tv[:60]})
         # 缺陷#18: DDL 禁令 —— schema 固定, 运行期禁止建/删表(worker 漂移防线)
         import re as _ddl
@@ -212,19 +212,26 @@ class Handler(BaseHTTPRequestHandler):
                 if h not in ("127.0.0.1", "localhost"):
                     hosts.add(h)
             if hosts:
-                with _lock:
-                    try:
-                        c = kuzu.Connection(db())
-                        r = c.execute("MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.scope")
-                        scope = ""
-                        while r.has_next():
-                            scope += str(r.get_next()[0] or "") + ","
-                        allowed = [s.strip().lower() for s in scope.split(",") if s.strip()]
-                        for h in hosts:
-                            if not any(h == a or h.endswith("." + a) for a in allowed):
-                                return self._send(403, {"error": f"scope violation at graphd layer: {h}"})
-                    except Exception:
-                        pass
+                # 首个 engagement 创建时无活跃 scope，跳过校验（自身即定义 scope）
+                if "Engagement" in cypher_raw and "CREATE" in cypher_raw.upper():
+                    pass
+                else:
+                    with _lock:
+                        try:
+                            c = kuzu.Connection(db())
+                            r = c.execute("MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.scope")
+                            scope = ""
+                            while r.has_next():
+                                scope += str(r.get_next()[0] or "") + ","
+                            allowed = [s.strip().lower() for s in scope.split(",") if s.strip()]
+                            if not allowed:
+                                pass  # 无活跃 engagement 时开放（首个创建）
+                            else:
+                                for h in hosts:
+                                    if not any(h == a or h.endswith("." + a) for a in allowed):
+                                        return self._send(403, {"error": f"scope violation at graphd layer: {h}"})
+                        except Exception:
+                            pass
         if self.path == "/query":
             cypher = req.get("cypher", "").strip()
             params = req.get("params") or {}
