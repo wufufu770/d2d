@@ -126,3 +126,13 @@ echo "  dsh --profile $PROFILE \"对 http://目标 进行三环渗透测试\""
 echo "  # 或交互式:"
 echo "  dsh --profile $PROFILE"
 echo "  # 图查询: curl -X POST http://127.0.0.1:$PORT/query -d '{\"cypher\":\"MATCH (n) RETURN count(n)\"}'"
+
+# I-024: install 后完整性自检
+if [ -f "$D2D_DIR/manifest.sha256" ]; then
+  c_info "校验安装完整性（manifest.sha256）..."
+  if ! (cd "$D2D_DIR" && sha256sum -c manifest.sha256 --quiet); then
+    c_err "sha256 mismatch — 安装产物被篡改，请删除 $D2D_DIR 重装"
+    exit 1
+  fi
+  c_info "✓ 安装完整性校验通过"
+fi
