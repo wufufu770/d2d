@@ -2,11 +2,29 @@
 """eval_profile.py v2 <graph_port> <profile_json> -> 基于靶场档案的评估
 v2: 误报判定用 title+category+repro 三字段; 覆盖判定文本池含 category。
 """
-import json, sys, urllib.request
+import json, sys, urllib.request, os
+
+def _auth_header():
+    tok = os.environ.get("P2P_WORKER_TOKEN", "") or os.environ.get("P2P_HOST_TOKEN", "") or os.environ.get("P2P_TOKEN", "")
+    if not tok:
+        for p in [os.environ.get("P2P_WORKER_TOKEN_FILE", os.path.expanduser("~/.config/d2d/worker-token")),
+                  os.environ.get("P2P_HOST_TOKEN_FILE", os.path.expanduser("~/.config/d2d/host-token")),
+                  os.path.expanduser("~/.config/d2d/worker-token"),
+                  os.path.expanduser("~/.config/d2d/host-token")]:
+            try:
+                tok = open(p).read().strip()
+                if tok:
+                    break
+            except: pass
+    return tok
 
 def q(port, cypher):
+    headers = {"Content-Type": "application/json"}
+    tok = _auth_header()
+    if tok:
+        headers["X-Auth"] = tok
     req = urllib.request.Request(f"http://127.0.0.1:{port}/query",
-        data=json.dumps({"cypher": cypher}).encode(), headers={"Content-Type": "application/json"})
+        data=json.dumps({"cypher": cypher}).encode(), headers=headers)
     return json.loads(urllib.request.urlopen(req, timeout=10).read()).get("rows", [])
 
 def main():
