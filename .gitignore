@@ -46,3 +46,10 @@ robots.txt
 evidence/
 graphs/
 graphd-lane*/
+acquisitions.md
+api-*.json
+quarantine-dir.html
+suspicious_errors.yml
+traversal-test
+evidence.md
+cookies.txt
