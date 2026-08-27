@@ -26,7 +26,7 @@ const q = async (cypher) => {
 }
 const evalProfile = () => {
   const out = execSync(
-    `python3 ${D2D_ROOT}/eval_profile.py ${PORT} ${PROFILE}`,
+    `python3 ${D2D_ROOT}/scripts/eval/eval_profile.py ${PORT} ${PROFILE}`,
     { encoding: 'utf8' })
   return JSON.parse(out)
 }
@@ -64,7 +64,7 @@ const wipeRuntime = async () => {
 const launchRound = (attempt) => {
   rmSync('/tmp/jiti', { recursive: true, force: true })
   const env = { ...process.env, R_TARGET: TARGET, R_SCOPE: SCOPE }
-  const p = spawn('node', ['round-launch.mjs', WHICH], {
+  const p = spawn('node', ['scripts/launch/round-launch.mjs', WHICH], {
     cwd: D2D_ROOT, env,
     stdio: ['ignore', 'ignore', 'ignore'],
     detached: true,
