@@ -2,8 +2,9 @@
 // range_run.mjs <pi|dsh> — 覆盖驱动续跑: 打一轮→评估→缺口注入下一轮, 至多3轮, PASS即止
 import { execSync, spawn } from 'node:child_process'
 import { rmSync } from 'node:fs'
+import os from 'node:os'
 
-const D2D_ROOT = process.env.D2D ?? '/home/wff/d2d'
+const D2D_ROOT = process.env.D2D ?? `${os.homedir()}/d2d`
 const WHICH = process.argv[2]
 const PROFILE = process.argv[3] ?? `${D2D_ROOT}/ranges/profiles/vuln-bank.json`
 const TARGET = process.env.R_TARGET ?? 'http://127.0.0.1:5000'
@@ -12,9 +13,7 @@ const SCOPE = process.env.R_SCOPE ?? '127.0.0.1'
 const PORT = process.env.LANE_GRAPHD ?? (WHICH === 'pi' ? '8765' : '8766')
 const MAX_ATTEMPTS = 3
 
-const _tokFile = PORT === '8766'
-  ? process.env.D2D ?? '/home/wff/d2d' + '/graphd/.host-token'
-  : (process.env.P2P_GRAPHD_DIR ?? '/home/wff/d2d/graphd-laneB') + '/.host-token'
+const _tokFile = process.env.P2P_HOST_TOKEN_FILE ?? `${os.homedir()}/.config/d2d/host-token`
 let _tok = ''
 try { _tok = require('node:fs').readFileSync(_tokFile, 'utf8').trim() } catch {}
 const q = async (cypher) => {
@@ -27,7 +26,7 @@ const q = async (cypher) => {
 }
 const evalProfile = () => {
   const out = execSync(
-    `python3 /home/wff/d2d/eval_profile.py ${PORT} ${PROFILE}`,
+    `python3 ${D2D_ROOT}/eval_profile.py ${PORT} ${PROFILE}`,
     { encoding: 'utf8' })
   return JSON.parse(out)
 }
@@ -53,7 +52,7 @@ const wipeRuntime = async () => {
     const rows = await q('MATCH (f:Finding) RETURN f')
     if (rows.length) {
       const { mkdirSync, writeFileSync } = await import('node:fs')
-      const dir = '/home/wff/d2d/evidence/range-snapshots'
+      const dir = `${D2D_ROOT}/evidence/range-snapshots`
       mkdirSync(dir, { recursive: true })
       writeFileSync(`${dir}/${WHICH}-${Date.now()}.json`, JSON.stringify(rows, null, 1))
     }
@@ -66,7 +65,7 @@ const launchRound = (attempt) => {
   rmSync('/tmp/jiti', { recursive: true, force: true })
   const env = { ...process.env, R_TARGET: TARGET, R_SCOPE: SCOPE }
   const p = spawn('node', ['round-launch.mjs', WHICH], {
-    cwd: '/home/wff/d2d', env,
+    cwd: D2D_ROOT, env,
     stdio: ['ignore', 'ignore', 'ignore'],
     detached: true,
   })
@@ -85,7 +84,7 @@ const waitTerminal = async () => {
   let stalledTicks = 0
   const eventCount = async () => {
     try {
-      const f = execSync(`ls -t ${process.env.P2P_RUNS_DIR ?? '/home/wff/runs'}/*/run-log.jsonl 2>/dev/null | head -1`, { encoding: 'utf8' }).trim()
+      const f = execSync(`ls -t ${process.env.P2P_RUNS_DIR ?? `${os.homedir()}/runs`}/*/run-log.jsonl 2>/dev/null | head -1`, { encoding: 'utf8' }).trim()
       if (!f) return 0
       return parseInt(execSync(`wc -l < '${f}'`, { encoding: 'utf8' }).trim(), 10) || 0
     } catch { return 0 }

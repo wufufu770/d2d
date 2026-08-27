@@ -3,7 +3,7 @@
 合并 evidence/range-snapshots/{pi,dsh}-*.json 全部历史快照 + 当前活图(8765/8766),
 按宿主分别计算 union 覆盖/artifacts/FP, 输出双侧 PASS 判定。
 """
-import json, sys, glob, urllib.request
+import json, sys, glob, urllib.request, os
 
 def q(port, cypher):
     req = urllib.request.Request(f"http://127.0.0.1:{port}/query",
@@ -58,7 +58,7 @@ def main():
         texts = []
         # 历史快照(支持字符串化 dict)
         import ast
-        for f in sorted(glob.glob(f"{os.environ.get('D2D', '/home/wff/d2d')}/evidence/range-snapshots/{host}-*.json")):
+        for f in sorted(glob.glob(f"{os.environ.get('D2D', os.path.expanduser('~/d2d'))}/evidence/range-snapshots/{host}-*.json")):
             try:
                 for r in json.load(open(f)):
                     fv = r.get("f", r)

@@ -1,5 +1,7 @@
 // 给 dsh 布置与 pi 相同的靶场任务(经插件 /pentest 处理器, 与 Web UI 调用等价)
-const plugin = await import('/home/wff/d2d/plugin/pentest-dsh/index.js')
+import os from 'node:os'
+const D2D_ROOT = process.env.D2D ?? `${os.homedir()}/d2d`
+const plugin = await import(`${D2D_ROOT}/plugin/pentest-dsh/index.js`)
 globalThis.__p2pChildProcess = await import('node:child_process')
 
 const registered = { tools: {}, commands: {}, gates: [] }

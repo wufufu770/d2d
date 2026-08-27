@@ -1,17 +1,18 @@
 // R1 发射器: 同时给 pi 与 dsh 布置同一靶场
 import { rmSync } from 'node:fs'
-const D2D_ROOT = process.env.D2D ?? '/home/wff/d2d'
+import os from 'node:os'
+const D2D_ROOT = process.env.D2D ?? `${os.homedir()}/d2d`
 try { rmSync('/tmp/jiti', { recursive: true, force: true }); } catch {}
 const TARGET = process.env.R_TARGET ?? 'http://127.0.0.1:8080'
 const SCOPE = process.env.R_SCOPE ?? '127.0.0.1'
 const INST = process.env.R_INST ?? '2'
 
 async function launchPi() {
-  const { createJiti } = await import('/home/wff/p2p/pi/node_modules/@earendil-works/pi-coding-agent/node_modules/jiti/lib/jiti.mjs')
+  const { createJiti } = await import(`${os.homedir()}/p2p/pi/node_modules/@earendil-works/pi-coding-agent/node_modules/jiti/lib/jiti.mjs`)
   const jiti = createJiti(import.meta.url)
   globalThis.__p2pChildProcess = await import('node:child_process')
   globalThis.__p2pFs = await import('node:fs')
-  const mod = await jiti.import('/home/wff/p2p/home/.pi/agent/extensions/pentest/index.ts')
+  const mod = await jiti.import(`${os.homedir()}/p2p/home/.pi/agent/extensions/pentest/index.ts`)
   const cmds = {}, tools = {}
   const notifyLog = []
   const fakePi = {
