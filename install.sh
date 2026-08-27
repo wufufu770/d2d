@@ -61,6 +61,15 @@ elif command -v bun >/dev/null; then
   (cd "$PROFILE_DIR" && bun install) || true
 fi
 
+# 2.5) 凭证初始化（host/worker token）
+mkdir -p ~/.config/d2d && chmod 700 ~/.config/d2d
+[ -f ~/.config/d2d/host-token ] || { umask 077 && openssl rand -hex 16 > ~/.config/d2d/host-token && chmod 600 ~/.config/d2d/host-token; }
+[ -f ~/.config/d2d/worker-token ] || { umask 077 && openssl rand -hex 16 > ~/.config/d2d/worker-token && chmod 600 ~/.config/d2d/worker-token; }
+# 迁移旧路径（graphd/.host-token）若存在
+if [ -f "$D2D_DIR/graphd/.host-token" ] && [ ! -f ~/.config/d2d/host-token ]; then
+  cp "$D2D_DIR/graphd/.host-token" ~/.config/d2d/host-token && chmod 600 ~/.config/d2d/host-token
+fi
+
 # 3) graphd 启动脚本 + 可选 systemd 用户服务
 mkdir -p "$D2D_DIR/graphd"
 cat > "$D2D_DIR/graphd/start.sh" <<'EOF'

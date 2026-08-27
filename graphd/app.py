@@ -95,8 +95,10 @@ class Handler(BaseHTTPRequestHandler):
         # #33修复: host token 单独配置时也放行宿主写入
         if worker:
             return got in (worker, host)
-        # #34: range 模式(完全未配 token)= 开放结构化写; 经验库仍由 host 级门保护
-        return True
+        # I-013: range 开放改为显式 opt-in(P2P_OPEN_RANGE=1), 默认 fail-closed
+        if os.environ.get("P2P_OPEN_RANGE") == "1":
+            return True
+        return False
 
     def do_POST(self):
 
@@ -111,6 +113,10 @@ class Handler(BaseHTTPRequestHandler):
         tok = os.environ.get("P2P_TOKEN", "")
         if tok and self.headers.get("X-Auth") != tok:
             return self._send(401, {"error": "unauthorized"})
+        # I-013: /query 与 /write/* 统一 worker 级认证(原先 /query 无 _auth 调用)
+        if self.path in ("/query", "/write/finding", "/write/signal", "/write/hypothesis"):
+            if not self._auth("worker"):
+                return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
         # ---- 结构化写端点: 参数校验替代内联 cypher 正则扫描(根治 #21 死门与 params 旁路) ----
 
         if self.path in ("/write/finding", "/write/signal", "/write/hypothesis"):
@@ -296,6 +302,18 @@ if __name__ == "__main__":
                     f.write(tok)
                 os.chmod(tok_path, 0o600)
                 os.environ["P2P_HOST_TOKEN"] = tok
+    # I-013: worker token 持久化（fail-closed 凭证）
+    if not os.environ.get("P2P_WORKER_TOKEN"):
+        w_tok_path = os.environ.get("P2P_WORKER_TOKEN_FILE", os.path.expanduser("~/.config/d2d/worker-token"))
+        if os.path.exists(w_tok_path):
+            os.environ["P2P_WORKER_TOKEN"] = open(w_tok_path).read().strip()
+        else:
+            w_tok = _sec.token_hex(16)
+            os.makedirs(os.path.dirname(w_tok_path), exist_ok=True)
+            with open(w_tok_path, "w") as f:
+                f.write(w_tok)
+            os.chmod(w_tok_path, 0o600)
+            os.environ["P2P_WORKER_TOKEN"] = w_tok
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     _tok = "required" if os.environ.get("P2P_TOKEN_REQUIRED") == "1" else "open"
     print(f"[graphd] listening :{PORT} db={DB_PATH} token_required={_tok} "

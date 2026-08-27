@@ -1,10 +1,28 @@
 #!/usr/bin/env python3
 """架构合规检查器: compliance_check.py -> 逐项 PASS/FAIL + 证据"""
-import json, sys, urllib.request
+import json, sys, urllib.request, os
+
+def _auth_header():
+    # I-013: compliance_check 需带 worker/host token（fail-closed 后无 token 即 401）
+    tok = os.environ.get("P2P_WORKER_TOKEN", "") or os.environ.get("P2P_HOST_TOKEN", "")
+    if not tok:
+        # 尝试从文件读取
+        for p in [os.environ.get("P2P_WORKER_TOKEN_FILE", os.path.expanduser("~/.config/d2d/worker-token")),
+                  os.environ.get("P2P_HOST_TOKEN_FILE", os.path.expanduser("~/.config/d2d/host-token"))]:
+            try:
+                tok = open(p).read().strip()
+                if tok:
+                    break
+            except: pass
+    return tok
 
 def q(port, cypher):
+    headers = {"Content-Type": "application/json"}
+    tok = _auth_header()
+    if tok:
+        headers["X-Auth"] = tok
     req = urllib.request.Request(f"http://127.0.0.1:{port}/query",
-        data=json.dumps({"cypher": cypher}).encode(), headers={"Content-Type": "application/json"})
+        data=json.dumps({"cypher": cypher}).encode(), headers=headers)
     return json.loads(urllib.request.urlopen(req, timeout=10).read()).get("rows", [])
 
 def check(port, label):
