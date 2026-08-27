@@ -17,4 +17,9 @@ jobs:
         run: pip install -r requirements.txt
       - name: Audit Python deps
         run: pip-audit -r requirements.txt
+      - name: Secret-leak scan (V-03, hook-proof)
+        run: |
+          LEAK=$(git ls-files | grep -E '(^cookies.*\.txt$|^quickship.*\.txt$|\.pem$|\.key$|^\.env$|\.host-token|^evidence.*\.md$|^handoff.*\.md$|^tmp-.*\.json$)' || true)
+          if [ -n "$LEAK" ]; then echo "❌ 泄露文件入库: $LEAK"; exit 1; fi
+          if git grep -qiE 'X-Auth.*[0-9a-f]{32}' -- ':!*.md' ':!docs/*' ':!.d2d-review/*'; then echo "❌ 疑似凭证入库"; exit 1; fi
       - run: pytest tests/test_graphd_gates.py -q

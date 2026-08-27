@@ -262,6 +262,12 @@ class Handler(BaseHTTPRequestHandler):
             params = req.get("params") or {}
             if not cypher:
                 return self._send(400, {"error": "empty cypher"})
+            # V-05: /query 只读白名单 — 仅 MATCH/RETURN/WITH 开头，拒 DML/DDL（ExperienceWeight 写已由 host 门保护）
+            import re as _ro
+            if not _ro.match(r"^(MATCH|RETURN|WITH|CALL)\b", cypher):
+                return self._send(403, {"ok": False, "error": "/query is read-only (MATCH/RETURN/WITH/CALL only); use /write/* for mutations"})
+            if _ro.search(r"\b(CREATE|MERGE|SET|DELETE|DROP|DETACH)\b", cypher):
+                return self._send(403, {"ok": False, "error": "/query is read-only: mutation keywords forbidden"})
             with _lock:
                 try:
                     conn = kuzu.Connection(db())
