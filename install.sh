@@ -67,6 +67,8 @@ cat > "$D2D_DIR/graphd/start.sh" <<'EOF'
 #!/usr/bin/env bash
 cd "$(dirname "$0")"
 export P2P_GRAPH_PORT="${P2P_GRAPH_PORT:-8766}"
+export P2P_HOST_TOKEN_FILE="${P2P_HOST_TOKEN_FILE:-$HOME/.config/d2d/host-token}"
+export P2P_WORKER_TOKEN_FILE="${P2P_WORKER_TOKEN_FILE:-$HOME/.config/d2d/worker-token}"
 unset P2P_GRAPH
 exec python3 app.py
 EOF
@@ -78,6 +80,8 @@ if command -v systemctl >/dev/null && systemctl --user status >/dev/null 2>&1; t
 [Unit]
 Description=d2d graphd (Kuzu single-writer state store)
 [Service]
+Environment=P2P_HOST_TOKEN_FILE=%h/.config/d2d/host-token
+Environment=P2P_WORKER_TOKEN_FILE=%h/.config/d2d/worker-token
 ExecStart=$D2D_DIR/graphd/start.sh
 Restart=on-failure
 [Install]

@@ -276,15 +276,26 @@ if __name__ == "__main__":
     # #32: host token 持久化 —— 文件存在则加载进环境; 不存在则生成
     import secrets as _sec
     if not os.environ.get("P2P_HOST_TOKEN"):
-        tok_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".host-token")
+        tok_path = os.environ.get("P2P_HOST_TOKEN_FILE", os.path.expanduser("~/.config/d2d/host-token"))
         if os.path.exists(tok_path):
             os.environ["P2P_HOST_TOKEN"] = open(tok_path).read().strip()
         else:
-            tok = _sec.token_hex(16)
-            with open(tok_path, "w") as f:
-                f.write(tok)
-            os.chmod(tok_path, 0o600)
-            os.environ["P2P_HOST_TOKEN"] = tok
+            # 兼容旧路径回退（迁移期）
+            _legacy = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".host-token")
+            if os.path.exists(_legacy):
+                os.environ["P2P_HOST_TOKEN"] = open(_legacy).read().strip()
+                # 迁移到新路径
+                os.makedirs(os.path.dirname(tok_path), exist_ok=True)
+                with open(tok_path, "w") as f:
+                    f.write(os.environ["P2P_HOST_TOKEN"])
+                os.chmod(tok_path, 0o600)
+            else:
+                tok = _sec.token_hex(16)
+                os.makedirs(os.path.dirname(tok_path), exist_ok=True)
+                with open(tok_path, "w") as f:
+                    f.write(tok)
+                os.chmod(tok_path, 0o600)
+                os.environ["P2P_HOST_TOKEN"] = tok
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     _tok = "required" if os.environ.get("P2P_TOKEN_REQUIRED") == "1" else "open"
     print(f"[graphd] listening :{PORT} db={DB_PATH} token_required={_tok} "
