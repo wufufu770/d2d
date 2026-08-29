@@ -4,6 +4,7 @@
 import re
 import pytest
 from graphd.app import finding_gates, JUNK_PATTERNS
+from graphd.app import transition_gate
 
 # ---- 与 graphd/app.py 单点真源对接，不复刻正则 ----
 
@@ -190,3 +191,32 @@ def test_r3_seven_state_transitions_source_of_truth():
     assert "accepted" not in FINDING_TRANSITIONS["verified"]
     assert "reported" in FINDING_TRANSITIONS["verified"]
     assert "candidate" in FINDING_TRANSITIONS["isolated"]  # 隔离可凭新证据重开
+
+
+# ---- W1: 七态转换审计门(纯函数真源) —— actor/reason 必填 + 轨迹完整 + 非法迁移仍拒 ----
+def test_w1_transition_requires_actor():
+    ok, err, _ = transition_gate("candidate", "verified", "", "verify replay")
+    assert not ok and "actor" in err
+
+def test_w1_transition_requires_reason():
+    ok, err, _ = transition_gate("candidate", "verified", "scheduler", "   ")
+    assert not ok and "reason" in err
+
+def test_w1_trajectory_complete():
+    ok, err, traj = transition_gate("candidate", "verified", "scheduler", "verify 独立重放背书")
+    assert ok and not err
+    assert traj["from"] == "candidate" and traj["to"] == "verified"
+    assert traj["actor"] == "scheduler" and traj["reason"] and traj["ts"]
+
+def test_w1_illegal_transition_still_blocked():
+    ok, err, traj = transition_gate("accepted", "verified", "scheduler", "try reopen")
+    assert not ok and traj is None and "illegal transition" in err
+
+def test_w1_actor_bound_40():
+    ok, err, _ = transition_gate("candidate", "triaged", "a" * 41, "x")
+    assert not ok and "actor" in err
+
+def test_w1_reason_bound_80():
+    ok, err, _ = transition_gate("candidate", "triaged", "scheduler", "r" * 81)
+    assert not ok and "reason" in err
+

@@ -78,3 +78,64 @@
 - shepherd cold-start 重验(watchdog 队列滚入, 验收: 无类定义靶自主 ≥5 verified)
 - SPA 小程序 CDP / APP 逆向交互层(target_type 桩已贯穿)
 - planner v2 指纹深化(知识卡+经验 stack_fp 联合检索)
+
+## SLO 与迭代纪律（R4a 起）
+以 fleet 迭代为窗口的三条服务级目标, 超预算即冻结功能迭代一轮(只修不改):
+| SLO | 目标 | 度量 |
+|---|---|---|
+| 迭代完成率 | ≥90% | 75min 窗口内终态靶场数/计划靶场数 |
+| graphd 可用性 | ≥99%(月) | /health 分钟级采样 |
+| watchdog 误杀率 | ≤5%/迭代 | 误杀次数/派发轮次 |
+
+### 归因纪律（B-1/E-1 配套）
+- 未跑消融实验(四配置×3)的战绩归因一律标注「假设」, 不得写入「系统性修复」栏
+- 每次消融产出 experiments/<id>/manifest.json(policies 快照 sha256/模型/token/wallclock) + summary.md(中位数+符号检验, n=3 标注无统计力)
+- mutation score 每轮记录曲线(基线 21.63% @ 2026-08-29), 系统性修复绑定「新增用例使 mutation ≥+3pp」
+
+### 安全运维记录（R4a）
+- D-1: 历史重写后旧提交仅存 GitHub 对象缓存(已核 forks=0); host/worker token 于下次车道滚动时随 graphd 重启自动轮换
+- D-3: notify webhook URL 支持环境变量 D2D_NOTIFY_WEBHOOK 注入(env 优先), config/notify.json 只留路由策略
+- A-2: 模型策略 canonical 位置外置 ~/.d2d-data/config/model-policies.json(仓库只留 example 模板); model-rotate 首次操作自动迁移
+
+## R4a 迭代（2026-08-30，五轮审查修复轮）
+**主题: 状态机接线(休眠门激活)/消融可信化/运维加固/调度器拆分 —— 四视角审查(全栈/研究员/渗透/运维)落地**
+
+### 最高发现: 七态状态机休眠
+/write/finding 服务端恒置 gate_status='candidate'(app.py), 而 /write/transition 全仓零生产调用方 —— verify 环的独立重放结论从不回写, 历史 finding 全部滞留 candidate。
+**接线**: verify 任务 brief 增「结论必须写 verify-result Signal」硬规则 → worker 终态时 scheduler 消费信号调 /write/transition(actor='scheduler', reason='verify 独立重放背书') confirmed→verified / refuted→rejected, 幂等(400/404 消费, 5xx 留 open 重试)。
+
+### W1 状态机审计轨迹
+- transition_gate 纯函数真源: actor(1-40)/reason(1-80) 必填, 非法迁移仍拒; Finding.last_transition 存 {ts,actor,reason,from,to}
+- src-export 增状态轨迹列 + 默认只导 verified(--all-states 越过); pytest 36→42
+- 实弹: 缺 reason 400 / 全轨迹 200 冒烟通过; control 图旧库 ALTER 迁移 OK
+
+### W4 快赢包
+- A-4: S21-test-log.md(9584 行)出库, .gitignore 拦 S*-test-log.md(方法学 verification.md 保留)
+- A-2: 模型策略外置 ~/.d2d-data/config/model-policies.json(仓库留 example 模板); loadPolicies/study 同序; model-rotate 首次操作自动迁移
+- D-3: notify webhook 走 D2D_NOTIFY_WEBHOOK env(优先); B-5: 门禁③样本量收紧(wins>=3 或 wins>=2 且不撞 refuted, 输出附 Laplace)
+- D-4: graphd 连接信号量 32(P2P_MAX_CONNS); D-5: SLO 节(完成率≥90%/可用≥99%/误杀≤5%); D-1: token 轮换记录(forks=0 已核)
+- study.mjs 反例段(Reflexion 最小移植): 学习 prompt 注入图中 refuted 方向, 新卡避让死路
+
+### W5 调度器拆分(A-1)
+- 六个 domain 模块: digest/allocator(纯规划: planReplenishment+planAllocation)/failover(QUOTA_RE+decideFailover)/knowledge-retrieval(B-2 L1 加权: 指纹×2+标题×3+recipe×1, top-3)/scope(checkBash 全量迁出)/briefs(简报模板)
+- scheduler.js 818→714 行(编排+IO+生命周期为主); mocha 12→63(35 新单测锁定分配边界/检索加权/降级决策/scope 门)
+- 拆分红利: scope.mjs 边界测试逮到两处实弹缺口 — validator --proxy/--resolve 死代码检查(token 级 \s 锚永不匹配)已修(归入 BLOCKED_FLAGS); allocator 计划内超发(静态快照缺 planned 计数)已修
+- ≤500 行目标未达(剩余为 runWorker/engagement 生命周期与 IO 胶水), 留 R4b 与车道离线窗口
+- brief 语义修正: /write/finding 恒置 candidate, deep brief 不再写 "gate_status='verified'" 误导
+
+### W2 消融框架(E-1/B-1)
+- scripts/eval/ablation.mjs: 四配置(full/no-experience/no-profile/bare-v0)×n 沙盒矩阵(独立 workspace/图实例/DATA_DIR/brain 快照)
+- 控制变量: GAP_HINTS 空/OAST 剔除/同 proxy/同 seeds; full-no-profile 复刻 control 经验先验+profile_suggest 预建模(生产稳态近似)
+- 产出 experiments/<id>/{manifest.json(policies 快照 hash/模型/token/wallclock), summary.md(中位数+符号检验, n=3 标无统计力)}
+- 运行: `node scripts/eval/ablation.mjs --profile dvwa --runs 3`(生产车道在飞时拒绝启动)
+
+### W3 备份生产化(E-6/D-2)
+- scripts/ops/backup-graph.sh 入库: SIGSTOP 停写窗口 tar 三实例(kuzu_db+wal) → ~/.d2d-data/backups, 留 14 份, D2D_BACKUP_OFFSITE rsync 钩子, 恢复演练步骤入脚本头
+- 实测: 三实例快照 + SIGCONT 后 /health 全活; crontab 已切换(旧 Trash 备份脚本退役)
+
+### W6 mutation 补课(A-3)
+- test/r4a-boundary.test.mjs: 17 条 EVIL 边界(指令模式多行/中文/$()/maxLen 精确界 + extractCurlArgs 方法闸/等号连写/旁路 flag/元字符)
+- stryker 跑分: **21.63% → 29.26%(+7.63pp, 417 mutants, killed 122)**; sanitize 66.13% / validator 22.82%(validator 无覆盖 205 是下一轮主靶)
+
+### R4b 候选(审查顺延项)
+E-5 OAST DNS 通道 / E-2 embedding 语义检索 / E-3 Cybench 适配 / E-4 变体卡 / E-7 SPA 执行器 / C-1 补卡 40+ / scheduler 深拆至 500

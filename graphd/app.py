@@ -52,7 +52,7 @@ SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, PRIMARY KEY(worker_id))",
@@ -88,6 +88,11 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Task ADD eng STRING DEFAULT ''")
     except Exception:
         pass
+    # W1: 七态转换审计轨迹列(旧库迁移, 新库由 SCHEMA 直接建全)
+    try:
+        conn.execute("ALTER TABLE Finding ADD last_transition STRING DEFAULT ''")
+    except Exception:
+        pass
 
 
 JUNK_PATTERNS = ["no rate limit", "missing rate limit", "lack of rate limiting",
@@ -112,6 +117,25 @@ FINDING_TRANSITIONS = {
     "accepted": (),
     "rejected": (),
 }
+
+def transition_gate(cur, to, actor, reason):
+    """W1: 七态转换审计门 — 纯函数单测真源(与 finding_gates 同模式)。
+    谁在何时推动了状态必须可追溯: actor(1-40字符) 与 reason(1-80字符) 必填,
+    合法迁移才产出轨迹 {ts, actor, reason, from, to}(宿主写入 Finding.last_transition)。"""
+    if to not in FINDING_STATES:
+        return False, f"to must be one of {list(FINDING_STATES)}", None
+    if to not in FINDING_TRANSITIONS.get(cur, ()):
+        return False, f"illegal transition {cur} -> {to}", None
+    actor = str(actor or "").strip()
+    reason = str(reason or "").strip()
+    if not actor or len(actor) > 40:
+        return False, "actor required (1-40 chars): 谁推动了状态", None
+    if not reason or len(reason) > 80:
+        return False, "reason required (1-80 chars): 为什么转换", None
+    traj = {"ts": datetime.now(timezone.utc).isoformat(), "actor": actor,
+            "reason": reason, "from": cur, "to": to}
+    return True, "", traj
+
 
 def redact_pii(s):
     """I-014 + V-10: PII/凭据脱敏 —— 身份证/手机号(含分隔符)/邮箱(大小写)/AWS key/JWT/私钥/Authorization 头"""
@@ -172,9 +196,31 @@ def worker_query_allowed(cypher: str) -> tuple[bool, str]:
         return False, "/query is read-only for workers: mutation keywords forbidden (case-insensitive)"
     return True, ""
 
+# D-4: 并发连接上限 — ThreadingHTTPServer 每连接一线程, 慢连接可耗尽线程/内存(纵深防御)
+_INFLIGHT = threading.BoundedSemaphore(int(os.environ.get("P2P_MAX_CONNS", "32")))
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
+
+    def handle_one_request(self):
+        if not _INFLIGHT.acquire(blocking=False):
+            try:
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Retry-After", "1")
+                body = b'{"ok": false, "error": "server busy: connection cap reached"}'
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception:
+                pass
+            self.close_connection = True
+            return
+        try:
+            super().handle_one_request()
+        finally:
+            _INFLIGHT.release()
 
     def _send(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode()
@@ -313,8 +359,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, {"ok": False, "error": "transitions require host token"})
             fid = str(req.get("id") or "")
             to = str(req.get("to") or "").strip().lower()
-            if not fid or to not in FINDING_STATES:
-                return self._send(400, {"ok": False, "error": f"id required; to must be one of {list(FINDING_STATES)}"})
+            if not fid:
+                return self._send(400, {"ok": False, "error": "id required"})
             with _locked():
                 try:
                     conn = kuzu.Connection(db())
@@ -322,21 +368,23 @@ class Handler(BaseHTTPRequestHandler):
                     if not r.has_next():
                         return self._send(404, {"ok": False, "error": "finding not found"})
                     cur = str(r.get_next()[0] or "candidate")
-                    if to not in FINDING_TRANSITIONS.get(cur, ()):
-                        return self._send(400, {"ok": False, "error": f"illegal transition {cur} -> {to}"})
+                    ok, err, traj = transition_gate(cur, to, req.get("actor"), req.get("reason"))
+                    if not ok:
+                        return self._send(400, {"ok": False, "error": err})
+                    traj_s = json.dumps(traj, ensure_ascii=False)
                     if to == "verified":
                         conn.execute(
-                            "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.verified_at=$ts",
-                            parameters={"id": fid, "to": to, "ts": datetime.now(timezone.utc).isoformat()})
+                            "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.verified_at=$ts, f.last_transition=$traj",
+                            parameters={"id": fid, "to": to, "ts": traj["ts"], "traj": traj_s})
                     else:
                         conn.execute(
-                            "MATCH (f:Finding {id:$id}) SET f.gate_status=$to",
-                            parameters={"id": fid, "to": to})
+                            "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.last_transition=$traj",
+                            parameters={"id": fid, "to": to, "traj": traj_s})
                 except TimeoutError as _te:
                     return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
                 except Exception as e:
                     return self._send(500, {"ok": False, "error": str(e)[:200]})
-            return self._send(200, {"ok": True, "from": cur, "to": to})
+            return self._send(200, {"ok": True, "from": cur, "to": to, "last_transition": traj})
 
         # 经验库写权限收归 host(防被注入的 worker 给自己刷经验权重) — V-06: re.I + REMOVE
         if re.search(r"ExperienceWeight", req.get("cypher", "")) and \

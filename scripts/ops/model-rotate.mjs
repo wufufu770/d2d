@@ -6,7 +6,21 @@ import os from 'node:os'
 import path from 'node:path'
 
 const REPO = process.env.D2D ?? `${os.homedir()}/d2d`
-const POLICY = `${REPO}/config/model-policies.json`
+const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
+// A-2: 策略 canonical 位置外置 DATA_DIR(不入库); 首次操作自动从仓库内旧位置迁移
+function policyPath() {
+  const data = `${DATA_DIR}/config/model-policies.json`
+  if (!fs.existsSync(data)) {
+    const repo = `${REPO}/config/model-policies.json`
+    if (fs.existsSync(repo)) {
+      fs.mkdirSync(path.dirname(data), { recursive: true })
+      fs.copyFileSync(repo, data)
+      console.log(`[A-2] 策略已外置迁移: ${repo} → ${data} (仓库内副本不再维护)`)
+    }
+  }
+  return data
+}
+const POLICY = policyPath()
 const SETTINGS = `${process.env.DSH_HOME ?? `${os.homedir()}/.dsh`}/settings.yaml`
 const MODELS_JSON = `${REPO}/scripts/ops/models.json`
 
@@ -16,7 +30,7 @@ const writeJson = (p, obj) => fs.writeFileSync(p, JSON.stringify(obj, null, 2) +
 function list() {
   const pol = readJson(POLICY) ?? {}
   const reg = readJson(MODELS_JSON)?.models ?? []
-  console.log('== 模型策略(config/model-policies.json, 可直接编辑) ==')
+  console.log(`== 模型策略(${POLICY}, 可直接编辑) ==`)
   console.log(`default: primary=${pol.default?.primary ?? '(dsh 默认)'} backup=${pol.default?.backup ?? '(空=不降级)'}`)
   for (const [role, r] of Object.entries(pol.roles ?? {}))
     console.log(`${String(role).padEnd(10)} primary=${r.primary ?? ''}  backup=${r.backup || '(空=暂停+通知)'}`)

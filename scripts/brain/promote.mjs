@@ -3,7 +3,7 @@
 // 用法:
 //   promote.mjs --check                 只跑门禁①②看结论
 //   promote.mjs --to-shadow [--graph P] staged → versions/vN(status=shadow)+brain/shadow 软链; 门禁①②必须全过
-//   promote.mjs --to-current [--force]  shadow → current; 门禁③: 需图中存在 card:<id> wins>=1 的实战命中证据(--force 可越过, 记审计)
+//   promote.mjs --to-current [--force]  shadow → current; 门禁③: 可信实战命中证据(样本量收紧, --force 记审计越过)
 //   promote.mjs --reject                丢弃 staged
 //   promote.mjs --seed                  安装 brain/seed/v0 基线为首个 current(生产冷启动)
 //   promote.mjs --status                版本一览
@@ -87,28 +87,49 @@ function prune() {
   const keep = new Set(vs.slice(-2).map((v) => v.dir))
   for (const v of vs) if (!keep.has(v.dir)) { fs.rmSync(`${VERSIONS}/${v.dir}`, { recursive: true, force: true }); console.log(`修剪超期版本 ${v.dir}`) }
 }
+// 门禁③(样本量收紧): wins>=1 即转正是低先验高方差陷阱 — 单次命中可能是运气。
+// 可信证据 = wins>=3, 或 wins>=2 且该卡 applies_to 不撞已证伪方向(refuted/pruned)。
 function fieldEvidence() {
-  const rows = gq(`MATCH (e:ExperienceWeight) WHERE e.id STARTS WITH 'card:' AND e.wins > 0 RETURN e.id AS id, e.wins AS w`)
-  return rows.map((r) => `${r.id}(wins=${r.w})`)
+  const rows = gq(`MATCH (e:ExperienceWeight) WHERE e.id STARTS WITH 'card:' AND e.wins > 0 RETURN e.id AS id, e.wins AS w, e.hits AS h, e.prior AS p`)
+  const laplace = (w, h) => Math.round(((w + 1) / (h + 2)) * 100) / 100
+  return rows.map((r) => {
+    const w = Number(r.w), h = Number(r.h ?? r.w)
+    return { id: String(r.id), wins: w, hits: h, prior: Number(r.p ?? laplace(w, h)) }
+  })
+}
+function gate3(ev) {
+  const refuted = gq(`MATCH (s:Signal_) WHERE s.status IN ['refuted','pruned'] RETURN DISTINCT s.type AS t LIMIT 60`).map((r) => _norm(r.t))
+  const shadowCards = (() => { try { return JSON.parse(fs.readFileSync(`${BRAIN}/shadow/techniques.json`, 'utf8')).cards ?? [] } catch { return [] } })()
+  const dirty = new Set(shadowCards
+    .filter((c) => (c.applies_to ?? []).some((k) => refuted.some((r) => r && (r.includes(_norm(k)) || _norm(k).includes(r)))))
+    .map((c) => c.id))
+  const pass = [], detail = []
+  for (const e of ev) {
+    const ok = e.wins >= 3 || (e.wins >= 2 && !dirty.has(e.id))
+    detail.push(`${e.id}(wins=${e.wins}, laplace=${e.prior}${dirty.has(e.id) ? ', 撞refuted' : ''})${ok ? '✓' : '✗'}`)
+    if (ok) pass.push(`${e.id}(wins=${e.wins}, laplace=${e.prior})`)
+  }
+  return { ok: pass.length > 0, pass, detail }
 }
 
 const cmd = process.argv[2]
 if (cmd === '--to-current') {
   const shadowLink = (() => { try { return fs.readlinkSync(`${BRAIN}/shadow`) } catch { return null } })()
   if (!shadowLink) { console.error('无 shadow 版本'); process.exit(1) }
-  const ev = fieldEvidence()
-  if (!ev.length && !FORCE) {
-    console.error(`❌ 门禁③未过: 影子包尚无实战命中证据(card:* wins>0)。随行观察或 --force 越过(记审计)。`)
+  const g3 = gate3(fieldEvidence())
+  if (!g3.ok && !FORCE) {
+    console.error(`❌ 门禁③未过: 影子包无可信实战证据(需 wins>=3, 或 wins>=2 且不撞已证伪方向)。随行观察或 --force 越过(记审计)。`)
+    if (g3.detail.length) console.error('  现状: ' + g3.detail.join('; '))
     process.exit(1)
   }
-  if (!ev.length && FORCE) console.log('⚠ --force 越过门禁③(无实战命中)')
+  if (!g3.ok && FORCE) console.log('⚠ --force 越过门禁③(无可信实战命中)')
   const vdir = path.basename(shadowLink)
   try { fs.rmSync(`${BRAIN}/current`) } catch {}
   fs.symlinkSync(`${VERSIONS}/${vdir}`, `${BRAIN}/current`)
   try { fs.rmSync(`${BRAIN}/shadow`) } catch {}
   const manifest = JSON.parse(fs.readFileSync(`${shadowLink}/manifest.json`, 'utf8'))
-  fs.writeFileSync(`${shadowLink}/manifest.json`, JSON.stringify({ ...manifest, status: 'current', promoted_at: new Date().toISOString(), field_evidence: ev }, null, 2))
-  console.log(`✅ ${vdir} 已晋级 current${ev.length ? `; 实战证据: ${ev.join(', ')}` : ''}`)
+  fs.writeFileSync(`${shadowLink}/manifest.json`, JSON.stringify({ ...manifest, status: 'current', promoted_at: new Date().toISOString(), field_evidence: g3.pass }, null, 2))
+  console.log(`✅ ${vdir} 已晋级 current${g3.pass.length ? `; 实战证据: ${g3.pass.join(', ')}` : ''}`)
   prune()
   process.exit(0)
 }

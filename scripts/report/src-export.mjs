@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // src-export.mjs — SRC 报告一键导出(G4/G5): findings → 去重指纹 → CVSS → markdown 报告 + 提交台账
-// 用法: node scripts/report/src-export.mjs [--graph 8767] [--min-severity high]
-//   默认只导 gate_status='verified'; --min-severity 过滤; config-advice 单独一节(不作漏洞结论)
+// 用法: node scripts/report/src-export.mjs [--graph 8767] [--min-severity high] [--all-states]
+//   默认只导 gate_status='verified'(W1 状态机接线后未验证候选不进提交清单); --min-severity 过滤; config-advice 单独一节(不作漏洞结论)
 // 台账: DATA_DIR/evidence/src-submitted.json 记录已导出指纹, 重复导出标注 [已提交过] 防重复提交
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -37,17 +37,19 @@ function fingerprint(f) {
   return { fp: `${host}|${path_}|${param}|${f.category ?? ''}|${payloadHash}`, host, path: path_, param }
 }
 
-const rows = gq(`MATCH (f:Finding) RETURN f.id AS id, f.title AS t, f.severity AS sev, f.cvss AS cvss, f.repro AS repro, f.category AS cat, f.gate_status AS g, f.evidence_dir AS ed, f.verified_at AS va ORDER BY f.ts DESC LIMIT 200`)
+const rows = gq(`MATCH (f:Finding) RETURN f.id AS id, f.title AS t, f.severity AS sev, f.cvss AS cvss, f.repro AS repro, f.category AS cat, f.gate_status AS g, f.evidence_dir AS ed, f.verified_at AS va, f.last_transition AS lt ORDER BY f.ts DESC LIMIT 200`)
 const ledgerPath = `${DATA_DIR}/evidence/src-submitted.json`
 let ledger = { submitted: {} }
 try { ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8')) } catch {}
 
+const ALL_STATES = process.argv.includes('--all-states')
 const now = new Date().toISOString()
 const vulns = [], advice = [], newFps = []
 for (const f of rows) {
   const { fp, host, path, param } = fingerprint(f)
   const entry = { ...f, fp, host, path, param, dup: !!ledger.submitted[fp] }
   if (f.cat === 'config-advice') advice.push(entry)
+  else if (!ALL_STATES && f.g !== 'verified') continue // W1: 状态机已接线 — 未验证候选不进提交清单(--all-states 越过)
   else if (SEV_RANK[f.sev] === undefined || SEV_RANK[f.sev] < SEV_RANK[MIN]) continue
   else {
     if (!entry.dup) newFps.push(fp)
@@ -66,6 +68,9 @@ for (const v of vulns) {
   const cvss = stored && !(stored === 5.0 && v.sev !== 'medium') ? stored : SEV_CVSS[v.sev] ?? 0
   L.push(`### [${v.dup ? '已提交过|' : ''}${v.sev.toUpperCase()}] CVSS ${cvss.toFixed(1)} — ${v.t}`)
   L.push(`- 指纹: \`${v.fp}\``)
+  // W1: 七态状态轨迹(谁在何时以何理由推动了状态)
+  const lt = (() => { try { return JSON.parse(String(v.lt ?? '')) } catch { return null } })()
+  L.push(`- 状态: ${v.g ?? 'candidate'}${lt ? ` — ${lt.from}→${lt.to} by ${lt.actor}(${lt.reason}) @ ${String(lt.ts ?? '').slice(0, 19)}` : ''}`)
   if (v.host) L.push(`- 资产: ${v.host}${v.path}${v.param ? ` (param: ${v.param})` : ''}`)
   if (v.ed) L.push(`- 证据目录: ${v.ed}`)
   if (v.repro) L.push(`- 复现:\n\`\`\`\n${String(v.repro).slice(0, 1200)}\n\`\`\``)
