@@ -1,0 +1,120 @@
+{
+ "name": "juice-shop-online",
+ "url": "https://juice-shop.demo.escape.tech",
+ "scope": "juice-shop.demo.escape.tech",
+ "source": "OWASP Juice Shop 在线演示 (官方托管, 100+ 挑战, 现代全栈)",
+ "classes": {
+  "xss": {
+   "kw": [
+    "xss",
+    "cross-site scripting"
+   ]
+  },
+  "sqli": {
+   "kw": [
+    "sql injection",
+    "sqli"
+   ]
+  },
+  "idor": {
+   "kw": [
+    "idor",
+    "insecure direct object"
+   ]
+  },
+  "ssrf": {
+   "kw": [
+    "ssrf",
+    "server-side request forgery"
+   ]
+  },
+  "xxe": {
+   "kw": [
+    "xxe",
+    "xml external entity"
+   ]
+  },
+  "auth_bypass": {
+   "kw": [
+    "authentication bypass",
+    "broken authentication",
+    "default credentials"
+   ]
+  },
+  "ssti": {
+   "kw": [
+    "ssti",
+    "template injection"
+   ]
+  },
+  "nosql_injection": {
+   "kw": [
+    "nosql injection"
+   ]
+  },
+  "access_control": {
+   "kw": [
+    "access control",
+    "越权",
+    "mass assignment",
+    "account takeover",
+    "privilege escalation"
+   ]
+  },
+  "info_disclosure": {
+   "kw": [
+    "information disclosure",
+    "sensitive data exposure"
+   ]
+  },
+  "business_logic_bypass": {
+   "kw": [
+    "business logic",
+    "negative quantity",
+    "super-surprise-box",
+    "negative values"
+   ]
+  },
+  "race_condition": {
+   "kw": [
+    "race condition"
+   ]
+  },
+  "broken_anti_automation": {
+   "kw": [
+    "captcha",
+    "anti-automation"
+   ]
+  },
+  "improper_input_validation": {
+   "kw": [
+    "improper input validation",
+    "empty json"
+   ]
+  },
+  "ctf_flag_capture": {
+   "kw": [
+    "continue-code",
+    "flag captured"
+   ]
+  }
+ },
+ "artifacts": [
+  {
+   "id": "ART-xss-dom",
+   "class": "xss",
+   "kw": [
+    "alert",
+    "xss"
+   ]
+  },
+  {
+   "id": "ART-sqli-login",
+   "class": "sqli",
+   "kw": [
+    "admin",
+    "or 1=1"
+   ]
+  }
+ ]
+}

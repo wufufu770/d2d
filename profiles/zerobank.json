@@ -1,0 +1,127 @@
+{
+ "name": "zerobank",
+ "url": "http://zero.webappsecurity.com",
+ "scope": "zero.webappsecurity.com",
+ "source": "HP/WebInspect demo bank (authorized test target)",
+ "classes": {
+  "sqli": {
+   "kw": [
+    "sql injection",
+    "sqli",
+    "' or ",
+    "injection"
+   ]
+  },
+  "xss": {
+   "kw": [
+    "xss",
+    "cross-site scripting",
+    "<script",
+    "alert"
+   ]
+  },
+  "lfi": {
+   "kw": [
+    "path traversal",
+    "../",
+    "etc/passwd",
+    "root:x:0"
+   ]
+  },
+  "info_disclosure": {
+   "kw": [
+    "information disclosure",
+    "username",
+    "password",
+    "account",
+    "stack trace",
+    "comment"
+   ]
+  },
+  "broken_auth": {
+   "kw": [
+    "authentication bypass",
+    "default credentials",
+    "login"
+   ]
+  },
+  "csrf": {
+   "kw": [
+    "csrf",
+    "cross-site request forgery",
+    "token"
+   ]
+  },
+  "open_redirect": {
+   "kw": [
+    "open redirect",
+    "redirect"
+   ]
+  },
+  "cookies_flags": {
+   "kw": [
+    "cookie",
+    "secure flag",
+    "httponly"
+   ]
+  },
+  "broken_access_control": {
+   "kw": [
+    "broken access control",
+    "access control",
+    "unauthenticated access",
+    "admin panel"
+   ]
+  },
+  "security_misconfiguration": {
+   "kw": [
+    "security misconfiguration",
+    "cors",
+    "trace method",
+    "xst",
+    "misconfiguration"
+   ]
+  },
+  "race_condition": {
+   "kw": [
+    "race condition",
+    "concurrent transfer",
+    "竞态"
+   ]
+  }
+ },
+ "artifacts": [
+  {
+   "id": "ART-sqli-search",
+   "class": "sqli",
+   "kw": [
+    "' or ",
+    "1=1"
+   ]
+  },
+  {
+   "id": "ART-lfi-passwd",
+   "class": "lfi",
+   "kw": [
+    "root:x:0",
+    "etc/passwd"
+   ]
+  },
+  {
+   "id": "ART-xss-reflected",
+   "class": "xss",
+   "kw": [
+    "<script",
+    "alert"
+   ]
+  },
+  {
+   "id": "ART-info",
+   "class": "info_disclosure",
+   "kw": [
+    "password",
+    "comment"
+   ]
+  }
+ ]
+}

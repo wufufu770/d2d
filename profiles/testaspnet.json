@@ -1,0 +1,102 @@
+{
+ "name": "testaspnet",
+ "url": "http://testaspnet.vulnweb.com",
+ "scope": "testaspnet.vulnweb.com",
+ "source": "Acunetix ASP.NET test site (authorized scanner target)",
+ "classes": {
+  "sqli": {
+   "kw": [
+    "sql injection",
+    "sqli",
+    "' or ",
+    "1=1"
+   ]
+  },
+  "xss": {
+   "kw": [
+    "xss",
+    "cross-site scripting",
+    "<script",
+    "alert"
+   ]
+  },
+  "lfi": {
+   "kw": [
+    "path traversal",
+    "../",
+    "etc/passwd",
+    "root:x:0"
+   ]
+  },
+  "info_disclosure": {
+   "kw": [
+    "information disclosure",
+    "password",
+    "stack trace",
+    "comment"
+   ]
+  },
+  "broken_auth": {
+   "kw": [
+    "authentication bypass",
+    "default credentials",
+    "login"
+   ]
+  },
+  "idor": {
+   "kw": [
+    "idor",
+    "insecure direct object"
+   ]
+  },
+  "csrf": {
+   "kw": [
+    "csrf",
+    "cross-site request forgery",
+    "forged request"
+   ]
+  }
+ },
+ "artifacts": [
+  {
+   "id": "ART-sqli",
+   "class": "sqli",
+   "kw": [
+    "' or ",
+    "1=1"
+   ],
+   "difficulty": 1
+  },
+  {
+   "id": "ART-lfi-passwd",
+   "class": "lfi",
+   "kw": [
+    "root:x:0",
+    "etc/passwd"
+   ],
+   "difficulty": 2
+  },
+  {
+   "id": "ART-xss",
+   "class": "xss",
+   "kw": [
+    "<script",
+    "alert"
+   ],
+   "difficulty": 2
+  },
+  {
+   "id": "ART-info",
+   "class": "info_disclosure",
+   "kw": [
+    "password",
+    "comment"
+   ],
+   "difficulty": 1
+  }
+ ],
+ "chains": [
+  "sqli->info-disclosure",
+  "lfi->passwd"
+ ]
+}

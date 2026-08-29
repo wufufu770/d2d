@@ -1,0 +1,129 @@
+{
+ "name": "dvwa",
+ "url": "http://127.0.0.1:8081",
+ "scope": "127.0.0.1",
+ "source": "DVWA (digininja 官方, 授权本地), 四档难度 low/medium/high/impossible",
+ "classes": {
+  "sqli": {
+   "kw": [
+    "sql injection",
+    "sqli",
+    "' or ",
+    "1=1",
+    "injection"
+   ]
+  },
+  "xss": {
+   "kw": [
+    "xss",
+    "cross-site scripting",
+    "<script",
+    "alert"
+   ]
+  },
+  "cmd_injection": {
+   "kw": [
+    "command injection",
+    "whoami",
+    "uid="
+   ]
+  },
+  "lfi": {
+   "kw": [
+    "path traversal",
+    "../",
+    "etc/passwd",
+    "root:x:0"
+   ]
+  },
+  "file_upload": {
+   "kw": [
+    "upload",
+    "shell",
+    "php"
+   ]
+  },
+  "csrf": {
+   "kw": [
+    "csrf",
+    "cross-site request forgery",
+    "token"
+   ]
+  },
+  "broken_auth": {
+   "kw": [
+    "brute force",
+    "insecure captcha",
+    "weak session"
+   ]
+  },
+  "info_disclosure": {
+   "kw": [
+    "information disclosure",
+    "phpinfo",
+    "stack trace"
+   ]
+  }
+ },
+ "artifacts": [
+  {
+   "id": "ART-sqli-db",
+   "class": "sqli",
+   "kw": [
+    "Surname",
+    "first_name"
+   ],
+   "difficulty": 1
+  },
+  {
+   "id": "ART-cmd-whoami",
+   "class": "cmd_injection",
+   "kw": [
+    "whoami",
+    "uid="
+   ],
+   "difficulty": 1
+  },
+  {
+   "id": "ART-lfi-passwd",
+   "class": "lfi",
+   "kw": [
+    "root:x:0",
+    "etc/passwd"
+   ],
+   "difficulty": 2
+  },
+  {
+   "id": "ART-xss-stored",
+   "class": "xss",
+   "kw": [
+    "alert",
+    "<script"
+   ],
+   "difficulty": 2
+  },
+  {
+   "id": "ART-upload-shell",
+   "class": "file_upload",
+   "kw": [
+    "shell",
+    "php"
+   ],
+   "difficulty": 3
+  },
+  {
+   "id": "ART-sqli-blind",
+   "class": "sqli",
+   "kw": [
+    "blind",
+    "sleep"
+   ],
+   "difficulty": 3
+  }
+ ],
+ "chains": [
+  "sqli->file-write->rce",
+  "lfi->log-poison->rce"
+ ],
+ "difficulty_scale": "DVWA low/medium/high/impossible 天然梯度"
+}

@@ -1,0 +1,4 @@
+[
+  {"text": "Juice Shop 在线演示: 先做用户注册登录, 再探 XSS/DOM、SQLi 登录绕过、IDOR 订单遍历", "strategy": "recon_refresh"},
+  {"text": "Juice Shop API 在 /api 前缀, 尝试 NoSQL 注入与 SSTI 模板探针", "strategy": "inversion"}
+]

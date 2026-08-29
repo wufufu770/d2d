@@ -1,0 +1,30 @@
+{
+  "_说明": "按任务类型的模型策略 — 用户直接编辑本文件。primary/backup 均为 '厂商/模型ID'，厂商须已在 ~/.dsh/settings.yaml 配置 provider(凭据走 env)。",
+  "_切换语义": "仅两种触发: ①用户指令 /pentest-model set ②worker 额度耗尽签名→自动切该角色的 backup。backup 为空串 = 额度耗尽即暂停+通知，绝不盲目轮换。",
+  "default": {
+    "primary": "minimax-cn/MiniMax-M3",
+    "backup": "opencode-go/mimo-v2.5"
+  },
+  "roles": {
+    "discovery": {
+      "primary": "minimax-cn/MiniMax-M2.7-highspeed",
+      "backup": "opencode-go/mimo-v2.5"
+    },
+    "deep": {
+      "primary": "minimax-cn/MiniMax-M3",
+      "backup": "opencode-go/mimo-v2.5"
+    },
+    "creative": {
+      "primary": "minimax-cn/MiniMax-M2.7",
+      "backup": ""
+    },
+    "verify": {
+      "primary": "minimax-cn/MiniMax-M2.7-highspeed",
+      "backup": "opencode-go/mimo-v2.5"
+    },
+    "study": {
+      "primary": "minimax-cn/MiniMax-M3",
+      "backup": "opencode-go/mimo-v2.5"
+    }
+  }
+}

@@ -1,0 +1,80 @@
+# 依赖与宿主工具(可重装)
+dsh/
+node_modules/
+home/.dsh/profiles/
+
+# 会话与运行时产物
+home/.dsh/sessions/
+graphd/kuzu_db*
+graphd/graphd.log
+*.log
+*.jsonl
+nohup.out
+__pycache__/
+checkpoints/
+evidence/
+experience.json
+END
+%2Fdev%2Fnull
+
+# 凭证
+*.key
+*.pem
+.env
+
+# 测试产物(本地保留, 不入库)
+campaign_run.py
+gen_range.py
+range-fixture.py
+eval_round.py
+ranges/
+
+# Team-Run 运行时(协调日志/成员产物)
+runs/
+graphd-laneB/
+graphd/.host-token
+headers.txt
+homepage.html
+index.html
+robots.txt
+# N0: 工作产物与敏感凭证预检
+headers.txt
+homepage.html
+index.html
+robots.txt
+*.http
+evidence/
+graphs/
+graphd-lane*/
+acquisitions.md
+api-*.json
+quarantine-dir.html
+suspicious_errors.yml
+traversal-test
+evidence.md
+evidence*.md
+handoff*.md
+handoff-*/
+tmp-*.json
+cookies.txt
+*.html + recon*.py
+*.html
+recon*.py
+# 测试期一次性脚本默认不入库, 放行运维/接管脚本目录
+*.sh
+!scripts/**/*.sh
+!.d2d-review/scripts/*.sh
+
+# 测试凭据与靶机证据(绝不入库)
+cookies*.txt
+passwd_test*.txt
+*.token
+reports/
+.stryker-tmp/
+rce_mono.txt
+.mimosa/
+.d2d-data/
+artifacts/
+.tmp_*/
+test.txt
+upload.out

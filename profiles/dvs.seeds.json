@@ -1,0 +1,26 @@
+[
+ {
+  "text": "DVS 全站路由在 /openapi.json 有完整 OpenAPI 规范 —— 先拉取规范枚举全部端点再分类测试",
+  "strategy": "recon_refresh"
+ },
+ {
+  "text": "LLM 聊天端点接受用户输入并回显: 依次探针 LLM01 提示词注入(覆盖系统指令)、LLM07 系统提示词泄露(要求复述指令)",
+  "strategy": "inversion"
+ },
+ {
+  "text": "认证体系: 尝试默认凭据/弱口令注册登录, JWT 弱密钥伪造, 用户 ID 横向遍历(IDOR)",
+  "strategy": "inversion"
+ },
+ {
+  "text": "页面 HTML 注释与 .env 是高价值线索源: 常含 db_url/admin_pw/jwt_secret/aws_keys 硬编码 —— 注释即证据",
+  "strategy": "recon_refresh"
+ },
+ {
+  "text": "JWT 验证: 同时测 none 算法与弱密钥签名(secret/jwt_secret 等常见弱钥)伪造 admin token",
+  "strategy": "inversion"
+ },
+ {
+  "text": "暴露面收尾: /openapi.json 全量 API 清单、隐藏管理端点(quickship/admin)、admin 面板授权缺失 —— 全部纳入覆盖",
+  "strategy": "recon_refresh"
+ }
+]

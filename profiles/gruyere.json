@@ -1,0 +1,112 @@
+{
+ "name": "gruyere",
+ "url": "http://google-gruyere.appspot.com",
+ "scope": "google-gruyere.appspot.com",
+ "source": "Google Gruyere (official codelab, authorized test target)",
+ "classes": {
+  "xss": {
+   "kw": [
+    "xss",
+    "cross-site scripting",
+    "<script",
+    "alert"
+   ]
+  },
+  "path_traversal": {
+   "kw": [
+    "path traversal",
+    "../",
+    "etc/passwd",
+    "root:x:0",
+    "file upload"
+   ]
+  },
+  "info_disclosure": {
+   "kw": [
+    "information disclosure",
+    "password",
+    "secret",
+    "source code",
+    "stack trace",
+    "data exposure",
+    "unauthenticated"
+   ]
+  },
+  "broken_auth": {
+   "kw": [
+    "authentication bypass",
+    "cookie forgery",
+    "admin",
+    "login",
+    "authorize"
+   ]
+  },
+  "csrf": {
+   "kw": [
+    "csrf",
+    "cross-site request forgery",
+    "token"
+   ]
+  },
+  "xsd": {
+   "kw": [
+    "xssi",
+    "cross-site inclusion",
+    "json hijacking"
+   ]
+  },
+  "idor": {
+   "kw": [
+    "idor",
+    "insecure direct object",
+    "userid",
+    "mass assignment",
+    "privilege escalation"
+   ]
+  },
+  "xxe": {
+   "kw": [
+    "xxe",
+    "xml external entity",
+    "system entity",
+    "cwe-611"
+   ]
+  }
+ },
+ "artifacts": [
+  {
+   "id": "ART-xss",
+   "class": "xss",
+   "kw": [
+    "<script",
+    "alert"
+   ]
+  },
+  {
+   "id": "ART-traversal",
+   "class": "path_traversal",
+   "kw": [
+    "root:x:0",
+    "etc/passwd",
+    "../"
+   ]
+  },
+  {
+   "id": "ART-authz",
+   "class": "broken_auth",
+   "kw": [
+    "cookie",
+    "admin",
+    "authorize"
+   ]
+  },
+  {
+   "id": "ART-info",
+   "class": "info_disclosure",
+   "kw": [
+    "password",
+    "secret"
+   ]
+  }
+ ]
+}

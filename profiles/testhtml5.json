@@ -1,0 +1,93 @@
+{
+ "name": "testhtml5",
+ "url": "http://testhtml5.vulnweb.com",
+ "scope": "testhtml5.vulnweb.com",
+ "source": "Acunetix HTML5/Angular test site (authorized scanner target)",
+ "classes": {
+  "sqli": {
+   "kw": [
+    "sql injection",
+    "sqli",
+    "' or ",
+    "1=1",
+    "injection"
+   ]
+  },
+  "xss": {
+   "kw": [
+    "xss",
+    "cross-site scripting",
+    "<script",
+    "alert"
+   ]
+  },
+  "lfi": {
+   "kw": [
+    "path traversal",
+    "../",
+    "etc/passwd",
+    "root:x:0"
+   ]
+  },
+  "info_disclosure": {
+   "kw": [
+    "information disclosure",
+    "password",
+    "username",
+    "stack trace",
+    "comment"
+   ]
+  },
+  "broken_auth": {
+   "kw": [
+    "authentication bypass",
+    "default credentials",
+    "login",
+    "token"
+   ]
+  },
+  "idor": {
+   "kw": [
+    "insecure direct object reference",
+    "idor",
+    "unauthorized access",
+    "other user"
+   ]
+  }
+ },
+ "artifacts": [
+  {
+   "id": "ART-sqli",
+   "class": "sqli",
+   "kw": [
+    "' or ",
+    "1=1"
+   ]
+  },
+  {
+   "id": "ART-xss",
+   "class": "xss",
+   "kw": [
+    "<script",
+    "alert"
+   ]
+  },
+  {
+   "id": "ART-info",
+   "class": "info_disclosure",
+   "kw": [
+    "password",
+    "stack trace"
+   ]
+  },
+  {
+   "id": "ART-authz",
+   "class": "idor",
+   "kw": [
+    "unauthorized",
+    "other user",
+    "idor"
+   ]
+  }
+ ]
+}

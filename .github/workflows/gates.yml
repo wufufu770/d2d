@@ -1,0 +1,71 @@
+name: gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  graphd-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+      - name: Audit Python deps
+        run: pip-audit -r requirements.txt
+      - name: Secret-leak scan (V-03, hook-proof)
+        run: |
+          LEAK=$(git ls-files | grep -E '(^cookies.*\.txt$|^quickship.*\.txt$|\.pem$|\.key$|^\.env$|\.host-token|^evidence.*\.md$|^handoff.*\.md$|^tmp-.*\.json$)' || true)
+          if [ -n "$LEAK" ]; then echo "❌ 泄露文件入库: $LEAK"; exit 1; fi
+          if git grep -qiE 'X-Auth.*[0-9a-f]{32}' -- ':!*.md' ':!docs/*' ':!.d2d-review/*'; then echo "❌ 疑似凭证入库"; exit 1; fi
+      - name: Manifest integrity (V-16: 白名单口径, 排除活跃日志)
+        run: sha256sum -c manifest.sha256 --quiet
+      - run: pytest tests/test_graphd_gates.py -q
+
+  # V-15: CodeQL 默认查询集 (js/py 双语言)
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript, python
+      - uses: github/codeql-action/analyze@v3
+
+  # V-15: Semgrep security-audit + secrets 规则集
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --config p/security-audit --config p/secrets --error
+
+  # V-15: 插件依赖审计 (npm audit)
+  npm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugin/pentest-dsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Generate lockfile if absent
+        run: npm install --package-lock-only --ignore-scripts
+      - name: npm audit (high+ blocks)
+        run: npm audit --audit-level=high
+      - name: Plugin syntax gates
+        run: |
+          for f in index.js scheduler.js validator.js sanitize.js adapter-dsh.mjs planner.js report.mjs; do
+            node --check "$f"
+          done
+          bash -n ../../install.sh ../../scripts/ops/*.sh

@@ -1,0 +1,91 @@
+{
+ "name": "restvulnweb",
+ "url": "http://rest.vulnweb.com",
+ "scope": "rest.vulnweb.com",
+ "source": "Acunetix REST API test site (authorized scanner target)",
+ "classes": {
+  "sqli": {
+   "kw": [
+    "sql injection",
+    "sqli",
+    "' or ",
+    "1=1"
+   ]
+  },
+  "xss": {
+   "kw": [
+    "xss",
+    "cross-site scripting",
+    "<script"
+   ]
+  },
+  "bola": {
+   "kw": [
+    "bola",
+    "broken object level",
+    "idor",
+    "insecure direct object"
+   ]
+  },
+  "info_disclosure": {
+   "kw": [
+    "information disclosure",
+    "token",
+    "password",
+    "exposed",
+    "api"
+   ]
+  },
+  "broken_auth": {
+   "kw": [
+    "authentication bypass",
+    "jwt",
+    "token",
+    "unauthorized"
+   ]
+  },
+  "excessive_data_exposure": {
+   "kw": [
+    "excessive data exposure",
+    "mass assignment",
+    "over-fetching"
+   ]
+  }
+ },
+ "artifacts": [
+  {
+   "id": "ART-sqli",
+   "class": "sqli",
+   "kw": [
+    "' or ",
+    "1=1"
+   ]
+  },
+  {
+   "id": "ART-bola",
+   "class": "bola",
+   "kw": [
+    "idor",
+    "other user",
+    "object"
+   ]
+  },
+  {
+   "id": "ART-token",
+   "class": "info_disclosure",
+   "kw": [
+    "token",
+    "exposed"
+   ]
+  },
+  {
+   "id": "ART-auth",
+   "class": "broken_auth",
+   "kw": [
+    "jwt",
+    "unauthorized",
+    "bypass"
+   ]
+  }
+ ]
+}

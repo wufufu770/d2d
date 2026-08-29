@@ -1,0 +1,34 @@
+[
+ {
+  "text": "VAmPI 的 /users/v1/{username} 无需认证即可返回任意用户数据(BOLA), GET admin 可拿到 admin@mail.com —— 作为已验证起点继续深入",
+  "strategy": "recon_refresh"
+ },
+ {
+  "text": "/books/v1?title= 参数存在 SQL 注入, 单引号报错后可用 ' OR 1=1 -- 提取 books 全表",
+  "strategy": "inversion"
+ },
+ {
+  "text": "/users/v1/_debug 端点泄露应用配置包括 SECRET_KEY, 拿到后可伪造 JWT 冒充 admin 调用 /me",
+  "strategy": "inversion"
+ },
+ {
+  "text": "POST /users/v1/register 接受额外字段(批量赋值); PUT /users/v1/{user}/password 未校验身份可改任意用户密码",
+  "strategy": "inversion"
+ },
+ {
+  "text": "BOLA 实证路径: 无认证 GET /users/v1/admin 直接返回 {username:admin, email:admin@mail.com} —— 重放并把响应原文写入 Finding.repro",
+  "strategy": "inversion"
+ },
+ {
+  "text": "用户枚举实证: /users/v1/register 重复用户名与错误密码的响应差异可区分存在用户; /users/v1 列表泄露全量用户(user enumeration)",
+  "strategy": "inversion"
+ },
+ {
+  "text": "陈旧外键 DoS: 删除某 book 的属主后 GET /books/v1 崩溃(stale fk dos), 记录崩溃栈即证据",
+  "strategy": "inversion"
+ },
+ {
+  "text": "ReDoS(redos): PUT /users/v1/{u}/email 的正则可用 (a+)+$ 类负载拖死单线程(redos), 记录 >10s 阻塞即可",
+  "strategy": "inversion"
+ }
+]

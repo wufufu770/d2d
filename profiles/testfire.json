@@ -1,0 +1,122 @@
+{
+ "name": "testfire",
+ "url": "http://demo.testfire.net",
+ "scope": "demo.testfire.net",
+ "source": "IBM AltoroJ (official demo bank, authorized test target)",
+ "classes": {
+  "sqli": {
+   "kw": [
+    "sql injection",
+    "sqli",
+    "' or ",
+    "1=1",
+    "injection"
+   ]
+  },
+  "xss": {
+   "kw": [
+    "xss",
+    "cross-site scripting",
+    "<script",
+    "alert"
+   ]
+  },
+  "lfi": {
+   "kw": [
+    "path traversal",
+    "../",
+    "etc/passwd",
+    "root:x:0",
+    "local file"
+   ]
+  },
+  "info_disclosure": {
+   "kw": [
+    "information disclosure",
+    "username",
+    "password",
+    "account",
+    "hello sun",
+    "admin",
+    "stack trace",
+    "comment"
+   ]
+  },
+  "broken_auth": {
+   "kw": [
+    "authentication bypass",
+    "default credentials",
+    "admin/admin",
+    "jane",
+    "login"
+   ]
+  },
+  "csrf": {
+   "kw": [
+    "csrf",
+    "cross-site request forgery",
+    "token"
+   ]
+  },
+  "open_redirect": {
+   "kw": [
+    "open redirect",
+    "redirect",
+    "302"
+   ]
+  },
+  "cmd_injection": {
+   "kw": [
+    "command injection",
+    "whoami",
+    "uid=",
+    "shell"
+   ]
+  },
+  "cookies_flags": {
+   "kw": [
+    "cookie",
+    "secure flag",
+    "httponly",
+    "session"
+   ]
+  }
+ },
+ "artifacts": [
+  {
+   "id": "ART-sqli-login",
+   "class": "sqli",
+   "kw": [
+    "' or ",
+    "1=1",
+    "select",
+    "users"
+   ]
+  },
+  {
+   "id": "ART-lfi-passwd",
+   "class": "lfi",
+   "kw": [
+    "root:x:0",
+    "etc/passwd"
+   ]
+  },
+  {
+   "id": "ART-xss-reflected",
+   "class": "xss",
+   "kw": [
+    "<script",
+    "alert"
+   ]
+  },
+  {
+   "id": "ART-info-comments",
+   "class": "info_disclosure",
+   "kw": [
+    "password",
+    "comment",
+    "admin"
+   ]
+  }
+ ]
+}

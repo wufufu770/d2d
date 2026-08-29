@@ -1,0 +1,10 @@
+[
+ {
+  "text": "AspGoat 是 ASP.NET Core MVC 应用: 路由大小写不敏感, 控制器在 /Account /Home /LLM 下, 视图用 Razor(模板注入探针 @Model)",
+  "strategy": "recon_refresh"
+ },
+ {
+  "text": "LLMController 存在提示词注入实验室: 找到该端点并尝试覆盖系统指令(excessive agency)",
+  "strategy": "inversion"
+ }
+]

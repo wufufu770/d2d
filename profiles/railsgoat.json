@@ -1,0 +1,31 @@
+{
+ "name": "railsgoat",
+ "url": "http://127.0.0.1:8083",
+ "scope": "127.0.0.1",
+ "source": "OWASP Railsgoat 官方(Ruby/Rails 栈, 补齐技术栈版图), 本地授权",
+ "classes": {},
+ "artifacts": [
+  {
+   "id": "ART-rg-sqli",
+   "class": "sqli",
+   "kw": [
+    "sqli",
+    "injection"
+   ],
+   "difficulty": 2
+  },
+  {
+   "id": "ART-rg-mass",
+   "class": "mass_assignment",
+   "kw": [
+    "mass assignment",
+    "permit"
+   ],
+   "difficulty": 3
+  }
+ ],
+ "chains": [
+  "mass-assignment->admin-escalation"
+ ],
+ "cold_start": true
+}

@@ -1,0 +1,26 @@
+[
+ {
+  "text": "XML-RPC 服务运行在 9090 端口, pingback.enumerateUsers 方法可能未授权枚举用户列表(证据关键词 enumerateusers/user enumeration)",
+  "strategy": "recon_refresh"
+ },
+ {
+  "text": "JWT signing secret 可能通过 /api/v1/info env dump 或弱字典爆破获得(jwt secret leak), 获得 secret 后可伪造任意用户 token",
+  "strategy": "inversion"
+ },
+ {
+  "text": "/api/v2/notes 与登录接口的 JSON body 可能接受 MongoDB $gt/$regex 操作符(NoSQL 注入探针: {\"user\":{\"$gt\":\"\"}})",
+  "strategy": "inversion"
+ },
+ {
+  "text": "/api/v2/users XML 端点与 search 参数可能存在 XPath 注入(探针: ' ] | //user/* | ')，回显异常即证据",
+  "strategy": "inversion"
+ },
+ {
+  "text": "CRLF 注入: /api/v2/redirect 的 url 参数与自定义 header 处试 %0d%0aX-Injected:1，响应头出现 X-Injected 即证据",
+  "strategy": "recon_refresh"
+ },
+ {
+  "text": "GraphQL 服务 :4000 内省开启，__schema{types{name}} 查询可获取全量 schema(证据关键词 __schema/introspection)，同时检查 GraphQL 层越权",
+  "strategy": "recon_refresh"
+ }
+]

@@ -1,0 +1,10 @@
+[
+ {
+  "text": "crAPI 是微服务架构车辆应用: identity/workshop/community/vehicle 四个微服务, 先枚举各服务 API 面。OAuth2 注册登录, JWT 无过期可伪造, OTP 在 mailhog(:8025)可截获",
+  "strategy": "recon_refresh"
+ },
+ {
+  "text": "OWASP API Top10 靶场: 优先测 BOLA(订单/车辆ID遍历)、JWT 伪造(HS256弱钥)、mass assignment(改订单金额/余额)、OTP绕过(mailhog截获验证码)",
+  "strategy": "inversion"
+ }
+]
