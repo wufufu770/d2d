@@ -1,84 +1,80 @@
 # d2d — Three-Ring Parallel Pentest for dsh
 
-> **One-line**: `dsh` plugin that runs **discovery (n×chain) + deep (3-stage) + creative (inversion)** in parallel, sharing a **Kuzu** graph (`:8766`), gated by **scope + 7-question + garbage-list**, with **ExperienceWeight prior=(wins+1)/(hits+2)**. Single-process multi-thread (Kuzu single-writer).
+> **One-line**: a `dsh` plugin that runs **discovery (n×chain) + deep (3-stage L1→L2→L3) + creative (inversion)** in parallel over a shared **Kuzu graph blackboard** (`:8766`), with **cross-model handoff memory**, **multi-agent task self-scheduling**, **per-role model policies**, and a **self-learning knowledge brain** (3-gate promotion, ≤3 versions, rollback). Non-destructive rules are enforced at the brief layer; all runtime data is externalized (`D2D_DATA_DIR`, default `~/.d2d-data`).
 
-**For agents**: read this + `graphd/app.py:1` + `plugin/pentest-dsh/scheduler.js:19` + `tests/test_graphd_gates.py:1` to fully perceive the project. `docs/` has process and review.
+**For agents**: read this + `graphd/app.py:1` + `plugin/pentest-dsh/scheduler.js:1` + `plugin/pentest-dsh/domain/` + `tests/test_graphd_gates.py:1` to fully perceive the project. `docs/ITERATION.md` is the iteration log (R1→R4c, with ablation attribution and honest caveats).
 
 ## Quick Start
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wufufu770/d2d/main/install.sh | bash -s -- [profile] [dir]
 # default: profile=headless, dir=~/d2d
-dsh --profile headless "pentest http://target 127.0.0.1 2"
-# or
-node scripts/launch/round-launch.mjs dsh  # uses R_TARGET/R_SCOPE/R_INST
+dsh --profile headless "pentest http://target 127.0.0.1 2"   # headless, fully autonomous
+# interactive: /pentest <target> [scope] [instances]  /pentest-status  /pentest-tasks
+#              /pentest-deep  /pentest-stop  /pentest-handoff  /pentest-report
+#              /pentest-model /pentest-study  /pentest-brain  /pentest-notify-test
 ```
 
-## File Map (agent perception)
+Model policies live **outside the repo** at `~/.d2d-data/config/model-policies.json` (template: `config/model-policies.example.json`): per-role `{primary, backup}` for `discovery/deep/creative/verify/study`, any vendor. Switching happens only on user command (`scripts/ops/model-rotate.mjs set <role>=<provider/model>`) or quota exhaustion (→ the role's designated backup; none → pause + notify, never blind rotation).
 
-| Path | Purpose |
-|---|---|
-| `graphd/app.py:1` `graphd/start.sh` | Kuzu sidecar `:8766`, `finding_gates()` pure, `redact_pii()`, `P2P_HOST_TOKEN_FILE=~/.config/d2d/host-token` |
-| `plugin/pentest-dsh/scheduler.js:19` `adapter-dsh.mjs:22` `validator.js:29` `sanitize.js:1` `planner.js:1` `roles/*.json` | Three-ring scheduler, scope gate (`GRAPHD_HOSTPORT`), worker spawn + `timeout --signal=KILL` + `detached` group kill, validator (`BLOCKED_FLAGS`), sanitize, planner |
-| `scripts/launch/` `assign-task.mjs` `range_run.mjs` `round-launch.mjs` | Ops: single-target launch, 3-attempt driver (`MAX_ATTEMPTS=3`, `gapHints`), multi-lane (`LANE_GRAPHD`) |
-| `scripts/eval/` `eval_profile.py` `compliance_check.py` `exp.py` `merge_eval.py` `range_inspect.py` | Eval: `eval_profile.py` = coverage/artifacts/FP (`80% + 100% + 0FP → PASS`), `compliance_check.py` = 9-item audit, `exp.py` = ExperienceWeight export/import |
-| `scripts/ops/` `env.sh` `reset-graphs.sh` | Ops: `source scripts/ops/env.sh` sets `D2D/D SH_HOME/P2P_GRAPHD`, `reset-graphs.sh` stops → `rm kuzu_db*` → restart |
-| `tests/test_graphd_gates.py:1` | Gates unit (19 passed, `finding_gates` import, not replicate) |
-| `requirements.txt` `manifest.sha256` `install.sh:21` `.github/workflows/gates.yml:16` | Deps pinned `kuzu==0.11.3`, `sha256sum -c` post-install, `pip-audit` CI |
-| `home/.dsh/skills/pentest/SKILL.md` | 9-zone boundary (garbage list / 7 gates / decision tree) |
-| `docs/ARCHITECTURE.md` `docs/PROCESS.md` `docs/REVIEW.md` | Deep dive: 3-ring, graph schema, control vs worker |
-| `ranges/` (at `/home/wff/ranges`) | 10 authoritative profiles (`vuln-bank` `dvws-node` `vampi` `dvs` `aspgoat` `crapi` + online `juice-shop-online` `crapi-online`) |
+## Capability Layers
 
-## Architecture
-
-```
-dsh --profile headless
-└─ plugin/pentest-dsh
-   ├─ scheduler.js  (discovery 2-4×chain, deep 3, creative 5, 45s chainLoop, 90min deadline)
-   ├─ graphd :8766  (Kuzu, 6 node tables + 4 rel, _lock, ExperienceWeight, AgentIdentity checkpoint)
-   └─ SKILL.md      (F-021 garbage, F-007 fail-closed 503, F-013 fail-closed 401, F-016 port-whitelist)
-```
-
-- **Roles**: `roles/*.json` global templates, `deep` picks by `signal_affinity`, `creative` alternates `redteam-theorist/dev-fresh-eyes`
-- **Handoff**: `runs/<eng>/artifacts/<wid>/evidence.md + handoff.md` (worker must write, next worker gets `refsBlock`)
-- **Experience**: `prior=(wins+1)/(hits+2)`, `upsertExperience()` on `Finding→Signal` and `refuted/pruned` not confirmed
-- **Anti-orphan**: `timeout --signal=KILL --kill-after=5 ${WORKER_TIMEOUT}s` + `detached:true` + `process.kill(-pid)` + `hardTimer` + `settleTimer = WORKER_TIMEOUT_MS + 60_000`
-
-## Process (control vs worker, 100s)
-
-- **Ranges**: 10, one at a time, `MAX_ATTEMPTS=3` per range, `gapHints` from `class_detail` → next attempt via `P2P_GAP_HINTS`
-- **PASS**: `eval_profile.py` `covered/total ≥80%` + `artifacts == total` + `false_positives == 0` → `wipeRuntime()` (keep `ExperienceWeight`) → delete range → next; `FAIL` → per-ring attribution, no answer-leak
-- **Control**: `d2d-control` (`:8766` frozen, `git tag control-v1` 18/24, `~/.local/share/Trash/d2d-control-bak/` daily cron 03:00, `control-v1` permanent)
-- **Workers**: `/tmp/d2d-laneB/C` (`:8767/:8768`, `P2P_OPEN_RANGE=0`, `P2P_GRAPHD`, `R_TARGET` online first `juice-shop.demo.escape.tech` → `crapi` → local `vuln-bank` fallback)
-- **Concurrency**: 3-tier auto (`load>3.5 or mem>85% →1 lane`, `>1.5 →2`, else `3`), `auto-concurrency.sh` every 100s, `monitor-s21.sh` every 100s `tee -a .d2d-review/S21-test-log.md`
-- **Sync**: worker `PASS` → `sync-control.sh` (`ExperienceWeight` API + `git diff` + `pytest` + `sha256sum -c` → `control-v2` tag), original `control-v1` kept for other lanes
-
-## Current Status (2026-08-27)
-
-| Range | Result | Note |
+| Layer | What | Where |
 |---|---|---|
-| vuln-bank | ✅ PASS | Full spectrum |
-| dvws-node | ✅ PASS | 92% 4/4 0FP |
-| vampi | ✅ PASS | 16/19 4/4 0FP |
-| dvs | ✅ PASS | 85% 4/4 0FP |
-| aspgoat / crapi | 🔄 60% / 42% (S21 laneB/C running) | Online, 3 FP/0 FP, gapHints xss/ssrf/ssti |
-| juice-shop-online | 🔄 6/10 60% 1/2 18 FP (laneB) | Uncovered xss/ssrf/ssti/nosql |
+| Memory | `Handoff` digest (≤4000 chars) injected into **every** worker brief — cross-ring/cross-model/cross-vendor takeover; `AgentIdentity.checkpoint/todo` backfill | `plugin/pentest-dsh/domain/digest.mjs` |
+| Multi-agent | `Task` graph nodes (eng-scoped) + `replenishTasks` (verify carries highest priority + original repro evidence) + `planAllocation` (capacity, deep-ring cap, atomic claim); **zero-write defense**: worker ending with zero graph writes is auto re-dispatched to flush results | `domain/allocator.mjs`, scheduler `applyVerifyResults` |
+| Learning brain | inbox articles → `study.mjs` (LLM distills technique cards, optional `variants`) → 3-gate promotion (structural+injection scan → history replay vs refuted → shadow canary on field wins≥3) → `versions ≤3` + `rollback.sh`; v0/v1 seed (42 public-knowledge cards) ships for cold start; Reflexion counter-examples injected into study prompt | `scripts/brain/`, `brain/seed/`, `domain/knowledge-retrieval.mjs` (hybrid: weighted keywords + char-trigram TF-IDF cosine, cached index) |
+| Seven-state FSM | Finding: candidate→triaged→verified→isolated→reported→accepted→rejected; `/write/transition` host-only, **actor+reason required**, `last_transition` audit JSON; verify workers write `verify-result` signals, scheduler transitions with `actor='scheduler'` | `graphd/app.py transition_gate`, `domain/allocator.mjs`, `scripts/report/src-export.mjs` (state trajectory column) |
+| Model policies | per-role primary/backup, quota-aware failover, `model-usage.jsonl` per worker | `config/model-policies.example.json`, `domain/failover.mjs` |
+| OAST | out-of-band HTTP **+ DNS** channel (zero-dep dgram responder, first label = finding attribution), merged `/hits?tail=N` | `scripts/gateway/oast.mjs` |
+| SPA renderer | CDP-driven headless chrome (attach or auto-launch), DOM links + XHR/fetch endpoints → `Endpoint` nodes (`tech=spa-cdp`); graceful degradation without chrome | `scripts/gateway/spa-render.mjs` |
+| External judge | cybench adapter: 43 real tasks parsed, docker compose up, official `subtasks[].answer` flag judging, partial scoring; ablation harness: 4 configs × n interleaved (full / no-experience / no-profile / bare-v0) with manifest + sign test | `scripts/eval/cybench-adapter.mjs`, `scripts/eval/ablation.mjs` |
+| Ops | graph snapshot backups (SIGSTOP window, 14-day rotation, offsite hook), `watchdog.sh` self-healing + idle-time brain evolution, worker `cwd=artifact dir` (no repo-root litter) | `scripts/ops/backup-graph.sh`, `scripts/ops/watchdog.sh` |
 
-18/24 S4 closed (`control-v1`), 7 D-deferred (`I-003/004/005/008/015/019/024` next quarter), `E-01` MCP blocked until `I-006/I-010` + clean + vuln-bank 2 weeks.
+## Non-Destructive Rules (brief-layer, enforced by scope gates + review)
+
+- SQL injection probing is **read-only** (SELECT / boolean / time-blind). UPDATE/INSERT/DELETE/DROP/TRUNCATE injection payloads are forbidden.
+- Deletion-type endpoints (DELETE methods / resource-removal flows) are probed for existence only, never actually invoked.
+- Destructive commands blocked (`rm -rf /`, `mkfs`, `dd of=/dev/`, shutdown, DROP TABLE/DATABASE); `file://` blocked; every curl target must carry an explicit scheme and pass the scope gate; worker tokens cannot write `ExperienceWeight` (host-only).
+
+## Data Layout
+
+Runtime data lives **outside the repo**: `~/.d2d-data/{runs,evidence,brain/{versions,current,shadow},knowledge/inbox,config,backups,experiments}`. The repo ships only code + `brain/seed/` (public knowledge baseline) + `config/*.example.json`. `manifest.sha256` covers the installed tree; `scripts/release/clean-export.sh` produces a data-free tree for publishing.
+
+## Ops Cheat Sheet
+
+```bash
+node scripts/ops/model-rotate.mjs list|set|unset|sync     # per-role model policies
+node scripts/brain/study.mjs --apply                       # inbox articles → staged cards
+node scripts/brain/promote.mjs --check|--to-shadow|--to-current|--seed|--status
+node scripts/brain/rollback.sh                             # flip current to parent version
+node scripts/report/src-export.mjs [--graph 8767]          # SRC report (verified-only, dedup, CVSS, ledger)
+bash scripts/ops/backup-graph.sh                           # snapshot all graphd instances
+node scripts/eval/ablation.mjs --profile dvwa --runs 3     # attribution: 4 configs × n
+node scripts/eval/cybench-adapter.mjs --list|--task <id>   # external judge (official flags)
+bash scripts/ops/watchdog.sh                               # self-healing + idle brain evolution
+```
+
+## Tests
+
+```bash
+pytest tests/test_graphd_gates.py -q        # 42 passed (FSM audit gate, config-advice, PII, DDL, V-series regressions)
+cd plugin/pentest-dsh && npm test           # 84 passed (allocator/knowledge-retrieval/failover/scope/briefs/experience/seed-schema)
+node --check scripts/**/*.mjs               # syntax gates
+sha256sum -c manifest.sha256 --quiet        # install integrity
+```
+
+## Status (honest, 2026-08-31)
+
+- **Internal ranges**: dvwa 100% (fully autonomous), zerobank 100%, aspgoat 83-95%, juice-shop 86% — scored by own profiles.
+- **Cold start (no preset classes, no hints)**: security-shepherd → 249+ candidate findings, **11 verified** (≥5 acceptance line) via independent replay + verdict consumption. PASS.
+- **Ablation**: knowledge+experience is the decisive variable (with: 100%; without: 10%) — but **single-run variance is high** (same config scored 100% and 10% across runs); production coverage relies on the fleet design (75min × 3 attempts with gap-hints feedback), not one-shot luck. Interleaved rerun with fixed knowledge cache in progress.
+- **External judge (cybench)**: adapter ready (43 tasks parsed, compose infra debugged); baseline scoring pending.
+- **Not done yet**: JS full-extraction live test needs chromium on the target box (done here, `tech=spa-cdp` verified); subdomain recon brief added but not yet live-validated; R5 backlog in `docs/ITERATION.md`.
 
 ## For Other Agents
 
-1. Read `README.md` + `graphd/app.py:67 finding_gates` + `scheduler.js:19 createScheduler`
-2. Check `tests/test_graphd_gates.py:6 from graphd.app import finding_gates` (19 passed)
-3. Inspect `plugin/pentest-dsh/roles/` and `SKILL.md` for boundaries
-4. Run `scripts/eval/compliance_check.py 8766 d2d` (expect 4/9 empty, no `NameError`)
-5. See `.d2d-review/S21-test-log.md` for live progress, `git tag -l | grep control`
-
-## Install & Test
-
-```bash
-pip install -r requirements.txt  # kuzu==0.11.3
-pytest tests/test_graphd_gates.py -q  # 19 passed
-sha256sum -c manifest.sha256 --quiet  # 0
-bash -n install.sh && bash -n scripts/ops/*.sh && node --check scripts/launch/*.mjs
-```
+1. Read `README.md` + `graphd/app.py` (`finding_gates`, `transition_gate`) + `plugin/pentest-dsh/scheduler.js` + `domain/` modules
+2. Check `tests/test_graphd_gates.py` (42) and `plugin/pentest-dsh/test/` (84) — gates are imported from implementation, never replicated
+3. Boundaries: `home/.dsh/skills/pentest/SKILL.md` + the brief layer (`domain/briefs.mjs` + scheduler `boundary`)
+4. `docs/ITERATION.md` = full iteration history with honest caveats and fix-chains

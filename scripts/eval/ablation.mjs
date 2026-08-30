@@ -206,11 +206,16 @@ if (DRY) {
 }
 
 fs.mkdirSync(`${EXP}/raw`, { recursive: true })
+// R4c 续跑支持: 夜间卡死恢复 — 已有 result 的 run 跳过并预载入 manifest(重跑只补缺口)
+for (const f of fs.readdirSync(`${EXP}/raw`).filter((x) => x.startsWith('result-'))) {
+  try { manifest.runs.push(JSON.parse(fs.readFileSync(`${EXP}/raw/${f}`, 'utf8'))) } catch {}
+}
 // R4c 修正: 交错执行(run 优先于配置) — 顺序执行曾使「配置效应」与「时间/额度限速效应」完全混杂
 const plan = []
 for (let i = 1; i <= RUNS; i++) for (const kind of CONFIGS) plan.push({ kind, run: i })
 let seq = 0
 for (const { kind, run: runIdx } of plan) {
+  if (manifest.runs.some((r) => r.kind === kind && r.run === runIdx && r.eval && !r.eval.error)) continue
   const port = BASE_PORT + seq
   seq++
   const r = await runOne(kind, runIdx, port)
