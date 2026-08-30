@@ -13,7 +13,7 @@ f965834ce70c885382484ef55dfc3eb1a724d5ed0d8885618dc600c856f3ba8b  ./.d2d-review/
 4145f8ef5d2f7d4aa46f67c8eda5be36b979564aae858c85b0525dc20601dff9  ./docs/ARCHITECTURE.md
 2e7ced80250796a5ce958d04cd0b06815723f7c41f045c2113414b602ccd027c  ./docs/BACKLOG-SRC.md
 44d1b2271ada40178eafadfec76e2137c800198abb8abd68423206f2bc2a4bb7  ./docs/INTEGRATION-DAG.md
-144b35fdeddaaeac1407c8dbe5a6e5a650ef25b7d07cd2f77278a2ff7883fafd  ./docs/ITERATION.md
+2d4995bed3748dccee282303b3fd48829de41ad6ff14ff578100bb5c30469f8d  ./docs/ITERATION.md
 569b1ce9cfd6501578dec07c7ca1b94c8a2ca024ba5aff29efba02e15190de3b  ./docs/MIMOSA-TRIAGE.md
 90de47ff820180746685b6a9848f30995015808bc3f494e0cbb52784a93499b2  ./docs/PROCESS.md
 ff97959559cde695a98cd0fee8b5dd949f54f71a120610df9f3f1a7a8b44c045  ./docs/REVIEW.md
@@ -46,7 +46,7 @@ a966865f29837b1d4ba76ce81c955a07bdc9a91078c11c1e3061eec5bf43d791  ./plugin/pente
 0f1ea4119ad5802992b02b2aa219370951fb29f18da92e739225da209c301168  ./plugin/pentest-dsh/roles/recon-generalist.json
 2ddce1422ada5270043ceebdf980938590083d6b82fa274187887b63587594c1  ./plugin/pentest-dsh/roles/redteam-theorist.json
 ec1b3ead7f4ce31e87b7b01aa60f52c69fd3fe6689ff89c16af971cc128766a5  ./plugin/pentest-dsh/sanitize.js
-595498479156e72ec3ae0f1fd23ad07d232dc049f1d3b30ca1c8d994653fc29d  ./plugin/pentest-dsh/scheduler.js
+b371ccd9da3bf537cf519bea74665ce9c2651b6bfaa9a149c6a9c16bc653dad6  ./plugin/pentest-dsh/scheduler.js
 07463e4eb35c8c9be146c6cba6bb135c3337d4be53c01d21911cbd85671cf68c  ./plugin/pentest-dsh/stryker.conf.json
 feed24a843ced3965e689f9dac1eac3f1195c593d41d7085cc5638a7725a94d2  ./plugin/pentest-dsh/test/allocator.test.mjs
 597d01d81c653d72ad6341c6f514e612b71cb79b0ef2cd15b5b59190c62a811f  ./plugin/pentest-dsh/test/failover.test.mjs
@@ -105,10 +105,10 @@ bb45ed4f7c19cd3fcd2bb5120d681febba809350b313a8cf8dcf40ae243cebc2  ./scripts/eval
 adfcdeac643c47f435643460afaa378899497f37b107a5243e97e2e1f0933fd1  ./scripts/eval/range_inspect.py
 4366ec208ae3bdd9cb5b123afe1ff8659892e5cbf1d065652d94784062e7b220  ./scripts/gateway/egress-gateway.mjs
 97e454ff89e883aeee37e234f9f5f270d20f84e8dbb77d5971d477e932448150  ./scripts/gateway/oast.mjs
-d33359e167ba3f3217c417fd4e66d3f71213601262466d2fcad7bf4562f8ae0c  ./scripts/gateway/spa-render.mjs
+3791053c6413308f9a06ed038e772824fe3001bb01ffe3d67400eedd7f50a358  ./scripts/gateway/spa-render.mjs
 2c3216e0047b0bd3a8f0c3f5d7be744feff0878239ad328e3e14f72ec6f1181b  ./scripts/launch/assign-task.mjs
 3ff2c7a1e9918af28ac54d62232c4d0d23ea79a707bc128f9c82986d4675f9a4  ./scripts/launch/range_run.mjs
-33479a62dfc694f1ba4d18cd107193ed95b82776de67dd066d7798a3f299216e  ./scripts/launch/round-launch.mjs
+6d1206efc76a82933f5acbe8321489f345053e5cd6788e83a10bb9bcc1cb732a  ./scripts/launch/round-launch.mjs
 50c5ed71aad6429d45e2b1e4eb5f0517cb22d4ee94c4cd5f49b590174fc4e9ab  ./scripts/ops/backup-graph.sh
 2e9cd41e140649b2fb34143951a51f3c166b7cda70e5b45513d370851e917491  ./scripts/ops/env.sh
 6cc836c6d6aa3492e4d3f5470f2fc67393dcf8ae0b180112fb758d93ca9b1744  ./scripts/ops/fleet.sh

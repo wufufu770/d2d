@@ -49,6 +49,10 @@ async function launchDsh() {
   return res
 }
 
+// R4c: 静默死亡着陆垫 — shepherd 宿主曾三度无痕死亡, 异常必须留痕且不坠机
+process.on('unhandledRejection', (e) => { console.error('[round-launch] unhandledRejection:', (e && (e.stack || e.message)) || e) })
+process.on('uncaughtException', (e) => { console.error('[round-launch] uncaughtException:', (e && (e.stack || e.message)) || e) })
+
 const which = process.argv[2]
 if (which === 'pi') console.log(JSON.stringify(await launchPi()))
 else if (which === 'dsh') console.log(JSON.stringify(await launchDsh()))

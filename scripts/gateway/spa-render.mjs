@@ -57,11 +57,11 @@ async function ensureChrome() {
   if (!bin) return null
   if (!chromeProc) {
     const port = 9333 + (process.pid % 100)
-    chromeProc = spawn(bin, ['--headless=new', `--remote-debugging-port=${port}`, '--no-first-run', '--disable-gpu', `--user-data-dir=${DATA_DIR}/spa-profile`], { stdio: 'ignore' })
+    chromeProc = spawn(bin, ['--headless=new', `--remote-debugging-port=${port}`, '--no-first-run', '--no-sandbox', '--disable-gpu', `--user-data-dir=${DATA_DIR}/spa-profile`], { stdio: 'ignore' })
     chromeProc.on('exit', () => { chromeProc = null })
     cdpHttp = `http://127.0.0.1:${port}`
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 300))
+    for (let i = 0; i < 60; i++) { // R4c: 冷启动窗口 6s→30s(首启建 profile 曾超窗)
+      await new Promise((r) => setTimeout(r, 500))
       if (await ensureChromeRaw()) break
     }
   }

@@ -189,3 +189,34 @@ cybench 适配器经 9 轮「跑→归因→修→再跑」闭环验证(每轮 1
 4. 判定器三连: ①gq 参数名 (cy) vs 引用 {cypher} ReferenceError 被 catch 吞成 null(与 R3 promote 同款 bug, 第二次现身) ②503 graph busy 是合法 JSON, rows undefined 曾被当成「零命中」 ③快照兜底目录缺 app.py → ok===true 判据 + 重试 + 停图后 WAL 重放兜底
 **终局: 合成任务 found=true score=1/1** — worker 抓到 flag{synthetic_e2e_7f3a} 写入 Finding(4 条, 含 verified), 官方 flag 判定命中。
 方法论沉淀: 判定类脚本禁止 `catch → 返回空集`(失败与真空必须可区分); 每轮 E2E 落 graph 快照+判定原文+graphd 日志三件套归因。
+
+## R4c 验证轮（2026-08-30，三笔验证欠账清偿 + 业主规则落地）
+**主题: 消融归因 / 外部裁判 / 冷启动验收 / 业主功能点对标 —— 「是否可投产」用数据回答**
+
+### 消融实验（四配置×3, dvwa, 首轮数据+重跑排程）
+首轮（知识缓存 bug 期间, 结论存疑）: full 100%(3/3) vs no-experience/no-profile/bare-v0 各 10% —— 方向性 3:0 显著但被两缺陷污染: ①knowledge index.bin Map 序列化错误致 worker 知识注入全灭(缓存命中即崩) ②顺序执行使配置效应与时序/额度限速完全混杂。已修: 缓存 entries 存储复活 Map、交错执行、seed fail-loud、eval 重试。**交错重跑进行中**(新模型策略 M3)。
+
+### shepherd 冷启动验收: ✅ PASS（verified=11, 验收线 ≥5）
+无预置类定义靶(classes=0)+无 GAP_HINTS+全自主: 249+ 候选 finding（JWT alg=none/默认凭据→superadmin/mass assignment/IDOR/SECRET_KEY 泄露/SSTI RCE/SSRF OAST 等, 质量抽样均为真实漏洞类）, verify 独立重放产出 10+ confirmed 裁决, tick 消费转换 verified=11+。
+**修正链**(每环都是真实缺陷): ①verify 饿死(deep-dive pr3 恒压 verify pr2)→优先级 4+cap2 ②verify 载荷无复现证据→携带 repro 摘要 ③裁决词表不匹配(worker 写 status=confirmed, 消费者只认 open)→消费不设词表 ④裁决消费只挂 worker 终态(宿主死亡即滞留)→挂 tick ⑤宿主无痕死亡×3→unhandledRejection/uncaughtException 着陆垫+supervisor 自动复活(6×25min)。
+
+### E-7 SPA 渲染执行器: ✅ CDP 全链实测通过
+chromium(Chrome for Testing 152)安装 → spa-render CDP 附着 → 迷你 SPA 渲染 → XHR(/api/items,/api/lazy)+DOM 链接 5 端点提取 → MERGE 入图(tech=spa-cdp)。修正: 冷启动窗口 6s→30s + --no-sandbox。**九个业主功能点全部达标收口**。
+
+### 业主规则入 brief（非破坏性约束）
+- SQL 注入探测仅限只读(SELECT/布尔/时间盲注), 禁 UPDATE/INSERT/DELETE/DROP/TRUNCATE 型注入
+- 不实际调用删除类接口(DELETE/移除操作只探测存在性)
+- 主侦察职责: 全量 .js 资源与 API 路径提取(tech=js/api)+business_chain 业务模块盘点+旁站/子域被动枚举(asset-perimeter 信号)
+
+### cybench 外部裁判（基建攻坚中）
+4/5 题镜像预构建缓存; 逐题基建怪癖(外部网络 shared_net 已建/motp 端口冲突已清/chunky 手动起靶验证 OK)。首轮 0/5 全灭在 compose 层(agent 未启动, 模型零消耗)。重跑与消融错峰进行。
+
+### 工程修复
+- worker cwd=产物目录(战利品不再散落仓库根; 适配层 cwd 透传)+gitignore 全模式补丁+索引重建
+- MCP npx 403 空烧摘除(cordis.patch.yml, 恢复条件注释)/round-launch 终态空挂 120min→15s
+- pgrep 自匹配自杀第 5 次现身 → 全部 kill 循环迁入脚本文件, 括号模式+分命令执行
+- 模型禁用: MiniMax-M2.7-highspeed 全量退场(discovery/verify→M3)
+- 推送: d8e32db(R4c 主批) + 终局批(spa-render 冷启动/cwd/tick 消费)
+
+### R5 候选
+cybench 基线重跑(chunky/frog-waf 已验证可起靶)/知识卡 42→58/embedding hook/SLO 首窗口/shepherd 冷启动复验(带旁站+JS brief)/watchdog 恢复后的自驱战报
