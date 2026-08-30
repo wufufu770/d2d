@@ -66,7 +66,9 @@ for s in json.load(open('/home/wff/ranges/profiles/$RANGE.seeds.json')):
   if ! workers_busy; then
     bash $D2D/scripts/brain/curate.sh >> $LOG 2>&1
     if [ ! -d "$DATA_DIR/brain/staged" ] || [ -z "$(ls -A $DATA_DIR/brain/staged 2>/dev/null)" ]; then
-      node $D2D/scripts/brain/study.mjs --apply >> $DATA_DIR/study.log 2>&1 && echo "$(date -Iseconds) | watchdog: 知识脑 study 产出 staged" >> $LOG
+      node $D2D/scripts/brain/study.mjs --apply >> $DATA_DIR/study.log 2>&1
+      # R4b: 只在 staged 真有产出时记日志(空 inbox 空转不刷屏)
+      [ -n "$(ls -A $DATA_DIR/brain/staged 2>/dev/null)" ] && echo "$(date -Iseconds) | watchdog: 知识脑 study 产出 staged" >> $LOG
     fi
     [ -d "$DATA_DIR/brain/staged" ] && [ -n "$(ls -A $DATA_DIR/brain/staged 2>/dev/null)" ] && node $D2D/scripts/brain/promote.mjs --to-shadow >> $LOG 2>&1
     node $D2D/scripts/brain/promote.mjs --to-current >> $LOG 2>&1

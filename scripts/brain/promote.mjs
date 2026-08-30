@@ -48,6 +48,10 @@ function structuralGate(cards) {
     const blob = JSON.stringify(c)
     if (!/^card:[a-z0-9-]+$/.test(String(c.id ?? ''))) { errs.push(`${c.id ?? '?'}: id 非法`); continue }
     if (!c.title || !Array.isArray(c.applies_to) || !c.applies_to.length || !c.validation_recipe) { errs.push(`${c.id}: 字段缺失`); continue }
+    // E-4: variants 可选字段形状校验 [{stack, payload_diff}]
+    if (c.variants !== undefined && (!Array.isArray(c.variants) || c.variants.some((v) => !v || typeof v.stack !== 'string' || typeof v.payload_diff !== 'string'))) {
+      errs.push(`${c.id}: variants 形状非法(需 [{stack,payload_diff}])`); continue
+    }
     if (EVIL.some((re) => re.test(blob))) { errs.push(`${c.id}: 注入/破坏性内容`); continue }
     if (currentIds.has(c.id)) continue // 与现役同卡: 幂等跳过
     clean.push(c)
@@ -141,18 +145,26 @@ if (cmd === '--status') {
   process.exit(0)
 }
 
-const stagedCards = (() => {
-  try { return JSON.parse(fs.readFileSync(`${STAGED}/techniques.json`, 'utf8')).cards ?? [] } catch { return [] }
-})()
-if (!stagedCards.length) { console.error('staged 为空 — 先跑 study.mjs --apply'); process.exit(1) }
 if (cmd === '--seed') {
+  // E-4/C-1: seed 以「下一版本」安装(保留旧版本可回退, 恒 ≤3 由 prune 收口), 不再覆写 v0
+  const curBase = (() => { try { return path.basename(fs.readlinkSync(`${BRAIN}/current`)) } catch { return '' } })()
+  const maxV = versionDirs().reduce((m, v) => Math.max(m, Number(v.dir.slice(1))), 0)
+  const next = `v${Math.max(maxV + 1, curBase ? Number(curBase.slice(1)) + 1 : 1)}`
   fs.mkdirSync(VERSIONS, { recursive: true })
-  fs.mkdirSync(`${VERSIONS}/v0`, { recursive: true })
-  fs.copyFileSync(SEED, `${VERSIONS}/v0/techniques.json`)
-  fs.writeFileSync(`${VERSIONS}/v0/manifest.json`, JSON.stringify({ created_at: new Date().toISOString(), status: 'current', parent_version: null, source_docs: ['builtin-seed'], bench_score: null }, null, 2))
+  fs.mkdirSync(`${VERSIONS}/${next}`, { recursive: true })
+  fs.copyFileSync(SEED, `${VERSIONS}/${next}/techniques.json`)
+  fs.writeFileSync(`${VERSIONS}/${next}/manifest.json`, JSON.stringify({ created_at: new Date().toISOString(), status: 'current', parent_version: curBase || null, source_docs: ['builtin-seed'], bench_score: null }, null, 2))
   try { fs.rmSync(`${BRAIN}/current`); } catch {}
-  fs.symlinkSync(`${VERSIONS}/v0`, `${BRAIN}/current`)
-  console.log('v0 基线已安装为 current')
+  fs.symlinkSync(`${VERSIONS}/${next}`, `${BRAIN}/current`)
+  // 旧 current 降为 retired(状态字段与软链一致, 便于审计)
+  if (curBase) {
+    try {
+      const om = JSON.parse(fs.readFileSync(`${VERSIONS}/${curBase}/manifest.json`, 'utf8'))
+      fs.writeFileSync(`${VERSIONS}/${curBase}/manifest.json`, JSON.stringify({ ...om, status: 'retired', retired_at: new Date().toISOString() }, null, 2))
+    } catch {}
+  }
+  console.log(`${next} 基线已安装为 current(parent=${curBase || 'null'})`)
+  prune()
   process.exit(0)
 }
 if (cmd === '--reject') {
@@ -160,6 +172,11 @@ if (cmd === '--reject') {
   console.log('staged 已丢弃')
   process.exit(0)
 }
+
+const stagedCards = (() => {
+  try { return JSON.parse(fs.readFileSync(`${STAGED}/techniques.json`, 'utf8')).cards ?? [] } catch { return [] }
+})()
+if (!stagedCards.length) { console.error('staged 为空 — 先跑 study.mjs --apply'); process.exit(1) }
 
 // 门禁①
 const g1 = structuralGate(stagedCards)

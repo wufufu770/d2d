@@ -115,6 +115,8 @@ async function runOne(kind, runIdx, port) {
   fs.cpSync(`${REPO}/plugin`, `${work}/plugin`, { recursive: true })
   fs.cpSync(`${REPO}/graphd`, `${work}/graphd`, { recursive: true })
   fs.cpSync(`${REPO}/scripts/launch/round-launch.mjs`, `${work}/round-launch.mjs`)
+  // 沙盒图必须全新: 剔除宿主 kuzu_db/wal(R4b 修正, 与 cybench-adapter 同)
+  for (const f of ['kuzu_db', 'kuzu_db.wal', 'graphd.log']) { try { fs.rmSync(`${work}/graphd/${f}`, { force: true }) } catch {} }
 
   const brainDir = `${EXP}/brain/${kind}`
   if (runIdx === 1 || !fs.existsSync(brainDir)) snapshotBrain(kind, brainDir) // 同配置多 run 共用开局快照
@@ -124,7 +126,12 @@ async function runOne(kind, runIdx, port) {
 
   const t0 = Date.now()
   const gd = spawn('python3', ['graphd/app.py'], { cwd: work, env: { ...process.env, P2P_GRAPH_PORT: String(port) }, stdio: 'ignore' })
-  await new Promise((r) => setTimeout(r, 2500))
+  let gdUp = false
+  for (let i = 0; i < 30; i++) { // 健康轮询(≤15s): 固定 2.5s 等待曾误判未起
+    await new Promise((r) => setTimeout(r, 500))
+    try { if ((await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(800) })).ok) { gdUp = true; break } } catch {}
+  }
+  if (!gdUp) { gd.kill(); return { kind, run: runIdx, exit: null, wallclock_s: 0, experience_seeded: 0, seeds: 0, models_used: [], eval: { error: '沙盒 graphd 未起' } } }
   const expSeeded = seedExperience(kind, port)
   const seeds = seedsInject(port)
 

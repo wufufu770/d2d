@@ -82,7 +82,7 @@ const docs = fs.readdirSync(INBOX).filter((f) => /\.(md|txt|markdown)$/i.test(f)
 const pdfs = fs.readdirSync(INBOX).filter((f) => /\.pdf$/i.test(f))
 if (!docs.length) {
   console.log(`inbox 为空(${INBOX})。投放 md/txt 文章后重跑; PDF 请先转 md。${pdfs.length ? `有 ${pdfs.length} 个 PDF 待转换: ${pdfs.join(', ')}` : ''}`)
-  process.exit(0)
+  process.exit(2) // R4b: 空转非成功 — watchdog 的 && 链不再误记「产出 staged」
 }
 console.log(`收料 ${docs.length} 篇: ${docs.map((d) => d.name).join(', ')}`)
 
@@ -95,7 +95,8 @@ const refutedBlock = refuted.length
 const prompt = `你是 d2d 知识脑的学习引擎。阅读以下安全文章/论文, 提炼可指导自主渗透测试的技术卡(technique cards)。要求:
 1. 只提炼"可操作"的知识: 触发场景/适用技术栈指纹/验证方法; 忽略纯理论叙事与营销内容。
 2. 输出严格的 JSON 数组, 每张卡形如:
-{"id":"card:<slug>","title":"...","applies_to":["小写技术指纹/业务关键词"],"domain":"可为空, 金融/支付等领域知识填领域名","validation_recipe":"1-2 句可执行的验证思路(非 payload 转储)","refs":["来源文章名"]}
+{"id":"card:<slug>","title":"...","applies_to":["小写技术指纹/业务关键词"],"domain":"可为空, 金融/支付等领域知识填领域名","validation_recipe":"1-2 句可执行的验证思路(非 payload 转储)","refs":["来源文章名"],"variants":[{"stack":"其他技术栈指纹","payload_diff":"同类攻击在该栈的等价形态差异","ref":"来源"}]}
+   variants 为可选字段(E-4 变体分析): 当文中技术有明显栈依赖差异时给出 1-3 个变体, 没有则省略。
 3. 8-16 张卡; 与常见基础重复度高的内容从简。禁止编造未在文章中出现的验证步骤。
 4. 最终回复只输出 JSON 数组本身, 不要其他文字。
 ${refutedBlock}

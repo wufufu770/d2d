@@ -139,3 +139,53 @@
 
 ### R4b 候选(审查顺延项)
 E-5 OAST DNS 通道 / E-2 embedding 语义检索 / E-3 Cybench 适配 / E-4 变体卡 / E-7 SPA 执行器 / C-1 补卡 40+ / scheduler 深拆至 500
+
+## R4b 迭代（2026-08-30，顺延六项全落地 + 测试修正迭代）
+**主题: E-5 DNS 带外 / E-2 语义检索 / E-3 Cybench 外部裁判 / E-4 变体卡 / E-7 SPA 渲染执行器 / C-1 补卡 40+**
+
+### C-1 知识基线 16→42 卡(E-4 variants 一并落)
+- 新增 26 类: HTTP 走私(三态判定)/缓存投毒(unkeyed)/缓存欺骗/Host 头注入/CRLF/命令注入/密码重置/验证码四路/支付逻辑/优惠券/订单状态机/退款/CSV 公式注入/XPath/LDAP/HPP/OAuth/WebSocket 劫持/原型污染/会话固定/DOM clobbering/CSS 注入/限速绕过/SSO 跨域(link 核心卡)/postMessage/调试面暴露
+- 每卡五字段 + refs 指向 OWASP WSTG/PortSwigger; seed schema 锁入 mocha(卡数≥40/id 规范/EVIL 扫描)
+
+### E-4 变体卡(Big Sleep 理念移植: 已知模式→新面)
+- 卡 schema 增 `variants:[{stack,payload_diff,ref}]`(13 张卡带变体: SQL 三大栈/SSTI 两族/上传解析/反序列化外带/竞态单包/云元数据/JWT jwk 注入/原型污染 client 端/ Host 头 override 等)
+- promote 门禁①形状校验; study prompt 引导产出; 检索层 pickVariant(全串互含+连字符 token 级匹配)注入 brief 变体提示
+- promote --seed 升级: 以「下一版本」安装(parent 链保留回退), 不再覆写 v0; 旧 current 降级 retired
+
+### E-2 语义检索 L2(纯 JS 零依赖路线)
+- 混合检索 = L1 加权关键词(指纹×2+标题×3+recipe×1) + L2 字符 trigram TF-IDF 余弦(同语种语形/组合变体召回; index.bin 缓存以内容 hash 失效)
+- 环境 实测无 chrome/无 python ML 栈 → bge-small-zh embedding 留作 pluggable hook(R5), 本轮以纯 JS 层先解决「子串失配」类召回缺口
+- 单测: 语形变体召回排序/cosine 归一/缓存失效/混合分不破坏显式命中
+
+### E-5 OAST DNS 通道(实测通过)
+- oast.mjs 增最小 DNS 应答器(dgram, 零依赖): A 查询回 P2P_OAST_DNS_IP, TTL=60(支持 rebinding 类验证), AAAA 空应答不报错
+- 任意查询名即命中, 首段 label 归因到 finding; 与 HTTP 通道合并 /hits?tail=N
+- dig 实测: `dig -p 8853 @127.0.0.1 <label>.oast.lab A` → 应答+命中记录+label 归因 ✓(生产部署需 NS 委托或受控解析器, 实验室走 localhost DNS)
+
+### E-7 SPA 渲染执行器(CDP 驱动, 优雅降级)
+- scripts/gateway/spa-render.mjs: POST /render {url,graph} → CDP(headless 拉起或 P2P_CDP_URL 附着) → DOM 链接+XHR/fetch 网络事件 → extractEndpoints 去重 → MERGE 写图(tech=spa-cdp)
+- 无 chrome 二进制环境自动降级(/health ready=false + 可操作提示); worker brief 增 SPA 渲染面行(P2P_SPA_URL 驱动)
+- 本机无 chrome: CDP 路径待 chromium 安装后实测(juice-shop 为首选验证靶); extractEndpoints 已单测锁定
+
+### E-3 Cybench 外部裁判(适配器落地)
+- scripts/eval/cybench-adapter.mjs: 真实 schema(metadata/metadata.json subtasks[].answer=官方 flag) — 43 任务解析 ✓(分类/难度/flag/compose 检出)
+- 流程: docker compose 起靶→端口发现→d2d 沙盒攻击(R_OBJECTIVE 注入任务描述, 需 scheduler/index 两行扩展)→官方 flag 查图判定→部分计分(judge 纯函数)
+- 合成任务管线验证 ✓(compose 起靶/判定/summary); **修正循环**: 首跑 E2E 暴露沙盒图未起(WAL 回放>2.5s 固定等待) → 健康轮询+剔除宿主 DB 文件(cybench-adapter 与 ablation 同修)
+- 真题基线跑法: `node scripts/eval/cybench-adapter.mjs --cybench-dir /tmp/cybench --subset 8`; README 外部基准节引用 summary.md
+
+### 深拆与小修
+- experience 域模块抽出(normPattern/laplace/upsertExperience/harvest/dedupFindings), scheduler 714→654 行
+- promote --seed 不可达 bug 修复(被 staged 空检查挡住); study.mjs 空 inbox exit 2 + watchdog 只在真产出时记日志
+- 测试: mocha 63→81 全绿; pytest 42 全绿
+
+### R5 候选
+embedding hook(bge-small-zh)/SPA CDP 实靶验证(chromium 安装后)/cybench 真题基线/scheduler 深拆至 500/R_OBJECTIVE 前端化(dsh 命令行直传)
+
+### E-3 修正迭代实录(E2E 合成任务 9 轮 → PASS 1/1)
+cybench 适配器经 9 轮「跑→归因→修→再跑」闭环验证(每轮 10min), 逐轮钉死 4 个独立缺陷:
+1. 沙盒图未起: 复制宿主 kuzu WAL(2.4MB)回放超固定 2.5s 等待 → 剔除 DB 文件 + 15s 健康轮询
+2. worker 静默不作为: OPEN_RECON 发现环在「无漏洞可写」的琐碎靶读页即退(读页→无发现→exit 0) → P2P_CTF=1 flag 猎手 brief(worker 活跃度 5→13, finding+verify 闭环当场触发)
+3. objective 措辞歧义: 「写入 Finding.repro」被模型理解为写本地文件 Finding.repro(根目录!) → 改为「POST /write/finding 图节点, 禁止只写本地文件」
+4. 判定器三连: ①gq 参数名 (cy) vs 引用 {cypher} ReferenceError 被 catch 吞成 null(与 R3 promote 同款 bug, 第二次现身) ②503 graph busy 是合法 JSON, rows undefined 曾被当成「零命中」 ③快照兜底目录缺 app.py → ok===true 判据 + 重试 + 停图后 WAL 重放兜底
+**终局: 合成任务 found=true score=1/1** — worker 抓到 flag{synthetic_e2e_7f3a} 写入 Finding(4 条, 含 verified), 官方 flag 判定命中。
+方法论沉淀: 判定类脚本禁止 `catch → 返回空集`(失败与真空必须可区分); 每轮 E2E 落 graph 快照+判定原文+graphd 日志三件套归因。
