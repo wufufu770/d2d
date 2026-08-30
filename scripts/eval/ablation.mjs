@@ -39,9 +39,10 @@ const gq = (port, cypher) => JSON.parse(execFileSync('curl', ['-s', '-m', '8', '
   `http://127.0.0.1:${port}/query`, '-H', 'Content-Type: application/json', '-H', `X-Auth: ${hostToken}`,
   '-d', JSON.stringify({ cypher })], { encoding: 'utf8' })).rows ?? []
 
-// 防资源互踩: 生产车道在飞时拒绝(除非 --force)
+// 防资源互踩: 生产车道在飞时拒绝(除非 --force); pgrep 无匹配(退出码 1)=clear, 不是错误
 if (!DRY && !flag('force')) {
-  const out = execFileSync('pgrep', ['-af', 'round-launch.mjs'], { encoding: 'utf8' }).trim()
+  let out = ''
+  try { out = execFileSync('pgrep', ['-af', 'round-launch.mjs'], { encoding: 'utf8' }).trim() } catch { out = '' }
   if (out) { console.error(`生产车道在飞, 拒绝启动消融(消融 run 会争抢 CPU/代理):\n${out}\n加 --force 越过`); process.exit(1) }
 }
 
@@ -73,9 +74,11 @@ function prepareProfile(kind, sandboxProf) {
 }
 
 // 经验先验变量: full/no-profile 把 control 图的 ExperienceWeight 复刻进沙盒(= 生产 sync 合流后的稳态)
+// R4c 验证轮: gq 在 control 忙时会静默空(rows ?? []) — 空种子会毁掉消融效度, 必须 fail-loud
 function seedExperience(kind, port) {
-  if (kind === 'no-experience' || kind === 'bare-v0') return 0
+  if (kind === 'no-experience' || kind === 'bare-v0') return { seeded: 0, note: 'config 无经验(设计如此)' }
   const rows = gq(8766, `MATCH (e:ExperienceWeight) RETURN e.id AS id, e.pattern AS pattern, e.stack AS stack, e.prior AS prior, e.hits AS hits, e.wins AS wins, e.target_type AS target_type, e.recipe AS recipe, e.stack_fp AS stack_fp, e.payload_hint AS payload_hint LIMIT 500`)
+  if (!rows.length) return { seeded: 0, note: '⚠ control 图无经验行可播(消融 full/no-profile 配置失效!)' }
   const esc = (v) => String(v ?? '').replace(/'/g, "''").replace(/\\/g, '\\\\')
   let n = 0
   for (const r of rows) {
@@ -87,7 +90,7 @@ function seedExperience(kind, port) {
       n++
     } catch {}
   }
-  return n
+  return { seeded: n, note: n ? '' : '⚠ seed 全部失败' }
 }
 
 function seedsInject(port) {
@@ -134,7 +137,6 @@ async function runOne(kind, runIdx, port) {
   if (!gdUp) { gd.kill(); return { kind, run: runIdx, exit: null, wallclock_s: 0, experience_seeded: 0, seeds: 0, models_used: [], eval: { error: '沙盒 graphd 未起' } } }
   const expSeeded = seedExperience(kind, port)
   const seeds = seedsInject(port)
-
   const env = {
     ...process.env,
     P2P_OPEN_RANGE: '0', P2P_OPEN_RECON: '1',
@@ -157,15 +159,21 @@ async function runOne(kind, runIdx, port) {
     p.on('close', (c) => { clearTimeout(timer); fs.writeFileSync(`${EXP}/raw/log-${kind}-${runIdx}.txt`, buf.slice(-20_000)); resolve(c) })
   })
   const wallclock = Math.round((Date.now() - t0) / 1000)
+  // R4c 验证轮: ①engagement 收尾有写锁, 等 6s 再评 ②eval 失败/空重试 ×3(同 cybench 判定器教训: 失败≠真空)
+  await new Promise((r) => setTimeout(r, 6000))
   let evalRes = {}
-  try {
-    evalRes = JSON.parse(execFileSync('python3', [`${REPO}/scripts/eval/eval_profile.py`, String(port), baseProfPath],
-      { encoding: 'utf8' }))
-  } catch (e) { evalRes = { error: String(e.message).slice(0, 200) } }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const out = execFileSync('python3', [`${REPO}/scripts/eval/eval_profile.py`, String(port), baseProfPath], { encoding: 'utf8' })
+      evalRes = JSON.parse(out)
+      if (evalRes && evalRes.PASS !== undefined) break
+    } catch (e) { evalRes = { error: String(e.message).slice(0, 200) } }
+    await new Promise((r) => setTimeout(r, 5000))
+  }
   const models = (() => { try { return fs.readFileSync(`${data}/runs/model-usage.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) } catch { return [] } })()
   gd.kill()
   fs.rmSync(work, { recursive: true, force: true }) // 释放磁盘, 证据在 raw/ 与 data/
-  return { kind, run: runIdx, exit: code, wallclock_s: wallclock, experience_seeded: expSeeded, seeds, models_used: [...new Set(models.map((m) => m.model))], eval: evalRes }
+  return { kind, run: runIdx, exit: code, wallclock_s: wallclock, experience_seeded: expSeeded.seeded, seed_note: expSeeded.note, seeds, models_used: [...new Set(models.map((m) => m.model))], eval: evalRes }
 }
 
 function signTest(pairs) {
@@ -198,14 +206,17 @@ if (DRY) {
 }
 
 fs.mkdirSync(`${EXP}/raw`, { recursive: true })
-for (const kind of CONFIGS) {
-  for (let i = 1; i <= RUNS; i++) {
-    const port = BASE_PORT + manifest.runs.length
-    const r = await runOne(kind, i, port)
-    manifest.runs.push(r)
-    fs.writeFileSync(`${EXP}/raw/result-${kind}-${i}.json`, JSON.stringify(r, null, 2))
-    fs.writeFileSync(`${EXP}/manifest.json`, JSON.stringify(manifest, null, 2))
-  }
+// R4c 修正: 交错执行(run 优先于配置) — 顺序执行曾使「配置效应」与「时间/额度限速效应」完全混杂
+const plan = []
+for (let i = 1; i <= RUNS; i++) for (const kind of CONFIGS) plan.push({ kind, run: i })
+let seq = 0
+for (const { kind, run: runIdx } of plan) {
+  const port = BASE_PORT + seq
+  seq++
+  const r = await runOne(kind, runIdx, port)
+  manifest.runs.push(r)
+  fs.writeFileSync(`${EXP}/raw/result-${kind}-${runIdx}.json`, JSON.stringify(r, null, 2))
+  fs.writeFileSync(`${EXP}/manifest.json`, JSON.stringify(manifest, null, 2))
 }
 
 // ---------- 汇总 ----------

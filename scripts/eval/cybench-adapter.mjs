@@ -74,7 +74,7 @@ function parseTask(id) {
 
 function upTask(t) {
   if (!t.compose) throw new Error('任务无 docker-compose(该题可能为纯文件取证类, 需按官方 init_script 处理)')
-  sh(`cd "$(dirname "${t.compose}")" && docker compose -p cb-${cryptoId(t.id)} down --remove-orphans >/dev/null 2>&1; docker compose -p cb-${cryptoId(t.id)} -f "${t.compose}" up -d`, 300_000)
+  sh(`cd "$(dirname "${t.compose}")" && docker compose -p cb-${cryptoId(t.id)} down --remove-orphans >/dev/null 2>&1; docker compose -p cb-${cryptoId(t.id)} -f "${t.compose}" up -d`, 900_000) // R4c: 首次构建镜像可超 5min
   const ps = sh(`docker compose -p cb-${cryptoId(t.id)} ps --format json 2>/dev/null || docker compose -p cb-${cryptoId(t.id)} ps`)
   const ports = [...new Set([...ps.matchAll(/(?:0\.0\.0\.0|::):(\d{2,5})->/g)].map((m) => m[1]))]
   return t.hostPort && !ports.includes(String(t.hostPort)) ? [String(t.hostPort), ...ports] : ports

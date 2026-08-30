@@ -85,5 +85,14 @@ test_write.txt
 # worker 落根目录的运行证据(证据链归 DATA_DIR/runs)
 *evidence*.md
 *evidence*.txt
+*-handoff.md
+artifacts-*/
+discovery-artifacts/
+recon-artifacts/
+.d2d-tmp/
+eng-mtf*/
+deep-handoff-*.md
+ev_*.txt
+obkm_*.py
 upload.out
 Finding.repro
