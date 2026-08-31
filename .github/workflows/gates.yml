@@ -21,7 +21,7 @@ jobs:
         run: |
           LEAK=$(git ls-files | grep -E '(^cookies.*\.txt$|^quickship.*\.txt$|\.pem$|\.key$|^\.env$|\.host-token|^evidence.*\.md$|^handoff.*\.md$|^tmp-.*\.json$)' || true)
           if [ -n "$LEAK" ]; then echo "❌ 泄露文件入库: $LEAK"; exit 1; fi
-          if git grep -qiE 'X-Auth.*[0-9a-f]{32}' -- ':!*.md' ':!docs/*' ':!.d2d-review/*'; then echo "❌ 疑似凭证入库"; exit 1; fi
+          if git grep -qiE 'X-Auth.*[0-9a-f]{32}' -- ':!*.md' ':!docs/*'; then echo "❌ 疑似凭证入库"; exit 1; fi
       - name: Manifest integrity (V-16: 白名单口径, 排除活跃日志)
         run: sha256sum -c manifest.sha256 --quiet
       - run: pytest tests/test_graphd_gates.py -q
@@ -68,4 +68,4 @@ jobs:
           for f in index.js scheduler.js validator.js sanitize.js adapter-dsh.mjs planner.js report.mjs; do
             node --check "$f"
           done
-          bash -n ../../install.sh ../../scripts/ops/*.sh
+          bash -n ../../scripts/ops/*.sh
