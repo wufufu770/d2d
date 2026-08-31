@@ -13,8 +13,8 @@ function makeFake(t = {}) {
     if (cypher.includes("status = 'active'")) return t.engActive ?? []
     if (cypher.includes('e.name AS name')) return t.engLast ?? []
     if (cypher.includes('AgentIdentity')) return t.agents ?? []
+    if (cypher.includes('f.id AS id')) return t.findings ?? [] // findingsList 亦含 'gate_status AS state', 须先判
     if (cypher.includes('gate_status AS state')) return t.byState ?? []
-    if (cypher.includes('f.id AS id')) return t.findings ?? []
     if (cypher.includes('s.type AS type')) return t.signals ?? []
     if (cypher.includes('count(e)')) return t.endpoints ?? [{ n: 0 }]
     if (cypher.includes('count(s)')) return t.signalsOpen ?? [{ n: 0 }]
@@ -64,7 +64,7 @@ test('buildSnapshot: 有数据 → 聚合/截断/排序字段齐备', async () =
     engActive: [{ name: 'eng-x', target: 'http://t.local', scope: 't.local', status: 'active', created_at: '2026-08-31T10:00:00Z' }],
     agents: [{ worker_id: 'w1', ring: 'discovery', chain: 'auth', status: 'running', updated_at: new Date().toISOString() }],
     byState: [{ state: 'candidate', n: 2 }, { state: 'verified', n: 3 }, { state: 'bogus', n: 99 }],
-    findings: [{ id: 'F1', title: 'SQL injection in /login', severity: 'critical', cvss: 9.14, gate_status: 'verified', category: 'sqli', ts: '2026-08-31T11:00:00Z', verified_at: '2026-08-31T11:05:00Z' }],
+    findings: [{ id: 'F1', title: 'SQL injection in /login', severity: 'critical', cvss: 9.14, state: 'verified', category: 'sqli', ts: '2026-08-31T11:00:00Z', verified_at: '2026-08-31T11:05:00Z' }], // 键名与 Q.findingsList 的 RETURN 别名对齐
     signals: [{ id: 'sig-1', type: 'sqli', weight: 4.5, ts: '2026-08-31T11:00:00Z' }],
     endpoints: [{ n: 12 }],
     signalsOpen: [{ n: 7 }],
