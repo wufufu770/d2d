@@ -1,0 +1,9 @@
+# d2d-panel bundle patch — 观测台插件挂载
+# 只读 graphd(:8766), 与 pentest-dsh 插件本体互不依赖(图黑板是唯一共享面)
+# 未装 dsh-better-sidebar 时 tab 注册静默跳过(软依赖), standalone 观测服务照常
+- insert:
+    - id: d2d-panel
+      name: d2d-panel
+      config:
+        graphdUrl: http://127.0.0.1:8766
+        standalonePort: 8790

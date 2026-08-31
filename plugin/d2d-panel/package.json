@@ -1,0 +1,32 @@
+{
+  "name": "d2d-panel",
+  "version": "0.1.0",
+  "description": "d2d 面板 — dsh Web UI 侧栏观测台(better-sidebar tab): 三环 worker 心跳 + 七态 findings 只读看板, host 半代理聚合快照, token 不出 host",
+  "type": "module",
+  "main": "./lib/host/index.mjs",
+  "exports": {
+    ".": "./lib/host/index.mjs",
+    "./client": "./lib/client/index.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": "./lib/client/index.js"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "dsh-better-sidebar": ">=0.12.0",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "dsh-better-sidebar": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "standalone": "node lib/host/standalone.mjs"
+  },
+  "license": "MIT"
+}
