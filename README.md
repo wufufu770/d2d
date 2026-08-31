@@ -2,6 +2,8 @@
 
 > **一句话**: 一个 `dsh` 插件, 对授权目标并行跑 **discovery(n×链) + deep(三级 L1→L2→L3) + creative(假设反转)** 三环渗透, 共享 **Kuzu 图黑板**(`:8766`), 带 **跨模型交接记忆**、**多 agent 任务自调度**、**按角色模型策略**、**自学习知识脑**(三门禁晋级, ≤3 版本, 可回滚)。非破坏规则在简报层强制; 运行数据全部外置(`D2D_DATA_DIR`, 默认 `~/.d2d-data`)。
 
+**面板**: `plugin/d2d-panel/` — dsh Web UI 侧栏观测台(better-sidebar 双 tab: ops + findings), host 半同源路由聚合快照, token 不出 host。规格与实施状态见 `docs/PANEL-UI-SPEC.md`。
+
 **For agents**: 读本文件 + `graphd/app.py`(`finding_gates`/`transition_gate`) + `plugin/pentest-dsh/scheduler.js` + `plugin/pentest-dsh/domain/` + `tests/` 即可完整感知项目。
 
 ## 快速开始

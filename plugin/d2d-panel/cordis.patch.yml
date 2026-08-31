@@ -1,9 +1,21 @@
-# d2d-panel bundle patch — 观测台插件挂载
-# 只读 graphd(:8766), 与 pentest-dsh 插件本体互不依赖(图黑板是唯一共享面)
-# 未装 dsh-better-sidebar 时 tab 注册静默跳过(软依赖), standalone 观测服务照常
+# d2d-panel bundle patch
+#
+# 本文件是 npm 包的 `dsh.bundle.patch` 层: 经官方 CLI 安装时——
+#
+#   dsh plugin --profile <name> add d2d-panel
+#
+# ——命令会 reconcile dsh.profile.bundles 并追加本包到 bundle 栈, profile 启动时
+# 合并本 patch(单条 insert 行), 与手写 cordis.patch.yml 挂载行等价(参照
+# dsh-sidebar-leap 的 bundle patch 模式)。
+#
+# 客户端半经 ctx.betterSidebar 注册 d2d tab, 依赖 dsh-better-sidebar 先挂载;
+# 手工挂载时请保证 better-sidebar 行在本行之前。
+#
+# 双挂载护栏: 聚合 bundle 可能已用别的 entry id 挂载本包, !!js 表达式在
+# 该场景下让本行退位, 由聚合实例持有插件。
 - insert:
     - id: d2d-panel
-      name: d2d-panel
+      name: 'd2d-panel'
       config:
-        graphdUrl: http://127.0.0.1:8766
-        standalonePort: 8790
+        graphdUrl: 'http://127.0.0.1:8766'
+      disabled: !!js "[...ctx.loader.entries()].some((e) => e.options.name === 'd2d-panel' && e.options.id !== 'd2d-panel' && !e.disabled)"
