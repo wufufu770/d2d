@@ -14,15 +14,16 @@ export const MACRO_GROUPS = [
   { key: 'rejected', label: '已驳回', states: ['rejected'] },
 ]
 export const ZOMBIE_MS = 30_000
-const MAX = { title: 200, scope: 200, target: 200, workers: 50, findings: 200, signals: 20, sigEvidence: 0 }
+const MAX = { title: 200, scope: 200, target: 200, workers: 50, findings: 200, signals: 20, exp: 12, checkpoint: 400, todo: 400, traj: 400, sigEvidence: 0 }
 
 // 全部只读 MATCH; host token 通道下不触发 worker 只读白名单(本就放行)
 const Q = {
   engActive: `MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name AS name, e.target AS target, e.scope AS scope, e.status AS status, e.created_at AS created_at ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`,
   engLast: `MATCH (e:Engagement) RETURN e.name AS name, e.target AS target, e.scope AS scope, e.status AS status, e.created_at AS created_at ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`,
-  agents: `MATCH (a:AgentIdentity) RETURN a.worker_id AS worker_id, a.ring AS ring, a.chain AS chain, a.status AS status, a.updated_at AS updated_at ORDER BY coalesce(a.updated_at, '') DESC LIMIT ${MAX.workers}`,
+  agents: `MATCH (a:AgentIdentity) RETURN a.worker_id AS worker_id, a.ring AS ring, a.chain AS chain, a.status AS status, a.checkpoint AS checkpoint, a.todo AS todo, a.updated_at AS updated_at ORDER BY coalesce(a.updated_at, '') DESC LIMIT ${MAX.workers}`,
   findingsByState: `MATCH (f:Finding) RETURN f.gate_status AS state, count(f) AS n`,
-  findingsList: `MATCH (f:Finding) RETURN f.id AS id, f.title AS title, f.severity AS severity, f.cvss AS cvss, f.gate_status AS state, f.category AS category, f.ts AS ts, f.verified_at AS verified_at ORDER BY coalesce(f.ts, '') DESC LIMIT ${MAX.findings}`,
+  findingsList: `MATCH (f:Finding) RETURN f.id AS id, f.title AS title, f.severity AS severity, f.cvss AS cvss, f.gate_status AS state, f.category AS category, f.ts AS ts, f.verified_at AS verified_at, f.last_transition AS last_transition ORDER BY coalesce(f.ts, '') DESC LIMIT ${MAX.findings}`,
+  experienceTail: `MATCH (x:ExperienceWeight) RETURN x.id AS id, x.pattern AS pattern, x.stack AS stack, x.prior AS prior, x.hits AS hits, x.wins AS wins, x.target_type AS target_type ORDER BY coalesce(x.prior, 1.0) DESC, coalesce(x.hits, 0) DESC LIMIT ${MAX.exp}`,
   signalsTail: `MATCH (s:Signal_) WHERE s.status = 'open' RETURN s.id AS id, s.type AS type, s.weight AS weight, s.ts AS ts ORDER BY coalesce(s.ts, '') DESC LIMIT ${MAX.signals}`,
   cntEndpoints: `MATCH (e:Endpoint) RETURN count(e) AS n`,
   cntSignalsOpen: `MATCH (s:Signal_) WHERE s.status = 'open' RETURN count(s) AS n`,
