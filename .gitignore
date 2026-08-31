@@ -63,6 +63,7 @@ recon*.py
 # 测试期一次性脚本默认不入库, 放行运维/接管脚本目录
 *.sh
 !scripts/**/*.sh
+!install.sh
 
 # 测试凭据与靶机证据(绝不入库)
 cookies*.txt
