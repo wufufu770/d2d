@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# d2d 一键安装脚本 — 实测流程固化(2026-08-31 全量重建验证)
+# d2d 一键安装脚本 — 实测流程固化(2026-08-31 全量重建验证; 09-01 修复 pnpm≥11 构建拦截/插件依赖/skill/网关接线)
 # 用法: curl -fsSL https://raw.githubusercontent.com/wufufu770/d2d/main/install.sh | bash -s -- [目标目录]
 #   或: git clone https://github.com/wufufu770/d2d && bash d2d/install.sh [目标目录]
 # 环境要求: Node >= 18(24 已实测), Python >= 3.10 + pip, git
@@ -14,6 +14,8 @@ D2D_DATA_DIR="${D2D_DATA_DIR:-$HOME/.d2d-data}"
 D2D_HOST_TOKEN="${D2D_HOST_TOKEN:-$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')}"
 GRAPHD_PORT="${GRAPHD_PORT:-8766}"
 WEB_PORT="${WEB_PORT:-8899}"
+PROXY_PORT="${PROXY_PORT:-8888}"
+OAST_PORT="${OAST_PORT:-8890}"
 
 step() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
@@ -54,26 +56,51 @@ if [ ! -f "$D2D_DATA_DIR/config/model-policies.json" ]; then
 else
   ok "model-policies.json 已存在, 保留"
 fi
+# D-6: notify 配置外置 — webhook URL 内嵌推送 token(Bark/Server酱), 绝不入库
+if [ ! -f "$D2D_DATA_DIR/config/notify.json" ]; then
+  cp "$REPO_DIR/config/notify.example.json" "$D2D_DATA_DIR/config/notify.json"
+  ok "notify 模板 → $D2D_DATA_DIR/config/notify.json(填 webhook 后即生效)"
+else
+  ok "notify.json 已存在, 保留"
+fi
 
-# ---------- 2. dsh profiles ----------
+# ---------- 2. 插件自身依赖 ----------
+# link: 协议只做符号链接, pnpm 不安装 link 目标的 dependencies; 而 Node 按 symlink
+# 真实路径解析依赖, profile 的 node_modules 不在解析链上 → 必须就地安装插件依赖。
+step "安装插件自身依赖(pentest-dsh: dsh-tools / dsh-mcp-client)"
+( cd "$REPO_DIR/plugin/pentest-dsh" && npm ci --omit=dev --no-audit --no-fund --silent 2>/dev/null ) \
+  || ( cd "$REPO_DIR/plugin/pentest-dsh" && npm install --omit=dev --no-audit --no-fund )
+ok "pentest-dsh 依赖就绪 — 工具面(p2p_status/p2p_graph)不再静默跳过"
+# d2d-panel 仅 peerDependencies(react/cordis/better-sidebar, 由 profile 环境提供), 无需就地安装
+
+# ---------- 3. dsh profiles ----------
 step "装配 dsh profiles($DSH_HOME)"
 mkdir -p "$DSH_HOME/profiles/web" "$DSH_HOME/profiles/headless"
 command -v pnpm >/dev/null || npm install -g pnpm
 
-# --- web profile: 基础 + 侧栏 + d2d 双插件 ---
-cat > "$DSH_HOME/profiles/web/cordis.yml" <<'EOF'
-# dsh profile root — an empty entry list. The tree is composed as patches:
-# each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml, then any
-# --patch overlays. Edit cordis.patch.yml, not this file.
-[]
-EOF
+# pnpm ≥10 默认拦截依赖的构建脚本(原生编译); node-pty(dsh 终端模拟)须放行,
+# 否则 pnpm 11 直接报 ERR_PNPM_IGNORED_BUILDS 退出 1。
+# allowBuilds 在 pnpm 10.5/11.x 双版本实测有效(onlyBuiltDependencies 已被 11 弃用)。
 cat > "$DSH_HOME/profiles/web/pnpm-workspace.yaml" <<'EOF'
 packages:
   - .
 
 nodeLinker: hoisted
 autoInstallPeers: false
+
+allowBuilds:
+  node-pty: true
 EOF
+cp "$DSH_HOME/profiles/web/pnpm-workspace.yaml" "$DSH_HOME/profiles/headless/pnpm-workspace.yaml"
+
+cat > "$DSH_HOME/profiles/web/cordis.yml" <<'EOF'
+# dsh profile root — an empty entry list. The tree is composed as patches:
+# each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml, then any
+# --patch overlays. Edit cordis.patch.yml, not this file.
+[]
+EOF
+cp "$DSH_HOME/profiles/web/cordis.yml" "$DSH_HOME/profiles/headless/cordis.yml"
+
 cat > "$DSH_HOME/profiles/web/package.json" <<EOF
 {
   "name": "dsh-profile-web",
@@ -98,35 +125,11 @@ cat > "$DSH_HOME/profiles/web/package.json" <<EOF
   }
 }
 EOF
-( cd "$DSH_HOME/profiles/web" && pnpm install --silent )
-ok "web profile: d2d-panel + pentest-dsh + better-sidebar 装配完成"
 
-# --- headless profile: worker 进程用(无 UI, 全权限, token 桥) ---
-cp "$DSH_HOME/profiles/web/cordis.yml" "$DSH_HOME/profiles/headless/cordis.yml"
-cp "$DSH_HOME/profiles/web/pnpm-workspace.yaml" "$DSH_HOME/profiles/headless/pnpm-workspace.yaml"
-cat > "$DSH_HOME/profiles/headless/package.json" <<EOF
-{
-  "name": "dsh-profile-headless",
-  "private": true,
-  "dependencies": {
-    "pentest-dsh": "link:$REPO_DIR/plugin/pentest-dsh"
-  },
-  "dsh": {
-    "profile": {
-      "bundles": [
-        "@deepseek-ai/dsh-base",
-        "@deepseek-ai/dsh-headless",
-        "pentest-dsh"
-      ]
-    }
-  }
-}
-EOF
-( cd "$DSH_HOME/profiles/headless" && pnpm install --silent )
-
-# headless 补丁: ①LLM 路由(按 model-policies 的 provider 前缀扩展) ②全权限沙箱 ③worker token 桥
-cat > "$DSH_HOME/profiles/headless/cordis.patch.yml" <<'EOF'
-# headless profile 用户补丁 — 由 d2d install.sh 生成
+# web profile 补丁: LLM 路由 — 主聊天也能用 minimax-cn/opencode-go 模型
+# (否则主会话默认 deepseek-official/deepseek-v4-flash, 未配 DEEPSEEK_API_KEY 即 MISSING_CREDENTIAL)
+cat > "$DSH_HOME/profiles/web/cordis.patch.yml" <<'EOF'
+# web profile 用户补丁 — 由 d2d install.sh 生成
 # LLM 路由: dsh-llm-pi-ai 任意厂商接入; providers 键须与 model-policies.json 的
 # "provider/" 前缀一致。下面是示例(minimax-cn 走 MiniMax 官方, opencode-go 走
 # OpenCode Go 订阅); 换厂商改 baseURL+apiKeyEnv+models 即可。
@@ -174,6 +177,37 @@ cat > "$DSH_HOME/profiles/headless/cordis.patch.yml" <<'EOF'
             name: MiMo v2.5 Pro
             contextWindow: 262144
             maxTokens: 32768
+EOF
+
+( cd "$DSH_HOME/profiles/web" && pnpm install ) \
+  || { echo "✗ web profile 装配失败(上方为 pnpm 完整输出; 常见原因: 网络/registry 权限)"; exit 1; }
+ok "web profile: d2d-panel + pentest-dsh + better-sidebar 装配完成"
+
+# --- headless profile: worker 进程用(无 UI, 全权限, token 桥) ---
+cat > "$DSH_HOME/profiles/headless/package.json" <<EOF
+{
+  "name": "dsh-profile-headless",
+  "private": true,
+  "dependencies": {
+    "pentest-dsh": "link:$REPO_DIR/plugin/pentest-dsh"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-headless",
+        "pentest-dsh"
+      ]
+    }
+  }
+}
+EOF
+( cd "$DSH_HOME/profiles/headless" && pnpm install ) \
+  || { echo "✗ headless profile 装配失败(上方为 pnpm 完整输出)"; exit 1; }
+
+# headless 补丁: ①LLM 路由(与 web 同源) ②全权限沙箱 ③worker token 桥
+cp "$DSH_HOME/profiles/web/cordis.patch.yml" "$DSH_HOME/profiles/headless/cordis.patch.yml"
+cat >> "$DSH_HOME/profiles/headless/cordis.patch.yml" <<'EOF'
 
 # 渗透 worker 需要完整网络/系统访问(目标探测 + graphd 写入);
 # sandbox 与 approval 必须成对切换(单独改 sandbox 组合不出 preset → boot 报错)。
@@ -193,12 +227,44 @@ cat > "$DSH_HOME/profiles/headless/cordis.patch.yml" <<'EOF'
 EOF
 ok "headless profile: LLM 路由 + 全权限 + token 桥 装配完成"
 
-# ---------- 3. 启动脚本 ----------
+# ---------- 4. pentest skill ----------
+step "安装 pentest skill(仓库 home/.dsh/skills/pentest — 垃圾洞清单/七问验证门)"
+if [ -d "$REPO_DIR/home/.dsh/skills/pentest" ]; then
+  mkdir -p "$DSH_HOME/skills"
+  rm -rf "$DSH_HOME/skills/pentest"
+  cp -r "$REPO_DIR/home/.dsh/skills/pentest" "$DSH_HOME/skills/pentest"
+  ok "skill → $DSH_HOME/skills/pentest/SKILL.md"
+else
+  warn "仓库缺 home/.dsh/skills/pentest(非发布树?) — 跳过"
+fi
+
+# ---------- 5. 默认模型 ----------
+step "设置主聊天默认模型"
+# dsh 出厂默认 deepseek-official/deepseek-v4-flash — 只配 MINIMAX/OPENCODE key 的
+# 机器上主会话直接 MISSING_CREDENTIAL。worker 不受影响(per-task 模型注入),
+# 这里只把「主聊天」指到已配置路由的 minimax 上。
+SETTINGS="$DSH_HOME/settings.yaml"
+if [ ! -f "$SETTINGS" ]; then
+  cat > "$SETTINGS" <<'EOF'
+agent-default-model:
+  provider: minimax-cn
+  model: MiniMax-M2.7
+EOF
+  ok "主聊天默认模型 → minimax-cn/MiniMax-M2.7(只需 MINIMAX_API_KEY)"
+elif grep -q '^agent-default-model:' "$SETTINGS"; then
+  warn "settings.yaml 已有 agent-default-model — 保留你的选择(若为 deepseek-official 且未配 DEEPSEEK_API_KEY, 主聊天会 MISSING_CREDENTIAL, 改法见 README「默认模型」)"
+else
+  printf '\nagent-default-model:\n  provider: minimax-cn\n  model: MiniMax-M2.7\n' >> "$SETTINGS"
+  ok "已追加 agent-default-model → minimax-cn/MiniMax-M2.7"
+fi
+
+# ---------- 6. 启动脚本 ----------
 step "生成启动脚本(ops/start-all.sh)"
 mkdir -p "$REPO_DIR/ops"
 cat > "$REPO_DIR/ops/start-all.sh" <<EOF
 #!/usr/bin/env bash
-# d2d 全栈启动: graphd + dsh web(面板)。API key 经环境变量注入, 不落盘。
+# d2d 全栈启动: graphd + egress-gateway(出网治理) + oast(带外回调) + dsh web(面板)
+# API key 经环境变量注入, 不落盘。
 set -euo pipefail
 export DSH_HOME="\${DSH_HOME:-$DSH_HOME}"
 export D2D_DATA_DIR="\${D2D_DATA_DIR:-$D2D_DATA_DIR}"
@@ -210,12 +276,30 @@ export P2P_GRAPHD="http://127.0.0.1:$GRAPHD_PORT"
 # export OPENCODE_API_KEY=sk-...
 
 pkill -f "graphd/app.py" 2>/dev/null || true
+pkill -f "gateway/egress-gateway.mjs" 2>/dev/null || true
+pkill -f "gateway/oast.mjs" 2>/dev/null || true
 pkill -f "dsh --profile web" 2>/dev/null || true
 sleep 1
 
 nohup python3 "$REPO_DIR/graphd/app.py" > "$D2D_DATA_DIR/graphd.log" 2>&1 &
 echo "graphd → http://127.0.0.1:$GRAPHD_PORT (pid \$!)"
 sleep 2
+
+# V-08 出网治理网关: 连接层 scope 强制(每 30s 动态拉 Engagement.scope ∪ 静态白名单,
+# 子域通配/CIDR) + per-host 令牌桶限速 + 全量请求审计(→ DATA_DIR/evidence/proxy)。
+# worker 的 curl 经 http_proxy 连接层强制走网关(graphd 回环走 NO_PROXY 豁免)。
+nohup node "$REPO_DIR/scripts/gateway/egress-gateway.mjs" > "$D2D_DATA_DIR/egress-gateway.log" 2>&1 &
+echo "egress-gateway → http://127.0.0.1:$PROXY_PORT (pid \$!)"
+export P2P_PROXY_URL="http://127.0.0.1:$PROXY_PORT"
+
+# G2 带外回调服务(盲注自主确认): HTTP 通道; DNS 通道需公网部署(见 oast.mjs 头注释)
+nohup node "$REPO_DIR/scripts/gateway/oast.mjs" > "$D2D_DATA_DIR/oast.log" 2>&1 &
+echo "oast → http://127.0.0.1:$OAST_PORT (pid \$!)"
+export P2P_OAST_HOST="127.0.0.1:$OAST_PORT"
+
+# E-7 SPA 渲染面执行器(需本机 chrome, 默认不启; 启用后取消注释):
+# nohup node "$REPO_DIR/scripts/gateway/spa-render.mjs" > "$D2D_DATA_DIR/spa-render.log" 2>&1 &
+# export P2P_SPA_URL="http://127.0.0.1:8891"
 
 nohup dsh --profile web --port $WEB_PORT --no-open --host 127.0.0.1 > "$D2D_DATA_DIR/dsh-web.log" 2>&1 &
 echo "dsh web → http://127.0.0.1:$WEB_PORT (pid \$!)"
@@ -224,18 +308,16 @@ EOF
 chmod +x "$REPO_DIR/ops/start-all.sh"
 ok "ops/start-all.sh(记得填 API key)"
 
-# ---------- 4. 完整性 ----------
+# ---------- 7. 完整性 ----------
 step "完整性校验"
 if (cd "$REPO_DIR" && sha256sum -c manifest.sha256 --quiet 2>/dev/null); then
   ok "manifest.sha256 校验通过"
 else
-  warn "manifest 校验失败或不存在(仓库被本地修改过) — 不影响使用"
+  warn "manifest 校验失败 — 发布快照与磁盘不一致(本地改过代码/装过依赖属正常), 不影响使用"
 fi
 
+printf '\n\033[1;32m✓ 安装完成\033[0m\n\n'
 cat <<EOF
-
-\033[1;32m✓ 安装完成\033[0m
-
 下一步:
   1. 编辑 $D2D_DATA_DIR/config/model-policies.json   # 五角色 primary/backup 模型
   2. 编辑 $DSH_HOME/profiles/headless/cordis.patch.yml  # LLM provider 路由(须与上表前缀一致)

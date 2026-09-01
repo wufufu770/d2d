@@ -47,10 +47,14 @@ bash d2d/install.sh ~/d2d
 
 1. 全局安装 `@deepseek-ai/dsh` CLI(已装则跳过)
 2. 安装 `kuzu==0.11.3`(graphd 依赖)
-3. 初始化 `~/.d2d-data/`(runs / config / knowledge)与 host-token
-4. 装配 `~/.dsh/profiles/web`(dsh web + better-sidebar + d2d-panel + pentest-dsh)
-5. 装配 `~/.dsh/profiles/headless`(worker 进程: LLM 路由 + 全权限 + token 桥)
-6. 生成 `ops/start-all.sh` 一键启动脚本
+3. 初始化 `~/.d2d-data/`(runs / config / knowledge)与 host-token, 复制 model-policies 与 notify 模板
+4. **就地安装插件自身依赖**(pentest-dsh 的 `@deepseek-ai/dsh-tools`/`dsh-mcp-client` — `link:` 协议不会装 link 目标的依赖, 跳过此步则工具面注册被整体跳过)
+5. 装配 `~/.dsh/profiles/web`(dsh web + better-sidebar + d2d-panel + pentest-dsh + LLM 路由)
+6. 装配 `~/.dsh/profiles/headless`(worker 进程: LLM 路由 + 全权限 + token 桥)
+7. 安装 pentest skill(`~/.dsh/skills/pentest/SKILL.md` — 垃圾洞清单/七问验证门)
+8. 设置主聊天默认模型(见下「默认模型」), 生成 `ops/start-all.sh` 一键启动脚本
+
+> **pnpm 版本兼容**: 脚本生成的 pnpm-workspace.yaml 带 `allowBuilds: node-pty: true` — pnpm ≥10 默认拦截原生构建脚本, 不放行则 pnpm 11 直接 `ERR_PNPM_IGNORED_BUILDS` 退出 1。该字段在 pnpm 10.5 / 11.x 双版本实测有效。
 
 ### 安装后配置(必做)
 
@@ -82,12 +86,24 @@ export OPENCODE_API_KEY=sk-...
 
 key 只经环境变量注入进程, 不落盘。
 
+### 默认模型(主聊天)
+
+dsh 出厂把**主聊天**默认模型设为 `deepseek-official/deepseek-v4-flash` — 只配了 MINIMAX/OPENCODE key 的机器上, 一启动主会话就报 `MISSING_CREDENTIAL`。三选一:
+
+1. **什么都不做**(推荐): install.sh 已把 `~/.dsh/settings.yaml` 的 `agent-default-model` 指到 `minimax-cn/MiniMax-M2.7`(文件已存在时只提示不覆盖), 且 web profile 已带 LLM 路由;
+2. 补 `DEEPSEEK_API_KEY` 到 `ops/start-all.sh`, 沿用官方默认模型;
+3. 手改 `~/.dsh/settings.yaml` 的 `agent-default-model` 段指到任意已配置路由的 provider/model。
+
+worker 不受此影响 — 渗透 worker 的模型走 per-task 注入(model-policies.json), 与主聊天独立。
+
 ### 启动
 
 ```bash
 bash ops/start-all.sh
-# graphd → http://127.0.0.1:8766
-# dsh web → http://127.0.0.1:8899  ← 浏览器打开
+# graphd        → http://127.0.0.1:8766   图数据库(写入侧 scope 门禁)
+# egress-gateway → http://127.0.0.1:8888  出网治理(scope 强制/限速/审计), worker curl 连接层强制走它
+# oast          → http://127.0.0.1:8890   带外回调(盲注确认通道)
+# dsh web       → http://127.0.0.1:8899   ← 浏览器打开
 ```
 
 打开 `http://127.0.0.1:8899`, 选工作区后右侧边栏会出现 **d2d** 与 **d2d Findings** 两个 tab — 即渗透观测面板。
@@ -157,7 +173,7 @@ brief 不含类清单/固定动作引导, worker 自主测绘→假设→攻击;
 | `/pentest-report` | SRC 报告导出(去重+CVSS+证据链) |
 | `/pentest-study` | 知识学习(处理 knowledge/inbox, 后台跑) |
 | `/pentest-brain status \| seed \| promote` | 知识脑版本管理 |
-| `/pentest-notify-test` | 通知通道测试(Bark/Server酱/webhook) |
+| `/pentest-notify-test` | 通知通道测试(读 `~/.d2d-data/config/notify.json`, webhook 外置不入库) |
 | `/pentest-stop` | 停止全部并冻结 |
 
 **注意**: 带参数命令必须从输入框的命令建议菜单选择(输入 `/` 弹出), 直接回车带参行会被当作聊天发给 LLM。
@@ -195,7 +211,7 @@ brief 不含类清单/固定动作引导, worker 自主测绘→假设→攻击;
 | 多厂商路由 | dsh-llm-pi-ai: 任意 OpenAI 兼容厂商; per-worker 临时 DSH_HOME(symlink overlay)注入模型, key 只走 env 不落盘 | `plugin/pentest-dsh/adapter-dsh.mjs` `buildModelHome` |
 | OAST | 带外 HTTP **+ DNS** 双通道(零依赖 dgram 应答, 首 label = finding 归因), 合并 `/hits?tail=N` | `scripts/gateway/oast.mjs` |
 | SPA 渲染 | CDP 驱动 headless chrome(附着或自启), DOM 链接 + XHR/fetch 端点 → `Endpoint` 节点(`tech=spa-cdp`); 无 chrome 优雅降级 | `scripts/gateway/spa-render.mjs` |
-| 出网治理 | 连接层 scope 强制(每 30s 动态拉 Engagement.scope ∪ 静态白名单, 子域通配) + per-host 令牌桶限速 + 全量请求审计 | `scripts/gateway/egress-gateway.mjs` |
+| 出网治理 | 连接层 scope 强制(每 30s 动态拉 Engagement.scope ∪ 静态白名单, 子域通配 + CIDR 按位匹配) + per-host 令牌桶限速 + 全量请求审计; worker env 注入 `http_proxy` 强制走网关(graphd 回环 `NO_PROXY` 豁免), **start-all.sh 默认拉起** | `scripts/gateway/egress-gateway.mjs`, `plugin/pentest-dsh/adapter-dsh.mjs` |
 | 运维 | 图快照备份(SIGSTOP 停写窗口, 14 天滚动, 异机 hook); worker `cwd=artifact dir`(不污染仓库根) | `scripts/ops/backup-graph.sh` |
 
 ---
@@ -210,7 +226,7 @@ brief 不含类清单/固定动作引导, worker 自主测绘→假设→攻击;
 
 ## 数据布局
 
-运行数据在**仓库外**: `~/.d2d-data/{runs,evidence,brain/{versions,current,shadow},knowledge/inbox,config,backups}`。仓库只带代码 + `brain/seed/`(公开知识基线) + `config/*.example.json`。`manifest.sha256` 覆盖安装树, 安装末尾校验。
+运行数据在**仓库外**: `~/.d2d-data/{runs,evidence,brain/{versions,current,shadow},knowledge/inbox,config,backups}`。仓库只带代码 + `brain/seed/`(公开知识基线) + `config/*.example.json`。`manifest.sha256` 覆盖发布快照(本地改代码/装依赖后校验会红, 属预期, 不影响使用)。凭据类配置(model-policies.json / notify.json — webhook URL 内嵌推送 token)一律外置 DATA_DIR, 绝不入库。
 
 ---
 
@@ -260,6 +276,8 @@ node scripts/brain/rollback.sh                            # current 切回父版
 node scripts/report/src-export.mjs [--graph 8766]         # SRC 报告(仅 verified, 去重, CVSS, 账本)
 bash scripts/ops/backup-graph.sh                          # graphd 实例快照
 bash ops/start-all.sh                                     # 全栈启动(install.sh 生成)
+curl -s http://127.0.0.1:8888/health                      # egress-gateway 状态(动态 scope/限速)
+curl -s 'http://127.0.0.1:8890/hits?tail=50'              # OAST 最近命中(label 归因)
 ```
 
 ## 测试

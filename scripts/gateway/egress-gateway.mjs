@@ -37,7 +37,10 @@ async function refreshScope() {
       for (const r of data.rows ?? []) {
         for (const s of String(r.s ?? '').split(',')) {
           const v = s.trim().toLowerCase()
-          if (v) next.add(v.startsWith('.') ? v : `.${v}`)
+          if (!v) continue
+          // 保留原文(IP/CIDR 精确匹配用); 域名形态额外记一条 ".域" 供子域通配
+          next.add(v)
+          if (!v.includes('/') && !/^\d+\.\d+\.\d+\.\d+$/.test(v)) next.add(`.${v}`)
         }
       }
     } catch { /* 单图抖动保留其余 */ }
@@ -45,11 +48,27 @@ async function refreshScope() {
   dynScope = next
 }
 refreshScope(); setInterval(refreshScope, 30_000)
+// scope 是 CIDR(如 192.168.1.0/24)时按位匹配 — 字符串后缀匹配会误杀段内主机(2026-09-01 接线时实证)
+function ipToInt(ip) {
+  const p = String(ip).split('.').map(Number)
+  if (p.length !== 4 || p.some((x) => !Number.isInteger(x) || x < 0 || x > 255)) return null
+  return (((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3]) >>> 0
+}
+function ipInCidr(ip, cidr) {
+  const [base, bitsStr] = String(cidr).split('/')
+  const b = ipToInt(base), v = ipToInt(ip)
+  if (b === null || v === null) return false
+  const bits = bitsStr === undefined || bitsStr === '' ? 32 : Number(bitsStr)
+  if (!Number.isInteger(bits) || bits < 0 || bits > 32) return false
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0
+  return (v & mask) === (b & mask)
+}
 function hostAllowed(host) {
   const h = String(host || '').toLowerCase().replace(/:\d+$/, '')
   if (STATIC_ALLOW.has(h)) return true
   for (const a of [...STATIC_ALLOW, ...dynScope]) {
-    if (a.startsWith('.')) { if (h.endsWith(a) || h === a.slice(1)) return true }
+    if (a.includes('/')) { if (ipInCidr(h, a)) return true }
+    else if (a.startsWith('.')) { if (h.endsWith(a) || h === a.slice(1)) return true }
     else if (h === a) return true
   }
   return false
