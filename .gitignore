@@ -14,8 +14,6 @@ __pycache__/
 checkpoints/
 evidence/
 experience.json
-END
-%2Fdev%2Fnull
 
 # 凭证
 *.key
@@ -76,6 +74,8 @@ rce_mono.txt
 .d2d-data/
 # A-2: 用户机器的模型策略不入库(仓库只留 example 模板)
 config/model-policies.json
+# D-6: webhook URL 内嵌推送 token — 外置 DATA_DIR, 仓库只留 example 模板
+config/notify.json
 artifacts/
 .tmp_*/
 test.txt
