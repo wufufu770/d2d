@@ -323,12 +323,13 @@ window.__ModuleLoader__.load({
       const total = entries.reduce((a, [, n]) => a + n, 0)
       return h(Card, { title: '模型用量 · 累计', extra: h('span', panel.muted(0.45), `共 ${total} 次调度`) },
         // R5: 口径标注 —— 这是自安装起跨轮次的累计记账, 不是当前 engagement 的
-        h('div', panel.muted(0.45), '自安装起全部轮次的 worker 派发记账(含已停止轮次)'),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
+          h('div', panel.muted(0.45), '自安装起全部轮次的 worker 派发记账(含已停止轮次)'),
         entries.map(([m, n]) => h('div', { key: m, style: { display: 'grid', gridTemplateColumns: 'minmax(64px, 38%) 1fr auto', gap: '6px', alignItems: 'center' } },
           h('span', { ...panel.mono, style: { ...panel.mono.style, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: m }, shortModel(m)),
           h('div', { style: { height: '6px', borderRadius: '3px', background: 'var(--d2d-line)', overflow: 'hidden' } },
             h('div', { style: { height: '100%', width: `${Math.round((n / max) * 100)}%`, borderRadius: '3px', background: run?.quotaHits?.includes?.(m) ? 'var(--d2d-sev-high)' : 'var(--d2d-brand)' } })),
-          h('span', { ...panel.mono, style: { ...panel.mono.style, opacity: '.7' } }, `${n} 次`, run?.quotaHits?.includes?.(m) ? ' ⚠' : ''))))
+          h('span', { ...panel.mono, style: { ...panel.mono.style, opacity: '.7' } }, `${n} 次`, run?.quotaHits?.includes?.(m) ? ' ⚠' : '')))))
     }
 
     // ---- Worker 鱼骨抽屉: 执行轨迹(run-log.jsonl 事件 + checkpoint/todo 折叠) ----
@@ -398,22 +399,17 @@ window.__ModuleLoader__.load({
 
     function WorkersCard({ snap, now }) {
       const [openId, setOpenId] = useState(null)
-      const [expandAll, setExpandAll] = useState(false)
       const agents = snap.agents ?? []
       const alive = agents.filter((a) => a.status === 'running' && !a.zombie).length
-      // R5: 默认只展开运行中的 worker + 补足到 4 行, 其余折叠 —— done/僵尸历史不刷屏
-      const running = agents.filter((a) => a.status === 'running')
-      const visible = expandAll ? agents : [...running, ...agents.filter((a) => a.status !== 'running')].slice(0, Math.max(4, running.length))
-      const hidden = agents.length - visible.length
+      // R5.1: 运行中的排前面, 全量渲染进固定高度滚动容器(替代展开/收起)
+      const sorted = [...agents].sort((a, b) => (a.status === 'running' ? 0 : 1) - (b.status === 'running' ? 0 : 1))
       return h(Card, {
         title: `Workers · 存活 ${alive}/${agents.length}`,
-        extra: hidden > 0 || expandAll ? h('button', {
-          ...panel.btn({ padding: '1px 8px' }),
-          onClick: () => setExpandAll(!expandAll),
-        }, expandAll ? '收起' : `展开全部 ${agents.length}`) : null,
+        extra: h('span', panel.muted(0.45), `${agents.length} 条 · 滚轮查看`),
       },
-        visible.length
-          ? visible.map((a) => h('div', { key: a.worker_id, style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+        sorted.length
+          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '320px', overflowY: 'auto', paddingRight: '2px' } },
+            sorted.map((a) => h('div', { key: a.worker_id, style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
             h('button', {
               onClick: () => setOpenId(openId === a.worker_id ? null : a.worker_id),
               style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, border: 'none', background: 'transparent', color: 'inherit', padding: 0, textAlign: 'left' },
@@ -424,9 +420,9 @@ window.__ModuleLoader__.load({
               a.chain ? h('span', panel.muted(0.5), a.chain) : null,
               h('span', { style: { fontSize: '10px', color: a.zombie ? 'var(--d2d-warn)' : 'inherit', opacity: '.7', whiteSpace: 'nowrap', flex: '0 0 auto' } },
                 (a.zombie ? `失联 ${fmtAge(now - (Date.parse(a.updated_at) || 0))}` : (a.status || '?')), ' ▸')),
-            openId === a.worker_id ? h(WorkerDrawer, { a, events: snap.run?.events ?? [], now }) : null))
+            openId === a.worker_id ? h(WorkerDrawer, { a, events: snap.run?.events ?? [], now }) : null)))
           : h('div', panel.muted(), '暂无 worker 心跳(AgentIdentity 为空)'),
-        agents.length ? h('div', panel.muted(0.4), expandAll ? '点击行展开执行轨迹' : `已折叠 ${hidden} 条历史 — 点「展开全部」查看 · 点击行展开执行轨迹`) : null)
+        agents.length ? h('div', panel.muted(0.4), '运行中置顶 · 点击行展开执行轨迹') : null)
     }
 
     // ---- 漏斗卡: 七态条形, 点击聚焦该状态 findings 迷你列表 ----
@@ -460,9 +456,10 @@ window.__ModuleLoader__.load({
       const gaps = snap.gaps ?? []
       return h(Card, { title: '覆盖缺口', extra: h('span', panel.muted(0.45), 'coverage_votes<2') },
         gaps.length
-          ? gaps.map((g, i) => h('div', { key: i, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
-            h('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: 'var(--d2d-warn)', flex: '0 0 auto', alignSelf: 'center' } }),
-            h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, g || '(无链名)')))
+          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '240px', overflowY: 'auto', paddingRight: '2px' } },
+            gaps.map((g, i) => h('div', { key: i, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
+              h('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: 'var(--d2d-warn)', flex: '0 0 auto', alignSelf: 'center' } }),
+              h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, g || '(无链名)'))))
           : h('div', panel.muted(0.45), '无未覆盖链 — 端点全部 exhausted/双投票'))
     }
 
@@ -471,10 +468,11 @@ window.__ModuleLoader__.load({
       const list = snap.experience ?? []
       return h(Card, { title: `经验库 · ${snap.counts.experience}`, extra: h('span', panel.muted(0.45), 'prior 权重序') },
         list.length
-          ? list.map((x) => h('div', { key: x.id, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
-            h('span', { ...panel.mono, style: { ...panel.mono.style, color: 'var(--d2d-ring-deep)', fontWeight: 600, flex: '0 0 auto' } }, `w=${x.prior}`),
-            h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }, title: `${x.pattern} @ ${x.stack}` }, x.pattern || x.id),
-            h('span', panel.muted(0.5), `${x.hits}命中/${x.wins}胜`)))
+          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '240px', overflowY: 'auto', paddingRight: '2px' } },
+            list.map((x) => h('div', { key: x.id, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
+              h('span', { ...panel.mono, style: { ...panel.mono.style, color: 'var(--d2d-ring-deep)', fontWeight: 600, flex: '0 0 auto' } }, `w=${x.prior}`),
+              h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }, title: `${x.pattern} @ ${x.stack}` }, x.pattern || x.id),
+              h('span', panel.muted(0.5), `${x.hits}命中/${x.wins}胜`))))
           : h('div', panel.muted(0.45), '暂无经验卡(ExperienceWeight 为空) — verify 环验证后沉淀'))
     }
 
@@ -507,11 +505,12 @@ window.__ModuleLoader__.load({
         !off.has('exp') ? h(ExperienceCard, { snap }) : null,
         h(Card, { title: `开放信号 tail · ${snap.counts.signals_open}` },
           snap.signals.length
-            ? snap.signals.map((s) =>
-              h('div', { key: s.id, style: { display: 'flex', gap: '7px', alignItems: 'baseline', minWidth: 0 } },
-                h('span', panel.chip(), s.type || '?'),
-                h('span', { ...panel.mono, style: { ...panel.mono.style, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, s.id),
-                h('span', panel.muted(0.5), `w=${s.weight}`)))
+            ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
+              snap.signals.map((s) =>
+                h('div', { key: s.id, style: { display: 'flex', gap: '7px', alignItems: 'baseline', minWidth: 0 } },
+                  h('span', panel.chip(), s.type || '?'),
+                  h('span', { ...panel.mono, style: { ...panel.mono.style, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, s.id),
+                  h('span', panel.muted(0.5), `w=${s.weight}`))))
             : h('div', panel.muted(), '无开放信号 — discovery 环产出后自动入列')))
     }
 
