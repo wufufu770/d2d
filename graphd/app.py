@@ -287,6 +287,36 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/query", "/write/finding", "/write/signal", "/write/hypothesis"):
             if not self._auth("worker"):
                 return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
+        # R6: 排除清单(denylist)硬拦截 —— 结构化写端点全字段扫描(禁引用: 载荷含排除资产即 403)。
+        # 实证通道: /write/signal 的 evidence 带 mail.ztgame.com 曾直穿(旧实现只扫 /query 变更类 cypher)。
+        # /write/transition 豁免 —— 合规隔离转移的 reason 需要引用红线资产本身。
+        if self.path.startswith("/write/") and self.path != "/write/transition":
+            _denied = list(DENYLIST.get("domains", [])) + list(DENYLIST.get("cidr_prefix", []))
+            try:
+                with _locked():  # V-11: 锁带 5s deadline
+                    _c = kuzu.Connection(db())
+                    _r = _c.execute("MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.scope")
+                    while _r.has_next():
+                        for _s in str(_r.get_next()[0] or "").split(","):
+                            _s = _s.strip().lower()
+                            if _s.startswith("!") and len(_s) > 1 and _s[1:] not in _denied:
+                                _denied.append(_s[1:])
+            except Exception as e:
+                return self._send(503, {"ok": False, "error": f"denylist check failed (fail-closed): {str(e)[:120]}"})
+            if _denied:
+                _blob = json.dumps(req, ensure_ascii=False).lower()
+                _hit = None
+                for _d in _denied:
+                    # 网段前缀条目(如 "222.73.243.")后接数字 IP 主机位; 域名条目要求词边界
+                    if _d.endswith("."):
+                        _pat = r"(?:^|[^a-z0-9.\-])" + re.escape(_d) + r"\d"
+                    else:
+                        _pat = r"(?:^|[^a-z0-9.\-])" + re.escape(_d) + r"(?:$|[^a-z0-9\-])"
+                    if re.search(_pat, _blob) or f"https://{_d}" in _blob or f"http://{_d}" in _blob:
+                        _hit = _d
+                        break
+                if _hit:
+                    return self._send(403, {"ok": False, "error": f"excluded asset (denylist 红线): {_hit} — 排除资产禁测/禁枚举/禁引用, 载荷含之即拒绝"})
         # ---- 结构化写端点: 参数校验替代内联 cypher 正则扫描(根治 #21 死门与 params 旁路) ----
 
         if self.path in ("/write/finding", "/write/signal", "/write/hypothesis"):
@@ -558,7 +588,7 @@ if __name__ == "__main__":
             os.chmod(w_tok_path, 0o600)
             os.environ["P2P_WORKER_TOKEN"] = w_tok
     # R6.1: 全局黑名单(denylist.json) — 与白名单对应; 对所有 engagement 的写门控生效
-    global DENYLIST
+    # (模块级 DENYLIST 已在文件头初始化; 此处同模块作用域, 无需 global)
     try:
         _dl_path = os.environ.get("P2P_DENYLIST_FILE", os.path.expanduser("~/.d2d-data/config/denylist.json"))
         with open(_dl_path) as _dlf:
