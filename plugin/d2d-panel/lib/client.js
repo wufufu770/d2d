@@ -193,13 +193,19 @@ window.__ModuleLoader__.load({
         return h(Card, { title: 'Engagement' },
           h('div', panel.muted(), '无活跃 engagement — 用 /pentest 命令开始'))
       }
-      const state = e.status === 'active' ? '运行中' : e.status
+      const state = e.status === 'active' ? '运行中'
+        : e.status === 'frozen' ? '已冻结'
+        : e.status === 'exhausted' ? '已收工(exhausted)'
+        : e.status
+      const stale = e.status !== 'active'
       return h(Card, {
         title: 'Engagement',
         extra: h('span', { ...panel.chip({ borderColor: e.status === 'active' ? 'var(--d2d-ok)' : 'var(--d2d-line-strong)' }) }, state),
       },
         h('div', { ...panel.mono, style: { ...panel.mono.style, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, e.name),
         h('div', panel.muted(0.55), `${e.target || '?'} · scope: ${e.scope || '?'}`),
+        // R5: 非运行态明示"历史轮次" —— 与新任务区分, 避免误读为仍在跑
+        stale ? h('div', panel.muted(0.5), '历史轮次 — 发起新任务将创建新的 engagement(本卡片始终显示最新一条)') : null,
         h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
           h('span', { style: { fontSize: '22px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' } },
             pct === null ? '—' : `${pct}%`),
@@ -314,7 +320,10 @@ window.__ModuleLoader__.load({
         return h(Card, { title: '模型用量' }, h('div', panel.muted(0.45), '无调度记录 — worker 派发后自动入列'))
       }
       const max = Math.max(...entries.map(([, n]) => n), 1)
-      return h(Card, { title: '模型用量', extra: h('span', panel.muted(0.45), `共 ${entries.reduce((a, [, n]) => a + n, 0)} 次调度`) },
+      const total = entries.reduce((a, [, n]) => a + n, 0)
+      return h(Card, { title: '模型用量 · 累计', extra: h('span', panel.muted(0.45), `共 ${total} 次调度`) },
+        // R5: 口径标注 —— 这是自安装起跨轮次的累计记账, 不是当前 engagement 的
+        h('div', panel.muted(0.45), '自安装起全部轮次的 worker 派发记账(含已停止轮次)'),
         entries.map(([m, n]) => h('div', { key: m, style: { display: 'grid', gridTemplateColumns: 'minmax(64px, 38%) 1fr auto', gap: '6px', alignItems: 'center' } },
           h('span', { ...panel.mono, style: { ...panel.mono.style, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: m }, shortModel(m)),
           h('div', { style: { height: '6px', borderRadius: '3px', background: 'var(--d2d-line)', overflow: 'hidden' } },
@@ -389,11 +398,22 @@ window.__ModuleLoader__.load({
 
     function WorkersCard({ snap, now }) {
       const [openId, setOpenId] = useState(null)
+      const [expandAll, setExpandAll] = useState(false)
       const agents = snap.agents ?? []
       const alive = agents.filter((a) => a.status === 'running' && !a.zombie).length
-      return h(Card, { title: `Workers · 存活 ${alive}/${agents.length}` },
-        agents.length
-          ? agents.map((a) => h('div', { key: a.worker_id, style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+      // R5: 默认只展开运行中的 worker + 补足到 4 行, 其余折叠 —— done/僵尸历史不刷屏
+      const running = agents.filter((a) => a.status === 'running')
+      const visible = expandAll ? agents : [...running, ...agents.filter((a) => a.status !== 'running')].slice(0, Math.max(4, running.length))
+      const hidden = agents.length - visible.length
+      return h(Card, {
+        title: `Workers · 存活 ${alive}/${agents.length}`,
+        extra: hidden > 0 || expandAll ? h('button', {
+          ...panel.btn({ padding: '1px 8px' }),
+          onClick: () => setExpandAll(!expandAll),
+        }, expandAll ? '收起' : `展开全部 ${agents.length}`) : null,
+      },
+        visible.length
+          ? visible.map((a) => h('div', { key: a.worker_id, style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
             h('button', {
               onClick: () => setOpenId(openId === a.worker_id ? null : a.worker_id),
               style: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, border: 'none', background: 'transparent', color: 'inherit', padding: 0, textAlign: 'left' },
@@ -406,7 +426,7 @@ window.__ModuleLoader__.load({
                 (a.zombie ? `失联 ${fmtAge(now - (Date.parse(a.updated_at) || 0))}` : (a.status || '?')), ' ▸')),
             openId === a.worker_id ? h(WorkerDrawer, { a, events: snap.run?.events ?? [], now }) : null))
           : h('div', panel.muted(), '暂无 worker 心跳(AgentIdentity 为空)'),
-        agents.length ? h('div', panel.muted(0.4), '点击行展开执行轨迹') : null)
+        agents.length ? h('div', panel.muted(0.4), expandAll ? '点击行展开执行轨迹' : `已折叠 ${hidden} 条历史 — 点「展开全部」查看 · 点击行展开执行轨迹`) : null)
     }
 
     // ---- 漏斗卡: 七态条形, 点击聚焦该状态 findings 迷你列表 ----
@@ -617,8 +637,9 @@ window.__ModuleLoader__.load({
           h(Stepper, { byState, filter, setFilter })),
         filter ? h(Card, { title: `${filter} · ${shown.length}`, extra: h('button', { ...panel.btn(), onClick: () => setFilter(null) }, '清除筛选') },
           shown.length
-            ? shown.slice(0, 50).map((f) =>
-              h(FindingCard, { key: f.id, f, expanded: openId === f.id, onToggle: () => setOpenId(openId === f.id ? null : f.id), refresh }))
+            ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '360px', overflowY: 'auto', paddingRight: '2px' } },
+              shown.map((f) =>
+                h(FindingCard, { key: f.id, f, expanded: openId === f.id, onToggle: () => setOpenId(openId === f.id ? null : f.id), refresh })))
             : h('div', panel.muted(0.4), '该状态无记录')) : null,
         h('div', {
           style: {
@@ -628,13 +649,15 @@ window.__ModuleLoader__.load({
           },
         }, COLUMNS.map((col) => {
           const items = shown.filter((f) => col.states.includes(f.state))
-          return h('div', { key: col.key, ...panel.card, style: { ...panel.card.style, background: 'transparent' } },
+          return h('div', { key: col.key, ...panel.card, style: { ...panel.card.style, background: 'transparent', display: 'flex', flexDirection: 'column', minWidth: 0 } },
             h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
               h('span', panel.cardTitle, col.label),
               h('b', { style: { fontSize: '12px' } }, String(macro[col.key] ?? 0))),
+            // R5: 列体固定高度 + 列内滚动 —— 115 条 candidate 不再把页面顶出三屏
             items.length
-              ? items.slice(0, 30).map((f) =>
-                h(FindingCard, { key: f.id, f, expanded: openId === f.id, onToggle: () => setOpenId(openId === f.id ? null : f.id), refresh }))
+              ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '360px', overflowY: 'auto', paddingRight: '2px' } },
+                items.map((f) =>
+                  h(FindingCard, { key: f.id, f, expanded: openId === f.id, onToggle: () => setOpenId(openId === f.id ? null : f.id), refresh })))
               : h('div', panel.muted(0.4), '空'))
         })))
     }
