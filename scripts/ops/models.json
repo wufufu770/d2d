@@ -1,0 +1,29 @@
+{
+  "_说明": "由 model-rotate.mjs sync 生成, vision/notes 请手工修订",
+  "models": [
+    {
+      "id": "minimax-cn/MiniMax-M2.7",
+      "vision": false,
+      "ctx": 204800,
+      "notes": ""
+    },
+    {
+      "id": "minimax-cn/MiniMax-M2.7-highspeed",
+      "vision": false,
+      "ctx": 204800,
+      "notes": ""
+    },
+    {
+      "id": "minimax-cn/MiniMax-M3",
+      "vision": false,
+      "ctx": 1000000,
+      "notes": ""
+    },
+    {
+      "id": "opencode-go/mimo-v2.5",
+      "vision": false,
+      "ctx": 1000000,
+      "notes": ""
+    }
+  ]
+}

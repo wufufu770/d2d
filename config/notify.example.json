@@ -1,0 +1,10 @@
+{
+  "_说明": "战果通知 — webhook_url 支持任意 POST JSON 端点(Bark/Server酱/自建均可); method 可 GET; 留空 webhook_url 即关闭。",
+  "webhook_url": "",
+  "method": "POST",
+  "_示例": {
+    "bark": "https://api.day.app/你的key/d2d战果通知",
+    "serverchan": "https://sctapi.ftqq.com/你的key.send",
+    "generic": "https://your-endpoint.example.com/d2d-hook"
+  }
+}
