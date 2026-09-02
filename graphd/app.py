@@ -5,6 +5,9 @@ stdlib only (kuzu 除外). GET /health POST /query POST /reset
 import hmac
 import json
 import os
+
+# R6.1: 全局黑名单(denylist.json)运行时缓存 — 启动时从文件加载, 对所有 engagement 生效
+DENYLIST = {"domains": [], "cidr_prefix": []}
 import re
 import sys
 import threading
@@ -432,6 +435,13 @@ class Handler(BaseHTTPRequestHandler):
                                         denied.append(d)
                                 else:
                                     allowed.append(s)
+                            # R6.1: 合并全局黑名单文件(denylist.json)
+                            for d in DENYLIST.get("domains", []):
+                                if d not in denied:
+                                    denied.append(d)
+                            for c in DENYLIST.get("cidr_prefix", []):
+                                if c not in denied:
+                                    denied.append(c)
                             if not allowed:
                                 pass  # 无活跃 engagement 时开放（首个创建）
                             else:
@@ -547,6 +557,16 @@ if __name__ == "__main__":
                 f.write(w_tok)
             os.chmod(w_tok_path, 0o600)
             os.environ["P2P_WORKER_TOKEN"] = w_tok
+    # R6.1: 全局黑名单(denylist.json) — 与白名单对应; 对所有 engagement 的写门控生效
+    global DENYLIST
+    try:
+        _dl_path = os.environ.get("P2P_DENYLIST_FILE", os.path.expanduser("~/.d2d-data/config/denylist.json"))
+        with open(_dl_path) as _dlf:
+            _dl = json.load(_dlf)
+        DENYLIST["domains"] = [str(x).lower() for x in _dl.get("domains", [])]
+        DENYLIST["cidr_prefix"] = [str(x) for x in _dl.get("cidr_prefix", [])]
+    except Exception:
+        DENYLIST = {"domains": [], "cidr_prefix": []}
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     _tok = "required" if os.environ.get("P2P_TOKEN_REQUIRED") == "1" else "open"
     print(f"[graphd] listening :{PORT} db={DB_PATH} token_required={_tok} "

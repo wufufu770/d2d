@@ -204,6 +204,12 @@ window.__ModuleLoader__.load({
       },
         h('div', { ...panel.mono, style: { ...panel.mono.style, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, e.name),
         h('div', panel.muted(0.55), `${e.target || '?'} · scope: ${e.scope || '?'}`),
+        // R6.1: 黑名单可视 —— 与白名单对应的排除资产, 门控双层硬拦截
+        (snap.denylist?.domains?.length || snap.denylist?.cidr_prefix?.length)
+          ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' } },
+            h('span', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', fontWeight: 600 } }, '⛔ 排除资产(黑名单):'),
+            [...(snap.denylist.domains ?? []), ...(snap.denylist.cidr_prefix ?? [])].map((d) =>
+              h('span', { key: d, ...panel.chip({ borderColor: 'var(--d2d-sev-high)', color: 'var(--d2d-sev-high)' }), style: { fontSize: '9px' } }, d))) : null,
         // R5: 非运行态明示"历史轮次" —— 与新任务区分, 避免误读为仍在跑
         stale ? h('div', panel.muted(0.5), '历史轮次 — 发起新任务将创建新的 engagement(本卡片始终显示最新一条)') : null,
         h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
