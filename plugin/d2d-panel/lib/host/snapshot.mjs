@@ -74,6 +74,15 @@ export function readHostToken(env = process.env) {
   try { return fs.readFileSync(f, 'utf8').trim() } catch { return '' }
 }
 
+/** R6.1: 全局黑名单(denylist.json) — 与白名单对应, 面板 ENGAGEMENT 卡展示 + 门控同源。 */
+export function readDenylist(env = process.env) {
+  try {
+    const p = env.P2P_DENYLIST_FILE ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/denylist.json`
+    const d = JSON.parse(fs.readFileSync(p, 'utf8'))
+    return { domains: (d.domains ?? []).map(String), cidr_prefix: (d.cidr_prefix ?? []).map(String) }
+  } catch { return { domains: [], cidr_prefix: [] } }
+}
+
 /** 模型策略(A-2 外置): DATA_DIR/config/model-policies.json, 缺失返回 null(fleet 卡降级)。*/
 export function readFleet(env = process.env) {
   const dir = env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
@@ -237,10 +246,19 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null } = 
   const now = new Date()
   const covTotal = num(coverageRows?.[0]?.total)
   const covCovered = num(coverageRows?.[0]?.covered)
+  // R6.1: 黑名单可视 —— 全局 denylist.json + 当前 engagement scope 的 `!` 条目合并展示
+  const scopeStr = String(engRows?.[0]?.scope ?? '')
+  const denyFromScope = scopeStr.split(',').map((s) => s.trim()).filter((s) => s.startsWith('!')).map((s) => s.slice(1))
+  const gd = readDenylist()
+  const denylist = {
+    domains: [...new Set([...gd.domains, ...denyFromScope])],
+    cidr_prefix: [...gd.cidr_prefix],
+  }
   return {
     ok: true,
     now: now.toISOString(),
     engagement: projectEngagement(engRows?.[0] ?? null),
+    denylist,
     counts: {
       endpoints: num(endpoints?.[0]?.n),
       signals_open: num(signalsOpen?.[0]?.n),
