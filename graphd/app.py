@@ -418,11 +418,27 @@ class Handler(BaseHTTPRequestHandler):
                             scope = ""
                             while r.has_next():
                                 scope += str(r.get_next()[0] or "") + ","
-                            allowed = [s.strip().lower() for s in scope.split(",") if s.strip()]
+                            # R6: scope 语法扩展 —— `!` 前缀条目 = 排除清单(denylist), 优先于白名单硬拦截。
+                            # 实证: 授权泛域(z tgame.com)的白名单天然放行排除资产子域(mail.ztgame.com),
+                            # 简报红线(提示层)拦不住自主 worker → 需在写门控层 fail-closed。
+                            allowed, denied = [], []
+                            for s in scope.split(","):
+                                s = s.strip().lower()
+                                if not s:
+                                    continue
+                                if s.startswith("!"):
+                                    d = s[1:].strip()
+                                    if d:
+                                        denied.append(d)
+                                else:
+                                    allowed.append(s)
                             if not allowed:
                                 pass  # 无活跃 engagement 时开放（首个创建）
                             else:
                                 for h in hosts:
+                                    # R6: 排除清单优先 —— 后缀/前缀匹配, 命中即拒绝(红线资产零触碰)
+                                    if any(h == d or h.endswith("." + d) or (d.endswith(".") and h.startswith(d)) for d in denied):
+                                        return self._send(403, {"error": f"excluded asset (denylist): {h}"})
                                     if not any(h == a or h.endswith("." + a) for a in allowed):
                                         return self._send(403, {"error": f"scope violation at graphd layer: {h}"})
                         except Exception as e:
