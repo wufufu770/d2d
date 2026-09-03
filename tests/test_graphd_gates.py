@@ -220,3 +220,77 @@ def test_w1_reason_bound_80():
     ok, err, _ = transition_gate("candidate", "triaged", "scheduler", "r" * 81)
     assert not ok and "reason" in err
 
+
+
+# ---- #6: repro 强制门(纯函数) — severity != info 必须带可复现命令 ----
+from graphd.app import repro_gate, normalize_title, titles_duplicate
+
+def test_repro_gate_blocks_empty_for_high():
+    ok, err = repro_gate("high", "")
+    assert not ok and "repro required" in err
+
+def test_repro_gate_blocks_whitespace_for_medium():
+    ok, err = repro_gate("medium", "   ")
+    assert not ok
+
+def test_repro_gate_info_exempt():
+    ok, err = repro_gate("info", "")
+    assert ok and err == ""
+
+def test_repro_gate_passes_with_command():
+    ok, err = repro_gate("critical", "curl -s http://t/login -d \"u=' or 1=1--\" | grep root")
+    assert ok
+
+# ---- #11: 去重门(纯函数) — normalized 标题精确/trigram>0.9 ----
+def test_normalize_title_strips_noise():
+    assert normalize_title("PHP/5.6.40 Version Leak!") == "php5640versionleak"
+    assert normalize_title("  XSS-in <search> ") == "xssinsearch"
+
+def test_dup_exact_after_normalization():
+    assert titles_duplicate(normalize_title("Tencent Cloud WAF Protection Detected"),
+                            normalize_title("tencent-cloud waf protection detected!"))
+
+def test_dup_trigram_near_identical():
+    # 实证样本: "/site/error 静态" 与 "/site/error 静态页" — 只差尾缀
+    assert titles_duplicate(normalize_title("/site/error 静态"), normalize_title("/site/error 静态页"))
+
+def test_not_dup_different_vulns():
+    assert not titles_duplicate(normalize_title("SQL injection in login bypasses auth"),
+                                normalize_title("Reflected XSS in search parameter"))
+
+def test_not_dup_empty():
+    assert not titles_duplicate("", "anything")
+    assert not titles_duplicate("x", "")
+
+# ---- #5: /write/endpoint upsert(真实 kuzu) ----
+kuzu = pytest.importorskip("kuzu")
+from graphd.app import upsert_endpoint
+
+def _endpoint_conn(tmp_path):
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    conn.execute("CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, PRIMARY KEY(id))")
+    return conn
+
+def test_upsert_endpoint_creates_then_updates(tmp_path):
+    conn = _endpoint_conn(tmp_path)
+    eid1 = upsert_endpoint(conn, "https://t.example.com/api/v1/users", "nginx/1.24", "auth")
+    assert eid1.startswith("e-")
+    r = conn.execute("MATCH (e:Endpoint) RETURN count(e) AS c")
+    assert r.get_next()[0] == 1
+    # 幂等: 同 url 再写不新建, 只补指纹
+    eid2 = upsert_endpoint(conn, "https://t.example.com/api/v1/users", "nginx/1.25", "auth2")
+    assert eid2 == eid1
+    r = conn.execute("MATCH (e:Endpoint) RETURN count(e) AS c")
+    assert r.get_next()[0] == 1
+    r = conn.execute("MATCH (e:Endpoint) RETURN e.tech AS t, e.business_chain AS b")
+    row = r.get_next()
+    assert row[0] == "nginx/1.25" and row[1] == "auth2"
+
+def test_upsert_endpoint_different_urls_distinct(tmp_path):
+    conn = _endpoint_conn(tmp_path)
+    a = upsert_endpoint(conn, "https://t.example.com/a", "", "")
+    b = upsert_endpoint(conn, "https://t.example.com/b", "", "")
+    assert a != b
+    r = conn.execute("MATCH (e:Endpoint) RETURN count(e) AS c")
+    assert r.get_next()[0] == 2

@@ -47,10 +47,14 @@ bash d2d/install.sh ~/d2d
 
 1. 全局安装 `@deepseek-ai/dsh` CLI(已装则跳过)
 2. 安装 `kuzu==0.11.3`(graphd 依赖)
-3. 初始化 `~/.d2d-data/`(runs / config / knowledge)与 host-token
-4. 装配 `~/.dsh/profiles/web`(dsh web + better-sidebar + d2d-panel + pentest-dsh)
-5. 装配 `~/.dsh/profiles/headless`(worker 进程: LLM 路由 + 全权限 + token 桥)
-6. 生成 `ops/start-all.sh` 一键启动脚本
+3. 初始化 `~/.d2d-data/`(runs / config / knowledge)与 host-token, 复制 model-policies 与 notify 模板
+4. **就地安装插件自身依赖**(pentest-dsh 的 `@deepseek-ai/dsh-tools`/`dsh-mcp-client` — `link:` 协议不会装 link 目标的依赖, 跳过此步则工具面注册被整体跳过)
+5. 装配 `~/.dsh/profiles/web`(dsh web + better-sidebar + d2d-panel + pentest-dsh + LLM 路由; 检测到 settings.yaml 已有 llm-pi-ai 配置时不覆盖)
+6. 装配 `~/.dsh/profiles/headless`(worker 进程: LLM 路由 + 全权限 + token 桥)
+7. 安装 pentest skill(`~/.dsh/skills/pentest/SKILL.md` — 垃圾洞清单/七问验证门/会话内工具面)
+8. 设置主聊天默认模型(见下「默认模型」), 生成 `ops/start-all.sh` 一键启动脚本
+
+> **pnpm 版本兼容**: 脚本生成的 pnpm-workspace.yaml 带 `allowBuilds: node-pty: true` — pnpm ≥10 默认拦截原生构建脚本, 不放行则 pnpm 11 直接 `ERR_PNPM_IGNORED_BUILDS` 退出 1。该字段在 pnpm 10.5 / 11.x 双版本实测有效。
 
 ### 安装后配置(必做)
 
@@ -73,6 +77,8 @@ bash d2d/install.sh ~/d2d
 
 **② LLM 路由** — 编辑 `~/.dsh/profiles/headless/cordis.patch.yml` 的 `llm-pi-ai` 段: 安装脚本预置了 `minimax-cn`(MiniMax 官方)与 `opencode-go`(OpenCode Go 订阅, 含 mimo-v2.5/mimo-v2.5-pro)两个 provider 示例。换任意厂商只改 `baseURL` + `apiKeyEnv` + `models` 三处。
 
+> **apiKeyEnv 逐字一致(重要, issue #2 实证)**: `cordis.patch.yml` 的 `apiKeyEnv` 必须与你在 web UI Models 页存储的**凭证引用名**完全一致(如 UI 存的是 `OPENCODE_GO_API_KEY` 就不能写 `OPENCODE_API_KEY`)。patch 层对 settings.yaml 的 llm-pi-ai 段是**整体覆盖**语义 — 名字对不齐时宿主 LLM 注册表解析出零个可用模型, 症状是模型选择器空白/发送框禁用且无法自诊。install.sh 检测到 settings.yaml 已有 llm-pi-ai 配置时会跳过模板生成, 保留你的配置。
+
 **③ API key** — 在 `ops/start-all.sh` 里取消注释并填入(与 ② 的 apiKeyEnv 对应):
 
 ```bash
@@ -82,13 +88,29 @@ export OPENCODE_API_KEY=sk-...
 
 key 只经环境变量注入进程, 不落盘。
 
+**④ 模型策略占位符** — `model-policies.json` 若保持模板占位符 `<provider>/<model>` 未编辑, scheduler 会检测到并**回退宿主默认模型 + 一次性通知**(不会像旧版那样派出必败 worker 后静默); `/pentest` 启动返回文本会带逐角色模型解析结果, 配置错误当场可见。
+
+### 默认模型(主聊天)
+
+dsh 出厂把**主聊天**默认模型设为 `deepseek-official/deepseek-v4-flash` — 只配了 MINIMAX/OPENCODE key 的机器上, 一启动主会话就报 `MISSING_CREDENTIAL`。三选一:
+
+1. **什么都不做**(推荐): install.sh 已把 `~/.dsh/settings.yaml` 的 `agent-default-model` 指到 `minimax-cn/MiniMax-M2.7`(文件已存在或已有自有 llm-pi-ai 配置时只提示不覆盖), 且 web profile 已带 LLM 路由;
+2. 补 `DEEPSEEK_API_KEY` 到 `ops/start-all.sh`, 沿用官方默认模型;
+3. 手改 `~/.dsh/settings.yaml` 的 `agent-default-model` 段指到任意已配置路由的 provider/model。
+
+worker 不受此影响 — 渗透 worker 的模型走 per-task 注入(model-policies.json), 与主聊天独立。
+
 ### 启动
 
 ```bash
 bash ops/start-all.sh
-# graphd → http://127.0.0.1:8766
-# dsh web → http://127.0.0.1:8899  ← 浏览器打开
+# graphd        → http://127.0.0.1:8766   图数据库(写入侧 scope 门禁, flock 实例互斥)
+# egress-gateway → http://127.0.0.1:8888  出网治理(scope 强制/限速/审计), worker curl 连接层强制走它
+# oast          → http://127.0.0.1:8890   带外回调(盲注确认通道)
+# dsh web       → http://127.0.0.1:8899   ← 浏览器打开
 ```
+
+停止全部服务用 `Ctrl-C` 后重跑脚本即可 — 脚本内建**优雅停止**(SIGTERM 等 5s 才 SIGKILL), 保护 kuzu WAL 不丢提交。
 
 打开 `http://127.0.0.1:8899`, 选工作区后右侧边栏会出现 **d2d** 与 **d2d Findings** 两个 tab — 即渗透观测面板。
 
@@ -105,6 +127,10 @@ bash ops/start-all.sh
 ```
 
 参数: `<target> [scope] [instances]` — 目标 / 授权 IP 段 / discovery 并行实例数(默认 2)。
+
+**scope 语法(含排除清单)**: 逗号分隔条目, `!` 前缀 = 排除资产(denylist) — 如 `ztgame.com,!mail.ztgame.com,!222.73.243.` 表示泛域授权但**禁测** mail 子域与该网段(授权书排除资产的落地方式)。排除清单在两层硬拦截: bash 门控(命令级拒绝) + graphd 写门控(载荷引用即 403), 简报边界段也会显著列明。全局黑名单可配 `~/.d2d-data/config/denylist.json`(`{"domains":[...],"cidr_prefix":[...]}`, 对所有 engagement 生效)。
+
+**单 engagement 约定**: 同一时刻只允许一个 active engagement — 已有 active 时再 `/pentest` 会被拒绝(调度器 + graphd 双层, issue #4: 并发第二轮的 stopAll 曾把第一轮 worker 全杀留僵尸)。换目标先 `/pentest-stop`; 同目标续跑用 `P2P_RESUME=1`。同理, **同一时刻只跑一个调度进程**(web 宿主或独立 runner 二选一) — 多进程各持私有 state, p2p 工具只能控制本进程的 worker(issue #9)。
 
 回车后系统自动:
 
@@ -183,7 +209,7 @@ P2P_INPROCESS=1 bash ops/start-all.sh
 | `/pentest-report` | SRC 报告导出(去重+CVSS+证据链) |
 | `/pentest-study` | 知识学习(处理 knowledge/inbox, 后台跑) |
 | `/pentest-brain status \| seed \| promote` | 知识脑版本管理 |
-| `/pentest-notify-test` | 通知通道测试(Bark/Server酱/webhook) |
+| `/pentest-notify-test` | 通知通道测试(读 `~/.d2d-data/config/notify.json`, webhook 外置不入库) |
 | `/pentest-stop` | 停止全部并冻结 |
 
 **注意**: 带参数命令必须从输入框的命令建议菜单选择(输入 `/` 弹出), 直接回车带参行会被当作聊天发给 LLM。
@@ -221,8 +247,9 @@ P2P_INPROCESS=1 bash ops/start-all.sh
 | 多厂商路由 | dsh-llm-pi-ai: 任意 OpenAI 兼容厂商; per-worker 临时 DSH_HOME(symlink overlay)注入模型, key 只走 env 不落盘 | `plugin/pentest-dsh/adapter-dsh.mjs` `buildModelHome` |
 | OAST | 带外 HTTP **+ DNS** 双通道(零依赖 dgram 应答, 首 label = finding 归因), 合并 `/hits?tail=N` | `scripts/gateway/oast.mjs` |
 | SPA 渲染 | CDP 驱动 headless chrome(附着或自启), DOM 链接 + XHR/fetch 端点 → `Endpoint` 节点(`tech=spa-cdp`); 无 chrome 优雅降级 | `scripts/gateway/spa-render.mjs` |
-| 出网治理 | 连接层 scope 强制(每 30s 动态拉 Engagement.scope ∪ 静态白名单, 子域通配) + per-host 令牌桶限速 + 全量请求审计 | `scripts/gateway/egress-gateway.mjs` |
-| 运维 | 图快照备份(SIGSTOP 停写窗口, 14 天滚动, 异机 hook); worker `cwd=artifact dir`(不污染仓库根) | `scripts/ops/backup-graph.sh` |
+| 出网治理 | 连接层 scope 强制(每 30s 动态拉 Engagement.scope ∪ 静态白名单, 子域通配 + CIDR 按位匹配) + per-host 令牌桶限速 + 全量请求审计; worker env 注入 `http_proxy` 强制走网关(graphd 回环 `NO_PROXY` 豁免), **start-all.sh 默认拉起** | `scripts/gateway/egress-gateway.mjs`, `plugin/pentest-dsh/adapter-dsh.mjs` |
+| 写通道门禁 | `/write/finding`: repro 必填(severity≠info, 空=400, issue #6) + 同类去重(normalized 标题 trigram>0.9 =409 返回已有 id, issue #11); `/write/endpoint`(issue #5): worker 可写 Endpoint(upsert 幂等) + `/write/signal` 内联 `endpoint_url` 自动建 AT 边(N2 闭环); 单 active engagement 双层门(issue #4) | `graphd/app.py` |
+| 运维 | 图快照备份(SIGSTOP 停写窗口, 14 天滚动, 异机 hook), **调度器每≈30min 自动跑**(issue #14); worker `cwd=artifact dir`(不污染仓库根) | `scripts/ops/backup-graph.sh`, scheduler tick |
 
 ---
 
@@ -231,12 +258,27 @@ P2P_INPROCESS=1 bash ops/start-all.sh
 - SQL 注入探测**只读**(SELECT / 布尔 / 时间盲)。UPDATE/INSERT/DELETE/DROP/TRUNCATE 注入载荷禁止。
 - 删除类端点(DELETE 方法 / 资源删除流)只探存在, 绝不实际调用。
 - 破坏性命令封禁(`rm -rf /`、`mkfs`、`dd of=/dev/`、shutdown、DROP TABLE/DATABASE); `file://` 封禁; 每条 curl 目标必须显式 scheme 且过 scope 门; worker token 不能写 `ExperienceWeight`(仅 host)。
+- **基础设施保护(issue #14)**: 禁止 worker 启动/停止/重启 graphd 等基础设施进程; graphd 不可达时必须报错收工(NEED_INPUT), 严禁自行拉起 — graphd 自身带 flock 实例互斥, 第二实例直接拒绝启动。
+
+---
+
+## 威胁模型(谁信任谁)
+
+静态扫描(Semgrep 类)对本仓库会报若干"SSRF/注入"高危 — 多数是渗透工具的**职责本身**, 此处显式文档化(issue #12):
+
+| 信任面 | 能力 | 边界 |
+|---|---|---|
+| **host token** | 图的 root: `/query` 任意 Cypher(含写)、`/write/transition`、ExperienceWeight 写入 | 只存在于调度器进程 env 与 `~/.config/d2d/host-token`(0600); 泄漏 = 图库全失守 |
+| **worker token** | 结构化写(`/write/finding|signal|hypothesis|endpoint`) + `/query` 只读白名单 | 无 DDL、无七态转移、无经验权重写、无 Engagement/AgentIdentity 修改; scope+denylist 双层门控 |
+| scheduler `q()` → GRAPHD | "SSRF"判定不成立 — 目标恒为本地 graphd | graphd 只绑 127.0.0.1; `P2P_GRAPHD` env 改动即操作者自担 |
+| validator/sanitize 解析不可信输入 | 这正是其职责 | 回归见 `plugin/pentest-dsh/test/`(V-09/sanitize 系列), 门禁 import 实现从不复刻 |
+| worker 进程全权限(danger-full-access) | 渗透必需 | 代价清单: 可触达本机文件/进程 — 简报层禁基础设施操作 + egress-gateway 连接层限网 + bash 门控; 完全隔离需容器/VM 承载 |
 
 ---
 
 ## 数据布局
 
-运行数据在**仓库外**: `~/.d2d-data/{runs,evidence,brain/{versions,current,shadow},knowledge/inbox,config,backups}`。仓库只带代码 + `brain/seed/`(公开知识基线) + `config/*.example.json`。`manifest.sha256` 覆盖安装树, 安装末尾校验。
+运行数据在**仓库外**: `~/.d2d-data/{runs,evidence,brain/{versions,current,shadow},knowledge/inbox,config,backups}`。仓库只带代码 + `brain/seed/`(公开知识基线) + `config/*.example.json`。`manifest.sha256` 覆盖发布快照(本地改代码/装依赖后校验会红, 属预期, 不影响使用)。凭据类配置(model-policies.json / notify.json / denylist.json — webhook URL 内嵌推送 token)一律外置 DATA_DIR, 绝不入库。
 
 ---
 
@@ -284,8 +326,10 @@ node scripts/brain/study.mjs --apply                      # inbox 文章 → sta
 node scripts/brain/promote.mjs --check|--to-shadow|--to-current|--seed|--status
 node scripts/brain/rollback.sh                            # current 切回父版本
 node scripts/report/src-export.mjs [--graph 8766]         # SRC 报告(仅 verified, 去重, CVSS, 账本)
-bash scripts/ops/backup-graph.sh                          # graphd 实例快照
+bash scripts/ops/backup-graph.sh                          # graphd 实例快照(调度器亦每≈30min 自动跑)
 bash ops/start-all.sh                                     # 全栈启动(install.sh 生成)
+curl -s http://127.0.0.1:8888/health                      # egress-gateway 状态(动态 scope/限速)
+curl -s 'http://127.0.0.1:8890/hits?tail=50'              # OAST 最近命中(label 归因)
 ```
 
 ## 测试
