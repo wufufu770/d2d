@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# @wufufu770/d2d-graphd - start graphd Python sidecar
+set -euo pipefail
+
+# Resolve package root (this script is in bin/, package root is one level up)
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+PKG_ROOT="$( cd -- "$SCRIPT_DIR/.." &> /dev/null && pwd )"
+
+# Pre-flight: python3 + kuzu
+if ! command -v python3 &> /dev/null; then
+  echo "[d2d-graphd] ERROR: python3 not found. Install Python 3.10+"
+  exit 1
+fi
+if ! python3 -c 'import kuzu' 2>/dev/null; then
+  echo "[d2d-graphd] ERROR: kuzu python module not installed."
+  echo "  Install: pip install kuzu==0.11.3"
+  echo "  Or reinstall package: npm install -g @wufufu770/d2d-graphd (runs postinstall)"
+  exit 1
+fi
+
+# Default env
+export P2P_GRAPH="${P2P_GRAPH:-$HOME/.d2d-data/kuzu_db}"
+export P2P_GRAPH_PORT="${P2P_GRAPH_PORT:-8766}"
+mkdir -p "$(dirname "$P2P_GRAPH")"
+
+# Initialize host-key if missing
+if ! command -v node &> /dev/null; then
+  echo "[d2d-graphd] WARNING: node not found, skipping host-key init"
+else
+  if [ ! -f "${D2D_CONFIG_DIR:-$HOME/.config/d2d}/host-key.pub" ]; then
+    echo "[d2d-graphd] initializing Ed25519 host-key..."
+    node "$PKG_ROOT/bin/d2d-init-hostkey.mjs" || true
+  fi
+fi
+
+# Start graphd Python
+exec python3 "$PKG_ROOT/graphd/app.py" "$@"

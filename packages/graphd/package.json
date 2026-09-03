@@ -3,10 +3,25 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.mjs",
+  "main": "./graphd/app.py",
+  "bin": {
+    "d2d-graphd": "./bin/d2d-graphd",
+    "d2d-init-hostkey": "./bin/d2d-init-hostkey.mjs"
+  },
   "scripts": {
+    "postinstall": "node ./scripts/postinstall.mjs",
     "build": "echo \"no build step for graphd yet\"",
-    "test": "echo \"no test step for graphd yet\"",
+    "test": "node --test test/*.test.mjs",
     "lint": "echo \"no lint step for graphd yet\""
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "graphd/",
+    "scripts/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
