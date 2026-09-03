@@ -776,7 +776,8 @@ if __name__ == "__main__":
     #      独占非阻塞锁; 锁文件随进程存活, 进程死亡(含 kill -9)由 OS 自动释放。
     import fcntl
     os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
-    _lock_fh = open(DB_PATH + ".lock", "w")
+    # Mimosa 加固: 锁文件 O_NOFOLLOW+0600(防符号链接替换; DB_PATH 为服务端常量, 非用户输入)
+    _lock_fh = os.fdopen(os.open(DB_PATH + ".lock", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600), "w")
     try:
         fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -809,6 +810,17 @@ if __name__ == "__main__":
             sys.exit(1)
         return r
 
+    def _write_token_file(raw_path: str, data: str) -> str:
+        """Mimosa 加固: 唯一 token 落盘点 — 路径白名单校验(_safe_token_path)后 O_NOFOLLOW+0600 写入,
+        三处写入点收敛至此, 防符号链接替换/任意路径写。"""
+        safe = _safe_token_path(raw_path)
+        os.makedirs(os.path.dirname(safe), exist_ok=True)
+        fd = os.open(safe, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(data)
+        os.chmod(safe, 0o600)
+        return safe
+
     # #32: host token 持久化 —— 文件存在则加载进环境; 不存在则生成
     import secrets as _sec
     if not os.environ.get("P2P_HOST_TOKEN"):
@@ -824,17 +836,10 @@ if __name__ == "__main__":
                 with open(_legacy) as _f:
                     os.environ["P2P_HOST_TOKEN"] = _f.read().strip()
                 # 迁移到新路径
-                os.makedirs(os.path.dirname(tok_path), exist_ok=True)
-                with open(tok_path, "w") as f:
-                    f.write(os.environ["P2P_HOST_TOKEN"])
-                os.chmod(tok_path, 0o600)
+                _write_token_file(tok_path, os.environ["P2P_HOST_TOKEN"])
             else:
                 tok = _sec.token_hex(16)
-                os.makedirs(os.path.dirname(tok_path), exist_ok=True)
-                with open(tok_path, "w") as f:
-                    f.write(tok)
-                os.chmod(tok_path, 0o600)
-                os.environ["P2P_HOST_TOKEN"] = tok
+                os.environ["P2P_HOST_TOKEN"] = _write_token_file(tok_path, tok)
     # I-013: worker token 持久化（fail-closed 凭证）
     if not os.environ.get("P2P_WORKER_TOKEN"):
         w_tok_path = _safe_token_path(os.environ.get("P2P_WORKER_TOKEN_FILE", os.path.expanduser("~/.config/d2d/worker-token")))
@@ -843,11 +848,7 @@ if __name__ == "__main__":
                 os.environ["P2P_WORKER_TOKEN"] = _wf.read().strip()
         else:
             w_tok = _sec.token_hex(16)
-            os.makedirs(os.path.dirname(w_tok_path), exist_ok=True)
-            with open(w_tok_path, "w") as f:
-                f.write(w_tok)
-            os.chmod(w_tok_path, 0o600)
-            os.environ["P2P_WORKER_TOKEN"] = w_tok
+            os.environ["P2P_WORKER_TOKEN"] = _write_token_file(w_tok_path, w_tok)
     # R6.1: 全局黑名单(denylist.json) — 与白名单对应; 对所有 engagement 的写门控生效
     # (R6.3 起运行时热重载走 /reload/denylist; 文件缺失/损坏时保持空名单 — 与原启动行为一致)
     try:
