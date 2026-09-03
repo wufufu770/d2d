@@ -3,8 +3,11 @@
 stdlib only (kuzu 除外). GET /health POST /query POST /reset
 """
 import hmac
+import ipaddress
 import json
 import os
+import socket as _socket
+import urllib.parse
 
 # R6.1: 全局黑名单(denylist.json)运行时缓存 — 启动时从文件加载, 对所有 engagement 生效
 DENYLIST = {"domains": [], "cidr_prefix": []}
@@ -13,6 +16,49 @@ import sys
 import threading
 import time
 import uuid
+import pathlib
+
+# P0-M5: literal/comment stripping + structured audit log
+try:
+    from literal_strip import strip_literals_and_comments, strip_and_normalize
+except ImportError:
+    def strip_literals_and_comments(s): return s
+    def strip_and_normalize(s): return (s or "").strip()
+try:
+    from audit import (
+        _audit_log, audit_auth_failure, audit_denylist_hit,
+        audit_transition_violation, audit_token_perm_issue, audit_gate_block,
+    )
+except ImportError:
+    def _audit_log(*a, **k): pass
+    def audit_auth_failure(*a, **k): pass
+    def audit_denylist_hit(*a, **k): pass
+    def audit_transition_violation(*a, **k): pass
+    def audit_token_perm_issue(*a, **k): pass
+    def audit_gate_block(*a, **k): pass
+
+# P0-M5: token file ownership validation
+def _validate_token_files():
+    """Scan ~/.config/d2d/*.token — verify owner is current UID and mode 0o600."""
+    config_dir = pathlib.Path(os.environ.get("D2D_CONFIG_DIR", os.path.expanduser("~/.config/d2d")))
+    if not config_dir.exists():
+        return
+    strict = os.environ.get("P2P_TOKEN_STRICT", "0") == "1"
+    my_uid = os.getuid() if hasattr(os, "getuid") else -1
+    for p in config_dir.glob("*.token"):
+        try:
+            st = p.stat()
+            mode = st.st_mode & 0o777
+            if mode != 0o600 or (my_uid >= 0 and st.st_uid != my_uid):
+                audit_token_perm_issue(str(p), mode, st.st_uid)
+                msg = f"[security] token file {p} mode={oct(mode)} owner={st.st_uid} (expected 0o600 owned by {my_uid})"
+                if strict:
+                    raise SystemExit(f"FATAL: {msg} (P2P_TOKEN_STRICT=1)")
+                print(msg, file=sys.stderr)
+        except Exception:
+            pass
+
+_validate_token_files()
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -210,15 +256,21 @@ def repro_gate(sev: str, repro) -> tuple[bool, str]:
 
 def finding_gates(cypher: str) -> tuple[bool, str]:
     """I-009: 三个门提取为模块级纯函数 — 空标题 / DDL / 垃圾清单
+    P0-M2: strip literals/comments first (防 'DELETE' in string bypass)
+    P0-M3: normalize cypher + case-insensitive entity check
     返回 (ok, err)：ok True 表示通过，False 表示被门拦截，err 为拦截原因
     供 tests/test_graphd_gates.py import 实测，防复刻正则漏检（如 junk NameError）
     """
     import re as _re
+    cypher = strip_and_normalize(cypher)
+    if not cypher:
+        return False, "empty cypher after normalization"
+    cu = cypher.upper()
     # DDL 禁令 — schema 固定，运行期禁止建/删表（最优先，与 Finding 无关）
     if _re.search(r"\b(CREATE|DROP)\s+(NODE\s+|REL\s+)?TABLE", cypher, _re.I):
         return False, "DDL forbidden at runtime (schema is fixed)"
-    # Finding 相关门：仅当涉及 Finding CREATE 时检查
-    if "Finding" in cypher and "CREATE" in cypher.upper():
+    # Finding 相关门：仅当涉及 Finding CREATE 时检查（case-insensitive + word boundary）
+    if _re.search(r"\bFINDING\b", cu) and "CREATE" in cu:
         # 空标题门
         m = _re.search(r"title\s*:", cypher + " ")
         if m:
@@ -235,6 +287,8 @@ def finding_gates(cypher: str) -> tuple[bool, str]:
 
 
 # V-06: worker /query 只读判定提为纯函数(大小写不敏感)。
+# P0-M2: strip literals+comments (防 'set/delete' in string literal bypass)
+# P0-M3: normalize cypher
 # 原 :271/:273 正则区分大小写, Kuzu 关键字大小写不敏感 → 'MATCH (n) detach delete n' 绕过黑名单
 # 删任意节点(2026-08-29 隔离实例杀链实证: 写入→小写删除→复查=0)。提取纯函数供 pytest 锁回归。
 WORKER_READONLY_WHITELIST = re.compile(r"^(MATCH|RETURN|WITH|CALL)\b", re.I)
@@ -244,7 +298,10 @@ WORKER_MUTATION_RE = re.compile(
 
 def worker_query_allowed(cypher: str) -> tuple[bool, str]:
     """worker token /query 只读门: 白名单首词 + 全文变更关键字扫描(均大小写不敏感)。
-    误报取舍: 字符串字面量里含独立 'set/delete' 等词的查询会被拒 —— fail-closed 方向。"""
+    P0-M2: strip literals+comments first; P0-M3: normalize cypher."""
+    cypher = strip_and_normalize(cypher)
+    if not cypher:
+        return False, "empty cypher after normalization"
     if not WORKER_READONLY_WHITELIST.match(cypher):
         return False, "/query is read-only for workers (MATCH/RETURN/WITH/CALL only); use /write/* for mutations"
     if WORKER_MUTATION_RE.search(cypher):
@@ -253,6 +310,125 @@ def worker_query_allowed(cypher: str) -> tuple[bool, str]:
 
 # D-4: 并发连接上限 — ThreadingHTTPServer 每连接一线程, 慢连接可耗尽线程/内存(纵深防御)
 _INFLIGHT = threading.BoundedSemaphore(int(os.environ.get("P2P_MAX_CONNS", "32")))
+
+
+# P0-M4: denylist canonicalization
+def _iter_strings(obj):
+    """Recursively yield all string values from a JSON-like structure."""
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _iter_strings(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _iter_strings(v)
+
+
+def _canonicalize_url(s: str) -> tuple:
+    """Try to parse s as URL, return (host_lower, ip_str_or_None).
+
+    Handles:
+      - Percent-decoded hostnames (example%2Ecom → example.com)
+      - Decimal IP notation (2886729729 = 172.16.0.1)
+      - Standard IPv4/IPv6
+    """
+    s = s.strip()
+    if "://" not in s:
+        s = "http://" + s
+    try:
+        u = urllib.parse.urlparse(s)
+        host = u.hostname
+        if not host:
+            return None, None
+        # Percent-decode hostname (handles %2E, %2F, etc.)
+        try:
+            host = urllib.parse.unquote(host)
+        except Exception:
+            pass
+        host = host.lower().strip(".")
+        # Try to parse as IP
+        try:
+            ip = ipaddress.ip_address(host)
+            return None, str(ip)
+        except ValueError:
+            pass
+        # Decimal IP notation: all-numeric string → int → IPv4
+        if host.isdigit():
+            try:
+                ip = ipaddress.ip_address(int(host))
+                return None, str(ip)
+            except ValueError:
+                pass
+        return host, None
+    except Exception:
+        return None, None
+
+
+# Regex to extract URLs and IP-like strings from arbitrary text
+_URL_RE = re.compile(
+    r'https?://[^\s"\\<>()]+|'
+    r'\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b|'
+    r'\b\d{8,10}\b'  # decimal IP notation
+)
+
+
+def _extract_urls_and_ips(s: str) -> list:
+    """Extract URL-like and IP-like strings from arbitrary text."""
+    return _URL_RE.findall(s or "")
+
+
+def _canonicalized_denylist_check(payload: dict, denied: list) -> str:
+    """P0-M4: structured denylist check. Returns matched entry or empty string.
+
+    Extracts URLs and IPs from all string values in payload, then matches
+    each against the denylist (domains: suffix match; CIDR: network match).
+    """
+    denied_domains = [d for d in denied if "/" not in d and not d.replace(".", "").isdigit()]
+    denied_cidrs = [d for d in denied if "/" in d or d.replace(".", "").isdigit()]
+
+    # Also include CIDRs from existing endpoint-style entries (e.g. "222.73.243.")
+    for d in denied_domains:
+        if d.endswith("."):
+            denied_cidrs.append(d)
+
+    for s in _iter_strings(payload):
+        if not isinstance(s, str) or len(s) < 4:
+            continue
+        # Extract URLs and IPs from arbitrary text
+        candidates = _extract_urls_and_ips(s)
+        # Also try the string itself as a URL
+        candidates.append(s)
+        for candidate in candidates:
+            host, ip = _canonicalize_url(candidate)
+            if ip:
+                for cidr in denied_cidrs:
+                    if _ip_in_network(ip, cidr):
+                        return cidr
+            if host:
+                for dom in denied_domains:
+                    dom_clean = dom.lower().strip(".")
+                    if not dom_clean.endswith("."):  # domain, not prefix
+                        if host == dom_clean or host.endswith("." + dom_clean):
+                            return dom
+    return ""
+
+
+def _ip_in_network(ip_str: str, cidr: str) -> bool:
+    """Check if ip_str is in network cidr (e.g. '10.0.0.0/8' or '222.73.243.')."""
+    try:
+        if "/" in cidr:
+            net = ipaddress.ip_network(cidr, strict=False)
+            return ipaddress.ip_address(ip_str) in net
+        else:
+            # Plain IP or prefix like "222.73.243."
+            if "." in cidr and not cidr.endswith("."):
+                return ip_str == cidr
+            # prefix
+            return ip_str.startswith(cidr)
+    except Exception:
+        return False
+
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -317,6 +493,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
 
+        # P0-M1: socket read timeout (slowloris 防护)
+        try:
+            self.connection.settimeout(int(os.environ.get("P2P_REQ_TIMEOUT", "5")))
+        except Exception:
+            pass
+
         # V-11: Content-Length 数值校验 + 1MB 上限(原 int() 对非数字头抛 ValueError 断连)
         try:
             n = int(self.headers.get("Content-Length", 0) or 0)
@@ -325,7 +507,10 @@ class Handler(BaseHTTPRequestHandler):
         if n > MAX_BODY_BYTES:
             return self._send(413, {"ok": False, "error": f"payload too large (> {MAX_BODY_BYTES} bytes)"})
         try:
-            req = json.loads(self.rfile.read(n) or b"{}")
+            req_raw = self.rfile.read(n) or b"{}"
+            req = json.loads(req_raw)
+        except (_socket.timeout,) as e:
+            return self._send(408, {"ok": False, "error": f"request timeout: {e}"})
         except Exception as e:
             return self._send(400, {"ok": False, "error": f"bad json: {e}"})
         if not isinstance(req, dict):
@@ -334,18 +519,20 @@ class Handler(BaseHTTPRequestHandler):
         tok = os.environ.get("P2P_TOKEN", "")
         _got_tok = self.headers.get("X-Auth", "")
         if tok and not (_got_tok and hmac.compare_digest(_got_tok, tok)):
+            audit_auth_failure("token_mismatch", _got_tok)
             return self._send(401, {"error": "unauthorized"})
         # I-013: /query 与 /write/* 统一 worker 级认证(原先 /query 无 _auth 调用)
         if self.path in ("/query", "/write/finding", "/write/signal", "/write/hypothesis", "/write/endpoint"):
             if not self._auth("worker"):
+                audit_auth_failure("worker_token_required", _got_tok)
                 return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
-        # R6: 排除清单(denylist)硬拦截 —— 结构化写端点全字段扫描(禁引用: 载荷含排除资产即 403)。
-        # 实证通道: /write/signal 的 evidence 带 mail.ztgame.com 曾直穿(旧实现只扫 /query 变更类 cypher)。
+        # R6: 排除清单(denylist)硬拦截 —— 结构化写端点全字段扫描
+        # P0-M4: 替换 substring search 为结构化 URL/IP 解析
         # /write/transition 豁免 —— 合规隔离转移的 reason 需要引用红线资产本身。
         if self.path.startswith("/write/") and self.path != "/write/transition":
             _denied = list(DENYLIST.get("domains", [])) + list(DENYLIST.get("cidr_prefix", []))
             try:
-                with _locked():  # V-11: 锁带 5s deadline
+                with _locked():
                     _c = kuzu.Connection(db())
                     _r = _c.execute("MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.scope")
                     while _r.has_next():
@@ -356,18 +543,11 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(503, {"ok": False, "error": f"denylist check failed (fail-closed): {str(e)[:120]}"})
             if _denied:
-                _blob = json.dumps(req, ensure_ascii=False).lower()
-                _hit = None
-                for _d in _denied:
-                    # 网段前缀条目(如 "222.73.243.")后接数字 IP 主机位; 域名条目要求词边界
-                    if _d.endswith("."):
-                        _pat = r"(?:^|[^a-z0-9.\-])" + re.escape(_d) + r"\d"
-                    else:
-                        _pat = r"(?:^|[^a-z0-9.\-])" + re.escape(_d) + r"(?:$|[^a-z0-9\-])"
-                    if re.search(_pat, _blob) or f"https://{_d}" in _blob or f"http://{_d}" in _blob:
-                        _hit = _d
-                        break
+                # P0-M4: structured canonicalization — extract URL/IPs from payload,
+                # decode percent-encoding, normalize, match against denylist
+                _hit = _canonicalized_denylist_check(req, _denied)
                 if _hit:
+                    audit_denylist_hit(_hit, self.path)
                     return self._send(403, {"ok": False, "error": f"excluded asset (denylist 红线): {_hit} — 排除资产禁测/禁枚举/禁引用, 载荷含之即拒绝"})
         # ---- 结构化写端点: 参数校验替代内联 cypher 正则扫描(根治 #21 死门与 params 旁路) ----
 
