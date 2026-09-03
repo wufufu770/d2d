@@ -9,5 +9,5 @@ bundles:
   - "@wufufu770/d2d-graphd"
 plugins:
   d2d-pentest:
-    inject: ["tools", "commands", "agents"]
+    inject: ["tools", "commands", "agents", "skills"]
     scope: ["session", "engagement"]
