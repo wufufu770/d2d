@@ -1,0 +1,236 @@
+{
+  "$schema": "https://d2d.dev/schemas/tool-registry/v1.json",
+  "version": "0.2.0",
+  "tools": [
+    {
+      "id": "nmap",
+      "category": "pentest/recon",
+      "purpose": "Network port scanner + service detection",
+      "binary": "nmap",
+      "system_install": { "apt": "apt install -y nmap" },
+      "license": "GPL-2.0",
+      "required": false
+    },
+    {
+      "id": "httpx",
+      "category": "pentest/recon",
+      "purpose": "HTTP probing / tech detection / alive host check",
+      "binary": "httpx",
+      "system_install": { "go": "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest" },
+      "license": "MIT",
+      "required": false
+    },
+    {
+      "id": "nuclei",
+      "category": "pentest/scanner",
+      "purpose": "Template-based vulnerability scanner (CVE + misconfig + exposed-panel)",
+      "binary": "nuclei",
+      "system_install": { "go": "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest" },
+      "license": "MIT",
+      "required": false
+    },
+    {
+      "id": "katana",
+      "category": "pentest/recon",
+      "purpose": "Next-gen crawler + spider",
+      "binary": "katana",
+      "system_install": { "go": "go install -v github.com/projectdiscovery/katana/cmd/katana@latest" },
+      "license": "MIT",
+      "required": false
+    },
+    {
+      "id": "ffuf",
+      "category": "pentest/fuzzer",
+      "purpose": "Web fuzzer (path / param / header)",
+      "binary": "ffuf",
+      "system_install": { "go": "go install -v github.com/ffuf/ffuf/v2@latest" },
+      "license": "MIT",
+      "required": false
+    },
+    {
+      "id": "feroxbuster",
+      "category": "pentest/fuzzer",
+      "purpose": "Recursive content discovery",
+      "binary": "feroxbuster",
+      "system_install": { "apt": "apt install -y feroxbuster" },
+      "license": "MIT",
+      "required": false
+    },
+    {
+      "id": "gobuster",
+      "category": "pentest/fuzzer",
+      "purpose": "Dir/DNS/vhost busting",
+      "binary": "gobuster",
+      "system_install": { "go": "go install -v github.com/OJ/gobuster/v3@latest" },
+      "license": "Apache-2.0",
+      "required": false
+    },
+    {
+      "id": "sqlmap",
+      "category": "pentest/sqli",
+      "purpose": "Automated SQL injection detection + exploitation",
+      "binary": "sqlmap",
+      "system_install": { "apt": "apt install -y sqlmap" },
+      "license": "GPLv2",
+      "required": false
+    },
+    {
+      "id": "dalfox",
+      "category": "pentest/xss",
+      "purpose": "XSS scanning + parameter analysis",
+      "binary": "dalfox",
+      "system_install": { "go": "go install -v github.com/hahwul/dalfox/v2@latest" },
+      "license": "MIT",
+      "required": false
+    },
+    {
+      "id": "commix",
+      "category": "pentest/cmdi",
+      "purpose": "Command injection exploitation",
+      "binary": "commix",
+      "system_install": { "apt": "apt install -y commix" },
+      "license": "GPLv3",
+      "required": false
+    },
+    {
+      "id": "interactsh",
+      "category": "pentest/oob",
+      "purpose": "Out-of-band interaction (DNS + HTTP) for blind vuln confirmation",
+      "binary": "interactsh-client",
+      "system_install": { "go": "go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest" },
+      "license": "MIT",
+      "required": false
+    },
+    {
+      "id": "jwt_tool",
+      "category": "pentest/jwt",
+      "purpose": "JWT attack suite (alg=none / weak key / kid inject)",
+      "binary": "jwt_tool",
+      "system_install": { "pip": "pipx install jwt-tool" },
+      "license": "BSD-3-Clause",
+      "required": false
+    },
+    {
+      "id": "jadx",
+      "category": "re/mobile",
+      "purpose": "Android APK decompiler (.java output)",
+      "binary": "jadx",
+      "system_install": { "apt": "apt install -y jadx" },
+      "license": "Apache-2.0",
+      "required": false
+    },
+    {
+      "id": "apktool",
+      "category": "re/mobile",
+      "purpose": "Android APK unpack (smali + resources + manifest)",
+      "binary": "apktool",
+      "system_install": { "apt": "apt install -y apktool" },
+      "license": "Apache-2.0",
+      "required": false
+    },
+    {
+      "id": "frida",
+      "category": "re/mobile",
+      "purpose": "Mobile dynamic instrumentation (Java + native hooks)",
+      "binary": "frida",
+      "system_install": { "pip": "pipx install frida-tools" },
+      "license": "wxWindows",
+      "required": false
+    },
+    {
+      "id": "mobsf",
+      "category": "re/mobile",
+      "purpose": "Mobile Security Framework (auto Android + iOS scan)",
+      "binary": "mobsf",
+      "system_install": { "docker": "docker pull opensecurity/mobile-security-framework-mobsf" },
+      "license": "AGPL-3.0",
+      "required": false
+    },
+    {
+      "id": "wasm2c",
+      "category": "re/wasm",
+      "purpose": "WebAssembly → C decompiler (LLM-readable format)",
+      "binary": "wasm2c",
+      "system_install": { "apt": "apt install -y wabt" },
+      "license": "Apache-2.0",
+      "required": false
+    },
+    {
+      "id": "radare2",
+      "category": "re/native",
+      "purpose": "Native binary reverse engineering (alternative to ghidra)",
+      "binary": "r2",
+      "system_install": { "apt": "apt install -y radare2" },
+      "license": "LGPL-3.0",
+      "required": false
+    },
+    {
+      "id": "pwntools",
+      "category": "re/exploit",
+      "purpose": "Exploit development framework",
+      "binary": "python3 -c 'import pwn'",
+      "system_install": { "pip": "pipx install pwntools" },
+      "license": "MIT",
+      "required": false
+    },
+    {
+      "id": "ghidra",
+      "category": "re/native",
+      "purpose": "Headless Native decompiler (heavy, 2-4GB RAM)",
+      "binary": "ghidra",
+      "system_install": { "manual": "https://ghidra-sre.org/" },
+      "license": "Apache-2.0",
+      "required": false
+    },
+    {
+      "id": "osint_fofa",
+      "category": "osint/passive",
+      "purpose": "FOFA asset search (query by domain/IP/title)",
+      "binary": "node -e 'require(\"@wufufu770/d2d-alternatives/fofa\")'",
+      "system_install": { "env": "FOFA_EMAIL + FOFA_API_KEY" },
+      "license": "MIT",
+      "required": false,
+      "in_process": true
+    },
+    {
+      "id": "osint_hunter",
+      "category": "osint/passive",
+      "purpose": "Hunter (奇安信) asset search",
+      "binary": "node -e 'require(\"@wufufu770/d2d-alternatives/hunter\")'",
+      "system_install": { "env": "HUNTER_API_KEY" },
+      "license": "MIT",
+      "required": false,
+      "in_process": true
+    },
+    {
+      "id": "osint_quake",
+      "category": "osint/passive",
+      "purpose": "Quake (360) asset search",
+      "binary": "node -e 'require(\"@wufufu770/d2d-alternatives/quake\")'",
+      "system_install": { "env": "QUAKE_API_KEY" },
+      "license": "MIT",
+      "required": false,
+      "in_process": true
+    },
+    {
+      "id": "osint_riskbird",
+      "category": "osint/passive",
+      "purpose": "RiskBird 工商画像 + 控股子公司",
+      "binary": "node -e 'require(\"@wufufu770/d2d-alternatives/riskbird\")'",
+      "system_install": { "env": "RISKBIRD_COOKIE" },
+      "license": "MIT",
+      "required": false,
+      "in_process": true
+    },
+    {
+      "id": "http_mitm_proxy",
+      "category": "mitm",
+      "purpose": "In-process MITM proxy (Node, async event + WebSocket hooks)",
+      "binary": "node -e 'require(\"http-mitm-proxy\")'",
+      "system_install": { "npm": "npm install -g http-mitm-proxy" },
+      "license": "MIT",
+      "required": false,
+      "in_process": true
+    }
+  ]
+}

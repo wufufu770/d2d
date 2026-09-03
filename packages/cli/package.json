@@ -9,7 +9,8 @@
   },
   "exports": {
     ".": "./src/index.mjs",
-    "./dsh-bridge": "./src/dsh-bridge/install-cordis.mjs"
+    "./dsh-bridge": "./src/dsh-bridge/install-cordis.mjs",
+    "./dsh-bridge/mcp": "./src/dsh-bridge/mcp-server.mjs"
   },
   "scripts": {
     "build": "echo \"no build step for cli yet\"",
