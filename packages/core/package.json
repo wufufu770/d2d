@@ -4,9 +4,23 @@
   "private": true,
   "type": "module",
   "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./agent-spec": "./src/agent-spec.mjs",
+    "./fsm": "./src/fsm.mjs",
+    "./scope": "./src/scope.mjs",
+    "./cypher": "./src/cypher.mjs",
+    "./checkpoint": "./src/checkpoint.mjs"
+  },
+  "dependencies": {
+    "zod": "^3.22.4"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
   "scripts": {
     "build": "echo \"no build step for core yet\"",
-    "test": "echo \"no test step for core yet\"",
+    "test": "node --test test/*.test.mjs",
     "lint": "echo \"no lint step for core yet\""
   }
 }
