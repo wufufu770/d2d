@@ -1,0 +1,24 @@
+{
+  "name": "@wufufu770/d2d-hooks",
+  "version": "0.1.0",
+  "description": "d2d hooks 包: 7 事件 hook 引擎(matcher/sync 执行/warn|block 失败模式), 子进程执行注入, 权限声明诚实化",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "publishConfig": {
+    "comment": "发布走 scripts/pack/inline-build.mjs 构建产物, 不直接 publish 源码包。"
+  },
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./engine": "./src/engine.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

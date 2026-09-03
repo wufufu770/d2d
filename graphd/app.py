@@ -110,6 +110,11 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Finding ADD last_transition STRING DEFAULT ''")
     except Exception:
         pass
+    # 签名去重: 跨 host 同缺陷(同 path+同类别)的关联标记 — 指向既有 finding id
+    try:
+        conn.execute("ALTER TABLE Finding ADD related_to STRING DEFAULT ''")
+    except Exception:
+        pass
 
 
 JUNK_PATTERNS = ["no rate limit", "missing rate limit", "lack of rate limiting",
@@ -219,6 +224,74 @@ def repro_gate(sev: str, repro) -> tuple[bool, str]:
         return False, ("repro required for severity != info: 必须携带可复现命令/证据"
                        "(完整 curl 单行+预期响应特征), 空 repro 会被验证环 refuted 且报告导出恒空")
     return True, ""
+
+
+def config_reject(sev: str, cat: str, title: str) -> tuple[bool, str]:
+    """垃圾拒收出口(纯函数供 pytest) — config/info 级加固建议不进漏洞库, /write/finding 直接 400。
+    此前行为是降级 config-advice 入库, 实证一轮 SRC 积压 165 条 config-advice 候选堆尸。
+    medium+ 仍降级入库供人工复核; worker 收到 400 后应改写 /write/signal 或升级证据重交。"""
+    s = str(sev or "").lower()
+    if s in ("low", "info"):
+        c = str(cat or "").lower()
+        if c in ("config", "config-advice", "hardening") or CONFIG_ADVICE_RE.search(str(title or "").lower()):
+            return True, ("config/info 级加固建议不入漏洞库: 加固项写 /write/signal(type='config-advice'); "
+                          "若确属可利用漏洞请提升 severity 并附凭证化证据(如 ACAC:true 回显)")
+    return False, ""
+
+
+def candidate_watermark_reject(sev: str, backlog: int, threshold: int) -> tuple[bool, str]:
+    """candidate 积压水位门(纯函数供 pytest) — 积压 ≥ 阈值时 low/medium/info 新 finding 暂收(429),
+    high/critical 不受限; 逼 worker 转写 signal/补证据, 防漏斗灌水(实证积压 258 条时验证环追不上)。"""
+    if int(backlog) >= int(threshold) and str(sev or "").lower() in ("low", "info", "medium"):
+        return True, (f"candidate 积压 {backlog}≥{threshold}: 暂收 low/medium/info Finding(只收 high/critical); "
+                      f"发现转写 /write/signal, 或为既有 candidate 补充证据")
+    return False, ""
+
+
+_URL_RE = re.compile(r"https?://[A-Za-z0-9.\-]+(?:/[A-Za-z0-9._~\-/?%=&]*)?")
+
+
+def url_sig(title: str, repro: str) -> tuple[str, str]:
+    """title+repro 首个 URL 的 (host, path); 无 URL/本地地址返回 ('','')(与 triage.mjs findingSig 同口径)。"""
+    m = _URL_RE.search(f"{title or ''} {repro or ''}")
+    if not m:
+        return "", ""
+    try:
+        from urllib.parse import urlparse
+        u = urlparse(m.group(0))
+        if u.hostname in ("127.0.0.1", "localhost"):
+            return "", ""
+        return (u.hostname or "").lower(), (u.path or "/").rstrip("/").lower()
+    except Exception:
+        return "", ""
+
+
+def title_tokens(t: str) -> set:
+    return {w for w in re.split(r"[^a-z0-9\u4e00-\u9fff]+", str(t or "").lower()) if len(w) >= 2}
+
+
+def token_jaccard(a: set, b: set) -> float:
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    return inter / (len(a) + len(b) - inter) if (len(a) + len(b) - inter) else 0.0
+
+
+def endpoint_sig_duplicate(fhost: str, fpath: str, ftoks: set, ehost: str, epath: str, etoks: set,
+                           j_threshold: float = 0.45) -> str:
+    """签名去重判定(纯函数供 pytest, 与 triage.mjs 问题签名同口径) —
+    'dup'=同 host+同 path 高相似(409 拒, 返回 existing_id); 'related'=跨 host 同 path 高相似(入库标 related_to); ''=放行。"""
+    if not fpath or not epath:
+        return ""
+    j = token_jaccard(ftoks, etoks)
+    if j < j_threshold:
+        return ""
+    if fhost and ehost:
+        if fhost == ehost and fpath == epath:
+            return "dup"
+        if fhost != ehost and fpath == epath:
+            return "related"
+    return ""
 
 
 def finding_gates(cypher: str) -> tuple[bool, str]:
@@ -421,7 +494,11 @@ class Handler(BaseHTTPRequestHandler):
                             return self._send(400, {"ok": False, "error": "placeholder finding rejected"})
                         if any(j in tl for j in JUNK_PATTERNS):
                             return self._send(400, {"ok": False, "error": "garbage-listed finding rejected"})
-                        # R3: 配置建议归类 —— 低危/信息级加固项不占漏洞结论位
+                        # 垃圾拒收出口: config/info 级加固建议直接 400(worker 改写 signal 或升级证据), 不再降级入库
+                        _crej, _crej_reason = config_reject(sev, str(req.get("category") or ""), title)
+                        if _crej:
+                            return self._send(400, {"ok": False, "error": _crej_reason})
+                        # R3: 配置建议归类 —— medium+ 的加固项仍降级 config-advice 入库供人工复核
                         cat = str(req.get("category") or "vuln")
                         if cat in ("config", "config-advice", "hardening") or \
                                 (sev in ("low", "info") and CONFIG_ADVICE_RE.search(tl)):
@@ -430,28 +507,49 @@ class Handler(BaseHTTPRequestHandler):
                         _ok_rp, _err_rp = repro_gate(sev, req.get("repro"))
                         if not _ok_rp:
                             return self._send(400, {"ok": False, "error": _err_rp})
+                        # candidate 积压水位门 — 积压超阈值时 low/medium/info 暂收(429), high/critical 不受限
+                        _wm = int(os.environ.get("P2P_CANDIDATE_WATERMARK", "100"))
+                        if _wm > 0:
+                            _bk = conn.execute("MATCH (f:Finding {gate_status:'candidate'}) RETURN count(f)")
+                            _backlog = int(list(_bk.get_next())[0]) if _bk.has_next() else 0
+                            _wm_rej, _wm_reason = candidate_watermark_reject(sev, _backlog, _wm)
+                            if _wm_rej:
+                                return self._send(429, {"ok": False, "error": _wm_reason})
                         # #11: 去重门 — 同 category 下 normalized(title) 重复(纯函数 titles_duplicate)即拒,
                         # 返回已有 finding id(worker 补证据而非重复新建)。实证: 同标题 finding ×2~3,
                         # 每条重复 candidate 白耗一个完整验证 worker 回合, 漏斗计数被灌水。
+                        # 签名去重(与 triage.mjs 同口径): 同 host+path+category 高相似 → 409;
+                        # 跨 host 同 path+category 高相似 → 放行但标 related_to(三网关同缺陷归并)。
                         _norm = normalize_title(title)
-                        if _norm:
-                            _r = conn.execute("MATCH (f:Finding) WHERE f.category = $c RETURN f.id AS id, f.title AS t",
+                        _fhost, _fpath = url_sig(title, str(req.get("repro") or ""))
+                        _ftoks = title_tokens(title)
+                        _rt = ""
+                        if _norm or _fpath:
+                            _r = conn.execute("MATCH (f:Finding) WHERE f.category = $c RETURN f.id AS id, f.title AS t, f.repro AS r",
                                               parameters={"c": cat})
                             while _r.has_next():
                                 _row = _r.get_next()
-                                _eid, _etitle = str(_row[0]), str(_row[1] or "")
-                                if titles_duplicate(_norm, normalize_title(_etitle)):
+                                _eid, _etitle, _erepro = str(_row[0]), str(_row[1] or ""), str(_row[2] or "")
+                                if _norm and titles_duplicate(_norm, normalize_title(_etitle)):
                                     return self._send(409, {"ok": False, "existing_id": _eid,
                                                             "error": f"duplicate finding: 与 {_eid}('{_etitle[:60]}') 标题重复(category={cat}) — 请勿新建重复条目; 补充证据用 /write/signal 引用该 finding id"})
+                                _ehost, _epath = url_sig(_etitle, _erepro)
+                                _rel = endpoint_sig_duplicate(_fhost, _fpath, _ftoks, _ehost, _epath, title_tokens(_etitle))
+                                if _rel == "dup":
+                                    return self._send(409, {"ok": False, "existing_id": _eid,
+                                                            "error": f"duplicate finding(端点签名): 与 {_eid}('{_etitle[:60]}') 同 host+path+category 高相似 — 补充证据用 /write/signal 引用该 finding id"})
+                                if _rel == "related" and not _rt:
+                                    _rt = _eid
                         conn.execute(
                             "CREATE (f:Finding {id:$id, title:$title, severity:$sev, cvss:$cvss, "
-                            "evidence_dir:$edir, repro:$repro, category:$cat, gate_status:'candidate', ts:$ts})",
+                            "evidence_dir:$edir, repro:$repro, category:$cat, gate_status:'candidate', ts:$ts, related_to:$rt})",
                             parameters={"id": str(req.get("id") or f"f-{int(time.time()*1000)}"),
                                         "title": title, "sev": sev,
                                         "cvss": float(req.get("cvss") or 5.0),
                                         "edir": str(req.get("evidence_dir") or ""),
                                         "repro": str(req.get("repro") or ""),
                                         "cat": cat,
+                                        "rt": _rt,
                                         "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat())})
                     elif self.path == "/write/signal":
                         # I-014: Signal.evidence 脱敏
