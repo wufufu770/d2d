@@ -1,0 +1,4 @@
+packages:
+  - 'plugin/pentest-dsh'
+  - 'plugin/d2d-panel'
+  - 'packages/*'

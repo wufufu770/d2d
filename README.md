@@ -253,6 +253,38 @@ P2P_INPROCESS=1 bash ops/start-all.sh
 
 ---
 
+## 能力模块(2026-09-04 issue 迭代新增)
+
+以下模块均为 stdlib-only 自研(参考未合并 PR 的思路, 代码全部重写), 测试随附:
+
+| 模块 | 路径 | 对应 issue |
+|---|---|---|
+| 工具注册表(25 工具/slot/argsPolicy) | `plugin/pentest-dsh/data/tool-registry.json` + `dsh-bridge/slots.mjs` | #33/#31 |
+| MCP 服务器(stdio JSON-RPC, 无 shell) | `dsh-bridge/mcp-server.mjs` | #28 |
+| skill 同步到 dsh(增量+manifest) | `dsh-bridge/skill-sync.mjs` | #29 |
+| cordis patch 渲染+热重载 | `dsh-bridge/cordis-reload.mjs` | #27 |
+| 面板独立路由/兜底服务(127.0.0.1:8799) | `dsh-bridge/panel-bridge.mjs` | #30 |
+| OSINT 6-provider 统一接口 + 并发聚合去重入图 | `osint/providers.mjs` `osint/aggregate.mjs` | #52/#54 |
+| 加密凭证库(AES-256-GCM, host-token 派生密钥) | `credentials/store.mjs` | #53 |
+| CryptoBackend(Ed25519/ML-DSA 44/65/87/Dual) | `crypto/backend.mjs` `crypto/mldsa.mjs` | #59/#60 |
+| 自研 HTTP MITM 代理(明文不落盘; TLS 解密 opt-in; WSS 帧审计 opt-in) | `scripts/gateway/mitm-proxy.mjs` | #46/#48 |
+| mitmproxy addon(body 摘要, 可选转图) | `scripts/integrations/mitmproxy_addon.py` | #56 |
+| ZAP JSON API 桥(spider/ascan/alerts→Finding) | `scripts/integrations/zap-bridge.mjs` | #57 |
+| interactsh 客户端(真实协议, 默认不连网) | `scripts/integrations/interactsh-client.mjs` | #58 |
+| 浏览器复用检测(builtin→playwright→none) | `scripts/integrations/browser-detect.mjs` | #45 |
+| SQLite checkpoint(node:sqlite, 零依赖) | `domain/checkpoint.mjs` | #40 |
+| Task 委派协议(Anthropic 风格) | `domain/task-tool.mjs` | #42 |
+| 轻量 schema(zod 替代, 带路径报错) | `domain/schema.mjs` | #43 |
+| 三层记忆(core/working/archival 预算裁剪) | `domain/agent-memory.mjs` | #41 |
+| 工具启动检测/偏好持久化/决策表 | `tools/detect.mjs` `tools/preferences.mjs` `tools/decide.mjs` | #34/#37/#35 |
+| 6 个纯 JS Alternative 工具 | `tools/alt/*.mjs` | #36 |
+| Bash 工具包装(checkBash 门禁前置) | `tools/bash-wrapper.mjs` | #38 |
+| 知识分层加载/变体胜率档案/negative_result 台账 | `domain/knowledge-layered.mjs` `domain/variant-archive.mjs` `domain/negative-ledger.mjs` | #74 P3 |
+| npm workspace + 6 个薄包装包 + 内联构建发布 | `packages/` `pnpm-workspace.yaml` `scripts/pack/inline-build.mjs` | #16-#25 |
+| 真 OIDC trusted publish(无 token secret)/CI/dependabot | `.github/workflows/publish.yml` `ci.yml` | #24 |
+
+---
+
 ## 非破坏规则(简报层, 由 scope 门禁 + 评审强制)
 
 - SQL 注入探测**只读**(SELECT / 布尔 / 时间盲)。UPDATE/INSERT/DELETE/DROP/TRUNCATE 注入载荷禁止。

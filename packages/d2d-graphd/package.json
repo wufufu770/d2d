@@ -1,0 +1,26 @@
+{
+  "name": "@wufufu770/d2d-graphd",
+  "version": "0.1.0",
+  "description": "d2d graphd 薄包装: /health /query /write/* 客户端 + 启动指引(kuzu 钉定说明, postinstall 不静默安装)",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "publishConfig": {
+    "comment": "发布走 scripts/pack/inline-build.mjs 构建产物, 不直接 publish 源码包。"
+  },
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./client": "./src/client.mjs",
+    "./postinstall": "./src/postinstall.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "postinstall": "node src/postinstall.mjs"
+  }
+}

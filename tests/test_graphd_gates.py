@@ -294,3 +294,54 @@ def test_upsert_endpoint_different_urls_distinct(tmp_path):
     assert a != b
     r = conn.execute("MATCH (e:Endpoint) RETURN count(e) AS c")
     assert r.get_next()[0] == 2
+
+
+# ---- 垃圾拒收出口 / candidate 水位门 / 端点签名去重(2026-09 批) ----
+from graphd.app import config_reject, candidate_watermark_reject, endpoint_sig_duplicate, title_tokens
+
+def test_config_reject_low_config_advice():
+    ok, reason = config_reject("low", "config-advice", "missing security header on login page")
+    assert ok and "不入漏洞库" in reason
+
+def test_config_reject_low_title_regex():
+    ok, _ = config_reject("info", "vuln", "Server version disclosure in response headers")
+    assert ok
+
+def test_config_reject_medium_not_rejected():
+    assert config_reject("medium", "config-advice", "CORS reflection with credentials")[0] is False
+
+def test_config_reject_high_real_vuln_not_rejected():
+    assert config_reject("high", "vuln", "CORS reflects any origin with credentials")[0] is False
+
+def test_config_reject_low_normal_vuln_not_rejected():
+    assert config_reject("low", "idor-bola", "IDOR on order id traversal")[0] is False
+
+def test_watermark_medium_rejected_at_threshold():
+    ok, reason = candidate_watermark_reject("medium", 100, 100)
+    assert ok and "积压" in reason
+
+def test_watermark_high_never_rejected():
+    assert candidate_watermark_reject("high", 150, 100)[0] is False
+    assert candidate_watermark_reject("critical", 150, 100)[0] is False
+
+def test_watermark_below_threshold_pass():
+    assert candidate_watermark_reject("low", 99, 100)[0] is False
+
+def test_endpoint_sig_duplicate_same_host_path():
+    ft = title_tokens("CORS reflection with credentials confirmed at gateway")
+    et = title_tokens("CORS reflection with credentials found at gateway")
+    assert endpoint_sig_duplicate("api.changyan.com", "/v1/tokens", ft, "api.changyan.com", "/v1/tokens", et) == "dup"
+
+def test_endpoint_sig_related_cross_host():
+    ft = title_tokens("CORS reflection with credentials confirmed at gateway")
+    et = title_tokens("CORS reflects any origin with credentials at gateway")
+    assert endpoint_sig_duplicate("api.changyan.com", "/v1/tokens", ft, "ktxinghuo-api.changyan.com", "/v1/tokens", et) == "related"
+
+def test_endpoint_sig_low_similarity_passes():
+    ft = title_tokens("SQL injection in search box")
+    et = title_tokens("CORS reflection with credentials at gateway")
+    assert endpoint_sig_duplicate("api.changyan.com", "/v1/search", ft, "api.changyan.com", "/v1/tokens", et) == ""
+
+def test_endpoint_sig_empty_path_never_flags():
+    ft = title_tokens("CORS reflection with credentials at gateway")
+    assert endpoint_sig_duplicate("api.changyan.com", "", ft, "api.changyan.com", "/v1", ft) == ""

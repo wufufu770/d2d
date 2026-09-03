@@ -1,0 +1,24 @@
+{
+  "name": "@wufufu770/d2d-agents",
+  "version": "0.1.0",
+  "description": "d2d agent 形态薄包装: 转发 plugin/pentest-dsh 的 in-process adapter 与三环 12-agent 装配",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "publishConfig": {
+    "comment": "发布走 scripts/pack/inline-build.mjs 构建产物, 不直接 publish 源码包。"
+  },
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "vendor",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
