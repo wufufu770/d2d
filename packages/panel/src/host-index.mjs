@@ -2,7 +2,7 @@
 // 路由: ctx.webServer.register({kind:'prefix', path:'/d2d/api'}) — 与 dsh /api 同一道
 // 浏览器信任栅栏(Host loopback/受信 + sec-fetch-site + Origin 同源), 同源零跨域,
 // token 全程留 host 侧。机制参照 dsh-sidebar-leap 宿主半(生态已验证模式)。
-import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, transitionFinding } from './snapshot.mjs'
+import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, transitionFinding } from './host-snapshot.mjs'
 
 export const name = 'd2d-panel'
 export const inject = ['webServer', 'webRuntime'] // 无 sessions 依赖: 快照只读 graphd, 不碰会话存储

@@ -3,7 +3,7 @@
 // /sidebar/api/* 同构防线); 全端点只读 GET + no-store; graphd 不可达 → 503 fail-closed。
 // 可独立运行: node lib/host/standalone.mjs (调试/未挂 dsh web 时)
 import http from 'node:http'
-import { buildSnapshot, createGraphdQuery, readHostToken, readFleet } from './snapshot.mjs'
+import { buildSnapshot, createGraphdQuery, readHostToken, readFleet } from './host-snapshot.mjs'
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1', '[::]'])
 const MICRO_CACHE_MS = 500 // 0.5s 微缓存 + 单飞: 并发请求合并为一次图读取(对 _lock 争用最小)
