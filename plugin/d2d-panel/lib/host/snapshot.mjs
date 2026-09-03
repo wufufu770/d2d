@@ -14,7 +14,7 @@ export const MACRO_GROUPS = [
   { key: 'rejected', label: '已驳回', states: ['rejected'] },
 ]
 export const ZOMBIE_MS = 30_000
-const MAX = { title: 200, scope: 200, target: 200, workers: 50, findings: 200, signals: 20, exp: 12, checkpoint: 400, todo: 400, traj: 400, digest: 160, usageLines: 2000, runLogLines: 400, sigEvidence: 0 }
+const MAX = { title: 200, scope: 200, target: 200, workers: 50, findings: 200, signals: 50, exp: 100, checkpoint: 400, todo: 400, traj: 400, digest: 160, usageLines: 2000, runLogLines: 400, sigEvidence: 0 }
 
 // 全部只读 MATCH; host token 通道下不触发 worker 只读白名单(本就放行)
 const Q = {
@@ -72,6 +72,110 @@ export function readHostToken(env = process.env) {
   if (env.P2P_HOST_TOKEN) return String(env.P2P_HOST_TOKEN).trim()
   const f = env.P2P_HOST_TOKEN_FILE ?? `${os.homedir()}/.config/d2d/host-token`
   try { return fs.readFileSync(f, 'utf8').trim() } catch { return '' }
+}
+
+/** R6.1: 全局黑名单(denylist.json) — 与白名单对应, 面板 ENGAGEMENT 卡展示 + 门控同源。 */
+export function readDenylist(env = process.env) {
+  try {
+    const p = env.P2P_DENYLIST_FILE ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/denylist.json`
+    const d = JSON.parse(fs.readFileSync(p, 'utf8'))
+    return { domains: (d.domains ?? []).map(String), cidr_prefix: (d.cidr_prefix ?? []).map(String) }
+  } catch { return { domains: [], cidr_prefix: [] } }
+}
+
+const _normDomain = (v) => String(v ?? '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+const _validDomain = (v) => /^[a-z0-9.*-]+(\.[a-z0-9.*-]+)+$/.test(v)
+const _validCidr = (v) => /^\d{1,3}(\.\d{1,3}){2,3}\.$/.test(v)
+
+/** R6.3: 黑名单 CRUD(面板增删改) — 改 denylist.json 后热重载 graphd 写门(免重启即时生效)。
+ *  op: 'add'{kind,value} | 'del'{kind,value} | 'update'{kind,from,to}; kind: 'domains'|'cidr_prefix'。
+ *  热重载失败不回滚文件(下次 engagement/重启亦生效), 以 warn 字段提示。 */
+export async function writeDenylist({ op, kind, value, from, to, graphdUrl, token, env = process.env }) {
+  const kinds = ['domains', 'cidr_prefix']
+  if (!kinds.includes(String(kind))) throw new Error(`kind 必须是 ${kinds.join('/')}`)
+  const p = env.P2P_DENYLIST_FILE ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/denylist.json`
+  const cur = readDenylist(env)
+  const items = cur[kind]
+  const check = (v) => {
+    if (kind === 'cidr_prefix') { if (!_validCidr(v)) throw new Error(`IP 段必须以点结尾(如 222.73.243.): ${v}`); return v }
+    if (!_validDomain(v)) throw new Error(`非法域名(纯 host, 不带协议/路径): ${v}`)
+    return v
+  }
+  if (op === 'add') {
+    const v = check(_normDomain(value))
+    if (items.includes(v)) throw new Error(`已存在: ${v}`)
+    items.push(v)
+  } else if (op === 'del') {
+    const v = String(value ?? '').trim().toLowerCase()
+    const i = items.indexOf(v)
+    if (i < 0) throw new Error(`不存在: ${v}`)
+    items.splice(i, 1)
+  } else if (op === 'update') {
+    const f = String(from ?? '').trim().toLowerCase()
+    const i = items.indexOf(f)
+    if (i < 0) throw new Error(`不存在: ${f}`)
+    const t = check(_normDomain(to))
+    if (items.includes(t) && t !== f) throw new Error(`已存在: ${t}`)
+    items[i] = t
+  } else throw new Error('op 必须是 add/del/update')
+  fs.writeFileSync(p, JSON.stringify({ domains: cur.domains, cidr_prefix: cur.cidr_prefix }, null, 2) + '\n')
+  let warn = ''
+  try {
+    const r = await fetch(`${graphdUrl}/reload/denylist`, {
+      method: 'POST', headers: token ? { 'X-Auth': token } : {}, signal: AbortSignal.timeout(4000),
+    })
+    if (!r.ok) warn = `文件已保存, graphd 热重载失败(HTTP ${r.status}) — 下个 engagement 起生效`
+  } catch { warn = '文件已保存, graphd 不可达 — graphd 恢复后生效' }
+  return { domains: cur.domains, cidr_prefix: cur.cidr_prefix, warn }
+}
+
+/** W4: 环容量热调(caps.json) — 面板容量卡片的读写源; 调度器每 tick 热读同一文件, 免重启生效。 */
+export function readCaps(env = process.env) {
+  try {
+    const p = env.P2P_CAPS_FILE ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/caps.json`
+    const d = JSON.parse(fs.readFileSync(p, 'utf8'))
+    return {
+      caps: (d.caps && typeof d.caps === 'object') ? d.caps : {},
+      deepParallel: d.deepParallel ?? null,
+      maxAgents: d.maxAgents ?? null,
+      backlogWatermark: d.backlogWatermark ?? null,
+      updated_at: String(d.updated_at ?? ''),
+    }
+  } catch { return { caps: {}, deepParallel: null, maxAgents: null, backlogWatermark: null, updated_at: '' } }
+}
+
+const _CAP_KINDS = ['recon', 'deep-dive', 'chain', 'verify', 'creative', 'link']
+const _CAP_RANGE = { kind: [1, 8], deepParallel: [1, 8], maxAgents: [1, 8], backlogWatermark: [5, 500] }
+const _capInt = (v, [lo, hi]) => {
+  const n = Number.parseInt(v, 10)
+  if (!Number.isFinite(n) || n < lo || n > hi) throw new Error(`须为 ${lo}-${hi} 的整数, 得到 "${v}"`)
+  return n
+}
+
+/** W4: 容量卡片写侧 — updates = { caps?:{kind:n}, deepParallel?, maxAgents?, backlogWatermark? };
+ *  值 '' / null = 清除该覆盖(调度器回落 env); 钳位与 domain/caps.mjs 读侧一致, 越界直接报错。 */
+export function writeCaps({ updates }, env = process.env) {
+  const p = env.P2P_CAPS_FILE ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/caps.json`
+  const cur = readCaps(env)
+  const next = { caps: { ...cur.caps }, deepParallel: cur.deepParallel, maxAgents: cur.maxAgents, backlogWatermark: cur.backlogWatermark }
+  const u = updates && typeof updates === 'object' ? updates : {}
+  if (u.caps !== undefined && typeof u.caps !== 'object') throw new Error('caps 必须是对象')
+  for (const [k, v] of Object.entries(u.caps ?? {})) {
+    if (!_CAP_KINDS.includes(k)) throw new Error(`未知环节 "${k}"(可选: ${_CAP_KINDS.join('/')})`)
+    if (v === '' || v === null) delete next.caps[k]
+    else next.caps[k] = _capInt(v, _CAP_RANGE.kind)
+  }
+  for (const key of ['deepParallel', 'maxAgents', 'backlogWatermark']) {
+    if (u[key] === undefined) continue
+    next[key] = (u[key] === '' || u[key] === null) ? null : _capInt(u[key], _CAP_RANGE[key])
+  }
+  if (!Object.keys(next.caps).length) delete next.caps
+  next.updated_at = new Date().toISOString()
+  fs.mkdirSync(`${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config`, { recursive: true })
+  const tmp = `${p}.tmp-${process.pid}-${Date.now()}`
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n')
+  fs.renameSync(tmp, p)
+  return readCaps(env)
 }
 
 /** 模型策略(A-2 外置): DATA_DIR/config/model-policies.json, 缺失返回 null(fleet 卡降级)。*/
@@ -237,10 +341,20 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null } = 
   const now = new Date()
   const covTotal = num(coverageRows?.[0]?.total)
   const covCovered = num(coverageRows?.[0]?.covered)
+  // R6.1: 黑名单可视 —— 全局 denylist.json + 当前 engagement scope 的 `!` 条目合并展示
+  const scopeStr = String(engRows?.[0]?.scope ?? '')
+  const denyFromScope = scopeStr.split(',').map((s) => s.trim()).filter((s) => s.startsWith('!')).map((s) => s.slice(1))
+  const gd = readDenylist()
+  const denylist = {
+    domains: [...new Set([...gd.domains, ...denyFromScope])],
+    cidr_prefix: [...gd.cidr_prefix],
+  }
   return {
     ok: true,
     now: now.toISOString(),
     engagement: projectEngagement(engRows?.[0] ?? null),
+    denylist,
+    caps: readCaps(),
     counts: {
       endpoints: num(endpoints?.[0]?.n),
       signals_open: num(signalsOpen?.[0]?.n),

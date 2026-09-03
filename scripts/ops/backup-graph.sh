@@ -17,7 +17,10 @@ set -u
 DATA_DIR="${D2D_DATA_DIR:-$HOME/.d2d-data}"
 OUT="$DATA_DIR/backups"; KEEP="${D2D_BACKUP_KEEP:-14}"
 DATE=$(date +%F-%H%M)
-INSTANCES="${D2D_BACKUP_INSTANCES:-control:/home/wff/d2d/graphd laneB:/tmp/d2d-laneB/graphd laneC:/tmp/d2d-laneC/graphd}"
+# 默认实例 = 本仓库的 graphd 目录(脚本位于 <repo>/scripts/ops/) — 原硬编码 /home/wff 不可移植
+_SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+_REPO_DIR=$(cd "$_SCRIPT_DIR/../.." && pwd)
+INSTANCES="${D2D_BACKUP_INSTANCES:-control:$_REPO_DIR/graphd}"
 LOG="$OUT/backup.log"
 mkdir -p "$OUT"
 log() { echo "$(date -Iseconds) | $*" >> "$LOG"; }
