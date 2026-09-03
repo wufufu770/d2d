@@ -52,7 +52,7 @@ mkdir -p "$HOME/.config/d2d"
 ok "host-token 就绪"
 if [ ! -f "$D2D_DATA_DIR/config/model-policies.json" ]; then
   cp "$REPO_DIR/config/model-policies.example.json" "$D2D_DATA_DIR/config/model-policies.json"
-  warn "模型策略模板已复制 → $D2D_DATA_DIR/config/model-policies.json(需编辑, 见 README)"
+  warn "模型策略模板已复制 → $D2D_DATA_DIR/config/model-policies.json(须编辑; 保持占位符时 worker 会回退宿主默认模型并提示, 不会再全灭)"
 else
   ok "model-policies.json 已存在, 保留"
 fi
@@ -128,11 +128,22 @@ EOF
 
 # web profile 补丁: LLM 路由 — 主聊天也能用 minimax-cn/opencode-go 模型
 # (否则主会话默认 deepseek-official/deepseek-v4-flash, 未配 DEEPSEEK_API_KEY 即 MISSING_CREDENTIAL)
+# #2: patch 层对 settings.yaml 的 llm-pi-ai 段是整体覆盖语义 — 用户在 UI Models 页配好的
+#     provider 会被静默冲掉(实证: 模型选择器瘫痪/发送框禁用)。已配置则不生成模板, 保留用户配置。
+_GEN_LLM_BLOCK=1
+if [ -f "$DSH_HOME/settings.yaml" ] && grep -q "llm-pi-ai" "$DSH_HOME/settings.yaml"; then
+  _GEN_LLM_BLOCK=0
+  warn "settings.yaml 已有 llm-pi-ai 配置(UI Models 页) — 本次不生成 provider 模板, 避免覆盖你的配置"
+  warn "注意: model-policies.json 的 provider 前缀必须与你已有 provider 名一致"
+fi
 cat > "$DSH_HOME/profiles/web/cordis.patch.yml" <<'EOF'
 # web profile 用户补丁 — 由 d2d install.sh 生成
 # LLM 路由: dsh-llm-pi-ai 任意厂商接入; providers 键须与 model-policies.json 的
-# "provider/" 前缀一致。下面是示例(minimax-cn 走 MiniMax 官方, opencode-go 走
-# OpenCode Go 订阅); 换厂商改 baseURL+apiKeyEnv+models 即可。
+# "provider/" 前缀一致。apiKeyEnv 必须与你在 web UI Models 页存储的凭证引用名逐字一致,
+# 否则宿主 LLM 注册表解析出零个可用模型(选择器瘫痪/发送禁用, 实证见 issue #2)。
+EOF
+if [ "$_GEN_LLM_BLOCK" = "1" ]; then
+  cat >> "$DSH_HOME/profiles/web/cordis.patch.yml" <<'EOF'
 - id: llm-pi-ai
   name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
@@ -178,6 +189,7 @@ cat > "$DSH_HOME/profiles/web/cordis.patch.yml" <<'EOF'
             contextWindow: 262144
             maxTokens: 32768
 EOF
+fi
 
 ( cd "$DSH_HOME/profiles/web" && pnpm install ) \
   || { echo "✗ web profile 装配失败(上方为 pnpm 完整输出; 常见原因: 网络/registry 权限)"; exit 1; }
@@ -243,8 +255,11 @@ step "设置主聊天默认模型"
 # dsh 出厂默认 deepseek-official/deepseek-v4-flash — 只配 MINIMAX/OPENCODE key 的
 # 机器上主会话直接 MISSING_CREDENTIAL。worker 不受影响(per-task 模型注入),
 # 这里只把「主聊天」指到已配置路由的 minimax 上。
+# #2: 用户已有自己的 llm-pi-ai provider 时不改默认(避免指到不存在的 provider)。
 SETTINGS="$DSH_HOME/settings.yaml"
-if [ ! -f "$SETTINGS" ]; then
+if [ "$_GEN_LLM_BLOCK" = "0" ]; then
+  ok "保留你现有的默认模型(settings.yaml 已有 llm-pi-ai 配置)"
+elif [ ! -f "$SETTINGS" ]; then
   cat > "$SETTINGS" <<'EOF'
 agent-default-model:
   provider: minimax-cn
@@ -275,14 +290,25 @@ export P2P_GRAPHD="http://127.0.0.1:$GRAPHD_PORT"
 # export MINIMAX_API_KEY=sk-...
 # export OPENCODE_API_KEY=sk-...
 
-pkill -f "graphd/app.py" 2>/dev/null || true
-pkill -f "gateway/egress-gateway.mjs" 2>/dev/null || true
-pkill -f "gateway/oast.mjs" 2>/dev/null || true
-pkill -f "dsh --profile web" 2>/dev/null || true
+# #14: 优雅停止 — graphd 持 kuzu WAL, kill -9 会丢未 checkpoint 的提交(实证全图数据丢失)。
+#      先 SIGTERM 等退出(≤5s), 仍存活才 SIGKILL 兜底。
+stop_graceful() {
+  pkill -TERM -f "\$1" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "\$1" >/dev/null 2>&1 || return 0
+    sleep 0.5
+  done
+  pkill -KILL -f "\$1" 2>/dev/null || true
+}
+stop_graceful "graphd/app.py"
+stop_graceful "gateway/egress-gateway.mjs"
+stop_graceful "gateway/oast.mjs"
+stop_graceful "dsh --profile web"
 sleep 1
 
-nohup python3 "$REPO_DIR/graphd/app.py" > "$D2D_DATA_DIR/graphd.log" 2>&1 &
-echo "graphd → http://127.0.0.1:$GRAPHD_PORT (pid \$!)"
+# graphd 以自身目录为 cwd 启动 — backup-graph.sh 按 /proc/<pid>/cwd 匹配实例做 SIGSTOP 停写快照
+( cd "$REPO_DIR/graphd" && nohup python3 app.py > "$D2D_DATA_DIR/graphd.log" 2>&1 & )
+echo "graphd → http://127.0.0.1:$GRAPHD_PORT"
 sleep 2
 
 # V-08 出网治理网关: 连接层 scope 强制(每 30s 动态拉 Engagement.scope ∪ 静态白名单,
