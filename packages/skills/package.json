@@ -1,0 +1,23 @@
+{
+  "name": "@wufufu770/d2d-skills",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./loader": "./src/loader.mjs"
+  },
+  "scripts": {
+    "build": "echo \"no build step for skills yet\"",
+    "test": "node --test test/*.test.mjs",
+    "lint": "echo \"no lint step for skills yet\""
+  },
+  "dependencies": {
+    "@wufufu770/d2d-core": "workspace:*"
+  },
+  "files": [
+    "src/",
+    "skills/"
+  ]
+}

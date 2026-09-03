@@ -1,0 +1,21 @@
+{
+  "name": "@wufufu770/d2d-agents",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./runner": "./src/runner.mjs",
+    "./dispatcher": "./src/dispatcher.mjs",
+    "./handlers": "./src/handlers/pentest.mjs"
+  },
+  "scripts": {
+    "build": "echo \"no build step for agents yet\"",
+    "test": "node --test test/*.test.mjs",
+    "lint": "echo \"no lint step for agents yet\""
+  },
+  "dependencies": {
+    "@wufufu770/d2d-core": "workspace:*"
+  }
+}
