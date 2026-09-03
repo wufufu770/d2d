@@ -138,6 +138,9 @@ FINDING_TRANSITIONS = {
     "reported": ("accepted", "rejected"),
     "accepted": (),
     "rejected": (),
+    # issue #88: 早期冻结逻辑写入的历史状态(frozen 不在七态内, 实测存量 301 条永久卡死)。
+    # 兼容出口只开三条: 退回 candidate(重新入验证)/triaged(有证据直通)/rejected; 禁止 frozen→verified 越权直通。
+    "frozen": ("candidate", "triaged", "rejected"),
 }
 
 def transition_gate(cur, to, actor, reason):
@@ -781,6 +784,21 @@ if __name__ == "__main__":
               f"(kuzu 无实例互斥, 并发打开同一库会毁数据 — 先停旧实例)", flush=True)
         sys.exit(1)
     db()  # 初始化 schema
+    # issue #88 防回归: 启动一致性检查 — gate_status 出现状态机之外的值时告警
+    # (历史数据漂移必须被看见, 不再让 301 条 frozen 无感知堆积)
+    try:
+        _rs = db().execute("MATCH (f:Finding) RETURN DISTINCT f.gate_status AS s")
+        _known = set(FINDING_STATES) | {"frozen"}
+        _unknown = []
+        while _rs.has_next():
+            _s = str(_rs.get_next()[0] or "")
+            if _s and _s not in _known:
+                _unknown.append(_s)
+        if _unknown:
+            print(f"[graphd] ⚠ gate_status 出现状态机之外的值: {sorted(_unknown)} — "
+                  f"请核对写入点(frozen 兼容出口已开: →candidate/triaged/rejected)", flush=True)
+    except Exception as _e:
+        print(f"[graphd] gate_status 一致性检查跳过: {_e}", flush=True)
 
     def _safe_token_path(p):
         """路径参数白名单: token 文件仅允许位于 ~/.config/d2d/ 下(防 env 污染导向任意路径读写)"""

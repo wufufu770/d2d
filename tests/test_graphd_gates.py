@@ -169,6 +169,10 @@ from graphd.app import FINDING_STATES, FINDING_TRANSITIONS, CONFIG_ADVICE_RE
 def test_r3_seven_states_complete():
     assert set(FINDING_STATES) == {"candidate", "triaged", "verified", "isolated", "reported", "accepted", "rejected"}
     for src, dsts in FINDING_TRANSITIONS.items():
+        # frozen 是唯一的历史别名例外(issue #88): 不属于七态, 仅提供解冻出口, 不可作为迁移目标
+        if src == "frozen":
+            assert set(dsts) <= {"candidate", "triaged", "rejected"}
+            continue
         assert src in FINDING_STATES
         for d in dsts:
             assert d in FINDING_STATES and d != src
@@ -345,3 +349,30 @@ def test_endpoint_sig_low_similarity_passes():
 def test_endpoint_sig_empty_path_never_flags():
     ft = title_tokens("CORS reflection with credentials at gateway")
     assert endpoint_sig_duplicate("api.changyan.com", "", ft, "api.changyan.com", "/v1", ft) == ""
+
+
+# ---- issue #88: frozen 历史状态兼容出口(解冻回验证管线, 禁止越权直通 verified) ----
+
+def test_frozen_to_candidate_allowed():
+    ok, err, _ = transition_gate("frozen", "candidate", "migration", "issue #88 存量解冻")
+    assert ok, err
+
+
+def test_frozen_to_triaged_allowed():
+    ok, err, _ = transition_gate("frozen", "triaged", "migration", "issue #88 有证据直通")
+    assert ok, err
+
+
+def test_frozen_to_rejected_allowed():
+    ok, err, _ = transition_gate("frozen", "rejected", "migration", "issue #88 垃圾清理")
+    assert ok, err
+
+
+def test_frozen_to_verified_still_illegal():
+    ok, err, _ = transition_gate("frozen", "verified", "migration", "try direct verify")
+    assert not ok and "illegal transition frozen -> verified" in err
+
+
+def test_frozen_missing_actor_still_rejected():
+    ok, err, _ = transition_gate("frozen", "candidate", "", "migration")
+    assert not ok and "actor" in err
