@@ -1,0 +1,24 @@
+{
+  "name": "d2d",
+  "version": "0.2.0",
+  "description": "d2d — three-ring parallel pentest dsh plugin (MIT)",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' build",
+    "test": "pnpm -r --filter './packages/*' test",
+    "lint": "pnpm -r --filter './packages/*' lint",
+    "publish:all": "pnpm -r --filter './packages/*' publish --access public",
+    "version:patch": "pnpm -r --filter './packages/*' version patch",
+    "version:minor": "pnpm -r --filter './packages/*' version minor",
+    "version:major": "pnpm -r --filter './packages/*' version major"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "dependencies": {
+    "cordis": "^4.0.0-rc.9"
+  }
+}
