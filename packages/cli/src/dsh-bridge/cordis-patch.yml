@@ -1,0 +1,13 @@
+bundles:
+  - "@deepseek-ai/dsh-base"
+  - "@deepseek-ai/dsh-web-app"
+  - "@wufufu770/d2d-core"
+  - "@wufufu770/d2d-agents"
+  - "@wufufu770/d2d-skills"
+  - "@wufufu770/d2d-hooks"
+  - "@wufufu770/d2d-panel"
+  - "@wufufu770/d2d-graphd"
+plugins:
+  d2d-pentest:
+    inject: ["tools", "commands", "agents"]
+    scope: ["session", "engagement"]
