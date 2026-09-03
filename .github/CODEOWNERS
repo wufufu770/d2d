@@ -1,0 +1,12 @@
+# CODEOWNERS — auto-assign reviewers for d2d
+/packages/core/    @wufufu770
+/packages/graphd/  @wufufu770
+/packages/agents/  @wufufu770
+/packages/skills/  @wufufu770
+/packages/hooks/   @wufufu770
+/packages/cli/     @wufufu770
+/packages/panel/   @wufufu770
+/packages/pentest/ @wufufu770
+/packages/osint-data/ @wufufu770
+/.github/         @wufufu770
+/docs/            @wufufu770
