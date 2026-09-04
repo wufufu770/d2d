@@ -1,23 +1,15 @@
 {
-  "name": "d2d-monorepo",
-  "version": "0.1.0",
+  "name": "d2d",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "d2d — 三环并行渗透测试系统 monorepo 工作区(plugin/* 为运行中的既有插件, packages/* 为薄包装发布包)",
+  "description": "d2d — 三环并行渗透测试框架(发现环/深度攻击环/创造探索环 并行自主挖掘, dsh 插件形态)",
   "license": "MIT",
-  "packageManager": "pnpm@9.0.0",
   "engines": {
     "node": ">=22.5"
   },
-  "workspaces": [
-    "plugin/pentest-dsh",
-    "plugin/d2d-panel",
-    "packages/*"
-  ],
   "scripts": {
-    "test": "node --test plugin/d2d-panel/test/*.test.mjs packages/*/test/*.test.mjs",
-    "test:packages": "node --test packages/*/test/*.test.mjs",
-    "lint": "for f in $(find packages scripts plugin -name '*.mjs' -type f -not -path '*/node_modules/*'); do node --check \"$f\" || exit 1; done",
-    "build:pack": "node scripts/pack/inline-build.mjs"
+    "test": "node --test plugin/d2d-panel/test/*.test.mjs && cd plugin/pentest-dsh && npm test",
+    "lint": "for f in $(find scripts plugin -name '*.mjs' -type f -not -path '*/node_modules/*'); do node --check \"$f\" || exit 1; done"
   }
 }

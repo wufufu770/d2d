@@ -1,0 +1,9 @@
+docs+refactor: README 重写为简洁版(介绍+使用) + 移除实验模块与迭代说明
+
+- README 全文重写: 仅保留项目介绍/架构/特性/安装/配置/使用/成本预算/SRC 口径/测试/授权声明
+- 删除实验模块: dsh-bridge(MCP/panel-bridge/slots/skill-sync/cordis-reload) / osint / crypto /
+  credentials / tools(alt+bash-wrapper+detect+decide+preferences) / domain(checkpoint/task-tool/
+  schema/agent-memory/knowledge-layered/variant-archive/negative-ledger) / packages 薄包装 /
+  scripts/integrations / scripts/gateway/mitm-proxy / .github/workflows(ci/publish)
+- 同步删除对应测试与 root package.json 精简
+- 安装模板/示例全部占位化(provider-a/model-x 风格), 不再出现具体厂商模型
