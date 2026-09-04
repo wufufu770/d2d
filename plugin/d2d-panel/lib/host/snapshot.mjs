@@ -232,10 +232,52 @@ export function parseProviderModels(text) {
         const id = idm[1].replace(/^["']|["']$/g, '')
         if (id) prov.models.push(id)
       }
+      const kem = body.match(/^apiKeyEnv:\s*(.+?)\s*$/)
+      if (kem) prov.apiKeyEnv = kem[1].replace(/^["']|["']$/g, '')
     }
   }
   if (prov !== null) out.push(prov)
   return out
+}
+
+/** 凭据状态: dsh credentials 文件 refs 段的环境变量名集合(只取名字, 值不读不外传) + 进程环境兜底。*/
+export function credentialEnvNames(env = process.env) {
+  const home = env.DSH_HOME ?? `${os.homedir()}/.dsh`
+  const names = new Set()
+  try {
+    let inRefs = false
+    for (const raw of fs.readFileSync(`${home}/.credentials.yaml`, 'utf8').split(/\r?\n/)) {
+      if (!raw.trim() || raw.trim().startsWith('#')) continue
+      const indent = raw.length - raw.replace(/^\s+/, '').length
+      const body = raw.trim()
+      if (indent === 0) { inRefs = /^refs:\s*$/.test(body); continue }
+      if (inRefs) {
+        const m = body.match(/^([A-Za-z0-9_]+):\s*(.*)$/)
+        if (m) names.add(m[1])
+      }
+    }
+  } catch {}
+  for (const k of Object.keys(env)) if (/API_KEY/.test(k)) names.add(k)
+  return names
+}
+
+/** 凭据 refs 合并(纯函数供 pytest/node test) — dsh 管理的 {version, refs:{ENV: key}} 平文本形态:
+ * 已有 refs: 段 → 在段尾插入新条目; 无 → 文件尾新建 refs: 段。env 名白名单校验。*/
+export function mergeCredentialRefs(text, envName, value) {
+  if (!/^[A-Za-z0-9_]+$/.test(String(envName || ''))) throw new Error('invalid credential env name')
+  const lines = String(text ?? '').split(/\r?\n/)
+  let refsStart = -1, refsEnd = -1
+  lines.forEach((l, i) => {
+    if (i === 0) return
+    const m = l.match(/^(\s*)([A-Za-z0-9_.-]+):\s*(.*)$/)
+    if (!m) return
+    if (m[1] === '' && m[2] === 'refs') refsStart = i
+    else if (refsStart >= 0 && m[1].startsWith('  ')) refsEnd = i
+  })
+  const entry = `  ${envName}: ${value}`
+  if (refsStart >= 0) lines.splice((refsEnd >= refsStart ? refsEnd : refsStart) + 1, 0, entry)
+  else lines.push('refs:', entry)
+  return lines.join('\n')
 }
 
 /** 汇总 dsh 配置里的供应商/模型(settings.yaml + profiles/<profile>/cordis.patch.yml), 按供应商排序去重。*/
@@ -248,19 +290,51 @@ export function loadDshCatalog(env = process.env) {
       if (fs.existsSync(p)) files.push(p)
     }
   } catch {}
-  const byProv = new Map()
+  const refs = credentialEnvNames(env)
+  const byProv = new Map() // provider → {models:Set, apiKeyEnv}
   for (const f of files) {
     try {
-      for (const { provider, models } of parseProviderModels(fs.readFileSync(f, 'utf8'))) {
-        const cur = byProv.get(provider) ?? new Set()
-        for (const m of models) cur.add(m)
+      for (const { provider, models, apiKeyEnv } of parseProviderModels(fs.readFileSync(f, 'utf8'))) {
+        const cur = byProv.get(provider) ?? { models: new Set(), apiKeyEnv: '' }
+        for (const m of models) cur.models.add(m)
+        if (apiKeyEnv) cur.apiKeyEnv = apiKeyEnv
         byProv.set(provider, cur)
       }
     } catch {}
   }
   return [...byProv.entries()]
-    .map(([provider, ms]) => ({ provider, models: [...ms].sort() }))
+    .map(([provider, cur]) => ({ provider, models: [...cur.models].sort(), apiKeyEnv: cur.apiKeyEnv || '',
+      hasKey: cur.apiKeyEnv ? (refs.has(cur.apiKeyEnv) || Boolean(env[cur.apiKeyEnv])) : false }))
     .sort((a, b) => a.provider.localeCompare(b.provider))
+}
+
+/** 策略库(#89 吸纳竞品策略库浏览面): 知识卡全量(现役+影子) + verify 命中战果(wins/hits)。
+ * source: current=confirmed(现役, 过三门禁) / shadow=default(影子待实战)。数据源=本地 brain 文件 + 图内战果。*/
+export async function loadStrategies(env = process.env, query) {
+  const dir = env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
+  const out = []
+  const seen = new Set()
+  const pools = [
+    ['confirmed', `${dir}/brain/current/techniques.json`],
+    ['default', `${dir}/brain/shadow/techniques.json`],
+  ]
+  for (const [source, p] of pools) {
+    try {
+      for (const c of JSON.parse(fs.readFileSync(p, 'utf8')).cards ?? []) {
+        if (seen.has(c.id)) continue
+        seen.set(c.id, true)
+        out.push({ id: c.id, title: c.title, category: c.category || 'general',
+          applies_to: c.applies_to ?? [], source: source === 'current' ? 'confirmed' : source })
+      }
+    } catch {}
+  }
+  let winsMap = {}
+  try {
+    const rows = await query(`MATCH (e:ExperienceWeight) WHERE e.id STARTS WITH 'card:' RETURN e.id AS id, e.wins AS w, e.hits AS h`)
+    for (const r of rows ?? []) winsMap[String(r.id)] = { wins: Number(r.w) || 0, hits: Number(r.h) || 0 }
+  } catch {}
+  for (const s of out) s.stats = winsMap[s.id] ?? { wins: 0, hits: 0 }
+  return out
 }
 
 const MODEL_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
@@ -379,6 +453,7 @@ function projectEngagement(row) {
  * runEvents: readRunEvents 产物(可选; 缺省时轨迹/用量区降级为空)。
  */
 export async function buildSnapshot(query, { fleet = null, runEvents = null } = {}) {
+  const strategies = await loadStrategies(process.env, query).catch(() => [])
   const [engActiveRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows] = await Promise.all([
     query(Q.engActive),
     query(Q.agents),
@@ -476,6 +551,7 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null } = 
       target_type: String(x?.target_type ?? ''),
     })),
     fleet, // null = 未配置模型策略(fleet 卡降级为空态)
+    strategies, // 策略库(#89 吸纳): 知识卡全量 + wins/hits 战果, 面板策略库浏览卡数据源
     run: {
       events: runEvents?.events ?? [],
       usage: runEvents?.usage ?? {},

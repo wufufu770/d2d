@@ -240,7 +240,7 @@ test('parseProviderModels: settings.yaml 缩进形态(providers@2)', () => {
     '  provider: minimax-cn',
     '  model: MiniMax-M3',
   ].join('\n')
-  assert.deepEqual(parseProviderModels(y), [{ provider: 'opencode-go', models: ['hy3', 'mimo-v2.5'] }])
+  assert.deepEqual(parseProviderModels(y), [{ provider: 'opencode-go', models: ['hy3', 'mimo-v2.5'], apiKeyEnv: 'OPENCODE_GO_API_KEY' }])
 })
 
 test('parseProviderModels: cordis.patch.yml 缩进形态(providers@4, 块外 - id 不误收)', () => {
@@ -282,8 +282,8 @@ test('loadDshCatalog: 合并 settings.yaml 与多 profile patch 并去重', () =
   ].join('\n'))
   const cat = loadDshCatalog({ DSH_HOME: dir })
   assert.deepEqual(cat, [
-    { provider: 'minimax-cn', models: ['MiniMax-M3'] },
-    { provider: 'opencode-go', models: ['hy3', 'mimo-v2.5', 'mimo-v2.5-pro'] },
+    { provider: 'minimax-cn', models: ['MiniMax-M3'], apiKeyEnv: '', hasKey: false },
+    { provider: 'opencode-go', models: ['hy3', 'mimo-v2.5', 'mimo-v2.5-pro'], apiKeyEnv: '', hasKey: false },
   ])
 })
 
