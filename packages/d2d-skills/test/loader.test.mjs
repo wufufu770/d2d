@@ -28,6 +28,14 @@ describe('parseFrontmatter 边界', () => {
     assert.equal(data['when_to_use'], 'a: b')
     assert.equal(data.name, 'x')
   })
+  it('仅白名单字段 allowed-tools 做逗号切分; 其余含逗号值保持字符串', () => {
+    const { data } = parseFrontmatter(
+      '---\nname: x\ndescription: 对目标探测, 验证链路, 再出报告\nallowed-tools: Bash, Read ,WebFetch\ncategory: a,b\n---\n',
+    )
+    assert.deepEqual(data['allowed-tools'], ['Bash', 'Read', 'WebFetch'], '白名单字段切分为数组')
+    assert.equal(data.description, '对目标探测, 验证链路, 再出报告', 'description 含逗号不拆(散文不是列表)')
+    assert.equal(data.category, 'a,b', '非白名单字段一律保持字符串')
+  })
 })
 
 describe('校验', () => {

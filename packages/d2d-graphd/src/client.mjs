@@ -16,7 +16,8 @@ export function createClient({ baseUrl = DEFAULT_BASE, hostToken = '', fetch: fe
   const base = String(baseUrl).replace(/\/+$/, '')
   async function call(path, { method = 'GET', body } = {}) {
     const headers = { 'content-type': 'application/json' }
-    if (hostToken) headers['authorization'] = `Bearer ${hostToken}`
+    // graphd 只认 X-Auth(app.py _auth), 发 authorization: Bearer 会被 401
+    if (hostToken) headers['x-auth'] = hostToken
     let res
     try {
       res = await fetchImpl(`${base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
@@ -33,7 +34,8 @@ export function createClient({ baseUrl = DEFAULT_BASE, hostToken = '', fetch: fe
     query: (cypher, params = {}) => call('/query', { method: 'POST', body: { cypher, params } }),
     writeFinding: (finding) => call('/write/finding', { method: 'POST', body: finding }),
     writeSignal: (signal) => call('/write/signal', { method: 'POST', body: signal }),
-    transition: ({ findingId, to, note = '' }) =>
-      call('/write/transition', { method: 'POST', body: { findingId, to, note } }),
+    // graphd /write/transition 读 id/to/actor/reason(app.py transition_gate: actor/reason 必填审计)
+    transition: ({ findingId, to, note = '', actor = 'host' }) =>
+      call('/write/transition', { method: 'POST', body: { id: findingId, to, actor, reason: note } }),
   }
 }

@@ -18,10 +18,14 @@
 import base64
 import hashlib
 import json
+import logging
 import os
 import time
 
-from mitmproxy import ctx, http
+from mitmproxy import http
+
+# 复审#10: ctx.log 在 mitmproxy ≥9 已移除(本机 12.x 无 ctx.log) → 标准库 logging
+log = logging.getLogger("d2d.mitm")
 
 BODY_SNIPPET_MAX = 256  # 与 scripts/gateway/mitm-proxy.mjs 保持一致
 EVENTS_PATH = os.environ.get(
@@ -31,6 +35,20 @@ EVENTS_PATH = os.environ.get(
 BODY_MODE = os.environ.get("D2D_MITM_BODY") == "1"
 GRAPHD_URL = os.environ.get("D2D_GRAPHD_URL", "").rstrip("/")
 GRAPH_TOKEN = os.environ.get("D2D_GRAPH_TOKEN", "")
+
+# 复审#10: 常驻句柄 + os.open(O_APPEND|O_CREAT, 0o600) — 文件创建即 0600
+# (老实现"先 open 再 chmod"存在窗口期; 且每次事件都重开文件浪费 fd/系统调用)
+_events_fd = None
+
+
+def _events_fileno() -> int:
+    global _events_fd
+    if _events_fd is None:
+        d = os.path.dirname(EVENTS_PATH)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        _events_fd = os.open(EVENTS_PATH, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    return _events_fd
 
 
 def _digest(content: bytes) -> dict:
@@ -43,12 +61,9 @@ def _digest(content: bytes) -> dict:
 
 def _emit(event: dict) -> None:
     try:
-        os.makedirs(os.path.dirname(EVENTS_PATH), exist_ok=True)
-        with open(EVENTS_PATH, "a", encoding="utf-8") as f:  # 打开即 O_APPEND, 0600
-            os.chmod(EVENTS_PATH, 0o600)
-            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+        os.write(_events_fileno(), (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8"))
     except OSError as e:
-        ctx.log.warn(f"[d2d#56] events 落盘失败(静默): {e}")
+        log.warning("[d2d#56] events 落盘失败(静默): %s", e)
     _forward(event)
 
 
@@ -71,14 +86,14 @@ def _forward(event: dict) -> None:
 
 
 class D2dEventAddon:
-    def __init__(self) -> None:
-        self._start: dict = {}
-
+    # 复审#10: 起始时间戳挂在 flow.metadata(id() 地址可被 GC 复用串号);
+    # 并补 error 钩子清理, 避免异常 flow 在 metadata 里留脏数据。
     def request(self, flow: http.HTTPFlow) -> None:
-        self._start[id(flow)] = time.monotonic()
+        flow.metadata["d2d_start"] = time.monotonic()
 
     def response(self, flow: http.HTTPFlow) -> None:
-        duration_ms = int((time.monotonic() - self._start.pop(id(flow), time.monotonic())) * 1000)
+        start = flow.metadata.pop("d2d_start", None)
+        duration_ms = int((time.monotonic() - start) * 1000) if start is not None else 0
         _emit(
             {
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -93,6 +108,9 @@ class D2dEventAddon:
                 "src": "mitmproxy-addon",
             }
         )
+
+    def error(self, flow: http.HTTPFlow) -> None:
+        flow.metadata.pop("d2d_start", None)
 
 
 addons = [D2dEventAddon()]

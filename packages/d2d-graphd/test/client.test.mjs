@@ -14,23 +14,24 @@ function mockFetch(handler) {
 const ok = (body) => ({ ok: true, status: 200, text: async () => JSON.stringify(body) })
 
 describe('d2d-graphd client', () => {
-  it('query 携带 Bearer hostToken 且 POST 到 /query', async () => {
+  it('query 携带 x-auth hostToken(graphd 只认 X-Auth) 且 POST 到 /query', async () => {
     const f = mockFetch(() => ok({ rows: [] }))
     const g = createClient({ baseUrl: 'http://127.0.0.1:9999/', hostToken: 'tok', fetch: f })
     await g.query('MATCH (n) RETURN n', { x: 1 })
     const { url, init } = f.calls[0]
     assert.equal(url, 'http://127.0.0.1:9999/query')
-    assert.equal(init.headers.authorization, 'Bearer tok')
+    assert.equal(init.headers['x-auth'], 'tok')
+    assert.equal(init.headers.authorization, undefined, 'authorization: Bearer 会被 graphd 401, 不得发送')
     assert.equal(init.method, 'POST')
     assert.deepEqual(JSON.parse(init.body), { cypher: 'MATCH (n) RETURN n', params: { x: 1 } })
   })
 
-  it('health GET 且无 token 时不带 authorization 头', async () => {
+  it('health GET 且无 token 时不带 x-auth 头', async () => {
     const f = mockFetch(() => ok({ status: 'ok' }))
     const g = createClient({ fetch: f })
     await g.health()
     assert.equal(f.calls[0].url, 'http://127.0.0.1:8766/health')
-    assert.equal(f.calls[0].init.headers.authorization, undefined)
+    assert.equal(f.calls[0].init.headers['x-auth'], undefined)
   })
 
   it('非 2xx 抛 GraphdError 并带 status', async () => {
@@ -53,12 +54,14 @@ describe('d2d-graphd client', () => {
     assert.equal(await g.health(), 'pong')
   })
 
-  it('transition 组装 findingId/to/note', async () => {
+  it('transition 组装 graphd 契约 {id, to, actor, reason}(app.py 读 id/actor/reason)', async () => {
     const f = mockFetch(() => ok({ ok: 1 }))
     const g = createClient({ fetch: f })
     await g.transition({ findingId: 'f1', to: 'verified' })
     assert.equal(f.calls[0].url, 'http://127.0.0.1:8766/write/transition')
-    assert.deepEqual(JSON.parse(f.calls[0].init.body), { findingId: 'f1', to: 'verified', note: '' })
+    assert.deepEqual(JSON.parse(f.calls[0].init.body), { id: 'f1', to: 'verified', actor: 'host', reason: '' })
+    await g.transition({ findingId: 'f2', to: 'dropped', note: '误报', actor: 'verifier-1' })
+    assert.deepEqual(JSON.parse(f.calls[1].init.body), { id: 'f2', to: 'dropped', actor: 'verifier-1', reason: '误报' })
   })
 
   it('FINDING_STATES 为七态', () => {

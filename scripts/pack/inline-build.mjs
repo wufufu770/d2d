@@ -14,7 +14,8 @@ import path from 'node:path'
 import url from 'node:url'
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
-const REPO = path.resolve(__dirname, '..', '..')
+// D2D_INLINE_BUILD_REPO: 测试注入最小 fixture 仓库用(默认取脚本所在仓库根)
+const REPO = path.resolve(process.env.D2D_INLINE_BUILD_REPO || path.join(__dirname, '..', '..'))
 const args = process.argv.slice(2)
 const outIdx = args.indexOf('--out')
 const DIST = outIdx >= 0 ? path.resolve(REPO, args[outIdx + 1] || 'dist') : path.join(REPO, 'dist')
@@ -48,19 +49,20 @@ function depsOf(file, repoFiles) {
 }
 
 function copyRewrite(srcFile, opts) {
-  const rel = path.relative(REPO, srcFile)
   let src = fs.readFileSync(srcFile, 'utf8')
-  // 改写跨包/指向 plugin 的相对 import → vendor/
+  const destFile = path.join(opts.pkgDist, opts.destRel.get(srcFile))
+  // 改写跨包/指向 plugin 的相对 import → 产物内真实相对路径(POSIX 化, 浏览器/npm 语义统一)。
+  // opts.destRel 是本次构建的全量 file → destRel 映射: 单条目映射会让任意依赖查不到而漏改写。
   src = src.replace(/(from\s*|import\s*\(\s*|import\s*)(['"])(\.\.[^'"]*)\2/g, (full, pre, q, spec) => {
-    const abs = path.resolve(path.dirname(srcFile), spec)
-    if (!abs.startsWith(REPO)) return full
-    const relToRepo = path.relative(REPO, abs)
-    const inlined = opts.inlined[abs]
-    if (!inlined) return full
-    const newSpec = './' + inlined.split(path.sep).join('/')
+    const base = path.resolve(path.dirname(srcFile), spec)
+    // depsOf 同款候选: 原样 / 补 .mjs / 目录 index(源码里存在无扩展名 import)
+    const target = [base, base + '.mjs', path.join(base, 'index.mjs')].find((c) => opts.destRel.has(c))
+    if (!target) return full // 仓库外/裸包名: 原样保留
+    let newSpec = path.relative(path.dirname(destFile), path.join(opts.pkgDist, opts.destRel.get(target)))
+      .split(path.sep).join('/')
+    if (!newSpec.startsWith('.')) newSpec = `./${newSpec}` // 同目录引用必须带 ./ 才是合法相对说明符
     return `${pre}${q}${newSpec}${q}`
   })
-  const destFile = path.join(opts.pkgDist, opts.inlined[srcFile])
   fs.mkdirSync(path.dirname(destFile), { recursive: true })
   fs.writeFileSync(destFile, src)
 }
@@ -86,13 +88,15 @@ function buildPkg(name) {
   pubMeta.description = `${meta.description} (inline-build 产物: vendor/ 内联仓库内依赖源码)`
   fs.writeFileSync(path.join(distDir, 'package.json'), JSON.stringify(pubMeta, null, 2) + '\n')
 
-  // 拷贝改写所有内联文件(自身文件落在包内相对位置, 依赖落在 vendor/)
+  // 全量 file → destRel 映射(自身文件落包内相对位置, 依赖落 vendor/) — 一次性算好,
+  // copyRewrite 改写 import 时要查任意内联目标的位置, 单条目映射会导致改写完全失效
+  const destRel = new Map()
   for (const [file, rel] of inlined) {
-    const destRel = rel.startsWith(`packages${path.sep}${name}`)
+    destRel.set(file, rel.startsWith(`packages${path.sep}${name}`)
       ? path.relative(path.join(REPO, 'packages', name), file)
-      : path.join('vendor', rel)
-    copyRewrite(file, { inlined: { [file]: destRel }, pkgDist: distDir })
+      : path.join('vendor', rel))
   }
+  for (const file of inlined.keys()) copyRewrite(file, { destRel, pkgDist: distDir })
   console.log(`inline-build: ${name} → ${path.relative(REPO, distDir)} (${inlined.size} files)`)
 }
 
