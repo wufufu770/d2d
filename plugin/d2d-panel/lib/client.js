@@ -237,21 +237,31 @@ window.__ModuleLoader__.load({
     }
 
     // ---- Fleet 卡: 模型可点开选择列表(并集 + 自定义输入; backup 可清除) ----
-    function FleetModelPicker({ role, slot, current, models, quotaHits, onPick, busy }) {
+    function FleetModelPicker({ role, slot, current, models, catalog, quotaHits, onPick, busy }) {
       const [custom, setCustom] = useState('')
       const isBackup = slot === 'backup'
-      const candidates = [...new Set([current, ...models].filter(Boolean))]
-      const hit = quotaHits?.includes?.(current)
+      // catalog = dsh 已注册供应商/模型(host 从 settings.yaml + profiles/*/cordis.patch.yml 枚举);
+      // models = 历史用过的模型(含手填自定义)。已用但不在 catalog 的单独一组保留, catalog 内的按供应商分组。
+      const inCatalog = new Set((catalog ?? []).flatMap((p) => p.models.map((id) => `${p.provider}/${id}`)))
+      const usedCustom = [...new Set([current, ...models].filter(Boolean))].filter((m) => !inCatalog.has(m))
+      const modelBtn = (m, label, opts = {}) => h('button', {
+        key: m + (opts.keySuffix ?? ''),
+        disabled: busy,
+        onClick: () => onPick(role, slot, m),
+        title: m,
+        ...panel.btn(m === current ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}, opts),
+      }, label, m === current ? ' ✓' : '')
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px' } },
-        h('div', panel.muted(0.55), `选择 ${role}/${slot} 的模型(${candidates.length} 个已用):`),
-        h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } },
-          candidates.map((m) => h('button', {
-            key: m,
-            disabled: busy,
-            onClick: () => onPick(role, slot, m),
-            ...panel.btn(m === current ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}),
-          }, shortModel(m), m === current ? ' ✓' : '')),
+        h('div', panel.muted(0.55), `选择 ${role}/${slot} 的模型(${(catalog ?? []).reduce((a, p) => a + p.models.length, 0)} 个来自 dsh 配置):`),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '220px', overflowY: 'auto', paddingRight: '2px' } },
+          (catalog ?? []).filter((p) => p.models.length).map((p) => h('div', { key: p.provider, style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'baseline' } },
+            h('span', { ...panel.mono, style: { ...(panel.mono.style ?? {}), fontSize: '10px', opacity: 0.75, minWidth: '86px' } }, p.provider),
+            p.models.map((id) => modelBtn(`${p.provider}/${id}`, id, { keySuffix: `/${p.provider}` })))),
+          usedCustom.length ? h('div', { key: 'used', style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'baseline' } },
+            h('span', { ...panel.mono, style: { ...(panel.mono.style ?? {}), fontSize: '10px', opacity: 0.75, minWidth: '86px' } }, '已用/自定义'),
+            usedCustom.map((m) => modelBtn(m, shortModel(m)))) : null,
           isBackup ? h('button', {
+            key: 'clear-backup',
             disabled: busy || !current,
             onClick: () => onPick(role, slot, ''),
             ...panel.btn(),
@@ -424,8 +434,8 @@ window.__ModuleLoader__.load({
                   onClick: () => setOpen(open === keyB ? null : keyB),
                 }, '+ 备'),
               busy && (open === key || open === keyB) ? h('span', panel.muted(0.5), '写入中…') : null),
-            open === key ? h(FleetModelPicker, { role, slot: 'primary', current: m.primary, models: fleet.models ?? [], quotaHits: run?.quotaHits, onPick: pick, busy }) : null,
-            open === keyB ? h(FleetModelPicker, { role, slot: 'backup', current: m.backup, models: fleet.models ?? [], quotaHits: run?.quotaHits, onPick: pick, busy }) : null)
+            open === key ? h(FleetModelPicker, { role, slot: 'primary', current: m.primary, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, busy }) : null,
+            open === keyB ? h(FleetModelPicker, { role, slot: 'backup', current: m.backup, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, busy }) : null)
         }),
         err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null)
     }

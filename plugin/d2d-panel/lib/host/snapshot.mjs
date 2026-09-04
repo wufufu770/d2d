@@ -187,14 +187,80 @@ export function readFleet(env = process.env) {
     for (const [k, v] of Object.entries(p?.roles ?? {})) {
       roles[k] = { primary: String(v?.primary ?? ''), backup: String(v?.backup ?? '') }
     }
-    const fleet = { default: { primary: String(p?.default?.primary ?? ''), backup: String(p?.default?.backup ?? '') }, roles, models: [] }
-    // 候选模型并集: 已被引用过的模型(任意厂商, 无中央注册表 — 并集 + 自定义输入)
+    const fleet = { default: { primary: String(p?.default?.primary ?? ''), backup: String(p?.default?.backup ?? '') }, roles, models: [], catalog: [] }
+    // 候选模型并集: 已被引用过的模型 + dsh 已注册供应商/模型(issue: 换槽选择器此前只有已用模型, 其余全靠手填)
     const seen = new Set()
     for (const m of [fleet.default.primary, fleet.default.backup, ...Object.values(roles).flatMap((r) => [r.primary, r.backup])]) {
       if (m && !seen.has(m)) { seen.add(m); fleet.models.push(m) }
     }
+    let catalog = []
+    try { catalog = loadDshCatalog(env) } catch {}
+    fleet.catalog = catalog
+    for (const { provider, models } of catalog) {
+      for (const id of models) {
+        const m = `${provider}/${id}`
+        if (m && !seen.has(m)) { seen.add(m); fleet.models.push(m) }
+      }
+    }
     return fleet
   } catch { return null }
+}
+
+/** issue: Fleet 换槽候选只有已用模型 — 从 dsh 配置枚举已注册供应商/模型(零依赖缩进解析)。
+ * 兼容两种缩进形态: ~/.dsh/settings.yaml(providers@2) 与 profiles/<profile>/cordis.patch.yml(providers@4)。
+ * provider 行 = providers: 块内下一级的 `name:`; 模型 = 块内 `- id: <id>` 列表项; 缩出块即结束。*/
+export function parseProviderModels(text) {
+  const out = []
+  const lines = String(text ?? '').split(/\r?\n/)
+  let block = -1
+  let prov = null
+  for (const raw of lines) {
+    if (!raw.trim() || raw.trim().startsWith('#')) continue
+    const indent = raw.length - raw.replace(/^\s+/, '').length
+    const body = raw.trim()
+    if (prov !== null && (indent <= block || (indent === block + 2 && /^[A-Za-z0-9_-]+:\s*$/.test(body)))) {
+      out.push(prov); prov = null // 出块 / 同级下一个 provider
+    }
+    if (prov === null && /^providers:\s*$/.test(body)) { block = indent; continue }
+    if (prov === null && block >= 0 && indent === block + 2) {
+      const m = body.match(/^([A-Za-z0-9_-]+):\s*$/)
+      if (m) { prov = { provider: m[1], models: [] }; continue }
+    }
+    if (prov !== null) {
+      const idm = body.match(/^-\s*id:\s*(.+?)\s*$/)
+      if (idm) {
+        const id = idm[1].replace(/^["']|["']$/g, '')
+        if (id) prov.models.push(id)
+      }
+    }
+  }
+  if (prov !== null) out.push(prov)
+  return out
+}
+
+/** 汇总 dsh 配置里的供应商/模型(settings.yaml + profiles/<profile>/cordis.patch.yml), 按供应商排序去重。*/
+export function loadDshCatalog(env = process.env) {
+  const home = env.DSH_HOME ?? `${os.homedir()}/.dsh`
+  const files = [`${home}/settings.yaml`]
+  try {
+    for (const e of fs.readdirSync(`${home}/profiles`)) {
+      const p = `${home}/profiles/${e}/cordis.patch.yml`
+      if (fs.existsSync(p)) files.push(p)
+    }
+  } catch {}
+  const byProv = new Map()
+  for (const f of files) {
+    try {
+      for (const { provider, models } of parseProviderModels(fs.readFileSync(f, 'utf8'))) {
+        const cur = byProv.get(provider) ?? new Set()
+        for (const m of models) cur.add(m)
+        byProv.set(provider, cur)
+      }
+    } catch {}
+  }
+  return [...byProv.entries()]
+    .map(([provider, ms]) => ({ provider, models: [...ms].sort() }))
+    .sort((a, b) => a.provider.localeCompare(b.provider))
 }
 
 const MODEL_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
