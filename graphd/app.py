@@ -146,6 +146,35 @@ CONFIG_ADVICE_RE = re.compile(
     r"secure flag|版本号|x-powered-by|server banner|version (disclosure|泄露)|missing security)",
     re.I)
 
+# issue #89 前置: 类别名归一 — 同缺陷因命名漂移(chain 族 4 种写法等)逃逸签名去重与分类统计。
+# 写入时归一(canonical_cat) + 存量迁移(scripts/ops 层), canonical 选择取存量最高频写法。
+CAT_ALIASES = {
+    # chain 族
+    "exploit-chain": "attack-chain", "complete-abuse-chain": "attack-chain",
+    "auth-chain": "attack-chain", "chain": "attack-chain",
+    # cors 族
+    "cors-misconfig": "cors-misconfiguration", "cors-misc": "cors-misconfiguration",
+    "cors-session-theft": "cors-misconfiguration",
+    # auth 族
+    "authentication-bypass": "auth-bypass", "auth-bypass-partial": "auth-bypass",
+    "auth-bypass-attempt": "auth-bypass", "auth-bypass-vector": "auth-bypass",
+    # crypto 族
+    "crypto-bypass": "crypto-failure", "broken-crypto": "crypto-failure", "crypto-weakness": "crypto-failure",
+    # info 族
+    "info-leak": "info-disclosure", "information-disclosure": "info-disclosure",
+    # credential 族
+    "credential-theft": "credential-exposure", "credential-extraction": "credential-exposure",
+    "credential-abuse": "credential-exposure",
+    # config 族
+    "config-issue": "config-advice", "config-change": "config-advice",
+}
+
+
+def canonical_cat(c) -> str:
+    """类别归一(纯函数供 pytest) — 小写化后按别名表映射到 canonical 写法。"""
+    c = str(c or "").strip().lower()
+    return CAT_ALIASES.get(c, c)
+
 # R3: Finding 七态状态机（INTEGRATION-DAG 采纳项）—— 只允许合法迁移
 FINDING_STATES = ("candidate", "triaged", "verified", "isolated", "reported", "accepted", "rejected")
 FINDING_TRANSITIONS = {
@@ -623,8 +652,9 @@ class Handler(BaseHTTPRequestHandler):
                         _crej, _crej_reason = config_reject(sev, str(req.get("category") or ""), title)
                         if _crej:
                             return self._send(400, {"ok": False, "error": _crej_reason})
+                        # issue #89 前置: 类别名归一(写入即 canonical, 防命名漂移逃逸去重)
+                        cat = canonical_cat(str(req.get("category") or "vuln"))
                         # R3: 配置建议归类 —— medium+ 的加固项仍降级 config-advice 入库供人工复核
-                        cat = str(req.get("category") or "vuln")
                         if cat in ("config", "config-advice", "hardening") or \
                                 (sev in ("low", "info") and CONFIG_ADVICE_RE.search(tl)):
                             cat = "config-advice"

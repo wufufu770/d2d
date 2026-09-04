@@ -20,7 +20,9 @@ const BRAIN = `${DATA_DIR}/brain`
 const STAGED = `${BRAIN}/staged`
 const VERSIONS = `${BRAIN}/versions`
 const SEED = `${REPO}/brain/seed/v0-techniques.json`
-const GRAPH = process.argv[process.argv.indexOf('--graph') + 1] ?? '8766'
+// 缺省参数修复: 同 src-export — 不带 --graph 时旧写法取到 argv[0]
+const _gi = process.argv.indexOf('--graph')
+const GRAPH = _gi > -1 ? (process.argv[_gi + 1] || '8766') : '8766'
 const FORCE = process.argv.includes('--force')
 
 // 门禁①: 注入/破坏性内容扫描(与 sanitize/destructive 同向)

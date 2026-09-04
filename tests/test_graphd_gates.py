@@ -162,6 +162,28 @@ def test_v10_authorization_header_redacted():
     assert "abcdef123456" not in out
 
 
+# ---- 类别名归一(issue #89 前置, 2026-09 批) ----
+from graphd.app import canonical_cat
+
+def test_canonical_chain_family():
+    assert canonical_cat("exploit-chain") == "attack-chain"
+    assert canonical_cat("complete-abuse-chain") == "attack-chain"
+    assert canonical_cat("auth-chain") == "attack-chain"
+    assert canonical_cat("chain") == "attack-chain"
+
+def test_canonical_other_families():
+    assert canonical_cat("cors-misc") == "cors-misconfiguration"
+    assert canonical_cat("authentication-bypass") == "auth-bypass"
+    assert canonical_cat("broken-crypto") == "crypto-failure"
+    assert canonical_cat("info-leak") == "info-disclosure"
+    assert canonical_cat("credential-theft") == "credential-exposure"
+
+def test_canonical_passthrough_and_case():
+    assert canonical_cat("idor-bola") == "idor-bola"
+    assert canonical_cat("  Auth-Bypass  ") == "auth-bypass"
+    assert canonical_cat("") == ""
+
+
 # ---- R3 回归: 七态机 / config-advice 归类 ----
 from graphd.app import FINDING_STATES, FINDING_TRANSITIONS, CONFIG_ADVICE_RE
 
