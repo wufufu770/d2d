@@ -322,11 +322,11 @@ export async function loadStrategies(env = process.env, query) {
     try {
       for (const c of JSON.parse(fs.readFileSync(p, 'utf8')).cards ?? []) {
         if (seen.has(c.id)) continue
-        seen.set(c.id, true)
+        seen.add(c.id)
         out.push({ id: c.id, title: c.title, category: c.category || 'general',
           applies_to: c.applies_to ?? [], source: source === 'current' ? 'confirmed' : source })
       }
-    } catch {}
+    } catch (e) { console.error('[d2d-panel] loadStrategies pool:', source, e.message) }
   }
   let winsMap = {}
   try {
