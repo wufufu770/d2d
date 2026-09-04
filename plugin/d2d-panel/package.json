@@ -36,5 +36,27 @@
     "test": "node --test test/snapshot.test.mjs",
     "standalone": "node lib/host/standalone.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wufufu770/d2d.git",
+    "directory": "plugin/d2d-panel"
+  },
+  "homepage": "https://github.com/wufufu770/d2d#readme",
+  "bugs": "https://github.com/wufufu770/d2d/issues",
+  "keywords": [
+    "dsh",
+    "d2d",
+    "panel",
+    "pentest",
+    "observability"
+  ],
+  "files": [
+    "lib/",
+    "test/",
+    "cordis.patch.yml"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

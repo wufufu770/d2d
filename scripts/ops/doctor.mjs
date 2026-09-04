@@ -54,21 +54,23 @@ check('model-policies.json 存在', Boolean(pol))
 const placeholder = pol ? ['discovery', 'deep', 'creative', 'verify', 'study'].map((r) => pol.roles?.[r]?.primary ?? pol.default?.primary ?? '').filter((m) => !m || m.includes('<') || !m.includes('/')) : ['(文件缺失)']
 check('模型策略无占位符', placeholder.length === 0, placeholder.join(', '))
 
-// 5. 主模型余额探针(1 次最小调用; 凭据只从 dsh credentials 读取, 不打印值)
-const cred = (() => { try { return fs.readFileSync(`${os.homedir()}/.dsh/.credentials.yaml`, 'utf8') } catch { return '' } })()
-const mm = (cred.match(/MINIMAX_API_KEY: \S+/) ?? [])[0]?.split(': ')[1]
-if (mm) {
+// 5. 主模型余额探针(可选): 默认不内置任何厂商端点 — 配置以下 env 才启用探针
+//    DOCTOR_PROBE_URL (OpenAI 兼容 chat/completions 地址) / DOCTOR_PROBE_KEY / DOCTOR_PROBE_MODEL
+const probeUrl = process.env.DOCTOR_PROBE_URL ?? ''
+const probeKey = process.env.DOCTOR_PROBE_KEY ?? ''
+const probeModel = process.env.DOCTOR_PROBE_MODEL ?? ''
+if (probeUrl && probeKey && probeModel) {
   try {
-    const r = await fetch('https://api.minimax.chat/v1/chat/completions', {
-      method: 'POST', headers: { Authorization: `Bearer ${mm}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'MiniMax-M3', messages: [{ role: 'user', content: 'hi' }], max_tokens: 4 }),
+    const r = await fetch(probeUrl, {
+      method: 'POST', headers: { Authorization: `Bearer ${probeKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: probeModel, messages: [{ role: 'user', content: 'hi' }], max_tokens: 4 }),
       signal: AbortSignal.timeout(15000),
     })
     const j = await r.json()
-    const dead = j?.error?.http_code === '402' || /insufficient|balance/i.test(JSON.stringify(j.error ?? ''))
-    check('主模型(minimax M3)余额探针', !dead, dead ? '402 无余额 — 建议切槽或充值' : 'OK')
+    const dead = j?.error && (String(j.error.http_code ?? '') === '402' || /insufficient|balance|余额/i.test(JSON.stringify(j.error)))
+    check(`主模型余额探针(${probeModel})`, !dead, dead ? '402 无余额 — 建议切槽或充值' : 'OK')
   } catch (e) { check('主模型余额探针', false, e.message.slice(0, 60)) }
-} else check('凭据引用(MINIMAX_API_KEY)', false, 'credentials.yaml 无此键')
+} else check('主模型余额探针', true, '未配置 DOCTOR_PROBE_* — 跳过(可选)')
 
 // 6. systemd 守护单元
 for (const u of ['d2d-graphd', 'd2d-dsh-web', 'd2d-egress', 'd2d-oast']) {

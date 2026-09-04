@@ -1,29 +1,23 @@
 {
-  "_说明": "由 model-rotate.mjs sync 生成, vision/notes 请手工修订",
+  "_说明": "由 model-rotate.mjs sync 生成(本文件为占位示例, 换成你实际接入的 厂商/模型 与上下文窗口)",
   "models": [
     {
-      "id": "minimax-cn/MiniMax-M2.7",
+      "id": "provider-a/model-x",
       "vision": false,
-      "ctx": 204800,
+      "ctx": 131072,
       "notes": ""
     },
     {
-      "id": "minimax-cn/MiniMax-M2.7-highspeed",
+      "id": "provider-a/model-x-fast",
       "vision": false,
-      "ctx": 204800,
+      "ctx": 131072,
       "notes": ""
     },
     {
-      "id": "minimax-cn/MiniMax-M3",
+      "id": "provider-b/model-y",
       "vision": false,
       "ctx": 1000000,
-      "notes": ""
-    },
-    {
-      "id": "opencode-go/mimo-v2.5",
-      "vision": false,
-      "ctx": 1000000,
-      "notes": ""
+      "notes": "大窗口模型 — 适合深环长循环"
     }
   ]
 }

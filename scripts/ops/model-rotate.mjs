@@ -41,7 +41,7 @@ function list() {
 function set(roleEq) {
   const [role, model] = String(roleEq ?? '').split('=')
   if (!role || !model || !/^[^/]+\/.+/.test(model)) {
-    console.error('用法: model-rotate.mjs set <role>=<provider/model>   例: set deep=opencode-go/mimo-v2.5')
+    console.error('用法: model-rotate.mjs set <role>=<provider/model>   例: set deep=provider-a/model-x')
     process.exit(1)
   }
   const pol = readJson(POLICY) ?? { default: { primary: '', backup: '' }, roles: {} }

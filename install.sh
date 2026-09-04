@@ -126,8 +126,7 @@ cat > "$DSH_HOME/profiles/web/package.json" <<EOF
 }
 EOF
 
-# web profile 补丁: LLM 路由 — 主聊天也能用 minimax-cn/opencode-go 模型
-# (否则主会话默认 deepseek-official/deepseek-v4-flash, 未配 DEEPSEEK_API_KEY 即 MISSING_CREDENTIAL)
+# web profile 补丁: LLM 路由 — 主聊天接入你在下方 provider 模板里配置的厂商
 # #2: patch 层对 settings.yaml 的 llm-pi-ai 段是整体覆盖语义 — 用户在 UI Models 页配好的
 #     provider 会被静默冲掉(实证: 模型选择器瘫痪/发送框禁用)。已配置则不生成模板, 保留用户配置。
 _GEN_LLM_BLOCK=1
@@ -148,45 +147,43 @@ if [ "$_GEN_LLM_BLOCK" = "1" ]; then
   name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
     providers:
-      minimax-cn:
-        displayName: MiniMax (via pi-ai)
-        apiKeyEnv: MINIMAX_API_KEY
+      # ↓ 占位示例: 换成你的厂商(改 displayName/baseURL/apiKeyEnv/models 四处),
+      #   provider 键名须与 model-policies.json 的 "provider/" 前缀一致
+      provider-a:
+        displayName: Provider A (via pi-ai)
+        apiKeyEnv: PROVIDER_A_API_KEY
         api: openai-completions
-        baseURL: https://api.minimax.chat/v1
+        baseURL: https://api.provider-a.example/v1
         compat:
           thinkingFormat: deepseek
           supportsDeveloperRole: false
           maxTokensField: max_tokens
         models:
-          - id: MiniMax-M2.7
-            name: MiniMax M2.7
+          - id: model-x-fast
+            name: Model X Fast
             contextWindow: 65536
             maxTokens: 8192
-          - id: MiniMax-M2.7-highspeed
-            name: MiniMax M2.7 highspeed
-            contextWindow: 65536
-            maxTokens: 8192
-          - id: MiniMax-M3
-            name: MiniMax M3
+          - id: model-x
+            name: Model X
             contextWindow: 131072
             maxTokens: 16384
-      opencode-go:
-        displayName: OpenCode Go (via pi-ai)
-        apiKeyEnv: OPENCODE_API_KEY
+      provider-b:
+        displayName: Provider B (via pi-ai)
+        apiKeyEnv: PROVIDER_B_API_KEY
         api: openai-completions
-        baseURL: https://opencode.ai/zen/go/v1
+        baseURL: https://api.provider-b.example/v1
         compat:
           thinkingFormat: deepseek
           supportsDeveloperRole: false
           maxTokensField: max_tokens
         models:
-          - id: mimo-v2.5
-            name: MiMo v2.5
+          - id: model-y
+            name: Model Y
             contextWindow: 262144
             maxTokens: 32768
-          - id: mimo-v2.5-pro
-            name: MiMo v2.5 Pro
-            contextWindow: 262144
+          - id: model-y-large
+            name: Model Y Large
+            contextWindow: 1000000
             maxTokens: 32768
 EOF
 fi
@@ -252,9 +249,9 @@ fi
 
 # ---------- 5. 默认模型 ----------
 step "设置主聊天默认模型"
-# dsh 出厂默认 deepseek-official/deepseek-v4-flash — 只配 MINIMAX/OPENCODE key 的
-# 机器上主会话直接 MISSING_CREDENTIAL。worker 不受影响(per-task 模型注入),
-# 这里只把「主聊天」指到已配置路由的 minimax 上。
+# dsh 出厂自带一个默认 provider — 只配第三方 provider key 的
+# 机器上主会话可能 MISSING_CREDENTIAL。worker 不受影响(per-task 模型注入),
+# 这里只把「主聊天」指到已配置路由的 provider 上。
 # #2: 用户已有自己的 llm-pi-ai provider 时不改默认(避免指到不存在的 provider)。
 SETTINGS="$DSH_HOME/settings.yaml"
 if [ "$_GEN_LLM_BLOCK" = "0" ]; then
@@ -262,15 +259,15 @@ if [ "$_GEN_LLM_BLOCK" = "0" ]; then
 elif [ ! -f "$SETTINGS" ]; then
   cat > "$SETTINGS" <<'EOF'
 agent-default-model:
-  provider: minimax-cn
-  model: MiniMax-M2.7
+  provider: provider-a
+  model: model-x
 EOF
-  ok "主聊天默认模型 → minimax-cn/MiniMax-M2.7(只需 MINIMAX_API_KEY)"
+  ok "主聊天默认模型 → provider-a/model-x(占位 — 换成你在 cordis.patch.yml 接入的 provider/model)"
 elif grep -q '^agent-default-model:' "$SETTINGS"; then
-  warn "settings.yaml 已有 agent-default-model — 保留你的选择(若为 deepseek-official 且未配 DEEPSEEK_API_KEY, 主聊天会 MISSING_CREDENTIAL, 改法见 README「默认模型」)"
+  warn "settings.yaml 已有 agent-default-model — 保留你的选择(若指向未配置 key 的 provider, 主聊天会 MISSING_CREDENTIAL, 改法见 README「默认模型」)"
 else
-  printf '\nagent-default-model:\n  provider: minimax-cn\n  model: MiniMax-M2.7\n' >> "$SETTINGS"
-  ok "已追加 agent-default-model → minimax-cn/MiniMax-M2.7"
+  printf '\nagent-default-model:\n  provider: provider-a\n  model: model-x\n' >> "$SETTINGS"
+  ok "已追加 agent-default-model → provider-a/model-x"
 fi
 
 # ---------- 6. 启动脚本 ----------
@@ -287,8 +284,8 @@ export P2P_HOST_TOKEN="\${P2P_HOST_TOKEN:-\$(cat $HOME/.config/d2d/host-token)}"
 export P2P_GRAPHD="http://127.0.0.1:$GRAPHD_PORT"
 
 # ↓↓↓ 按需注入你的模型 API key(与 cordis.patch.yml 的 apiKeyEnv 对应)
-# export MINIMAX_API_KEY=sk-...
-# export OPENCODE_API_KEY=sk-...
+# export PROVIDER_A_API_KEY=sk-...
+# export PROVIDER_B_API_KEY=sk-...
 
 # #14: 优雅停止 — graphd 持 kuzu WAL, kill -9 会丢未 checkpoint 的提交(实证全图数据丢失)。
 #      先 SIGTERM 等退出(≤5s), 仍存活才 SIGKILL 兜底。

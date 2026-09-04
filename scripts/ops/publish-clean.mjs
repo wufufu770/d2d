@@ -20,6 +20,8 @@ function walk(dir, base = '') {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const p = path.join(dir, ent.name)
     const rel = base ? `${base}/${ent.name}` : ent.name
+    // .github/workflows 改写需要 PAT 的 Workflows:write 权限(默认没有 → 403)。main 保留其现有 CI 配置。
+    if (ent.isDirectory() && rel === '.github') continue
     if (ent.isDirectory()) entries.push(...walk(p, rel))
     else entries.push({ path: rel, file: p })
   }
@@ -28,10 +30,20 @@ function walk(dir, base = '') {
 const files = walk(EXPORT)
 console.log('待发布文件:', files.length)
 
-// 逐文件上传 blob(内容→SHA), 失败即停
+// 逐文件上传 blob(内容→SHA), 网络抖动重试 3 次
+const ghRetry = (args, input, label) => {
+  for (let a = 1; a <= 3; a++) {
+    try { return execFileSync('gh', ['api', ...args], { input, encoding: 'utf8', maxBuffer: 1e9 }) }
+    catch (e) {
+      if (a === 3) { console.error(`\n✗ ${label}: ${String(e.message).slice(0, 200)}`); process.exit(1) }
+      execFileSync('sleep', ['3'])
+    }
+  }
+}
 const treeArgs = []
 for (const f of files) {
-  const b = JSON.parse(gh(['repos/' + REPO + '/git/blobs', '-F', `content=${fs.readFileSync(f.file, 'utf8')}`, '-F', 'encoding=utf-8'], ''))
+  const body = JSON.stringify({ content: fs.readFileSync(f.file, 'utf8'), encoding: 'utf-8' })
+  const b = JSON.parse(ghRetry(['repos/' + REPO + '/git/blobs', '--input', '-'], body, f.path))
   treeArgs.push('-f', `tree[][path]=${f.path}`, '-f', 'tree[][mode]=100644', '-f', 'tree[][type]=blob', '-f', `tree[][sha]=${b.sha}`)
   process.stdout.write(`.`)
 }
