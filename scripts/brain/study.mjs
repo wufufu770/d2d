@@ -14,7 +14,9 @@ const INBOX = `${DATA_DIR}/knowledge/inbox`
 const STAGED = `${DATA_DIR}/brain/staged`
 const APPLY = process.argv.includes('--apply')
 const mi = process.argv.indexOf('--model')
-const GRAPH = process.argv[process.argv.indexOf('--graph') + 1] ?? '8766'
+// 缺省参数修复: 同 src-export — 不带 --graph 时旧写法取到 argv[0]
+const _gi = process.argv.indexOf('--graph')
+const GRAPH = _gi > -1 ? (process.argv[_gi + 1] || '8766') : '8766'
 
 const readJson = (p, d = null) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return d } }
 function studyModel() {
