@@ -120,6 +120,7 @@ window.__ModuleLoader__.load({
       { key: 'caps', label: '容量' },
       { key: 'denylist', label: '黑名单' },
       { key: 'fleet', label: 'fleet' },
+      { key: 'strategies', label: '策略库' },
       { key: 'usage', label: '用量' },
       { key: 'workers', label: 'workers' },
       { key: 'funnel', label: '漏斗' },
@@ -237,13 +238,17 @@ window.__ModuleLoader__.load({
     }
 
     // ---- Fleet 卡: 模型可点开选择列表(并集 + 自定义输入; backup 可清除) ----
-    function FleetModelPicker({ role, slot, current, models, catalog, quotaHits, onPick, busy }) {
+    function FleetModelPicker({ role, slot, current, models, catalog, quotaHits, onPick, onCredential, busy }) {
       const [custom, setCustom] = useState('')
+      const [keyFor, setKeyFor] = useState(null) // 正在补凭据的 provider
+      const [keyVal, setKeyVal] = useState('')
+      const [credMsg, setCredMsg] = useState(null)
       const isBackup = slot === 'backup'
       // catalog = dsh 已注册供应商/模型(host 从 settings.yaml + profiles/*/cordis.patch.yml 枚举);
       // models = 历史用过的模型(含手填自定义)。已用但不在 catalog 的单独一组保留, catalog 内的按供应商分组。
       const inCatalog = new Set((catalog ?? []).flatMap((p) => p.models.map((id) => `${p.provider}/${id}`)))
       const usedCustom = [...new Set([current, ...models].filter(Boolean))].filter((m) => !inCatalog.has(m))
+      const hit = quotaHits?.includes?.(current)
       const modelBtn = (m, label, opts = {}) => h('button', {
         key: m + (opts.keySuffix ?? ''),
         disabled: busy,
@@ -254,9 +259,19 @@ window.__ModuleLoader__.load({
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px' } },
         h('div', panel.muted(0.55), `选择 ${role}/${slot} 的模型(${(catalog ?? []).reduce((a, p) => a + p.models.length, 0)} 个来自 dsh 配置):`),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '220px', overflowY: 'auto', paddingRight: '2px' } },
-          (catalog ?? []).filter((p) => p.models.length).map((p) => h('div', { key: p.provider, style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'baseline' } },
-            h('span', { ...panel.mono, style: { ...(panel.mono.style ?? {}), fontSize: '10px', opacity: 0.75, minWidth: '86px' } }, p.provider),
-            p.models.map((id) => modelBtn(`${p.provider}/${id}`, id, { keySuffix: `/${p.provider}` })))),
+          (catalog ?? []).filter((p) => p.models.length).map((p) => h('div', { key: p.provider, style: { display: 'flex', flexDirection: 'column', gap: '3px' } },
+            h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'baseline' } },
+              h('span', { ...panel.mono, style: { ...(panel.mono.style ?? {}), fontSize: '10px', opacity: 0.75, minWidth: '86px' } }, p.provider),
+              p.models.map((id) => modelBtn(`${p.provider}/${id}`, id, { keySuffix: `/${p.provider}` })),
+              !p.hasKey ? h('button', {
+                ...panel.btn({ padding: '0 6px', opacity: 0.85, borderColor: 'var(--d2d-warn)', color: 'var(--d2d-warn)' }),
+                title: `该供应商未配置凭据(${p.apiKeyEnv || 'API KEY'}), 点此粘贴 API key 存入 dsh credentials(0600), 之后可无痕切换`,
+                onClick: () => setKeyFor(keyFor === p.provider ? null : p.provider),
+              }, '🔑 缺凭据') : null),
+            keyFor === p.provider ? h('div', { key: `cred-${p.provider}`, style: { display: 'flex', gap: '4px', width: '100%' } },
+              h('input', { ...panel.input({ flex: 1 }), type: 'password', placeholder: `粘贴 ${p.apiKeyEnv || 'API KEY'}(仅写入 dsh credentials 文件)`,
+                value: keyVal, onChange: (ev) => setKeyVal(ev.target.value) }),
+              h('button', { ...panel.btn(), disabled: busy || !keyVal, onClick: () => onCredential(p.provider, keyVal) }, '保存凭据')) : null)),
           usedCustom.length ? h('div', { key: 'used', style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'baseline' } },
             h('span', { ...panel.mono, style: { ...(panel.mono.style ?? {}), fontSize: '10px', opacity: 0.75, minWidth: '86px' } }, '已用/自定义'),
             usedCustom.map((m) => modelBtn(m, shortModel(m)))) : null,
@@ -282,6 +297,33 @@ window.__ModuleLoader__.load({
             ...panel.btn({ opacity: /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(custom) ? 1 : 0.4 }),
           }, '设为该槽')),
         hit ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-warn)' } }, `⚠ ${current} 近期命中额度降级`) : null)
+    }
+
+    // ---- 策略库(#89 吸纳竞品): 知识卡全量浏览 — 关键词/类别过滤 + 战果(wins/hits) + 来源(confirmed/default) ----
+    function StrategiesCard({ strategies }) {
+      const [kw, setKw] = useState('')
+      const [cat, setCat] = useState('')
+      const list = (strategies ?? []).filter((s) => {
+        if (cat && (s.category || 'general') !== cat) return false
+        if (!kw) return true
+        const blob = `${s.id} ${s.title} ${(s.applies_to ?? []).join(' ')}`.toLowerCase()
+        return kw.toLowerCase().split(/\s+/).filter(Boolean).every((k) => blob.includes(k))
+      }).sort((a, b) => (b.stats?.wins ?? 0) - (a.stats?.wins ?? 0) || a.id.localeCompare(b.id))
+      const cats = [...new Set((strategies ?? []).map((s) => s.category || 'general'))].sort()
+      return h(Card, { title: `策略库 · ${strategies?.length ?? 0} 张`, extra: h('span', panel.muted(0.45), 'confirmed=现役 / default=影子待实战') },
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+          h('input', { ...panel.input(), placeholder: '关键词过滤(id/标题/applies_to, 空格分隔与语义)', value: kw, onChange: (ev) => setKw(ev.target.value) }),
+          h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } },
+            h('button', { ...panel.btn(cat === '' ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}), onClick: () => setCat('') }, '全部'),
+            cats.map((c) => h('button', { key: c, ...panel.btn(cat === c ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}), onClick: () => setCat(cat === c ? '' : c) }, c)))),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '300px', overflowY: 'auto', paddingRight: '2px' } },
+          list.slice(0, 80).map((s) => h('div', { key: s.id + s.source, style: { display: 'flex', gap: '7px', alignItems: 'baseline', minWidth: 0 } },
+            h('span', { ...panel.mono, style: { ...(panel.mono.style ?? {}), fontSize: '10px', flex: '0 0 auto', opacity: 0.75 } },
+              `${s.source === 'confirmed' ? '✓' : s.source === 'shadow' ? '◦' : '?'}${s.stats?.wins ? ` W${s.stats.wins}` : ''}`),
+            h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }, title: `${s.id} · ${s.category}` }, s.title || s.id),
+            h('span', panel.chip(), s.category || 'general'))),
+          list.length > 80 ? h('div', panel.muted(0.5), `… 仅显示前 80/${list.length} 条, 请继续输入关键词收窄`) : null,
+          !list.length ? h('div', panel.muted(0.5), '无匹配策略') : null))
     }
 
     // ---- R6.3: 黑名单独立卡 — 每行一条(域名/IP段), 行内增删改, 固定高度内滚 ----
@@ -411,6 +453,14 @@ window.__ModuleLoader__.load({
           refresh()
         } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
       }
+      const saveCredential = async (provider, key) => {
+        setBusy(true); setErr(null)
+        try {
+          await postJson('credential', { provider, key })
+          setCredMsg(null)
+          refresh()
+        } catch (e) { setErr(String(e?.message ?? e)); throw e } finally { setBusy(false) }
+      }
       return h(Card, { title: 'Fleet 模型矩阵', extra: h('span', panel.muted(0.45), '点击模型换槽') },
         Object.entries(fleet.roles).map(([role, m]) => {
           const key = `${role}/primary`
@@ -434,8 +484,8 @@ window.__ModuleLoader__.load({
                   onClick: () => setOpen(open === keyB ? null : keyB),
                 }, '+ 备'),
               busy && (open === key || open === keyB) ? h('span', panel.muted(0.5), '写入中…') : null),
-            open === key ? h(FleetModelPicker, { role, slot: 'primary', current: m.primary, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, busy }) : null,
-            open === keyB ? h(FleetModelPicker, { role, slot: 'backup', current: m.backup, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, busy }) : null)
+            open === key ? h(FleetModelPicker, { role, slot: 'primary', current: m.primary, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, onCredential: saveCredential, busy }) : null,
+            open === keyB ? h(FleetModelPicker, { role, slot: 'backup', current: m.backup, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, onCredential: saveCredential, busy }) : null)
         }),
         err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null)
     }
@@ -640,6 +690,7 @@ window.__ModuleLoader__.load({
         !off.has('funnel') ? h(FunnelCard, { snap }) : null,
         !off.has('gaps') ? h(GapsCard, { snap }) : null,
         !off.has('exp') ? h(ExperienceCard, { snap }) : null,
+        !off.has('strategies') || !snap.strategies?.length ? null : h(StrategiesCard, { strategies: snap.strategies }),
         h(Card, { title: `开放信号 tail · ${snap.counts.signals_open}`, extra: h('span', panel.muted(0.45), `显示最近 ${snap.signals.length} 条`) },
           snap.signals.length
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
