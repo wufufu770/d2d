@@ -231,16 +231,16 @@ test('parseProviderModels: settings.yaml 缩进形态(providers@2)', () => {
   const y = [
     'llm-pi-ai:',
     '  providers:',
-    '    opencode-go:',
+    '    provider-a:',
     '      models:',
-    '        - id: hy3',
-    '        - id: mimo-v2.5',
-    '      apiKeyEnv: OPENCODE_GO_API_KEY',
+    '        - id: model-y-fast',
+    '        - id: model-y',
+    '      apiKeyEnv: PROVIDER_A_API_KEY',
     'agent-default-model:',
-    '  provider: minimax-cn',
-    '  model: MiniMax-M3',
+    '  provider: provider-b',
+    '  model: model-x',
   ].join('\n')
-  assert.deepEqual(parseProviderModels(y), [{ provider: 'opencode-go', models: ['hy3', 'mimo-v2.5'], apiKeyEnv: 'OPENCODE_GO_API_KEY' }])
+  assert.deepEqual(parseProviderModels(y), [{ provider: 'provider-a', models: ['model-y-fast', 'model-y'], apiKeyEnv: 'PROVIDER_A_API_KEY' }])
 })
 
 test('parseProviderModels: cordis.patch.yml 缩进形态(providers@4, 块外 - id 不误收)', () => {
@@ -248,13 +248,13 @@ test('parseProviderModels: cordis.patch.yml 缩进形态(providers@4, 块外 - i
     '- id: llm-pi-ai',
     '  config:',
     '    providers:',
-    '      minimax-cn:',
+    '      provider-a:',
     '        models:',
-    '          - id: MiniMax-M2.7',
-    '          - id: MiniMax-M3',
+    '          - id: model-x-fast',
+    '          - id: model-x',
     '- id: pentest-worker-env',
   ].join('\n')
-  assert.deepEqual(parseProviderModels(y), [{ provider: 'minimax-cn', models: ['MiniMax-M2.7', 'MiniMax-M3'] }])
+  assert.deepEqual(parseProviderModels(y), [{ provider: 'provider-a', models: ['model-x-fast', 'model-x'] }])
 })
 
 test('loadDshCatalog: 合并 settings.yaml 与多 profile patch 并去重', () => {
@@ -264,26 +264,26 @@ test('loadDshCatalog: 合并 settings.yaml 与多 profile patch 并去重', () =
   fs.writeFileSync(path.join(dir, 'settings.yaml'), [
     'llm-pi-ai:',
     '  providers:',
-    '    opencode-go:',
+    '    provider-b:',
     '      models:',
-    '        - id: hy3',
-    '        - id: mimo-v2.5',
+    '        - id: model-y-fast',
+    '        - id: model-y',
   ].join('\n'))
   fs.writeFileSync(path.join(dir, 'profiles', 'headless', 'cordis.patch.yml'), [
     'x:',
     '  providers:',
-    '    opencode-go:',
+    '    provider-b:',
     '      models:',
-    '        - id: mimo-v2.5',
-    '        - id: mimo-v2.5-pro',
-    '    minimax-cn:',
+    '        - id: model-y',
+    '        - id: model-y-large',
+    '    provider-a:',
     '      models:',
-    '        - id: MiniMax-M3',
+    '        - id: model-x',
   ].join('\n'))
   const cat = loadDshCatalog({ DSH_HOME: dir })
   assert.deepEqual(cat, [
-    { provider: 'minimax-cn', models: ['MiniMax-M3'], apiKeyEnv: '', hasKey: false },
-    { provider: 'opencode-go', models: ['hy3', 'mimo-v2.5', 'mimo-v2.5-pro'], apiKeyEnv: '', hasKey: false },
+    { provider: 'provider-a', models: ['model-x'], apiKeyEnv: '', hasKey: false },
+    { provider: 'provider-b', models: ['model-y', 'model-y-fast', 'model-y-large'], apiKeyEnv: '', hasKey: false },
   ])
 })
 
@@ -295,20 +295,20 @@ test('readFleet: catalog 模型并入 models 并集(去重)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-data-'))
   fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'config', 'model-policies.json'), JSON.stringify({
-    default: { primary: 'opencode-go/hy3', backup: '' },
-    roles: { discovery: { primary: 'opencode-go/hy3', backup: 'minimax-cn/MiniMax-M3' } },
+    default: { primary: 'provider-b/model-y-fast', backup: '' },
+    roles: { discovery: { primary: 'provider-b/model-y-fast', backup: 'provider-a/model-x' } },
   }))
   const dshDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cat2-'))
   fs.writeFileSync(path.join(dshDir, 'settings.yaml'), [
     'llm-pi-ai:',
     '  providers:',
-    '    opencode-go:',
+    '    provider-b:',
     '      models:',
-    '        - id: hy3',
-    '        - id: mimo-v2.5',
+    '        - id: model-y-fast',
+    '        - id: model-y',
   ].join('\n'))
   const fleet = readFleet({ D2D_DATA_DIR: dir, DSH_HOME: dshDir })
-  assert.ok(fleet.catalog.some((p) => p.provider === 'opencode-go'))
-  assert.ok(fleet.models.includes('opencode-go/mimo-v2.5'))
-  assert.ok(fleet.models.includes('opencode-go/hy3'))
+  assert.ok(fleet.catalog.some((p) => p.provider === 'provider-b'))
+  assert.ok(fleet.models.includes('provider-b/model-y'))
+  assert.ok(fleet.models.includes('provider-b/model-y-fast'))
 })

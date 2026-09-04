@@ -2,7 +2,7 @@
   "_说明": {
     "用途": "每任务角色的模型策略: primary 主模型 + backup 额度到限后的备用。复制本模板到 $D2D_DATA_DIR/config/model-policies.json(默认 ~/.d2d-data/config/)后编辑生效; 仓库内同名真实配置不入库(仅作本机回退)。",
     "切换语义": "只有两种触发: ①用户指令 node scripts/ops/model-rotate.mjs set <role>=<provider/model>; ②额度到限自动切该角色 backup。backup 留空 = 暂停+通知, 绝不盲目轮换。",
-    "格式": "provider/model, 与 dsh settings.yaml 中 providers 的 models id 对应, 跨厂商可混用(如 minimax-cn/MiniMax-M3、opencode-go/mimo-v2.5)。",
+    "格式": "provider/model, 与 dsh settings.yaml 中 providers 的 models id 对应, 跨厂商可混用(示例: provider-a/model-x、provider-b/model-y)。",
     "roles": "discovery/deep/creative/verify/study 五角色; 未配置的角色回退 default。可用 node scripts/ops/model-rotate.mjs list 查看生效策略。"
   },
   "default": { "primary": "<provider>/<model>", "backup": "" },
