@@ -1,0 +1,13 @@
+# P0-4 守护单元 — OAST 带外回调(:8890)
+[Unit]
+Description=d2d OAST out-of-band callback (:8890)
+After=network.target d2d-graphd.service
+
+[Service]
+ExecStart=/usr/bin/node %h/d2d/scripts/gateway/oast.mjs
+WorkingDirectory=%h/d2d
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

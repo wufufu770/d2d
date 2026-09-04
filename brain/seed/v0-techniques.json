@@ -1,80 +1,921 @@
 {
-  "_说明": "v1 知识基线(C-1 扩充 16→40) — 随产品发布的公开安全知识检索卡(源自 OWASP WSTG/PortSwigger Web Security Academy 类公开知识体系, 不含任何本机测试数据)。variants 字段(E-4 变体分析): 同类攻击在其他技术栈的等价形态, 净室/创造环注入驱动「已知模式→新面」迁移。",
-  "cards": [
-    { "id": "card:sql-injection", "title": "SQL 注入(报错/布尔/时间盲/联合)", "applies_to": ["php", "mysql", "python", "flask", "django", "asp", "jsp", "db", "sql", "login", "search", "filter", "order"], "domain": "", "validation_recipe": "参数处单引号/布尔差异/睡眠函数探测; 确认需区分报错回显与行为差异, 盲注用布尔对比或时序双重验证; 联合查询先探测列数。", "refs": ["OWASP Testing Guide WSTG-INPV-05"], "variants": [
-      { "stack": "mssql", "payload_diff": "睡眠用 WAITFOR DELAY '0:0:5'; 报错用 CONVERT/CAST 类型错误; 字符串拼接用 + 而非 CONCAT", "ref": "PortSwigger SQL injection cheat sheet" },
-      { "stack": "postgresql", "payload_diff": "睡眠用 pg_sleep(5); 报错用 cast('x' as int); 联合注入 NULL 填充需匹配列类型", "ref": "PortSwigger SQL injection cheat sheet" },
-      { "stack": "oracle", "payload_diff": "无 LIMIT, 用 ROWNUM/ROW_NUMBER; 睡眠用 dbms_lock.sleep(5) 需 DBA 常不可用, 改用重查询时延; FROM dual 必带", "ref": "PortSwigger SQL injection cheat sheet" }
-    ] },
-    { "id": "card:xss-reflected-stored", "title": "XSS(反射/存储/DOM)", "applies_to": ["javascript", "html", "comment", "profile", "search", "render", "markdown", "editor"], "domain": "", "validation_recipe": "标记性探针确认回显位置与编码上下文(HTML/属性/JS), 再选适配的上下文闭合构造; 需证明脚本上下文可执行而非仅回显。", "refs": ["OWASP WSTG-INPV-02"] },
-    { "id": "card:ssrf", "title": "SSRF 服务端请求伪造(含云元数据)", "applies_to": ["import", "upload-by-url", "webhook", "avatar", "fetch", "proxy", "preview", "pdf"], "domain": "", "validation_recipe": "服务端发起 URL 的参数指向自建回调与 169.254.169.254/latest/meta-data/ 与内网保留段; 回调命中或元数据回显(instance-id)即证据。", "refs": ["OWASP WSTG-INPV-19"], "variants": [
-      { "stack": "aliyun-ecs", "payload_diff": "元数据地址 100.100.100.200/latest/meta-data/; 相比 AWS 无 IMDSv2 token 要求(老实例)", "ref": "阿里云 ECS 元数据官方文档" },
-      { "stack": "dns-rebinding", "payload_diff": "校验与请求分两次解析时, 用 rebinding 域(首次解析白名单 IP, TTL=0 二次解析内网 IP)", "ref": "PortSwigger SSRF advanced exploits" }
-    ] },
-    { "id": "card:ssti", "title": "模板注入 SSTI", "applies_to": ["jinja2", "twig", "freemarker", "velocity", "thymeleaf", "template", "render", "preview", "mail"], "domain": "", "validation_recipe": "模板表达式探针(不同引擎数学差异)判引擎族, 再按族构造; 需区分 SSTI 与普通模板回显。", "refs": ["OWASP WSTG-INPV-18"], "variants": [
-      { "stack": "java-freemarker", "payload_diff": "探针 ${7*7}; 执行用 .getRuntime() 链或新内置 assign; EL 系另试 ${applicationScope}", "ref": "PortSwigger SSTI methodology" },
-      { "stack": "php-twig", "payload_diff": "探针 {{7*7}}; filter 注入用 map/sort 回调变体; 老版 Twig 用 _self.env.registerUndefinedFilterCallback", "ref": "PortSwigger SSTI methodology" }
-    ] },
-    { "id": "card:idor-bola", "title": "IDOR/BOLA 越权对象访问", "applies_to": ["api", "order", "invoice", "user", "profile", "download", "id", "uuid", "rest"], "domain": "", "validation_recipe": "两个低权限身份互换对象标识访问; 证据=低权限身份+他人对象ID 成功取得数据的请求响应对; 管理员访问管理对象是正常功能。", "refs": ["OWASP API1:2023"] },
-    { "id": "card:auth-bypass-logic", "title": "认证绕过与业务逻辑缺陷", "applies_to": ["login", "otp", "captcha", "reset", "register", "verify", "step", "session"], "domain": "", "validation_recipe": "多步流程跳步/参数篡改/响应篡改/状态不一致; 验证需以未授权身份完成本应被拦截的完整流程。", "refs": ["OWASP WSTG-ATHN"] },
-    { "id": "card:jwt-manipulation", "title": "JWT 缺陷(alg none/弱密钥/未校验)", "applies_to": ["jwt", "token", "bearer", "authorization", "session", "api"], "domain": "", "validation_recipe": "解码验签段, 试 alg 切换/空签名/密钥爆破; 证据=篡改后 token 被接受且身份改变。", "refs": ["OWASP API2:2023"], "variants": [
-      { "stack": "jwk-injection", "payload_diff": "header 内嵌 jwk/jku/x5u 指向自控公钥, 服务端取其验签; kid 路径注入类则试目录穿越与 SQL 拼接", "ref": "PortSwigger JWT attacks" }
-    ] },
-    { "id": "card:race-condition", "title": "竞态条件(转账/兑换/限额)", "applies_to": ["transfer", "redeem", "coupon", "withdraw", "balance", "limit", "payment"], "domain": "", "validation_recipe": "同一请求并发重放≥5 次后查余额/次数差; 负值或超限即证据。", "refs": ["OWASP WSTG-BUSL"], "variants": [
-      { "stack": "single-threaded-server", "payload_diff": "node 类单线程服务用 last-byte-sync 变体: 并发请求响应分片对齐最后字节, 使业务处理窗口重叠", "ref": "PortSwigger race conditions with HTTP/2 single-packet attack" }
-    ] },
-    { "id": "card:path-traversal", "title": "路径穿越/任意文件读取", "applies_to": ["download", "file", "path", "include", "read", "export", "lang", "page"], "domain": "", "validation_recipe": "../ 变体与编码穿越(%2e%2e%2f 等)读已知文件; 回显文件特征内容即证据。", "refs": ["OWASP WSTG-PATH"], "variants": [
-      { "stack": "java", "payload_diff": "war 部署根在 /usr/local/tomcat/webapps/ROOT/, 读 WEB-INF/web.xml 定位数据源; %2e 在 java URL 归一化中可能不被解码需双写", "ref": "OWASP Path Traversal" },
-      { "stack": "php-windows", "payload_diff": "windows 下 ../ ..\\ 混用与 \\..\\ 等价; 盘符前缀 C:/; 点号截断(老PHP<5.3)与 ::$DATA 流", "ref": "OWASP Path Traversal" }
-    ] },
-    { "id": "card:file-upload-rce", "title": "文件上传接管(扩展名/类型/解析漏洞)", "applies_to": ["upload", "avatar", "attachment", "import", "excel", "image", "parser"], "domain": "", "validation_recipe": "扩展名/Content-Type/魔数绕过组合测试; 上传后需实际访问到可解析执行路径才算接管。", "refs": ["OWASP WSTG-BUSL-09"], "variants": [
-      { "stack": "nginx-php", "payload_diff": "cgi.fix_pathinfo 类解析: /upload/x.png/.php 由 fastcgi 回退执行; 需实测服务端行为而非只看保存路径", "ref": "Nginx+PHP fastcgi_parse_errors 文档" },
-      { "stack": "iis-asp", "payload_diff": "分号截断 x.asp;.png 与 /x.png/ 目录解析(aspx 当目录名); 短文件名枚举辅助定位", "ref": "OWASP WSTG-BUSL-09" }
-    ] },
-    { "id": "card:deserialization", "title": "不安全反序列化", "applies_to": ["java", "php", "python", "pickle", "session", "cookie", "rmi", "viewstate"], "domain": "", "validation_recipe": "识别序列化数据格式(cookie/session/viewstate), 用对应生态已知链构造探测(gadget 探针非破坏性); 需 DNS/时间类外带证据。", "refs": ["OWASP WSTG-INPV-15"] },
-    { "id": "card:xxe", "title": "XXE 实体注入(含 OOB)", "applies_to": ["xml", "soap", "docx", "xlsx", "svg", "rss", "import"], "domain": "", "validation_recipe": "XML 输入点试外部实体(file:// 与外部 DTD 回调); 无回显用 OOB 回调确认。", "refs": ["OWASP WSTG-INPV-07"] },
-    { "id": "card:open-redirect", "title": "开放重定向", "applies_to": ["redirect", "url", "next", "return", "goto", "callback", "continue"], "domain": "", "validation_recipe": "跳转参数指向外部域验证 30x Location; 需证明完整跳转链未被白名单拦截。", "refs": ["OWASP WSTG-VAL-09"] },
-    { "id": "card:business-privilege-escalation", "title": "水平/垂直权限提升(功能级)", "applies_to": ["admin", "role", "permission", "user-id", "level", "security", "setting"], "domain": "", "validation_recipe": "低权限身份调用功能级管理端点(改配置/重置/管理操作); 证据=低权限会话+成功响应+状态实际变化。", "refs": ["OWASP API5:2023"] },
-    { "id": "card:graphql-abuse", "title": "GraphQL 越权与自省滥用", "applies_to": ["graphql", "graphiql", "query", "mutation", "introspection"], "domain": "", "validation_recipe": "introspection 拉取 schema, 找未授权 field/mutation 与对象级缺口; 证据=跨身份取数。", "refs": ["OWASP GraphQL Cheat Sheet"] },
-    { "id": "card:api-mass-assignment", "title": "API 批量赋值/参数污染", "applies_to": ["api", "patch", "put", "register", "profile", "json", "field"], "domain": "", "validation_recipe": "请求体注入特权字段(role/isAdmin/balance)验证服务端是否吸收; 证据=权限或状态实际改变。", "refs": ["OWASP API3:2023"] },
-    { "id": "card:http-request-smuggling", "title": "HTTP 请求走私(CL.TE/TE.CL/TE.TE)", "applies_to": ["proxy", "cdn", "lb", "front", "backend", "apache", "nginx", "haproxy", "varnish"], "domain": "", "validation_recipe": "三态判定: CL.TE 用前置 Content-Length+分块体探针; TE.CL 反之; 观察后端收到的封装差异(延迟探针+自污染响应); 需两次独立复现且排除误报。", "refs": ["PortSwigger Web Security Academy: HTTP request smuggling", "OWASP WSTG-INPV-16"], "variants": [
-      { "stack": "te-te", "payload_diff": "两端都支持 TE 时用混淆变形(Transfer-encoding: xchunked / TE 头重复+大小写/空格差异)让一端忽略 TE", "ref": "PortSwigger browser-powered desync" },
-      { "stack": "http2-desync", "payload_diff": "H2.downgrade 场景: :path/header 中注入 CL 或 TE, 利用前端 H2→H1 转换不归一", "ref": "PortSwigger HTTP/2 desync" }
-    ] },
-    { "id": "card:web-cache-poisoning", "title": "Web 缓存投毒(unkeyed 输入)", "applies_to": ["cache", "cdn", "vary", "x-forwarded", "akamai", "cloudflare", "squid"], "domain": "", "validation_recipe": "参数化审计: 对每个 header/query 找 unkeyed 输入(改值后缓存命中内容变化); 反射点升级为可执行注入后等待/触发他人缓存; 证据=另一身份命中被投毒响应。", "refs": ["PortSwigger Web Security Academy: Web cache poisoning"], "variants": [
-      { "stack": "unkeyed-query", "payload_diff": "utm_* 类参数若 unkeyed 可投毒; 用 cache-buster 参数隔离自身验证", "ref": "PortSwigger web cache poisoning" }
-    ] },
-    { "id": "card:web-cache-deception", "title": "Web 缓存欺骗", "applies_to": ["cache", "cdn", "profile", "static", "path-info"], "domain": "", "validation_recipe": "已认证敏感页 URL 后缀伪静态(如 /profile/nonexistent.css)诱导缓存存储个人数据; 证据=未认证身份命中同 URL 取得他人数据。", "refs": ["PortSwigger Web Security Academy: Web cache deception"] },
-    { "id": "card:host-header-injection", "title": "Host 头注入(重置投毒/缓存键污染)", "applies_to": ["host", "reset", "password", "cache", "routing", "vhost"], "domain": "", "validation_recipe": "改 Host/X-Forwarded-Host 观察生成的绝对链接(重置邮件/跳转); 密码重置投毒证据=收到的重置链接域名变为攻击者域。", "refs": ["PortSwigger Web Security Academy: Host header injection"], "variants": [
-      { "stack": "override-headers", "payload_diff": "Host 被白名单时试 X-Forwarded-Host/X-Host/Forwarded: host=; 与缓存键差异组合成投毒", "ref": "PortSwigger host header injection" }
-    ] },
-    { "id": "card:crlf-injection", "title": "CRLF 注入(响应拆分/头注入)", "applies_to": ["redirect", "set-cookie", "header", "url", "param"], "domain": "", "validation_recipe": "参数值注入 %0d%0a 观察响应头分裂(Set-Cookie/Location 注入); 现代框架多已免疫, 重点在自研跳转/代理层。", "refs": ["OWASP WSTG-INPV-15"] },
-    { "id": "card:command-injection", "title": "命令注入(管道/分隔符/编码绕过)", "applies_to": ["ping", "export", "convert", "exec", "shell", "cli", "tool", "report"], "domain": "", "validation_recipe": "参数拼接系统命令的点(导出/转换/诊断)用分隔符与时延探针(| & ; $( ) 反引号 + $IFS/url 编码变体); 证据=时延差异或输出回显, 禁止破坏性命令。", "refs": ["OWASP WSTG-INPV-12"], "variants": [
-      { "stack": "windows", "payload_diff": "分隔符用 & 与 |; 变量展开 %COMSPEC%; 注释符无 # 用 & rem", "ref": "OWASP Command Injection" }
-    ] },
-    { "id": "card:password-reset-flaws", "title": "密码重置流程缺陷", "applies_to": ["reset", "password", "token", "email", "otp", "forgot"], "domain": "", "validation_recipe": "token 可预测/复用/跨账号使用; host 投毒改变重置链接; 参数邮箱污染(多邮箱参数); 证据=以未授权身份完成重置。", "refs": ["OWASP WSTG-ATHN"] },
-    { "id": "card:captcha-bypass", "title": "验证码绕过(四路)", "applies_to": ["captcha", "verify", "code", "sms", "otp", "login"], "domain": "", "validation_recipe": "四路: ①前端校验(响应可篡改) ②验证码可复用(同码多次提交) ③万能/默认码与参数删除 ④简单数学/字符可程序化识别; 证据=自动化流程完成受保护操作。", "refs": ["OWASP WSTG-ATHN"] },
-    { "id": "card:payment-logic-flaws", "title": "支付逻辑缺陷(金额/数量/币种)", "applies_to": ["payment", "checkout", "price", "amount", "cart", "order", "currency"], "domain": "", "validation_recipe": "改价(前端隐藏字段/请求体金额)、数量负数/超大值溢出、币种/单位混淆(分↔元)、0 元下单; 证据=异常价格订单实际成立且支付成功。", "refs": ["OWASP WSTG-BUSL"], "variants": [
-      { "stack": "integer-overflow", "payload_diff": "数量取 2^31 边界值观察金额回绕为负; 逐字段单变量测试避免混杂", "ref": "OWASP Business Logic" }
-    ] },
-    { "id": "card:coupon-discount-abuse", "title": "优惠券/折扣滥用", "applies_to": ["coupon", "discount", "promo", "redeem", "voucher"], "domain": "", "validation_recipe": "叠加使用/负值折扣/已用券重放(与竞态卡联动)/他人券码枚举; 证据=异常折扣订单成立。", "refs": ["OWASP WSTG-BUSL"] },
-    { "id": "card:order-flow-bypass", "title": "订单状态机跳跃/回调重放", "applies_to": ["order", "status", "callback", "notify", "webhook", "refund", "cancel"], "domain": "", "validation_recipe": "状态字段篡改跨步跳转(未支付→已发货); 支付回调重放/签名缺失导致重复发货; 取消后仍可发货的窗口。", "refs": ["OWASP WSTG-BUSL"] },
-    { "id": "card:refund-abuse", "title": "退款逻辑滥用", "applies_to": ["refund", "chargeback", "balance", "credit", "return"], "domain": "", "validation_recipe": "部分退款超原额/重复退款请求/退款与发货状态解耦验证; 证据=余额/账户实际多出资金或商品。", "refs": ["OWASP WSTG-BUSL"] },
-    { "id": "card:csv-injection", "title": "CSV/公式注入(导出链)", "applies_to": ["export", "csv", "excel", "report", "download"], "domain": "", "validation_recipe": "可写入字段值注入 =+@- 前缀公式(如 =HYPERLINK/命令类), 受害者打开导出文件触发; 证据=导出文件含未转义公式。", "refs": ["OWASP WSTG-INPV"] },
-    { "id": "card:xpath-injection", "title": "XPath 注入", "applies_to": ["xml", "xpath", "search", "query", "auth"], "domain": "", "validation_recipe": "查询点注入 ' 或 '1'='1 类布尔差异; 无报错用布尔/错误分支差异判定; 证据=认证/查询逻辑被改变。", "refs": ["OWASP WSTG-INPV"] },
-    { "id": "card:ldap-injection", "title": "LDAP 注入", "applies_to": ["ldap", "ad", "directory", "search", "auth", "filter"], "domain": "", "validation_recipe": "过滤器注入 ()*&| 变体改变查询语义(通配枚举/条件恒真); 证据=未授权数据返回或认证绕过。", "refs": ["OWASP WSTG-INPV"] },
-    { "id": "card:http-parameter-pollution", "title": "HTTP 参数污染(HPP)", "applies_to": ["param", "query", "filter", "amount", "id", "proxy"], "domain": "", "validation_recipe": "同名参数多次提交(?a=1&a=2)观察前后端取值差异(首个/末个/拼接); 与越权/支付逻辑联动放大。", "refs": ["OWASP WSTG-INPV"] },
-    { "id": "card:oauth-misconfig", "title": "OAuth/OIDC 配置缺陷", "applies_to": ["oauth", "oidc", "redirect_uri", "state", "code", "token", "sso", "callback"], "domain": "", "validation_recipe": "redirect_uri 白名单绕过(子域/路径/编码), state 缺失 CSRF, code 重放/跨客户端交换, implicit 模式 token 泄露; 证据=以受害者身份完成授权绑定。", "refs": ["OWASP OAuth Cheat Sheet"] },
-    { "id": "card:websocket-hijacking", "title": "WebSocket 跨站劫持(CSWSH)", "applies_to": ["websocket", "ws", "wss", "socket", "realtime", "chat"], "domain": "", "validation_recipe": "握手仅靠 Cookie 认证且无 Origin 校验 → 恶意页面可建立 ws 收发; 用自建页+控制端验证可读敏感消息/发操作指令。", "refs": ["PortSwigger Web Security Academy: WebSockets"] },
-    { "id": "card:prototype-pollution", "title": "原型链污染(服务端/客户端)", "applies_to": ["node", "express", "merge", "lodash", "json", "config", "__proto__"], "domain": "", "validation_recipe": "JSON 递归合并点注入 __proto__.{key} 观察全局行为改变(如 options 继承); 证据=污染后默认行为变化(配合 gadget 升级 RCE 更佳)。", "refs": ["PortSwigger Web Security Academy: Client-side prototype pollution"], "variants": [
-      { "stack": "client-side", "payload_diff": "URL 片段/query 注入 #__proto__ 与 ?__proto__[x] 变体, 用 DOM 破坏 gadget(如 script src)验证", "ref": "PortSwigger client-side prototype pollution" }
-    ] },
-    { "id": "card:session-fixation", "title": "会话固定", "applies_to": ["session", "cookie", "login", "sid", "token"], "domain": "", "validation_recipe": "登录前后会话标识不变且标识可由攻击者预设(URL/cookie 注入); 证据=受害者用固定标识登录后攻击者以同标识接管会话。", "refs": ["OWASP WSTG-SESS-03"] },
-    { "id": "card:dom-clobbering", "title": "DOM Clobbering", "applies_to": ["html", "dom", "form", "anchor", "global", "sanitize"], "domain": "", "validation_recipe": "注入命名元素(id/name)覆盖 window/文档对象属性, 改变脚本控制流(如覆盖 config 变量); 证据=脚本逻辑被注入值改变。", "refs": ["PortSwigger Web Security Academy: DOM clobbering"] },
-    { "id": "card:css-injection", "title": "CSS 注入(数据外带/UI 欺骗)", "applies_to": ["css", "style", "theme", "profile", "editor"], "domain": "", "validation_recipe": "style 注入点用属性选择器逐字符外带(背景图 URL 回调)或覆盖 UI 造成点击劫持; 证据=回调按序收到目标 token 字符。", "refs": ["PortSwigger Web Security Academy: CSS injection"] },
-    { "id": "card:rate-limit-bypass", "title": "限速/防爆破绕过", "applies_to": ["login", "otp", "rate", "limit", "brute", "429"], "domain": "", "validation_recipe": "限速键差异(X-Forwarded-For 轮换/大小写/参数变化/会话轮换/端点等价路径); 证据=同账号超限请求持续成功。", "refs": ["OWASP WSTG-ATHN"] },
-    { "id": "card:sso-cross-domain", "title": "SSO 跨域联动缺陷(link 任务核心)", "applies_to": ["sso", "saml", "sso-callback", "domain", "federation", "link"], "domain": "", "validation_recipe": "多域 SSO: 注销不彻底(旧会话跨域仍有效)/断言接收域过宽/回跳参数跨域开放; 用 link 协同任务同时持有多域身份互验; 证据=注销后旧断言仍可用。", "refs": ["OWASP SAML Cheat Sheet", "OWASP Session Management"] },
-    { "id": "card:client-side-path-manipulation", "title": "客户端资源加载篡改(iframe/postMessage)", "applies_to": ["iframe", "postmessage", "embed", "frame", "parent"], "domain": "", "validation_recipe": "postMessage 无 origin 校验接收敏感操作; iframe 嵌入策略缺失导致 clickwrapping; 证据=跨源页面成功触发目标站操作。", "refs": ["OWASP WSTG-CLNT"] },
-    { "id": "card:debug-endpoint-disclosure", "title": "调试/管理面暴露(发现环)", "applies_to": ["debug", "actuator", "console", "swagger", "graphiql", "phpinfo", "metrics", "admin"], "domain": "", "validation_recipe": "探测 /debug /actuator* /swagger* /phpinfo /console 等并验证信息可利用(配置泄露→升级路径); 单纯暴露记 config-advice, 可升权才算漏洞。", "refs": ["OWASP WSTG-INFO"] }
-  ]
+ "_说明": "v1 知识基线(C-1 扩充 16→40) — 随产品发布的公开安全知识检索卡(源自 OWASP WSTG/PortSwigger Web Security Academy 类公开知识体系, 不含任何本机测试数据)。variants 字段(E-4 变体分析): 同类攻击在其他技术栈的等价形态, 净室/创造环注入驱动「已知模式→新面」迁移。",
+ "cards": [
+  {
+   "id": "card:sql-injection",
+   "title": "SQL 注入(报错/布尔/时间盲/联合)",
+   "applies_to": [
+    "php",
+    "mysql",
+    "python",
+    "flask",
+    "django",
+    "asp",
+    "jsp",
+    "db",
+    "sql",
+    "login",
+    "search",
+    "filter",
+    "order"
+   ],
+   "domain": "",
+   "validation_recipe": "参数处单引号/布尔差异/睡眠函数探测; 确认需区分报错回显与行为差异, 盲注用布尔对比或时序双重验证; 联合查询先探测列数。",
+   "refs": [
+    "OWASP Testing Guide WSTG-INPV-05"
+   ],
+   "variants": [
+    {
+     "stack": "mssql",
+     "payload_diff": "睡眠用 WAITFOR DELAY '0:0:5'; 报错用 CONVERT/CAST 类型错误; 字符串拼接用 + 而非 CONCAT",
+     "ref": "PortSwigger SQL injection cheat sheet"
+    },
+    {
+     "stack": "postgresql",
+     "payload_diff": "睡眠用 pg_sleep(5); 报错用 cast('x' as int); 联合注入 NULL 填充需匹配列类型",
+     "ref": "PortSwigger SQL injection cheat sheet"
+    },
+    {
+     "stack": "oracle",
+     "payload_diff": "无 LIMIT, 用 ROWNUM/ROW_NUMBER; 睡眠用 dbms_lock.sleep(5) 需 DBA 常不可用, 改用重查询时延; FROM dual 必带",
+     "ref": "PortSwigger SQL injection cheat sheet"
+    }
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:xss-reflected-stored",
+   "title": "XSS(反射/存储/DOM)",
+   "applies_to": [
+    "javascript",
+    "html",
+    "comment",
+    "profile",
+    "search",
+    "render",
+    "markdown",
+    "editor"
+   ],
+   "domain": "",
+   "validation_recipe": "标记性探针确认回显位置与编码上下文(HTML/属性/JS), 再选适配的上下文闭合构造; 需证明脚本上下文可执行而非仅回显。",
+   "refs": [
+    "OWASP WSTG-INPV-02"
+   ],
+   "category": "client"
+  },
+  {
+   "id": "card:ssrf",
+   "title": "SSRF 服务端请求伪造(含云元数据)",
+   "applies_to": [
+    "import",
+    "upload-by-url",
+    "webhook",
+    "avatar",
+    "fetch",
+    "proxy",
+    "preview",
+    "pdf"
+   ],
+   "domain": "",
+   "validation_recipe": "服务端发起 URL 的参数指向自建回调与 169.254.169.254/latest/meta-data/ 与内网保留段; 回调命中或元数据回显(instance-id)即证据。",
+   "refs": [
+    "OWASP WSTG-INPV-19"
+   ],
+   "variants": [
+    {
+     "stack": "aliyun-ecs",
+     "payload_diff": "元数据地址 100.100.100.200/latest/meta-data/; 相比 AWS 无 IMDSv2 token 要求(老实例)",
+     "ref": "阿里云 ECS 元数据官方文档"
+    },
+    {
+     "stack": "dns-rebinding",
+     "payload_diff": "校验与请求分两次解析时, 用 rebinding 域(首次解析白名单 IP, TTL=0 二次解析内网 IP)",
+     "ref": "PortSwigger SSRF advanced exploits"
+    }
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:ssti",
+   "title": "模板注入 SSTI",
+   "applies_to": [
+    "jinja2",
+    "twig",
+    "freemarker",
+    "velocity",
+    "thymeleaf",
+    "template",
+    "render",
+    "preview",
+    "mail"
+   ],
+   "domain": "",
+   "validation_recipe": "模板表达式探针(不同引擎数学差异)判引擎族, 再按族构造; 需区分 SSTI 与普通模板回显。",
+   "refs": [
+    "OWASP WSTG-INPV-18"
+   ],
+   "variants": [
+    {
+     "stack": "java-freemarker",
+     "payload_diff": "探针 ${7*7}; 执行用 .getRuntime() 链或新内置 assign; EL 系另试 ${applicationScope}",
+     "ref": "PortSwigger SSTI methodology"
+    },
+    {
+     "stack": "php-twig",
+     "payload_diff": "探针 {{7*7}}; filter 注入用 map/sort 回调变体; 老版 Twig 用 _self.env.registerUndefinedFilterCallback",
+     "ref": "PortSwigger SSTI methodology"
+    }
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:idor-bola",
+   "title": "IDOR/BOLA 越权对象访问",
+   "applies_to": [
+    "api",
+    "order",
+    "invoice",
+    "user",
+    "profile",
+    "download",
+    "id",
+    "uuid",
+    "rest"
+   ],
+   "domain": "",
+   "validation_recipe": "两个低权限身份互换对象标识访问; 证据=低权限身份+他人对象ID 成功取得数据的请求响应对; 管理员访问管理对象是正常功能。",
+   "refs": [
+    "OWASP API1:2023"
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:auth-bypass-logic",
+   "title": "认证绕过与业务逻辑缺陷",
+   "applies_to": [
+    "login",
+    "otp",
+    "captcha",
+    "reset",
+    "register",
+    "verify",
+    "step",
+    "session"
+   ],
+   "domain": "",
+   "validation_recipe": "多步流程跳步/参数篡改/响应篡改/状态不一致; 验证需以未授权身份完成本应被拦截的完整流程。",
+   "refs": [
+    "OWASP WSTG-ATHN"
+   ],
+   "category": "auth"
+  },
+  {
+   "id": "card:jwt-manipulation",
+   "title": "JWT 缺陷(alg none/弱密钥/未校验)",
+   "applies_to": [
+    "jwt",
+    "token",
+    "bearer",
+    "authorization",
+    "session",
+    "api"
+   ],
+   "domain": "",
+   "validation_recipe": "解码验签段, 试 alg 切换/空签名/密钥爆破; 证据=篡改后 token 被接受且身份改变。",
+   "refs": [
+    "OWASP API2:2023"
+   ],
+   "variants": [
+    {
+     "stack": "jwk-injection",
+     "payload_diff": "header 内嵌 jwk/jku/x5u 指向自控公钥, 服务端取其验签; kid 路径注入类则试目录穿越与 SQL 拼接",
+     "ref": "PortSwigger JWT attacks"
+    }
+   ],
+   "category": "auth"
+  },
+  {
+   "id": "card:race-condition",
+   "title": "竞态条件(转账/兑换/限额)",
+   "applies_to": [
+    "transfer",
+    "redeem",
+    "coupon",
+    "withdraw",
+    "balance",
+    "limit",
+    "payment"
+   ],
+   "domain": "",
+   "validation_recipe": "同一请求并发重放≥5 次后查余额/次数差; 负值或超限即证据。",
+   "refs": [
+    "OWASP WSTG-BUSL"
+   ],
+   "variants": [
+    {
+     "stack": "single-threaded-server",
+     "payload_diff": "node 类单线程服务用 last-byte-sync 变体: 并发请求响应分片对齐最后字节, 使业务处理窗口重叠",
+     "ref": "PortSwigger race conditions with HTTP/2 single-packet attack"
+    }
+   ],
+   "category": "logic"
+  },
+  {
+   "id": "card:path-traversal",
+   "title": "路径穿越/任意文件读取",
+   "applies_to": [
+    "download",
+    "file",
+    "path",
+    "include",
+    "read",
+    "export",
+    "lang",
+    "page"
+   ],
+   "domain": "",
+   "validation_recipe": "../ 变体与编码穿越(%2e%2e%2f 等)读已知文件; 回显文件特征内容即证据。",
+   "refs": [
+    "OWASP WSTG-PATH"
+   ],
+   "variants": [
+    {
+     "stack": "java",
+     "payload_diff": "war 部署根在 /usr/local/tomcat/webapps/ROOT/, 读 WEB-INF/web.xml 定位数据源; %2e 在 java URL 归一化中可能不被解码需双写",
+     "ref": "OWASP Path Traversal"
+    },
+    {
+     "stack": "php-windows",
+     "payload_diff": "windows 下 ../ ..\\ 混用与 \\..\\ 等价; 盘符前缀 C:/; 点号截断(老PHP<5.3)与 ::$DATA 流",
+     "ref": "OWASP Path Traversal"
+    }
+   ],
+   "category": "files"
+  },
+  {
+   "id": "card:file-upload-rce",
+   "title": "文件上传接管(扩展名/类型/解析漏洞)",
+   "applies_to": [
+    "upload",
+    "avatar",
+    "attachment",
+    "import",
+    "excel",
+    "image",
+    "parser"
+   ],
+   "domain": "",
+   "validation_recipe": "扩展名/Content-Type/魔数绕过组合测试; 上传后需实际访问到可解析执行路径才算接管。",
+   "refs": [
+    "OWASP WSTG-BUSL-09"
+   ],
+   "variants": [
+    {
+     "stack": "nginx-php",
+     "payload_diff": "cgi.fix_pathinfo 类解析: /upload/x.png/.php 由 fastcgi 回退执行; 需实测服务端行为而非只看保存路径",
+     "ref": "Nginx+PHP fastcgi_parse_errors 文档"
+    },
+    {
+     "stack": "iis-asp",
+     "payload_diff": "分号截断 x.asp;.png 与 /x.png/ 目录解析(aspx 当目录名); 短文件名枚举辅助定位",
+     "ref": "OWASP WSTG-BUSL-09"
+    }
+   ],
+   "category": "files"
+  },
+  {
+   "id": "card:deserialization",
+   "title": "不安全反序列化",
+   "applies_to": [
+    "java",
+    "php",
+    "python",
+    "pickle",
+    "session",
+    "cookie",
+    "rmi",
+    "viewstate"
+   ],
+   "domain": "",
+   "validation_recipe": "识别序列化数据格式(cookie/session/viewstate), 用对应生态已知链构造探测(gadget 探针非破坏性); 需 DNS/时间类外带证据。",
+   "refs": [
+    "OWASP WSTG-INPV-15"
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:xxe",
+   "title": "XXE 实体注入(含 OOB)",
+   "applies_to": [
+    "xml",
+    "soap",
+    "docx",
+    "xlsx",
+    "svg",
+    "rss",
+    "import"
+   ],
+   "domain": "",
+   "validation_recipe": "XML 输入点试外部实体(file:// 与外部 DTD 回调); 无回显用 OOB 回调确认。",
+   "refs": [
+    "OWASP WSTG-INPV-07"
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:open-redirect",
+   "title": "开放重定向",
+   "applies_to": [
+    "redirect",
+    "url",
+    "next",
+    "return",
+    "goto",
+    "callback",
+    "continue"
+   ],
+   "domain": "",
+   "validation_recipe": "跳转参数指向外部域验证 30x Location; 需证明完整跳转链未被白名单拦截。",
+   "refs": [
+    "OWASP WSTG-VAL-09"
+   ],
+   "category": "client"
+  },
+  {
+   "id": "card:business-privilege-escalation",
+   "title": "水平/垂直权限提升(功能级)",
+   "applies_to": [
+    "admin",
+    "role",
+    "permission",
+    "user-id",
+    "level",
+    "security",
+    "setting"
+   ],
+   "domain": "",
+   "validation_recipe": "低权限身份调用功能级管理端点(改配置/重置/管理操作); 证据=低权限会话+成功响应+状态实际变化。",
+   "refs": [
+    "OWASP API5:2023"
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:graphql-abuse",
+   "title": "GraphQL 越权与自省滥用",
+   "applies_to": [
+    "graphql",
+    "graphiql",
+    "query",
+    "mutation",
+    "introspection"
+   ],
+   "domain": "",
+   "validation_recipe": "introspection 拉取 schema, 找未授权 field/mutation 与对象级缺口; 证据=跨身份取数。",
+   "refs": [
+    "OWASP GraphQL Cheat Sheet"
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:api-mass-assignment",
+   "title": "API 批量赋值/参数污染",
+   "applies_to": [
+    "api",
+    "patch",
+    "put",
+    "register",
+    "profile",
+    "json",
+    "field"
+   ],
+   "domain": "",
+   "validation_recipe": "请求体注入特权字段(role/isAdmin/balance)验证服务端是否吸收; 证据=权限或状态实际改变。",
+   "refs": [
+    "OWASP API3:2023"
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:http-request-smuggling",
+   "title": "HTTP 请求走私(CL.TE/TE.CL/TE.TE)",
+   "applies_to": [
+    "proxy",
+    "cdn",
+    "lb",
+    "front",
+    "backend",
+    "apache",
+    "nginx",
+    "haproxy",
+    "varnish"
+   ],
+   "domain": "",
+   "validation_recipe": "三态判定: CL.TE 用前置 Content-Length+分块体探针; TE.CL 反之; 观察后端收到的封装差异(延迟探针+自污染响应); 需两次独立复现且排除误报。",
+   "refs": [
+    "PortSwigger Web Security Academy: HTTP request smuggling",
+    "OWASP WSTG-INPV-16"
+   ],
+   "variants": [
+    {
+     "stack": "te-te",
+     "payload_diff": "两端都支持 TE 时用混淆变形(Transfer-encoding: xchunked / TE 头重复+大小写/空格差异)让一端忽略 TE",
+     "ref": "PortSwigger browser-powered desync"
+    },
+    {
+     "stack": "http2-desync",
+     "payload_diff": "H2.downgrade 场景: :path/header 中注入 CL 或 TE, 利用前端 H2→H1 转换不归一",
+     "ref": "PortSwigger HTTP/2 desync"
+    }
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:web-cache-poisoning",
+   "title": "Web 缓存投毒(unkeyed 输入)",
+   "applies_to": [
+    "cache",
+    "cdn",
+    "vary",
+    "x-forwarded",
+    "akamai",
+    "cloudflare",
+    "squid"
+   ],
+   "domain": "",
+   "validation_recipe": "参数化审计: 对每个 header/query 找 unkeyed 输入(改值后缓存命中内容变化); 反射点升级为可执行注入后等待/触发他人缓存; 证据=另一身份命中被投毒响应。",
+   "refs": [
+    "PortSwigger Web Security Academy: Web cache poisoning"
+   ],
+   "variants": [
+    {
+     "stack": "unkeyed-query",
+     "payload_diff": "utm_* 类参数若 unkeyed 可投毒; 用 cache-buster 参数隔离自身验证",
+     "ref": "PortSwigger web cache poisoning"
+    }
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:web-cache-deception",
+   "title": "Web 缓存欺骗",
+   "applies_to": [
+    "cache",
+    "cdn",
+    "profile",
+    "static",
+    "path-info"
+   ],
+   "domain": "",
+   "validation_recipe": "已认证敏感页 URL 后缀伪静态(如 /profile/nonexistent.css)诱导缓存存储个人数据; 证据=未认证身份命中同 URL 取得他人数据。",
+   "refs": [
+    "PortSwigger Web Security Academy: Web cache deception"
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:host-header-injection",
+   "title": "Host 头注入(重置投毒/缓存键污染)",
+   "applies_to": [
+    "host",
+    "reset",
+    "password",
+    "cache",
+    "routing",
+    "vhost"
+   ],
+   "domain": "",
+   "validation_recipe": "改 Host/X-Forwarded-Host 观察生成的绝对链接(重置邮件/跳转); 密码重置投毒证据=收到的重置链接域名变为攻击者域。",
+   "refs": [
+    "PortSwigger Web Security Academy: Host header injection"
+   ],
+   "variants": [
+    {
+     "stack": "override-headers",
+     "payload_diff": "Host 被白名单时试 X-Forwarded-Host/X-Host/Forwarded: host=; 与缓存键差异组合成投毒",
+     "ref": "PortSwigger host header injection"
+    }
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:crlf-injection",
+   "title": "CRLF 注入(响应拆分/头注入)",
+   "applies_to": [
+    "redirect",
+    "set-cookie",
+    "header",
+    "url",
+    "param"
+   ],
+   "domain": "",
+   "validation_recipe": "参数值注入 %0d%0a 观察响应头分裂(Set-Cookie/Location 注入); 现代框架多已免疫, 重点在自研跳转/代理层。",
+   "refs": [
+    "OWASP WSTG-INPV-15"
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:command-injection",
+   "title": "命令注入(管道/分隔符/编码绕过)",
+   "applies_to": [
+    "ping",
+    "export",
+    "convert",
+    "exec",
+    "shell",
+    "cli",
+    "tool",
+    "report"
+   ],
+   "domain": "",
+   "validation_recipe": "参数拼接系统命令的点(导出/转换/诊断)用分隔符与时延探针(| & ; $( ) 反引号 + $IFS/url 编码变体); 证据=时延差异或输出回显, 禁止破坏性命令。",
+   "refs": [
+    "OWASP WSTG-INPV-12"
+   ],
+   "variants": [
+    {
+     "stack": "windows",
+     "payload_diff": "分隔符用 & 与 |; 变量展开 %COMSPEC%; 注释符无 # 用 & rem",
+     "ref": "OWASP Command Injection"
+    }
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:password-reset-flaws",
+   "title": "密码重置流程缺陷",
+   "applies_to": [
+    "reset",
+    "password",
+    "token",
+    "email",
+    "otp",
+    "forgot"
+   ],
+   "domain": "",
+   "validation_recipe": "token 可预测/复用/跨账号使用; host 投毒改变重置链接; 参数邮箱污染(多邮箱参数); 证据=以未授权身份完成重置。",
+   "refs": [
+    "OWASP WSTG-ATHN"
+   ],
+   "category": "auth"
+  },
+  {
+   "id": "card:captcha-bypass",
+   "title": "验证码绕过(四路)",
+   "applies_to": [
+    "captcha",
+    "verify",
+    "code",
+    "sms",
+    "otp",
+    "login"
+   ],
+   "domain": "",
+   "validation_recipe": "四路: ①前端校验(响应可篡改) ②验证码可复用(同码多次提交) ③万能/默认码与参数删除 ④简单数学/字符可程序化识别; 证据=自动化流程完成受保护操作。",
+   "refs": [
+    "OWASP WSTG-ATHN"
+   ],
+   "category": "auth"
+  },
+  {
+   "id": "card:payment-logic-flaws",
+   "title": "支付逻辑缺陷(金额/数量/币种)",
+   "applies_to": [
+    "payment",
+    "checkout",
+    "price",
+    "amount",
+    "cart",
+    "order",
+    "currency"
+   ],
+   "domain": "",
+   "validation_recipe": "改价(前端隐藏字段/请求体金额)、数量负数/超大值溢出、币种/单位混淆(分↔元)、0 元下单; 证据=异常价格订单实际成立且支付成功。",
+   "refs": [
+    "OWASP WSTG-BUSL"
+   ],
+   "variants": [
+    {
+     "stack": "integer-overflow",
+     "payload_diff": "数量取 2^31 边界值观察金额回绕为负; 逐字段单变量测试避免混杂",
+     "ref": "OWASP Business Logic"
+    }
+   ],
+   "category": "logic"
+  },
+  {
+   "id": "card:coupon-discount-abuse",
+   "title": "优惠券/折扣滥用",
+   "applies_to": [
+    "coupon",
+    "discount",
+    "promo",
+    "redeem",
+    "voucher"
+   ],
+   "domain": "",
+   "validation_recipe": "叠加使用/负值折扣/已用券重放(与竞态卡联动)/他人券码枚举; 证据=异常折扣订单成立。",
+   "refs": [
+    "OWASP WSTG-BUSL"
+   ],
+   "category": "logic"
+  },
+  {
+   "id": "card:order-flow-bypass",
+   "title": "订单状态机跳跃/回调重放",
+   "applies_to": [
+    "order",
+    "status",
+    "callback",
+    "notify",
+    "webhook",
+    "refund",
+    "cancel"
+   ],
+   "domain": "",
+   "validation_recipe": "状态字段篡改跨步跳转(未支付→已发货); 支付回调重放/签名缺失导致重复发货; 取消后仍可发货的窗口。",
+   "refs": [
+    "OWASP WSTG-BUSL"
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:refund-abuse",
+   "title": "退款逻辑滥用",
+   "applies_to": [
+    "refund",
+    "chargeback",
+    "balance",
+    "credit",
+    "return"
+   ],
+   "domain": "",
+   "validation_recipe": "部分退款超原额/重复退款请求/退款与发货状态解耦验证; 证据=余额/账户实际多出资金或商品。",
+   "refs": [
+    "OWASP WSTG-BUSL"
+   ],
+   "category": "logic"
+  },
+  {
+   "id": "card:csv-injection",
+   "title": "CSV/公式注入(导出链)",
+   "applies_to": [
+    "export",
+    "csv",
+    "excel",
+    "report",
+    "download"
+   ],
+   "domain": "",
+   "validation_recipe": "可写入字段值注入 =+@- 前缀公式(如 =HYPERLINK/命令类), 受害者打开导出文件触发; 证据=导出文件含未转义公式。",
+   "refs": [
+    "OWASP WSTG-INPV"
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:xpath-injection",
+   "title": "XPath 注入",
+   "applies_to": [
+    "xml",
+    "xpath",
+    "search",
+    "query",
+    "auth"
+   ],
+   "domain": "",
+   "validation_recipe": "查询点注入 ' 或 '1'='1 类布尔差异; 无报错用布尔/错误分支差异判定; 证据=认证/查询逻辑被改变。",
+   "refs": [
+    "OWASP WSTG-INPV"
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:ldap-injection",
+   "title": "LDAP 注入",
+   "applies_to": [
+    "ldap",
+    "ad",
+    "directory",
+    "search",
+    "auth",
+    "filter"
+   ],
+   "domain": "",
+   "validation_recipe": "过滤器注入 ()*&| 变体改变查询语义(通配枚举/条件恒真); 证据=未授权数据返回或认证绕过。",
+   "refs": [
+    "OWASP WSTG-INPV"
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:http-parameter-pollution",
+   "title": "HTTP 参数污染(HPP)",
+   "applies_to": [
+    "param",
+    "query",
+    "filter",
+    "amount",
+    "id",
+    "proxy"
+   ],
+   "domain": "",
+   "validation_recipe": "同名参数多次提交(?a=1&a=2)观察前后端取值差异(首个/末个/拼接); 与越权/支付逻辑联动放大。",
+   "refs": [
+    "OWASP WSTG-INPV"
+   ],
+   "category": "web"
+  },
+  {
+   "id": "card:oauth-misconfig",
+   "title": "OAuth/OIDC 配置缺陷",
+   "applies_to": [
+    "oauth",
+    "oidc",
+    "redirect_uri",
+    "state",
+    "code",
+    "token",
+    "sso",
+    "callback"
+   ],
+   "domain": "",
+   "validation_recipe": "redirect_uri 白名单绕过(子域/路径/编码), state 缺失 CSRF, code 重放/跨客户端交换, implicit 模式 token 泄露; 证据=以受害者身份完成授权绑定。",
+   "refs": [
+    "OWASP OAuth Cheat Sheet"
+   ],
+   "category": "auth"
+  },
+  {
+   "id": "card:websocket-hijacking",
+   "title": "WebSocket 跨站劫持(CSWSH)",
+   "applies_to": [
+    "websocket",
+    "ws",
+    "wss",
+    "socket",
+    "realtime",
+    "chat"
+   ],
+   "domain": "",
+   "validation_recipe": "握手仅靠 Cookie 认证且无 Origin 校验 → 恶意页面可建立 ws 收发; 用自建页+控制端验证可读敏感消息/发操作指令。",
+   "refs": [
+    "PortSwigger Web Security Academy: WebSockets"
+   ],
+   "category": "client"
+  },
+  {
+   "id": "card:prototype-pollution",
+   "title": "原型链污染(服务端/客户端)",
+   "applies_to": [
+    "node",
+    "express",
+    "merge",
+    "lodash",
+    "json",
+    "config",
+    "__proto__"
+   ],
+   "domain": "",
+   "validation_recipe": "JSON 递归合并点注入 __proto__.{key} 观察全局行为改变(如 options 继承); 证据=污染后默认行为变化(配合 gadget 升级 RCE 更佳)。",
+   "refs": [
+    "PortSwigger Web Security Academy: Client-side prototype pollution"
+   ],
+   "variants": [
+    {
+     "stack": "client-side",
+     "payload_diff": "URL 片段/query 注入 #__proto__ 与 ?__proto__[x] 变体, 用 DOM 破坏 gadget(如 script src)验证",
+     "ref": "PortSwigger client-side prototype pollution"
+    }
+   ],
+   "category": "client"
+  },
+  {
+   "id": "card:session-fixation",
+   "title": "会话固定",
+   "applies_to": [
+    "session",
+    "cookie",
+    "login",
+    "sid",
+    "token"
+   ],
+   "domain": "",
+   "validation_recipe": "登录前后会话标识不变且标识可由攻击者预设(URL/cookie 注入); 证据=受害者用固定标识登录后攻击者以同标识接管会话。",
+   "refs": [
+    "OWASP WSTG-SESS-03"
+   ],
+   "category": "auth"
+  },
+  {
+   "id": "card:dom-clobbering",
+   "title": "DOM Clobbering",
+   "applies_to": [
+    "html",
+    "dom",
+    "form",
+    "anchor",
+    "global",
+    "sanitize"
+   ],
+   "domain": "",
+   "validation_recipe": "注入命名元素(id/name)覆盖 window/文档对象属性, 改变脚本控制流(如覆盖 config 变量); 证据=脚本逻辑被注入值改变。",
+   "refs": [
+    "PortSwigger Web Security Academy: DOM clobbering"
+   ],
+   "category": "client"
+  },
+  {
+   "id": "card:css-injection",
+   "title": "CSS 注入(数据外带/UI 欺骗)",
+   "applies_to": [
+    "css",
+    "style",
+    "theme",
+    "profile",
+    "editor"
+   ],
+   "domain": "",
+   "validation_recipe": "style 注入点用属性选择器逐字符外带(背景图 URL 回调)或覆盖 UI 造成点击劫持; 证据=回调按序收到目标 token 字符。",
+   "refs": [
+    "PortSwigger Web Security Academy: CSS injection"
+   ],
+   "category": "client"
+  },
+  {
+   "id": "card:rate-limit-bypass",
+   "title": "限速/防爆破绕过",
+   "applies_to": [
+    "login",
+    "otp",
+    "rate",
+    "limit",
+    "brute",
+    "429"
+   ],
+   "domain": "",
+   "validation_recipe": "限速键差异(X-Forwarded-For 轮换/大小写/参数变化/会话轮换/端点等价路径); 证据=同账号超限请求持续成功。",
+   "refs": [
+    "OWASP WSTG-ATHN"
+   ],
+   "category": "infra"
+  },
+  {
+   "id": "card:sso-cross-domain",
+   "title": "SSO 跨域联动缺陷(link 任务核心)",
+   "applies_to": [
+    "sso",
+    "saml",
+    "sso-callback",
+    "domain",
+    "federation",
+    "link"
+   ],
+   "domain": "",
+   "validation_recipe": "多域 SSO: 注销不彻底(旧会话跨域仍有效)/断言接收域过宽/回跳参数跨域开放; 用 link 协同任务同时持有多域身份互验; 证据=注销后旧断言仍可用。",
+   "refs": [
+    "OWASP SAML Cheat Sheet",
+    "OWASP Session Management"
+   ],
+   "category": "auth"
+  },
+  {
+   "id": "card:client-side-path-manipulation",
+   "title": "客户端资源加载篡改(iframe/postMessage)",
+   "applies_to": [
+    "iframe",
+    "postmessage",
+    "embed",
+    "frame",
+    "parent"
+   ],
+   "domain": "",
+   "validation_recipe": "postMessage 无 origin 校验接收敏感操作; iframe 嵌入策略缺失导致 clickwrapping; 证据=跨源页面成功触发目标站操作。",
+   "refs": [
+    "OWASP WSTG-CLNT"
+   ],
+   "category": "client"
+  },
+  {
+   "id": "card:debug-endpoint-disclosure",
+   "title": "调试/管理面暴露(发现环)",
+   "applies_to": [
+    "debug",
+    "actuator",
+    "console",
+    "swagger",
+    "graphiql",
+    "phpinfo",
+    "metrics",
+    "admin"
+   ],
+   "domain": "",
+   "validation_recipe": "探测 /debug /actuator* /swagger* /phpinfo /console 等并验证信息可利用(配置泄露→升级路径); 单纯暴露记 config-advice, 可升权才算漏洞。",
+   "refs": [
+    "OWASP WSTG-INFO"
+   ],
+   "category": "infra"
+  }
+ ]
 }

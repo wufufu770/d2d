@@ -1,0 +1,4 @@
+d2d — 三环并行渗透测试框架(完全自主+能力层)
+
+干净发布版: 无挖掘记录/无运行数据/无凭据。
+含: graphd 图黑板(Kuzu) / pentest-dsh 三环调度+工具面+七态FSM+自动分诊 / d2d-panel 观测台(策略库/成本卡/Fleet矩阵) / 学习脑(分批蒸馏study→门禁promote→insight) / 网关三件套(egress出口治理+OAST+SPA渲染) / 生命周期防护(图栅栏+租约+取消令牌+额度熔断+step硬上限) / systemd守护单元×4 / doctor 16项自检 / 全量测试(139 mocha + 86 pytest)

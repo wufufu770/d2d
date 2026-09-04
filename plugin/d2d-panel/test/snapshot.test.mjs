@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, transitionFinding, FINDING_STATES } from '../lib/host/snapshot.mjs'
+import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog } from '../lib/host/snapshot.mjs'
 
 // fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应)
 function makeFake(t = {}) {
@@ -138,7 +138,7 @@ test('createGraphdQuery: X-Auth 注入 + 非 ok 响应抛错', async () => {
 
 test('readFleet: DATA_DIR 外置策略, 缺失返回 null(A-2)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-panel-test-'))
-  const env = { D2D_DATA_DIR: dir }
+  const env = { D2D_DATA_DIR: dir, DSH_HOME: '/tmp/definitely-not-exist-dsh-xyz' } // 隔离真实 dsh 目录, catalog 保持确定性
   assert.equal(readFleet(env), null) // 未配置
   fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'config', 'model-policies.json'), JSON.stringify({
@@ -223,4 +223,92 @@ test('transitionFinding: 代理 /write/transition + host token 注入 + 服务�
 
   const denyFetch = async () => ({ ok: false, status: 403, json: async () => ({ ok: false, error: 'illegal transition candidate -> accepted' }) })
   await assert.rejects(() => transitionFinding({ graphdUrl: 'http://x', token: 't', id: 'F1', to: 'accepted', actor: 'panel', reason: 'x' }, denyFetch), /illegal transition/)
+})
+
+// ---- Fleet 模型目录: dsh 配置枚举(2026-09 批) ----
+
+test('parseProviderModels: settings.yaml 缩进形态(providers@2)', () => {
+  const y = [
+    'llm-pi-ai:',
+    '  providers:',
+    '    opencode-go:',
+    '      models:',
+    '        - id: hy3',
+    '        - id: mimo-v2.5',
+    '      apiKeyEnv: OPENCODE_GO_API_KEY',
+    'agent-default-model:',
+    '  provider: minimax-cn',
+    '  model: MiniMax-M3',
+  ].join('\n')
+  assert.deepEqual(parseProviderModels(y), [{ provider: 'opencode-go', models: ['hy3', 'mimo-v2.5'], apiKeyEnv: 'OPENCODE_GO_API_KEY' }])
+})
+
+test('parseProviderModels: cordis.patch.yml 缩进形态(providers@4, 块外 - id 不误收)', () => {
+  const y = [
+    '- id: llm-pi-ai',
+    '  config:',
+    '    providers:',
+    '      minimax-cn:',
+    '        models:',
+    '          - id: MiniMax-M2.7',
+    '          - id: MiniMax-M3',
+    '- id: pentest-worker-env',
+  ].join('\n')
+  assert.deepEqual(parseProviderModels(y), [{ provider: 'minimax-cn', models: ['MiniMax-M2.7', 'MiniMax-M3'] }])
+})
+
+test('loadDshCatalog: 合并 settings.yaml 与多 profile patch 并去重', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cat-'))
+  fs.mkdirSync(path.join(dir, 'profiles', 'web'), { recursive: true })
+  fs.mkdirSync(path.join(dir, 'profiles', 'headless'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'settings.yaml'), [
+    'llm-pi-ai:',
+    '  providers:',
+    '    opencode-go:',
+    '      models:',
+    '        - id: hy3',
+    '        - id: mimo-v2.5',
+  ].join('\n'))
+  fs.writeFileSync(path.join(dir, 'profiles', 'headless', 'cordis.patch.yml'), [
+    'x:',
+    '  providers:',
+    '    opencode-go:',
+    '      models:',
+    '        - id: mimo-v2.5',
+    '        - id: mimo-v2.5-pro',
+    '    minimax-cn:',
+    '      models:',
+    '        - id: MiniMax-M3',
+  ].join('\n'))
+  const cat = loadDshCatalog({ DSH_HOME: dir })
+  assert.deepEqual(cat, [
+    { provider: 'minimax-cn', models: ['MiniMax-M3'], apiKeyEnv: '', hasKey: false },
+    { provider: 'opencode-go', models: ['hy3', 'mimo-v2.5', 'mimo-v2.5-pro'], apiKeyEnv: '', hasKey: false },
+  ])
+})
+
+test('loadDshCatalog: dsh 目录缺失 → 空数组(容错)', () => {
+  assert.deepEqual(loadDshCatalog({ DSH_HOME: '/tmp/definitely-not-exist-dsh-xyz' }), [])
+})
+
+test('readFleet: catalog 模型并入 models 并集(去重)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-data-'))
+  fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'config', 'model-policies.json'), JSON.stringify({
+    default: { primary: 'opencode-go/hy3', backup: '' },
+    roles: { discovery: { primary: 'opencode-go/hy3', backup: 'minimax-cn/MiniMax-M3' } },
+  }))
+  const dshDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cat2-'))
+  fs.writeFileSync(path.join(dshDir, 'settings.yaml'), [
+    'llm-pi-ai:',
+    '  providers:',
+    '    opencode-go:',
+    '      models:',
+    '        - id: hy3',
+    '        - id: mimo-v2.5',
+  ].join('\n'))
+  const fleet = readFleet({ D2D_DATA_DIR: dir, DSH_HOME: dshDir })
+  assert.ok(fleet.catalog.some((p) => p.provider === 'opencode-go'))
+  assert.ok(fleet.models.includes('opencode-go/mimo-v2.5'))
+  assert.ok(fleet.models.includes('opencode-go/hy3'))
 })
