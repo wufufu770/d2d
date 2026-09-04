@@ -276,6 +276,28 @@ def repro_gate(sev: str, repro) -> tuple[bool, str]:
     return True, ""
 
 
+_D2D_PAUSE_FILE = os.environ.get("D2D_DATA_DIR", os.path.expanduser("~/.d2d-data")) + "/config/paused.json"
+_pause_mtime_cache: list = [None, False]  # [mtime, paused] — 每请求检查 mtime, 变了才重读
+
+
+def _d2d_paused() -> bool:
+    """P0-3 全局暂停开关(取消令牌的 worker 侧通道) — stopAll 写 paused.json, 写通道 409。
+    mtime 缓存: 文件未变时不重读, 请求路径零额外 IO; startEngagement 删除文件即解除。"""
+    try:
+        m = os.path.getmtime(_D2D_PAUSE_FILE)
+    except OSError:
+        _pause_mtime_cache[0], _pause_mtime_cache[1] = None, False
+        return False
+    if m != _pause_mtime_cache[0]:
+        try:
+            with open(_D2D_PAUSE_FILE) as f:
+                _pause_mtime_cache[1] = bool(json.load(f).get("paused"))
+        except Exception:
+            _pause_mtime_cache[1] = False
+        _pause_mtime_cache[0] = m
+    return _pause_mtime_cache[1]
+
+
 def config_reject(sev: str, cat: str, title: str) -> tuple[bool, str]:
     """垃圾拒收出口(纯函数供 pytest) — config/info 级加固建议不进漏洞库, /write/finding 直接 400。
     此前行为是降级 config-advice 入库, 实证一轮 SRC 积压 165 条 config-advice 候选堆尸。
@@ -626,6 +648,10 @@ class Handler(BaseHTTPRequestHandler):
         # ---- 结构化写端点: 参数校验替代内联 cypher 正则扫描(根治 #21 死门与 params 旁路) ----
 
         if self.path in ("/write/finding", "/write/signal", "/write/hypothesis", "/write/endpoint"):
+            # P0-3 取消令牌的 worker 侧通道: 全局暂停文件存在 → 写通道 409, 在跑 worker 下一次
+            # 写图即知停机并自行收尾(实证 0905: 僵尸派发器靠进程猎杀停不干净)。brief 已 instruct。
+            if _d2d_paused():
+                return self._send(409, {"ok": False, "error": "d2d-paused — 全局暂停中(stopAll/熔断), 任务立即收尾退出"})
             # V-12: 移除重复 _auth("worker")(上方 :152-154 已统一校验, 原 :157-160 为死代码)
             # 注意: req 已由 do_POST 开头解析, 此处严禁重复 rfile.read(#27 双读挂死)
             with _locked():  # V-11: 锁带 5s deadline
