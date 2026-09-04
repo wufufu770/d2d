@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # node 20 已移除: node:sqlite(DatabaseSync) 需要 >= 22.5
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        # 不传 version 输入 — 让 action 读根 package.json 的 "packageManager": "pnpm@9.0.0",
+        # 避免 version 输入与 packageManager 字段双重指定导致的 ERR_PNPM_BAD_PM_VERSION。
+
+      - name: Install dependencies
+        # 仓库当前无 pnpm-lock.yaml, 先 --no-frozen-lockfile;
+        # 提交 lockfile 后必须改回 `pnpm install --frozen-lockfile` 保证 CI 可复现。
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Test (all workspaces, node --test)
+        run: pnpm test
+
+      # 根 test 脚本只覆盖 plugin/d2d-panel + packages/*, plugin/pentest-dsh 在此单跑
+      - name: Test (plugin pentest-dsh m3/p3, node --test)
+        run: node --test plugin/pentest-dsh/test/m3-*.test.mjs plugin/pentest-dsh/test/p3-*.test.mjs
+
+      - name: Lint (syntax check all mjs)
+        run: pnpm lint
+
+      - name: "Smoke: inline-build produces publishable dirs"
+        run: node scripts/pack/inline-build.mjs
