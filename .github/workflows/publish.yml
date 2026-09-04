@@ -1,0 +1,46 @@
+name: publish
+
+# #24 — 真 OIDC trusted publishing: 不使用 NODE_AUTH_TOKEN secret,
+# 由 npm provenance(OTP/OIDC) 证明构建来源。顶层不放大权限, 仅 publish job 声明所需。
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC trusted publishing / provenance 必需
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install pnpm (version from packageManager field)
+        uses: pnpm/action-setup@v4
+        # 不传 version 输入 — 读根 package.json 的 packageManager, 避免双重指定冲突
+
+      - name: Install dependencies
+        # 仓库当前无 lockfile; 生成 lockfile 后改回 --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Test
+        run: pnpm test
+
+      - name: Inline-build publishable packages
+        run: node scripts/pack/inline-build.mjs
+
+      # OIDC trusted publishing 的 provenance 需要 npm >= 11.5; node 22 自带 npm 10 不满足,
+      # 这里 publish 步前显式升级(原注释落地成步骤, 避免 "--provenance requires npm >= 11.5")。
+      - name: Upgrade npm for provenance
+        run: npm i -g npm@latest
+
+      - name: Publish (provenance, public)
+        run: |
+          for dir in dist/*/; do
+            npm publish "$dir" --provenance --access public
+          done
