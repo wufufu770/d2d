@@ -496,3 +496,19 @@ def test_audit73_no_follow_symlink(tmp_path, monkeypatch):
     assert graphd_audit.audit_event("auth-fail", {"path": "/x"}) is False
     assert graphd_audit._fail_count == before + 1
     assert real.read_text() == "victim"  # 链接目标未被写入
+
+
+# ---- P0-3 全局暂停开关(取消令牌 worker 侧通道): stopAll 写 paused.json → 写通道 409 ----
+
+def test_d2d_paused_file_lifecycle(tmp_path, monkeypatch):
+    import graphd.app as app
+    pf = tmp_path / "paused.json"
+    monkeypatch.setattr(app, "_D2D_PAUSE_FILE", str(pf))
+    monkeypatch.setattr(app, "_pause_mtime_cache", [None, False])
+    assert app._d2d_paused() is False            # 无文件 = 不暂停
+    pf.write_text('{"paused": true}')
+    assert app._d2d_paused() is True             # 文件出现 = 暂停
+    pf.write_text('{"paused": false}')
+    assert app._d2d_paused() is False            # mtime 变化 = 重新加载
+    pf.unlink()
+    assert app._d2d_paused() is False            # 删除(startEngagement) = 解除

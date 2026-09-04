@@ -365,20 +365,33 @@ export function writeFleet({ role, slot, model }, env = process.env) {
 /** 运行事件(scheduler run-log.jsonl + model-usage.jsonl 的面板投影) — 只读 tail, 任意一行坏行跳过。
  *  产出: { events: 轨迹事件(升序), usage: {model: 调度次数}, quotaHits: [model...] } */
 export function readRunEvents({ engName, dataDir }, fsImpl = fs, env = process.env) {
-  const out = { events: [], usage: {}, quotaHits: [] }
+  const out = { events: [], usage: {}, quotaHits: [], cost: { dispatches24h: 0, terminals24h: 0, workerMin24h: 0, steps24h: 0, quotaEvents24h: 0 } }
   const dir = env.D2D_DATA_DIR ?? dataDir ?? `${os.homedir()}/.d2d-data`
   // 与 scheduler.js RUNS_BASE 同口径: P2P_RUNS_DIR/D2D_RUNS_DIR 优先, 否则 DATA_DIR/runs
   const runs = env.D2D_RUNS_DIR ?? env.P2P_RUNS_DIR ?? `${dir}/runs`
   // model-usage.jsonl: 每 worker 派发一行 {ts, worker, role, model}
+  // P2-10 起终态行还带 {event:'terminal', code, ms, quota, steps, tools, compactions} — 这里顺带算 24h 烧速
+  const cutoff = Date.now() - 86_400_000
   try {
     const lines = fsImpl.readFileSync(`${runs}/model-usage.jsonl`, 'utf8').split('\n').filter(Boolean).slice(-MAX.usageLines)
     for (const ln of lines) {
       try {
         const r = JSON.parse(ln)
         const m = String(r?.model ?? '')
-        if (m) out.usage[m] = (out.usage[m] ?? 0) + 1
+        if (m && !r?.event) out.usage[m] = (out.usage[m] ?? 0) + 1
+        const t = r?.ts ? Date.parse(r.ts) : NaN
+        if (Number.isFinite(t) && t >= cutoff) {
+          if (!r?.event || r.event === 'dispatch') out.cost.dispatches24h++
+          else if (r.event === 'terminal') {
+            out.cost.terminals24h++
+            out.cost.workerMin24h += Number(r.ms ?? 0) / 60_000
+            out.cost.steps24h += Number(r.steps ?? 0) || 0
+            if (r.quota) out.cost.quotaEvents24h++
+          }
+        }
       } catch {}
     }
+    out.cost.workerMin24h = Math.round(out.cost.workerMin24h)
   } catch {}
   // run-log.jsonl: dispatch/terminal/zero-write/handoff 事件(轨迹主线)
   if (engName) {

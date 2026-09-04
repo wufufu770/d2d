@@ -493,13 +493,20 @@ window.__ModuleLoader__.load({
     // ---- 用量卡: 每模型调度次数(model-usage.jsonl 真实计数) ----
     function UsageCard({ run }) {
       const entries = Object.entries(run?.usage ?? {}).sort((a, b) => b[1] - a[1])
+      const c = run?.cost
+      const costHead = c ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' } },
+        h('span', { ...panel.chip({}), style: { fontSize: '9px' } }, `24h 派发 ${c.dispatches24h}`),
+        h('span', { ...panel.chip({}), style: { fontSize: '9px' } }, `24h worker ${c.workerMin24h} 分钟`),
+        h('span', { ...panel.chip({}), style: { fontSize: '9px' } }, `24h step ${c.steps24h}`),
+        h('span', { ...panel.chip(c.quotaEvents24h ? { borderColor: 'var(--d2d-sev-high)', color: 'var(--d2d-sev-high)' } : {}), style: { fontSize: '9px' } }, `24h 额度事件 ${c.quotaEvents24h}`)) : null
       if (!entries.length) {
-        return h(Card, { title: '模型用量' }, h('div', panel.muted(0.45), '无调度记录 — worker 派发后自动入列'))
+        return h(Card, { title: '模型用量' }, costHead, h('div', panel.muted(0.45), '无调度记录 — worker 派发后自动入列'))
       }
       const max = Math.max(...entries.map(([, n]) => n), 1)
       const total = entries.reduce((a, [, n]) => a + n, 0)
       return h(Card, { title: '模型用量 · 累计', extra: h('span', panel.muted(0.45), `共 ${total} 次调度`) },
         // R5: 口径标注 —— 这是自安装起跨轮次的累计记账, 不是当前 engagement 的
+        costHead,
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
           h('div', panel.muted(0.45), '自安装起全部轮次的 worker 派发记账(含已停止轮次)'),
         entries.map(([m, n]) => h('div', { key: m, style: { display: 'grid', gridTemplateColumns: 'minmax(64px, 38%) 1fr auto', gap: '6px', alignItems: 'center' } },
