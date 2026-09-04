@@ -9,7 +9,9 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 
 const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
-const GRAPH = process.argv[process.argv.indexOf('--graph') + 1] ?? '8766'
+// 缺省参数修复: indexOf('--graph')=-1 时 +1 会取到 argv[0](node 路径) — 旧写法不带参即错位
+const _gi = process.argv.indexOf('--graph')
+const GRAPH = _gi > -1 ? (process.argv[_gi + 1] || '8766') : '8766'
 const MIN = (() => { const i = process.argv.indexOf('--min-severity'); return i > 0 ? process.argv[i + 1] : 'medium' })()
 const SEV_RANK = { critical: 3, high: 2, medium: 1, low: 0 }
 const SEV_CVSS = { critical: 9.1, high: 7.5, medium: 5.3, low: 3.1, info: 0 }

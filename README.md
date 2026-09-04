@@ -128,7 +128,7 @@ bash ops/start-all.sh
 
 参数: `<target> [scope] [instances]` — 目标 / 授权 IP 段 / discovery 并行实例数(默认 2)。
 
-**scope 语法(含排除清单)**: 逗号分隔条目, `!` 前缀 = 排除资产(denylist) — 如 `ztgame.com,!mail.ztgame.com,!222.73.243.` 表示泛域授权但**禁测** mail 子域与该网段(授权书排除资产的落地方式)。排除清单在两层硬拦截: bash 门控(命令级拒绝) + graphd 写门控(载荷引用即 403), 简报边界段也会显著列明。全局黑名单可配 `~/.d2d-data/config/denylist.json`(`{"domains":[...],"cidr_prefix":[...]}`, 对所有 engagement 生效)。
+**scope 语法(含排除清单)**: 逗号分隔条目, `!` 前缀 = 排除资产(denylist) — 如 `demo-src.com,!mail.demo-src.com,!203.0.113.` 表示泛域授权但**禁测** mail 子域与该网段(授权书排除资产的落地方式)。排除清单在两层硬拦截: bash 门控(命令级拒绝) + graphd 写门控(载荷引用即 403), 简报边界段也会显著列明。全局黑名单可配 `~/.d2d-data/config/denylist.json`(`{"domains":[...],"cidr_prefix":[...]}`, 对所有 engagement 生效)。
 
 **单 engagement 约定**: 同一时刻只允许一个 active engagement — 已有 active 时再 `/pentest` 会被拒绝(调度器 + graphd 双层, issue #4: 并发第二轮的 stopAll 曾把第一轮 worker 全杀留僵尸)。换目标先 `/pentest-stop`; 同目标续跑用 `P2P_RESUME=1`。同理, **同一时刻只跑一个调度进程**(web 宿主或独立 runner 二选一) — 多进程各持私有 state, p2p 工具只能控制本进程的 worker(issue #9)。
 
@@ -253,6 +253,38 @@ P2P_INPROCESS=1 bash ops/start-all.sh
 
 ---
 
+## 能力模块(2026-09-04 issue 迭代新增)
+
+以下模块均为 stdlib-only 自研(参考未合并 PR 的思路, 代码全部重写), 测试随附:
+
+| 模块 | 路径 | 对应 issue |
+|---|---|---|
+| 工具注册表(25 工具/slot/argsPolicy) | `plugin/pentest-dsh/data/tool-registry.json` + `dsh-bridge/slots.mjs` | #33/#31 |
+| MCP 服务器(stdio JSON-RPC, 无 shell) | `dsh-bridge/mcp-server.mjs` | #28 |
+| skill 同步到 dsh(增量+manifest) | `dsh-bridge/skill-sync.mjs` | #29 |
+| cordis patch 渲染+热重载 | `dsh-bridge/cordis-reload.mjs` | #27 |
+| 面板独立路由/兜底服务(127.0.0.1:8799) | `dsh-bridge/panel-bridge.mjs` | #30 |
+| OSINT 6-provider 统一接口 + 并发聚合去重入图 | `osint/providers.mjs` `osint/aggregate.mjs` | #52/#54 |
+| 加密凭证库(AES-256-GCM, host-token 派生密钥) | `credentials/store.mjs` | #53 |
+| CryptoBackend(Ed25519/ML-DSA 44/65/87/Dual) | `crypto/backend.mjs` `crypto/mldsa.mjs` | #59/#60 |
+| 自研 HTTP MITM 代理(明文不落盘; TLS 解密 opt-in; WSS 帧审计 opt-in) | `scripts/gateway/mitm-proxy.mjs` | #46/#48 |
+| mitmproxy addon(body 摘要, 可选转图) | `scripts/integrations/mitmproxy_addon.py` | #56 |
+| ZAP JSON API 桥(spider/ascan/alerts→Finding) | `scripts/integrations/zap-bridge.mjs` | #57 |
+| interactsh 客户端(真实协议, 默认不连网) | `scripts/integrations/interactsh-client.mjs` | #58 |
+| 浏览器复用检测(builtin→playwright→none) | `scripts/integrations/browser-detect.mjs` | #45 |
+| SQLite checkpoint(node:sqlite, 零依赖) | `domain/checkpoint.mjs` | #40 |
+| Task 委派协议(Anthropic 风格) | `domain/task-tool.mjs` | #42 |
+| 轻量 schema(zod 替代, 带路径报错) | `domain/schema.mjs` | #43 |
+| 三层记忆(core/working/archival 预算裁剪) | `domain/agent-memory.mjs` | #41 |
+| 工具启动检测/偏好持久化/决策表 | `tools/detect.mjs` `tools/preferences.mjs` `tools/decide.mjs` | #34/#37/#35 |
+| 6 个纯 JS Alternative 工具 | `tools/alt/*.mjs` | #36 |
+| Bash 工具包装(checkBash 门禁前置) | `tools/bash-wrapper.mjs` | #38 |
+| 知识分层加载/变体胜率档案/negative_result 台账 | `domain/knowledge-layered.mjs` `domain/variant-archive.mjs` `domain/negative-ledger.mjs` | #74 P3 |
+| npm workspace + 6 个薄包装包 + 内联构建发布 | `packages/` `pnpm-workspace.yaml` `scripts/pack/inline-build.mjs` | #16-#25 |
+| 真 OIDC trusted publish(无 token secret)/CI/dependabot | `.github/workflows/publish.yml` `ci.yml` | #24 |
+
+---
+
 ## 非破坏规则(简报层, 由 scope 门禁 + 评审强制)
 
 - SQL 注入探测**只读**(SELECT / 布尔 / 时间盲)。UPDATE/INSERT/DELETE/DROP/TRUNCATE 注入载荷禁止。
@@ -273,6 +305,20 @@ P2P_INPROCESS=1 bash ops/start-all.sh
 | scheduler `q()` → GRAPHD | "SSRF"判定不成立 — 目标恒为本地 graphd | graphd 只绑 127.0.0.1; `P2P_GRAPHD` env 改动即操作者自担 |
 | validator/sanitize 解析不可信输入 | 这正是其职责 | 回归见 `plugin/pentest-dsh/test/`(V-09/sanitize 系列), 门禁 import 实现从不复刻 |
 | worker 进程全权限(danger-full-access) | 渗透必需 | 代价清单: 可触达本机文件/进程 — 简报层禁基础设施操作 + egress-gateway 连接层限网 + bash 门控; 完全隔离需容器/VM 承载 |
+
+### 静态扫描高危甄别(2026-09-04 复扫, 12 high — 逐项处置)
+
+本轮改造后扫描器仍报 12 high; 逐项甄别如下(可修的已在本轮修掉: curl flag 白名单化 / webhook 出站门禁 / ALTER 字面量化; 以下为**职责本身**残留):
+
+| 扫描位置 | 判定 | 依据与运行时缓解 |
+|---|---|---|
+| scheduler `q()`/`graphdUp()`/transition fetch ×4 "SSRF" | 误报(职责) | 目标恒为 `GRAPHD` 基址, 启动时强制回环校验(非回环需 `P2P_GRAPHD_ALLOW=1`, 操作者显式自担); graphd 只绑 127.0.0.1 |
+| scheduler `notifyVerified()` webhook fetch ×1 "SSRF" | 误报(已加固) | `assertNotifyUrl()` 门禁: 仅 http/https、禁内嵌凭据、禁云元数据/link-local; 回环接收端(ntfy 等)属合法用途放行 |
+| graphd `__main__` 锁文件/token 文件 open ×4 "路径穿越" | 误报(已有白名单) | token 路径经 `_safe_token_path()` 强制位于 `~/.config/d2d/` 下(realpath 前缀校验); 锁文件与 DB 同目录, DB 路径本身是操作者 env 配置 |
+| validator `spawn('curl', argv)` ×1 "不可信命令参数" | 职责(已结构性收口) | argv 来自 worker repro 解析, 现为**白名单 flag + 值禁 `@file` + 位置参数必须唯一 http(s) URL**; 无 shell; 回归见 `test/validator.test.mjs` 与 `test/r4a-boundary.test.mjs` |
+| scheduler `loadKnowledge()` read ×2 "path-traversal" | 误报 | 读取路径为 `P2P_BRAIN_DIR`/`DATA_DIR` 操作者配置, 非请求方可控输入; try/catch 缺文件安全回退 |
+
+结论: 无一为请求方可控的可达注入/穿越面; 处置口径与 issue #12 一致 — **文档化 + 代码级缓解 + 回归测试**, 不为满足扫描器而阉割功能。
 
 ---
 

@@ -14,7 +14,7 @@ export const MACRO_GROUPS = [
   { key: 'rejected', label: '已驳回', states: ['rejected'] },
 ]
 export const ZOMBIE_MS = 30_000
-const MAX = { title: 200, scope: 200, target: 200, workers: 50, findings: 200, signals: 20, exp: 12, checkpoint: 400, todo: 400, traj: 400, digest: 160, usageLines: 2000, runLogLines: 400, sigEvidence: 0 }
+const MAX = { title: 200, scope: 200, target: 200, workers: 50, findings: 200, signals: 50, exp: 100, checkpoint: 400, todo: 400, traj: 400, digest: 160, usageLines: 2000, runLogLines: 400, sigEvidence: 0 }
 
 // 全部只读 MATCH; host token 通道下不触发 worker 只读白名单(本就放行)
 const Q = {
@@ -83,6 +83,101 @@ export function readDenylist(env = process.env) {
   } catch { return { domains: [], cidr_prefix: [] } }
 }
 
+const _normDomain = (v) => String(v ?? '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+const _validDomain = (v) => /^[a-z0-9.*-]+(\.[a-z0-9.*-]+)+$/.test(v)
+const _validCidr = (v) => /^\d{1,3}(\.\d{1,3}){2,3}\.$/.test(v)
+
+/** R6.3: 黑名单 CRUD(面板增删改) — 改 denylist.json 后热重载 graphd 写门(免重启即时生效)。
+ *  op: 'add'{kind,value} | 'del'{kind,value} | 'update'{kind,from,to}; kind: 'domains'|'cidr_prefix'。
+ *  热重载失败不回滚文件(下次 engagement/重启亦生效), 以 warn 字段提示。 */
+export async function writeDenylist({ op, kind, value, from, to, graphdUrl, token, env = process.env }) {
+  const kinds = ['domains', 'cidr_prefix']
+  if (!kinds.includes(String(kind))) throw new Error(`kind 必须是 ${kinds.join('/')}`)
+  const p = env.P2P_DENYLIST_FILE ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/denylist.json`
+  const cur = readDenylist(env)
+  const items = cur[kind]
+  const check = (v) => {
+    if (kind === 'cidr_prefix') { if (!_validCidr(v)) throw new Error(`IP 段必须以点结尾(如 222.73.243.): ${v}`); return v }
+    if (!_validDomain(v)) throw new Error(`非法域名(纯 host, 不带协议/路径): ${v}`)
+    return v
+  }
+  if (op === 'add') {
+    const v = check(_normDomain(value))
+    if (items.includes(v)) throw new Error(`已存在: ${v}`)
+    items.push(v)
+  } else if (op === 'del') {
+    const v = String(value ?? '').trim().toLowerCase()
+    const i = items.indexOf(v)
+    if (i < 0) throw new Error(`不存在: ${v}`)
+    items.splice(i, 1)
+  } else if (op === 'update') {
+    const f = String(from ?? '').trim().toLowerCase()
+    const i = items.indexOf(f)
+    if (i < 0) throw new Error(`不存在: ${f}`)
+    const t = check(_normDomain(to))
+    if (items.includes(t) && t !== f) throw new Error(`已存在: ${t}`)
+    items[i] = t
+  } else throw new Error('op 必须是 add/del/update')
+  fs.writeFileSync(p, JSON.stringify({ domains: cur.domains, cidr_prefix: cur.cidr_prefix }, null, 2) + '\n')
+  let warn = ''
+  try {
+    const r = await fetch(`${graphdUrl}/reload/denylist`, {
+      method: 'POST', headers: token ? { 'X-Auth': token } : {}, signal: AbortSignal.timeout(4000),
+    })
+    if (!r.ok) warn = `文件已保存, graphd 热重载失败(HTTP ${r.status}) — 下个 engagement 起生效`
+  } catch { warn = '文件已保存, graphd 不可达 — graphd 恢复后生效' }
+  return { domains: cur.domains, cidr_prefix: cur.cidr_prefix, warn }
+}
+
+/** W4: 环容量热调(caps.json) — 面板容量卡片的读写源; 调度器每 tick 热读同一文件, 免重启生效。 */
+export function readCaps(env = process.env) {
+  try {
+    const p = env.P2P_CAPS_FILE ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/caps.json`
+    const d = JSON.parse(fs.readFileSync(p, 'utf8'))
+    return {
+      caps: (d.caps && typeof d.caps === 'object') ? d.caps : {},
+      deepParallel: d.deepParallel ?? null,
+      maxAgents: d.maxAgents ?? null,
+      backlogWatermark: d.backlogWatermark ?? null,
+      updated_at: String(d.updated_at ?? ''),
+    }
+  } catch { return { caps: {}, deepParallel: null, maxAgents: null, backlogWatermark: null, updated_at: '' } }
+}
+
+const _CAP_KINDS = ['recon', 'deep-dive', 'chain', 'verify', 'creative', 'link']
+const _CAP_RANGE = { kind: [1, 8], deepParallel: [1, 8], maxAgents: [1, 8], backlogWatermark: [5, 500] }
+const _capInt = (v, [lo, hi]) => {
+  const n = Number.parseInt(v, 10)
+  if (!Number.isFinite(n) || n < lo || n > hi) throw new Error(`须为 ${lo}-${hi} 的整数, 得到 "${v}"`)
+  return n
+}
+
+/** W4: 容量卡片写侧 — updates = { caps?:{kind:n}, deepParallel?, maxAgents?, backlogWatermark? };
+ *  值 '' / null = 清除该覆盖(调度器回落 env); 钳位与 domain/caps.mjs 读侧一致, 越界直接报错。 */
+export function writeCaps({ updates }, env = process.env) {
+  const p = env.P2P_CAPS_FILE ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/caps.json`
+  const cur = readCaps(env)
+  const next = { caps: { ...cur.caps }, deepParallel: cur.deepParallel, maxAgents: cur.maxAgents, backlogWatermark: cur.backlogWatermark }
+  const u = updates && typeof updates === 'object' ? updates : {}
+  if (u.caps !== undefined && typeof u.caps !== 'object') throw new Error('caps 必须是对象')
+  for (const [k, v] of Object.entries(u.caps ?? {})) {
+    if (!_CAP_KINDS.includes(k)) throw new Error(`未知环节 "${k}"(可选: ${_CAP_KINDS.join('/')})`)
+    if (v === '' || v === null) delete next.caps[k]
+    else next.caps[k] = _capInt(v, _CAP_RANGE.kind)
+  }
+  for (const key of ['deepParallel', 'maxAgents', 'backlogWatermark']) {
+    if (u[key] === undefined) continue
+    next[key] = (u[key] === '' || u[key] === null) ? null : _capInt(u[key], _CAP_RANGE[key])
+  }
+  if (!Object.keys(next.caps).length) delete next.caps
+  next.updated_at = new Date().toISOString()
+  fs.mkdirSync(`${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config`, { recursive: true })
+  const tmp = `${p}.tmp-${process.pid}-${Date.now()}`
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n')
+  fs.renameSync(tmp, p)
+  return readCaps(env)
+}
+
 /** 模型策略(A-2 外置): DATA_DIR/config/model-policies.json, 缺失返回 null(fleet 卡降级)。*/
 export function readFleet(env = process.env) {
   const dir = env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
@@ -92,14 +187,154 @@ export function readFleet(env = process.env) {
     for (const [k, v] of Object.entries(p?.roles ?? {})) {
       roles[k] = { primary: String(v?.primary ?? ''), backup: String(v?.backup ?? '') }
     }
-    const fleet = { default: { primary: String(p?.default?.primary ?? ''), backup: String(p?.default?.backup ?? '') }, roles, models: [] }
-    // 候选模型并集: 已被引用过的模型(任意厂商, 无中央注册表 — 并集 + 自定义输入)
+    const fleet = { default: { primary: String(p?.default?.primary ?? ''), backup: String(p?.default?.backup ?? '') }, roles, models: [], catalog: [] }
+    // 候选模型并集: 已被引用过的模型 + dsh 已注册供应商/模型(issue: 换槽选择器此前只有已用模型, 其余全靠手填)
     const seen = new Set()
     for (const m of [fleet.default.primary, fleet.default.backup, ...Object.values(roles).flatMap((r) => [r.primary, r.backup])]) {
       if (m && !seen.has(m)) { seen.add(m); fleet.models.push(m) }
     }
+    let catalog = []
+    try { catalog = loadDshCatalog(env) } catch {}
+    fleet.catalog = catalog
+    for (const { provider, models } of catalog) {
+      for (const id of models) {
+        const m = `${provider}/${id}`
+        if (m && !seen.has(m)) { seen.add(m); fleet.models.push(m) }
+      }
+    }
     return fleet
   } catch { return null }
+}
+
+/** issue: Fleet 换槽候选只有已用模型 — 从 dsh 配置枚举已注册供应商/模型(零依赖缩进解析)。
+ * 兼容两种缩进形态: ~/.dsh/settings.yaml(providers@2) 与 profiles/<profile>/cordis.patch.yml(providers@4)。
+ * provider 行 = providers: 块内下一级的 `name:`; 模型 = 块内 `- id: <id>` 列表项; 缩出块即结束。*/
+export function parseProviderModels(text) {
+  const out = []
+  const lines = String(text ?? '').split(/\r?\n/)
+  let block = -1
+  let prov = null
+  for (const raw of lines) {
+    if (!raw.trim() || raw.trim().startsWith('#')) continue
+    const indent = raw.length - raw.replace(/^\s+/, '').length
+    const body = raw.trim()
+    if (prov !== null && (indent <= block || (indent === block + 2 && /^[A-Za-z0-9_-]+:\s*$/.test(body)))) {
+      out.push(prov); prov = null // 出块 / 同级下一个 provider
+    }
+    if (prov === null && /^providers:\s*$/.test(body)) { block = indent; continue }
+    if (prov === null && block >= 0 && indent === block + 2) {
+      const m = body.match(/^([A-Za-z0-9_-]+):\s*$/)
+      if (m) { prov = { provider: m[1], models: [] }; continue }
+    }
+    if (prov !== null) {
+      const idm = body.match(/^-\s*id:\s*(.+?)\s*$/)
+      if (idm) {
+        const id = idm[1].replace(/^["']|["']$/g, '')
+        if (id) prov.models.push(id)
+      }
+      const kem = body.match(/^apiKeyEnv:\s*(.+?)\s*$/)
+      if (kem) prov.apiKeyEnv = kem[1].replace(/^["']|["']$/g, '')
+    }
+  }
+  if (prov !== null) out.push(prov)
+  return out
+}
+
+/** 凭据状态: dsh credentials 文件 refs 段的环境变量名集合(只取名字, 值不读不外传) + 进程环境兜底。*/
+export function credentialEnvNames(env = process.env) {
+  const home = env.DSH_HOME ?? `${os.homedir()}/.dsh`
+  const names = new Set()
+  try {
+    let inRefs = false
+    for (const raw of fs.readFileSync(`${home}/.credentials.yaml`, 'utf8').split(/\r?\n/)) {
+      if (!raw.trim() || raw.trim().startsWith('#')) continue
+      const indent = raw.length - raw.replace(/^\s+/, '').length
+      const body = raw.trim()
+      if (indent === 0) { inRefs = /^refs:\s*$/.test(body); continue }
+      if (inRefs) {
+        const m = body.match(/^([A-Za-z0-9_]+):\s*(.*)$/)
+        if (m) names.add(m[1])
+      }
+    }
+  } catch {}
+  for (const k of Object.keys(env)) if (/API_KEY/.test(k)) names.add(k)
+  return names
+}
+
+/** 凭据 refs 合并(纯函数供 pytest/node test) — dsh 管理的 {version, refs:{ENV: key}} 平文本形态:
+ * 已有 refs: 段 → 在段尾插入新条目; 无 → 文件尾新建 refs: 段。env 名白名单校验。*/
+export function mergeCredentialRefs(text, envName, value) {
+  if (!/^[A-Za-z0-9_]+$/.test(String(envName || ''))) throw new Error('invalid credential env name')
+  const lines = String(text ?? '').split(/\r?\n/)
+  let refsStart = -1, refsEnd = -1
+  lines.forEach((l, i) => {
+    if (i === 0) return
+    const m = l.match(/^(\s*)([A-Za-z0-9_.-]+):\s*(.*)$/)
+    if (!m) return
+    if (m[1] === '' && m[2] === 'refs') refsStart = i
+    else if (refsStart >= 0 && m[1].startsWith('  ')) refsEnd = i
+  })
+  const entry = `  ${envName}: ${value}`
+  if (refsStart >= 0) lines.splice((refsEnd >= refsStart ? refsEnd : refsStart) + 1, 0, entry)
+  else lines.push('refs:', entry)
+  return lines.join('\n')
+}
+
+/** 汇总 dsh 配置里的供应商/模型(settings.yaml + profiles/<profile>/cordis.patch.yml), 按供应商排序去重。*/
+export function loadDshCatalog(env = process.env) {
+  const home = env.DSH_HOME ?? `${os.homedir()}/.dsh`
+  const files = [`${home}/settings.yaml`]
+  try {
+    for (const e of fs.readdirSync(`${home}/profiles`)) {
+      const p = `${home}/profiles/${e}/cordis.patch.yml`
+      if (fs.existsSync(p)) files.push(p)
+    }
+  } catch {}
+  const refs = credentialEnvNames(env)
+  const byProv = new Map() // provider → {models:Set, apiKeyEnv}
+  for (const f of files) {
+    try {
+      for (const { provider, models, apiKeyEnv } of parseProviderModels(fs.readFileSync(f, 'utf8'))) {
+        const cur = byProv.get(provider) ?? { models: new Set(), apiKeyEnv: '' }
+        for (const m of models) cur.models.add(m)
+        if (apiKeyEnv) cur.apiKeyEnv = apiKeyEnv
+        byProv.set(provider, cur)
+      }
+    } catch {}
+  }
+  return [...byProv.entries()]
+    .map(([provider, cur]) => ({ provider, models: [...cur.models].sort(), apiKeyEnv: cur.apiKeyEnv || '',
+      hasKey: cur.apiKeyEnv ? (refs.has(cur.apiKeyEnv) || Boolean(env[cur.apiKeyEnv])) : false }))
+    .sort((a, b) => a.provider.localeCompare(b.provider))
+}
+
+/** 策略库(#89 吸纳竞品策略库浏览面): 知识卡全量(现役+影子) + verify 命中战果(wins/hits)。
+ * source: current=confirmed(现役, 过三门禁) / shadow=default(影子待实战)。数据源=本地 brain 文件 + 图内战果。*/
+export async function loadStrategies(env = process.env, query) {
+  const dir = env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
+  const out = []
+  const seen = new Set()
+  const pools = [
+    ['confirmed', `${dir}/brain/current/techniques.json`],
+    ['default', `${dir}/brain/shadow/techniques.json`],
+  ]
+  for (const [source, p] of pools) {
+    try {
+      for (const c of JSON.parse(fs.readFileSync(p, 'utf8')).cards ?? []) {
+        if (seen.has(c.id)) continue
+        seen.add(c.id)
+        out.push({ id: c.id, title: c.title, category: c.category || 'general',
+          applies_to: c.applies_to ?? [], source: source === 'current' ? 'confirmed' : source })
+      }
+    } catch (e) { console.error('[d2d-panel] loadStrategies pool:', source, e.message) }
+  }
+  let winsMap = {}
+  try {
+    const rows = await query(`MATCH (e:ExperienceWeight) WHERE e.id STARTS WITH 'card:' RETURN e.id AS id, e.wins AS w, e.hits AS h`)
+    for (const r of rows ?? []) winsMap[String(r.id)] = { wins: Number(r.w) || 0, hits: Number(r.h) || 0 }
+  } catch {}
+  for (const s of out) s.stats = winsMap[s.id] ?? { wins: 0, hits: 0 }
+  return out
 }
 
 const MODEL_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
@@ -130,20 +365,33 @@ export function writeFleet({ role, slot, model }, env = process.env) {
 /** 运行事件(scheduler run-log.jsonl + model-usage.jsonl 的面板投影) — 只读 tail, 任意一行坏行跳过。
  *  产出: { events: 轨迹事件(升序), usage: {model: 调度次数}, quotaHits: [model...] } */
 export function readRunEvents({ engName, dataDir }, fsImpl = fs, env = process.env) {
-  const out = { events: [], usage: {}, quotaHits: [] }
+  const out = { events: [], usage: {}, quotaHits: [], cost: { dispatches24h: 0, terminals24h: 0, workerMin24h: 0, steps24h: 0, quotaEvents24h: 0 } }
   const dir = env.D2D_DATA_DIR ?? dataDir ?? `${os.homedir()}/.d2d-data`
   // 与 scheduler.js RUNS_BASE 同口径: P2P_RUNS_DIR/D2D_RUNS_DIR 优先, 否则 DATA_DIR/runs
   const runs = env.D2D_RUNS_DIR ?? env.P2P_RUNS_DIR ?? `${dir}/runs`
   // model-usage.jsonl: 每 worker 派发一行 {ts, worker, role, model}
+  // P2-10 起终态行还带 {event:'terminal', code, ms, quota, steps, tools, compactions} — 这里顺带算 24h 烧速
+  const cutoff = Date.now() - 86_400_000
   try {
     const lines = fsImpl.readFileSync(`${runs}/model-usage.jsonl`, 'utf8').split('\n').filter(Boolean).slice(-MAX.usageLines)
     for (const ln of lines) {
       try {
         const r = JSON.parse(ln)
         const m = String(r?.model ?? '')
-        if (m) out.usage[m] = (out.usage[m] ?? 0) + 1
+        if (m && !r?.event) out.usage[m] = (out.usage[m] ?? 0) + 1
+        const t = r?.ts ? Date.parse(r.ts) : NaN
+        if (Number.isFinite(t) && t >= cutoff) {
+          if (!r?.event || r.event === 'dispatch') out.cost.dispatches24h++
+          else if (r.event === 'terminal') {
+            out.cost.terminals24h++
+            out.cost.workerMin24h += Number(r.ms ?? 0) / 60_000
+            out.cost.steps24h += Number(r.steps ?? 0) || 0
+            if (r.quota) out.cost.quotaEvents24h++
+          }
+        }
       } catch {}
     }
+    out.cost.workerMin24h = Math.round(out.cost.workerMin24h)
   } catch {}
   // run-log.jsonl: dispatch/terminal/zero-write/handoff 事件(轨迹主线)
   if (engName) {
@@ -218,6 +466,7 @@ function projectEngagement(row) {
  * runEvents: readRunEvents 产物(可选; 缺省时轨迹/用量区降级为空)。
  */
 export async function buildSnapshot(query, { fleet = null, runEvents = null } = {}) {
+  const strategies = await loadStrategies(process.env, query).catch(() => [])
   const [engActiveRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows] = await Promise.all([
     query(Q.engActive),
     query(Q.agents),
@@ -259,6 +508,7 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null } = 
     now: now.toISOString(),
     engagement: projectEngagement(engRows?.[0] ?? null),
     denylist,
+    caps: readCaps(),
     counts: {
       endpoints: num(endpoints?.[0]?.n),
       signals_open: num(signalsOpen?.[0]?.n),
@@ -314,6 +564,7 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null } = 
       target_type: String(x?.target_type ?? ''),
     })),
     fleet, // null = 未配置模型策略(fleet 卡降级为空态)
+    strategies, // 策略库(#89 吸纳): 知识卡全量 + wins/hits 战果, 面板策略库浏览卡数据源
     run: {
       events: runEvents?.events ?? [],
       usage: runEvents?.usage ?? {},

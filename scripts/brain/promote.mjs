@@ -3,7 +3,8 @@
 // 用法:
 //   promote.mjs --check                 只跑门禁①②看结论
 //   promote.mjs --to-shadow [--graph P] staged → versions/vN(status=shadow)+brain/shadow 软链; 门禁①②必须全过
-//   promote.mjs --to-current [--force]  shadow → current; 门禁③: 可信实战命中证据(样本量收紧, --force 记审计越过)
+//   promote.mjs --to-current [--force]  shadow → current; 门禁③: 可信实战命中证据(样本量收紧)
+//                                       (#74/P0: --force 已废除, 不再提供越过门禁③的通道)
 //   promote.mjs --reject                丢弃 staged
 //   promote.mjs --seed                  安装 brain/seed/v0 基线为首个 current(生产冷启动)
 //   promote.mjs --status                版本一览
@@ -19,7 +20,9 @@ const BRAIN = `${DATA_DIR}/brain`
 const STAGED = `${BRAIN}/staged`
 const VERSIONS = `${BRAIN}/versions`
 const SEED = `${REPO}/brain/seed/v0-techniques.json`
-const GRAPH = process.argv[process.argv.indexOf('--graph') + 1] ?? '8766'
+// 缺省参数修复: 同 src-export — 不带 --graph 时旧写法取到 argv[0]
+const _gi = process.argv.indexOf('--graph')
+const GRAPH = _gi > -1 ? (process.argv[_gi + 1] || '8766') : '8766'
 const FORCE = process.argv.includes('--force')
 
 // 门禁①: 注入/破坏性内容扫描(与 sanitize/destructive 同向)
@@ -121,12 +124,16 @@ if (cmd === '--to-current') {
   const shadowLink = (() => { try { return fs.readlinkSync(`${BRAIN}/shadow`) } catch { return null } })()
   if (!shadowLink) { console.error('无 shadow 版本'); process.exit(1) }
   const g3 = gate3(fieldEvidence())
-  if (!g3.ok && !FORCE) {
-    console.error(`❌ 门禁③未过: 影子包无可信实战证据(需 wins>=3, 或 wins>=2 且不撞已证伪方向)。随行观察或 --force 越过(记审计)。`)
-    if (g3.detail.length) console.error('  现状: ' + g3.detail.join('; '))
+  if (!g3.ok) {
+    // #74/P0: --force 废除 — 门禁③证据(卡片实战命中)由命中归因自动累积:
+    // 简报卡下发(worker 回报 used_knowledge:card:<id>) → verify 闭环计 wins → 此处自然可过。
+    console.error(`❌ 门禁③未过: 影子包无可信实战证据(需 wins>=3, 或 wins>=2 且不撞已证伪方向)。`)
+    console.error(`   --force 已废除(#74/P0) — 晋级通路: 继续实战, 卡片被引用且命中即自动计胜;`)
+    console.error(`   冷启动装基线用 promote.mjs --seed。`)
+    if (g3.detail.length) console.error(`   现状: ${g3.detail.join('; ')}`)
+    else console.error('   现状: 图内无 card: 前缀命中记录(简报卡尚未在实战中被引用过)')
     process.exit(1)
   }
-  if (!g3.ok && FORCE) console.log('⚠ --force 越过门禁③(无可信实战命中)')
   const vdir = path.basename(shadowLink)
   try { fs.rmSync(`${BRAIN}/current`) } catch {}
   fs.symlinkSync(`${VERSIONS}/${vdir}`, `${BRAIN}/current`)

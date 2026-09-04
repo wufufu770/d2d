@@ -1,0 +1,16 @@
+# P0-4 守护单元 — d2d-graphd(图黑板 :8766)
+# 安装: scripts/systemd/install.sh  |  日志: journalctl --user -u d2d-graphd -f
+[Unit]
+Description=d2d graphd (Kuzu graph blackboard :8766)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/d2d/graphd/app.py
+WorkingDirectory=%h/d2d/graphd
+Restart=on-failure
+RestartSec=3
+# kuzu 无实例互斥: 双实例会毁库(app.py 启动锁自检兜底, 这里仍禁止并发重启抖动)
+Environment=P2P_GRAPHD=http://127.0.0.1:8766
+
+[Install]
+WantedBy=default.target

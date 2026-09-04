@@ -1,0 +1,20 @@
+# P0-4 守护单元 — dsh web 面板(:8899, 装载 d2d-panel/d2d 插件)
+# 注意: 调度器代码随本进程加载 — 升级 d2d 代码后必须 restart 本单元, 否则内存里跑旧代码(0905 僵尸教训)
+[Unit]
+Description=dsh web panel (:8899)
+After=network.target d2d-graphd.service
+
+[Service]
+ExecStart=%h/.npm-global/bin/dsh --profile web --port 8899 --no-open --host 127.0.0.1
+WorkingDirectory=%h
+Restart=on-failure
+RestartSec=3
+Environment=P2P_GRAPHD=http://127.0.0.1:8766
+Environment=P2P_PROXY_URL=http://127.0.0.1:8888
+Environment=P2P_OAST_HOST=127.0.0.1:8890
+# 🟢 日常档成本参数(0905 调优): step 硬上限 45 / 深环 600s; 冲刺档可临时改 60
+Environment=P2P_MAX_STEPS=45
+Environment=P2P_DEEP_TIMEOUT_MS=600000
+
+[Install]
+WantedBy=default.target
