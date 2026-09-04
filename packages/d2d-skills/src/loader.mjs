@@ -24,15 +24,19 @@ export function parseFrontmatter(text) {
     if (i <= 0) continue
     const key = line.slice(0, i).trim()
     let val = line.slice(i + 1).trim()
-    if (!(key in data)) data[key] = coerce(val)
+    if (!(key in data)) data[key] = coerce(val, key)
   }
   return { data, body: m[2] }
 }
 
-function coerce(v) {
+// 仅白名单字段做裸逗号切分(多工具列表); 其余含逗号值(description 等散文)必须保持字符串,
+// 否则任意含逗号的句子都被误拆成数组。
+const COMMA_LIST_FIELDS = new Set(['allowed-tools'])
+
+function coerce(v, key) {
   if (v === '' || v === undefined) return ''
   if (/^\[.*\]$/.test(v)) return v.slice(1, -1).split(',').map((x) => x.trim()).filter(Boolean)
-  if (v.includes(',')) return v.split(',').map((x) => x.trim()).filter(Boolean)
+  if (COMMA_LIST_FIELDS.has(key) && v.includes(',')) return v.split(',').map((x) => x.trim()).filter(Boolean)
   if (v === 'true') return true
   if (v === 'false') return false
   if (/^-?\d+$/.test(v)) return Number.parseInt(v, 10)

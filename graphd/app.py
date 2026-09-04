@@ -19,6 +19,7 @@ def _read_denylist_file():
     return {"domains": [str(x).lower() for x in _dl.get("domains", [])],
             "cidr_prefix": [str(x) for x in _dl.get("cidr_prefix", [])]}
 import re
+import socket
 import sys
 import threading
 import time
@@ -26,6 +27,23 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# #73: 审计日志 —— 可选依赖, try/except 降级导入(audit.py 缺失/损坏时审计退化为无操作, 业务不崩)。
+# 两种形态都接住: 包内导入(from graphd.app import, pytest/调度器侧)与直接脚本运行(cd graphd && python3 app.py)。
+try:
+    from graphd import audit as _audit_mod
+except Exception:
+    try:
+        import audit as _audit_mod
+    except Exception:
+        _audit_mod = None
+
+
+def _audit_event(kind, detail):
+    """#73: 审计事件统一出口。audit_event 内部自吞一切异常(静默计数), 此处不重复包裹 ——
+    审计故障永不改变门控判定结果。调用点: 认证失败 / denylist 命中 / 非法状态迁移。"""
+    if _audit_mod is not None:
+        _audit_mod.audit_event(kind, detail)
 
 # 可移植性: DB 默认落在脚本同目录(每仓天然隔离); 端口由各仓 start.sh 钉定
 DB_PATH = os.environ.get("P2P_GRAPH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kuzu_db"))
@@ -340,10 +358,55 @@ def worker_query_allowed(cypher: str) -> tuple[bool, str]:
         return False, "/query is read-only for workers: mutation keywords forbidden (case-insensitive)"
     return True, ""
 
+
+def prose_denylist_hit(text_lower: str, domains) -> str:
+    """#73: denylist 兜底散文匹配(模块级纯函数供 pytest) — 与 R6 结构化字段扫描互为双保险。
+
+    堵两个实证漏检形态(结构化正则左界字符类 [^a-z0-9.\\-] 排除了 '.'):
+      1) 父域条目(ztgame.com)对子域散文提及(mail.ztgame.com)不命中 —— 前导 '.' 被排除;
+      2) percent-encoded 点号形态(mail%2Eztgame%2Ecom)不命中。
+    规则与 plugin/pentest-dsh/domain/scope.mjs 的 deniedHit 后缀匹配同口径: 域名条目须以
+    「行首或非字母数字字符(含 '.')」为左界、以「串尾或非字母数字字符」为右界全段出现 ——
+    全段匹配不做子串误伤(ztgame.company / notztgame.com 不命中); 右界含 '-' 与 '.'
+    (散文红线零容忍, fail-closed: 'ztgame.com.cn' 这类更长域名的提及同样拒收)。
+    仅处理域名条目: 以 '.' 结尾的网段前缀条目(如 222.73.243.)不进本兜底, 由结构化扫描的
+    \\d 主机位语义负责。
+    text_lower 须为已 lower() 文本(调用方传 json.dumps(req).lower()); 内部对原文做至多两轮
+    unquote(percent-decode, 覆盖双重编码), 原文/解码文任一命中即返回该域名条目, 未命中返回 ''。"""
+    if not text_lower or not domains:
+        return ""
+    variants = [text_lower]
+    try:
+        from urllib.parse import unquote
+        _dec = text_lower
+        for _ in range(2):
+            _n = unquote(_dec).lower()
+            if _n == _dec:
+                break
+            _dec = _n
+            variants.append(_dec)
+    except Exception:
+        pass
+    for _raw in domains:
+        d = str(_raw or "").strip().lower()
+        if not d or "." not in d or d.endswith("."):
+            continue  # 空条目/无点条目/网段前缀不在散文兜底范围
+        pat = re.compile(r"(?:^|[^a-z0-9])" + re.escape(d) + r"(?:$|[^a-z0-9])")
+        for v in variants:
+            if pat.search(v):
+                return d
+    return ""
+
 # D-4: 并发连接上限 — ThreadingHTTPServer 每连接一线程, 慢连接可耗尽线程/内存(纵深防御)
 _INFLIGHT = threading.BoundedSemaphore(int(os.environ.get("P2P_MAX_CONNS", "32")))
 
 class Handler(BaseHTTPRequestHandler):
+    # #73 slowloris 第一道(慢头部): StreamRequestHandler.setup() 依据该类属性, 在连接的
+    # 「首个请求行/头部字节被读取之前」即对 socket settimeout —— 首请求与 keep-alive 后续
+    # 请求的头部阶段全程受限。超时抛 socket.timeout: 头部阶段由 stdlib handle_one_request
+    # 捕获并断连(线程立即释放); body 阶段由 do_POST 显式捕获回 408。
+    timeout = 30
+
     def log_message(self, *a):
         pass
 
@@ -374,7 +437,37 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _slowloris_arm(self):
+        """#73 slowloris 第二道(请求处理入口): 对连接 socket 设 30s 读超时。
+        socket 超时是连接级属性, 一旦设置即覆盖本连接「后续所有读」—— 当前请求的 body 阶段,
+        以及 keep-alive 下一请求的请求行/头部阶段(慢头部); 与类属性 timeout=30(覆盖首请求
+        慢头部)互为冗余防线, 慢头部+慢 body 两阶段均不超 30s。响应发送后不恢复 None ——
+        连接本就该短命, 保持受限; 读超时统一走 _timeout_408/stdlib 断连路径。"""
+        try:
+            self.connection.settimeout(30)
+        except Exception:
+            pass  # 连接已被对端关闭: 交由上层异常路径处理
+
+    def _timeout_408(self):
+        """#73: 读超时(慢头部/慢 body 任一阶段漏到本层) → 408 Request Timeout 并关闭连接。
+        rfile 在超时后缓冲状态不可靠, 必须 close_connection; 408 让客户端可感知重试语义。
+        (头部阶段首请求的 socket.timeout 由 stdlib handle_one_request 捕获, 静默断连。)"""
+        self.close_connection = True
+        try:
+            self._send(408, {"ok": False,
+                             "error": "request timeout: read phase exceeded 30s (slowloris guard)"})
+        except Exception:
+            pass
+
+    def _peer(self):
+        """来源地址(防御性格式化: client_address 存在 AF_UNIX 等非 (ip, port) 形态)。"""
+        try:
+            return "%s:%s" % (self.client_address[0], self.client_address[1])
+        except Exception:
+            return str(self.client_address)
+
     def do_GET(self):
+        self._slowloris_arm()  # #73: 慢头部/慢 body 读全程受限(见 _slowloris_arm 注释)
         if self.path == "/health":
             # V-12: 不回显 DB_PATH(本机信息暴露面收敛)
             self._send(200, {"ok": True})
@@ -385,7 +478,17 @@ class Handler(BaseHTTPRequestHandler):
         """level='host': 需 HOST_TOKEN; level='worker': WORKER 或 HOST 均可。
         #32(审查F1) 提权修复: host 级必须「已配置且匹配」;
         P2P_TOKEN_REQUIRED=1 时未配置即拒绝(生产模式), 默认 0 放行(range 模式)。
-        V-13: 恒定时间比较(hmac.compare_digest), 消除 loopback 时序侧信道。"""
+        V-13: 恒定时间比较(hmac.compare_digest), 消除 loopback 时序侧信道。
+        #73: 认证失败统一审计 —— host 级 kind='auth-fail', worker 级 kind='auth-fail-worker',
+        detail 含 path 与来源地址; 审计只增不改判定语义。"""
+        ok = self._auth_check(level)
+        if not ok:
+            _audit_event("auth-fail" if level == "host" else "auth-fail-worker",
+                         {"path": self.path, "peer": self._peer()})
+        return ok
+
+    def _auth_check(self, level):
+        """#73 拆分: 纯判定逻辑(_auth 负责失败审计包装), 判定规则与原 _auth 完全一致。"""
         # #32 严格版: 无任何开放回退 —— 未配置 token 的端点一律拒绝
         host = os.environ.get("P2P_HOST_TOKEN", "")
         worker = os.environ.get("P2P_WORKER_TOKEN", "")
@@ -405,6 +508,7 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def do_POST(self):
+        self._slowloris_arm()  # #73: 慢头部/慢 body 读全程受限(见 _slowloris_arm 注释)
 
         # V-11: Content-Length 数值校验 + 1MB 上限(原 int() 对非数字头抛 ValueError 断连)
         try:
@@ -414,7 +518,11 @@ class Handler(BaseHTTPRequestHandler):
         if n > MAX_BODY_BYTES:
             return self._send(413, {"ok": False, "error": f"payload too large (> {MAX_BODY_BYTES} bytes)"})
         try:
-            req = json.loads(self.rfile.read(n) or b"{}")
+            _body = self.rfile.read(n)  # #73: body 读取全程受 30s 读超时约束(慢 body 阶段)
+        except socket.timeout:
+            return self._timeout_408()
+        try:
+            req = json.loads(_body or b"{}")
         except Exception as e:
             return self._send(400, {"ok": False, "error": f"bad json: {e}"})
         if not isinstance(req, dict):
@@ -439,6 +547,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "denylist": dict(DENYLIST),
                                     "count": len(DENYLIST["domains"]) + len(DENYLIST["cidr_prefix"])})
         # I-013: /query 与 /write/* 统一 worker 级认证(原先 /query 无 _auth 调用)
+        # #73 复核: /query 保持 worker 级(WORKER 或 HOST 均可, 只读门见 worker_query_allowed);
+        # /write/transition 为 host-only(见下方 _auth("host") 注释)。
         if self.path in ("/query", "/write/finding", "/write/signal", "/write/hypothesis", "/write/endpoint"):
             if not self._auth("worker"):
                 return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
@@ -459,6 +569,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(503, {"ok": False, "error": f"denylist check failed (fail-closed): {str(e)[:120]}"})
             if _denied:
+                # #73 大小写一致性: 名单加载即 lower()(:19), scope `!` 条目 lower()(:下方), 文本亦
+                # lower() 后比对 —— 双端同构, 无需 re.I。
                 _blob = json.dumps(req, ensure_ascii=False).lower()
                 _hit = None
                 for _d in _denied:
@@ -470,7 +582,17 @@ class Handler(BaseHTTPRequestHandler):
                     if re.search(_pat, _blob) or f"https://{_d}" in _blob or f"http://{_d}" in _blob:
                         _hit = _d
                         break
+                if not _hit:
+                    # #73 兜底(散文提及, 结构化检查之外的第二道): 结构化正则左界字符类排除 '.',
+                    # 父域条目(ztgame.com)对子域散文(mail.ztgame.com)与 percent-encoded 点号
+                    # (%2e)形态会漏检 —— 对整包小写文本 percent-decode 后再做词边界全段匹配。
+                    # 双保险关系: 结构化扫描(含 CIDR 前缀与 https:// 快路径)为主, 本兜底仅补
+                    # 域名条目的散文/编码形态; 任一命中即 403(红线散文提及零容忍, fail-closed)。
+                    _prose = prose_denylist_hit(_blob, [x for x in _denied if not x.endswith(".")])
+                    if _prose:
+                        _hit = _prose
                 if _hit:
+                    _audit_event("denylist-hit", {"path": self.path, "asset": _hit})
                     return self._send(403, {"ok": False, "error": f"excluded asset (denylist 红线): {_hit} — 排除资产禁测/禁枚举/禁引用, 载荷含之即拒绝"})
         # ---- 结构化写端点: 参数校验替代内联 cypher 正则扫描(根治 #21 死门与 params 旁路) ----
 
@@ -608,6 +730,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True})
 
         # R3: Finding 七态状态机转换（host 专属；worker 的 verified 结论仍须经验证器环独立重放背书）
+        # #73 token 归属复核: 本端点已 host-only —— _auth("host") 只接受与 HOST_TOKEN 的恒等
+        # 比较, worker token 无法通过(403), 无需改动。/query 维持 worker 级(见下方统一 _auth("worker"))。
         if self.path == "/write/transition":
             if not self._auth("host"):
                 return self._send(403, {"ok": False, "error": "transitions require host token"})
@@ -624,6 +748,10 @@ class Handler(BaseHTTPRequestHandler):
                     cur = str(r.get_next()[0] or "candidate")
                     ok, err, traj = transition_gate(cur, to, req.get("actor"), req.get("reason"))
                     if not ok:
+                        # #73: 非法迁移审计(七态机拒绝动作可追溯: cur/to/actor)
+                        _audit_event("transition-illegal",
+                                     {"id": fid, "cur": cur, "to": to,
+                                      "actor": str(req.get("actor") or ""), "err": err})
                         return self._send(400, {"ok": False, "error": err})
                     traj_s = json.dumps(traj, ensure_ascii=False)
                     if to == "verified":
@@ -712,6 +840,7 @@ class Handler(BaseHTTPRequestHandler):
                                 for h in hosts:
                                     # R6: 排除清单优先 —— 后缀/前缀匹配, 命中即拒绝(红线资产零触碰)
                                     if any(h == d or h.endswith("." + d) or (d.endswith(".") and h.startswith(d)) for d in denied):
+                                        _audit_event("denylist-hit", {"path": self.path, "asset": h})  # #73
                                         return self._send(403, {"error": f"excluded asset (denylist): {h}"})
                                     if not any(h == a or h.endswith("." + a) for a in allowed):
                                         return self._send(403, {"error": f"scope violation at graphd layer: {h}"})

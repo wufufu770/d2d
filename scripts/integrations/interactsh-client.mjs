@@ -15,13 +15,9 @@
 import crypto from 'node:crypto'
 
 const DEFAULT_SERVER = 'https://oast.pro'
-const CID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
-const genCid = (len = 20) => {
-  const b = crypto.randomBytes(len)
-  let s = ''
-  for (let i = 0; i < len; i++) s += CID_ALPHABET[b[i] % CID_ALPHABET.length]
-  return s
-}
+// 复审#14: randomBytes % 36 有取模偏置(前 8 个字符概率高 1/219) → 改 base64url
+// 无偏采样后截断(base64url 正是子域安全字符集, 43B 熵源 ≥ 20B 输出)
+const genCid = (len = 20) => crypto.randomBytes(32).toString('base64url').slice(0, len)
 
 export class InteractshClient {
   // fetchImpl 注入: 默认全局 fetch(仅显式使用时才真正出网)
@@ -29,19 +25,31 @@ export class InteractshClient {
     this.server = server.replace(/\/+$/, '')
     this.fetchImpl = fetchImpl
     this.cid = null
-    this.rsa = null // 客户端 RSA 密钥对 { publicKey, privateKey }
+    this.rsa = null // 客户端 RSA 密钥对 { publicKey, privateKey }(懒生成, 见 _ensureRsa)
+    this._rsaPromise = null
     this.aesKey = null
+  }
+
+  // 复审#14: RSA-2048 keygen 昂贵(数百 ms) → 懒生成: 首次真正需要注册时才做,
+  // 之后复用; 失败允许下次重试。构造函数保持零开销。
+  _ensureRsa() {
+    if (!this._rsaPromise) {
+      this._rsaPromise = Promise.resolve(crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }))
+      this._rsaPromise.catch(() => { this._rsaPromise = null })
+    }
+    return this._rsaPromise
   }
 
   // 建会话: 密钥交换 → 注册 → 返回唯一子域 <cid>.<server-domain>
   async createSession() {
     this.cid = genCid()
-    this.rsa = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
     this.aesKey = crypto.randomBytes(32)
     const pkRes = await this.fetchImpl(`${this.server}/public-key`)
     if (!pkRes.ok) throw new Error(`#58 interactsh 密钥交换失败: HTTP ${pkRes.status}`)
     const pkBody = await pkRes.json()
     const serverPub = crypto.createPublicKey({ key: Buffer.from(pkBody['public-key'], 'base64'), format: 'der', type: 'spki' })
+    // RSA 懒生成: 密钥交换成功、确实要注册时才 keygen
+    this.rsa = await this._ensureRsa()
     const encAes = crypto.publicEncrypt(
       { key: serverPub, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
       this.aesKey,

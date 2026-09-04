@@ -376,3 +376,101 @@ def test_frozen_to_verified_still_illegal():
 def test_frozen_missing_actor_still_rejected():
     ok, err, _ = transition_gate("frozen", "candidate", "", "migration")
     assert not ok and "actor" in err
+
+
+# ---- issue #73: denylist 兜底散文匹配(模块级纯函数, 与 R6 结构化字段扫描互为双保险) ----
+import json
+from graphd.app import prose_denylist_hit, _read_denylist_file
+
+def test_prose73_hit_exact_asset_in_evidence():
+    """实证回归形态: evidence 散文直接提及红线资产本身 → 命中"""
+    blob = json.dumps({"evidence": "切换验证时发现同时影响 mail.ztgame.com 的同型接口"},
+                      ensure_ascii=False).lower()
+    assert prose_denylist_hit(blob, ["mail.ztgame.com"]) == "mail.ztgame.com"
+
+def test_prose73_hit_subdomain_under_parent_entry():
+    """实证回归形态①: 父域条目(ztgame.com)对子域散文(mail.ztgame.com) —
+    结构化正则左界排除 '.', 本兜底以非字母数字(含 '.')为左界命中"""
+    blob = json.dumps({"evidence": "we also saw mail.ztgame.com in the logs"}).lower()
+    assert prose_denylist_hit(blob, ["ztgame.com"]) == "ztgame.com"
+
+def test_prose73_hit_percent_encoded():
+    """实证回归形态②: percent-encoded 点号(%2e)形态 — percent-decode 后命中"""
+    blob = "redirect target=mail%2eztgame%2ecom confirmed"
+    assert prose_denylist_hit(blob, ["mail.ztgame.com"]) == "mail.ztgame.com"
+
+def test_prose73_hit_double_percent_encoded():
+    """双重编码 %252e → 两轮 unquote 后命中"""
+    assert prose_denylist_hit("go mail%252eztgame%252ecom now", ["mail.ztgame.com"]) == "mail.ztgame.com"
+
+def test_prose73_no_hit_normal_text():
+    assert prose_denylist_hit("reflected xss at example.com/search?q=1 in login flow",
+                              ["mail.ztgame.com"]) == ""
+    assert prose_denylist_hit("正常证据文本, 无任何红线资产提及", ["mail.ztgame.com"]) == ""
+
+def test_prose73_no_substring_false_positive():
+    """全段匹配不做子串误伤: 前后紧贴字母数字不命中"""
+    assert prose_denylist_hit("we probed ztgame.company internal portal", ["ztgame.com"]) == ""
+    assert prose_denylist_hit("host notztgame.com was untouched", ["ztgame.com"]) == ""
+
+def test_prose73_empty_inputs_return_empty():
+    assert prose_denylist_hit("", ["ztgame.com"]) == ""
+    assert prose_denylist_hit("anything", []) == ""
+    assert prose_denylist_hit("anything", [None, "", "   "]) == ""
+
+def test_prose73_skips_cidr_prefix_entries():
+    """网段前缀条目(以 '.' 结尾)不进散文兜底, 由结构化扫描的 \\d 语义负责"""
+    assert prose_denylist_hit("payload mentions 222.73.243.5", ["222.73.243."]) == ""
+
+
+# ---- issue #73: denylist 加载大小写一致性(R6.1 _read_denylist_file → lower()) ----
+def test_denylist73_loader_lowercases_domains(tmp_path, monkeypatch):
+    f = tmp_path / "denylist.json"
+    f.write_text('{"domains": ["Mail.ZTGame.COM", "Evil.Example.ORG"], "cidr_prefix": ["222.73.243."]}')
+    monkeypatch.setenv("P2P_DENYLIST_FILE", str(f))
+    dl = _read_denylist_file()
+    assert dl["domains"] == ["mail.ztgame.com", "evil.example.org"]
+    assert dl["cidr_prefix"] == ["222.73.243."]
+
+
+# ---- issue #73: audit_event — JSONL 追加 / 0700 目录 / 0600 文件 / 写失败静默计数 ----
+import os
+import stat
+from graphd import audit as graphd_audit
+
+def test_audit73_jsonl_append_and_file_modes(tmp_path, monkeypatch):
+    log = tmp_path / "logs" / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(log))
+    assert graphd_audit.audit_event("denylist-hit", {"path": "/write/signal", "asset": "mail.ztgame.com"}) is True
+    assert graphd_audit.audit_event("auth-fail-worker", {"path": "/query", "peer": "127.0.0.1:40000"}) is True
+    # JSONL: 每行一个完整 JSON 对象, 追加不覆盖
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    ev1, ev2 = json.loads(lines[0]), json.loads(lines[1])
+    assert ev1["kind"] == "denylist-hit" and ev1["detail"]["asset"] == "mail.ztgame.com" and ev1["ts"]
+    assert ev2["kind"] == "auth-fail-worker" and ev2["detail"]["peer"] == "127.0.0.1:40000"
+    # 0600 文件 / 0700 目录
+    assert stat.S_IMODE(os.stat(log).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(log.parent).st_mode) == 0o700
+
+def test_audit73_silent_failure_counts_not_raises(tmp_path, monkeypatch):
+    """落盘点父路径被既有文件占用 → makedirs 失败: 静默计数返回 False, 绝不抛异常"""
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x")  # 使 blocker/sub/audit.log 的父目录创建必然失败
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(blocker / "sub" / "audit.log"))
+    before = graphd_audit._fail_count
+    assert graphd_audit.audit_event("transition-illegal", {"cur": "candidate", "to": "verified"}) is False
+    assert graphd_audit._fail_count == before + 1
+    assert not os.path.exists(blocker / "sub")
+
+def test_audit73_no_follow_symlink(tmp_path, monkeypatch):
+    """O_NOFOLLOW: 审计路径被符号链接替换时写失败(静默), 不跟随链接写"""
+    real = tmp_path / "real.txt"
+    real.write_text("victim")
+    link = tmp_path / "audit.log"
+    os.symlink(real, link)
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(link))
+    before = graphd_audit._fail_count
+    assert graphd_audit.audit_event("auth-fail", {"path": "/x"}) is False
+    assert graphd_audit._fail_count == before + 1
+    assert real.read_text() == "victim"  # 链接目标未被写入
