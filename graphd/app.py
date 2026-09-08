@@ -47,6 +47,10 @@ def _audit_event(kind, detail):
 
 # 可移植性: DB 默认落在脚本同目录(每仓天然隔离); 端口由各仓 start.sh 钉定
 DB_PATH = os.environ.get("P2P_GRAPH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kuzu_db"))
+# M8 守护自愈锚: /health 回显三要素。发版必须改 VERSION — preflight 据版本差异识别 stale 旧实例;
+# STARTED_AT 是本进程启动时间, 预检与 /proc/<pid> starttime 比对防 pid 复用误判。
+VERSION = "1.1.0"
+STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 PORT = int(os.environ.get("P2P_GRAPH_PORT", "8766"))
 
 import kuzu
@@ -81,13 +85,13 @@ def db():
 
 SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, PRIMARY KEY(name))",
-    "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, PRIMARY KEY(worker_id))",
+    "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', PRIMARY KEY(worker_id))",
     "CREATE NODE TABLE IF NOT EXISTS Task(id STRING, eng STRING DEFAULT '', kind STRING, payload STRING, priority DOUBLE DEFAULT 1.0, status STRING DEFAULT 'pending', claimed_by STRING DEFAULT '', claimed_at STRING DEFAULT '', target_type STRING DEFAULT 'web', link_id STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Handoff(id STRING, eng STRING, digest STRING, model STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE REL TABLE IF NOT EXISTS AT(FROM Signal_ TO Endpoint)",
@@ -114,6 +118,19 @@ def init_schema(conn):
             conn.execute(_ddl)
         except Exception:
             pass
+    # P0 生命周期列迁移(0905 实证: 旧库无列时 SET/RETURN cancel 直接 Binder exception,
+    # 调度器侧 .catch 静默吞掉 → 栅栏/租约/取消令牌整体失效)
+    for _ddl in ("ALTER TABLE Engagement ADD cancel STRING DEFAULT 'false'",
+                 "ALTER TABLE Engagement ADD leased_by STRING DEFAULT ''",
+                 "ALTER TABLE Engagement ADD lease_at INT64 DEFAULT 0",
+                 # 0906 图队列采纳: panel POST /d2d/api/start 写 status='requested' 节点,
+                 # web 宿主调度器认领(adopt) — instances/objective 随节点传给 startEngagement
+                 "ALTER TABLE Engagement ADD instances INT64 DEFAULT 2",
+                 "ALTER TABLE Engagement ADD objective STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
     # R3: 旧库增量迁移 Finding.notify_sent（战果通知去重）与 Task.eng（任务归属 engagement）
     try:
         conn.execute("ALTER TABLE Finding ADD notify_sent BOOL DEFAULT false")
@@ -131,6 +148,23 @@ def init_schema(conn):
     # 签名去重: 跨 host 同缺陷(同 path+同类别)的关联标记 — 指向既有 finding id
     try:
         conn.execute("ALTER TABLE Finding ADD related_to STRING DEFAULT ''")
+    except Exception:
+        pass
+    # W5(engagement 池子隔离): 池子表补 eng 归属列 — 新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。
+    # ExperienceWeight(经验)与模型策略刻意不加: 跨 src 项目共享(用户约定)。
+    for _ddl in ("ALTER TABLE Endpoint ADD eng STRING DEFAULT ''",
+                 "ALTER TABLE Signal_ ADD eng STRING DEFAULT ''",
+                 "ALTER TABLE Hypothesis ADD eng STRING DEFAULT ''",
+                 "ALTER TABLE Finding ADD eng STRING DEFAULT ''",
+                 "ALTER TABLE Plan ADD eng STRING DEFAULT ''",
+                 "ALTER TABLE AgentIdentity ADD eng STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
+    # 存量混合池归属回填: 只处理 eng='' 的行, 幂等(每次启动 O(池子行数), 空转即跳过)。
+    try:
+        _backfill_eng(conn)
     except Exception:
         pass
 
@@ -175,16 +209,188 @@ def canonical_cat(c) -> str:
     c = str(c or "").strip().lower()
     return CAT_ALIASES.get(c, c)
 
-# R3: Finding 七态状态机（INTEGRATION-DAG 采纳项）—— 只允许合法迁移
-FINDING_STATES = ("candidate", "triaged", "verified", "isolated", "reported", "accepted", "rejected")
+
+# ── W5: engagement 池子隔离 ─────────────────────────────────────────────
+# 池子数据(Finding/Signal_/Endpoint/Hypothesis/Plan)带 eng 归属; 面板按选中 engagement 过滤,
+# 经验(ExperienceWeight)与模型策略跨项目共享。存量混合池由 _backfill_eng 启动时一次性消化。
+
+def parse_scope_allows(scope) -> list:
+    """scope 字符串 → 授权(非 `!`)条目列表(纯函数)。与写门控同口径解析。"""
+    out = []
+    for s in str(scope or "").split(","):
+        s = s.strip().lower()
+        if s and not s.startswith("!"):
+            out.append(s)
+    return out
+
+
+def host_in_scope(host, scope) -> bool:
+    """host 是否落在 scope 授权条目内(纯函数) — 后缀匹配, 与写门控同口径。"""
+    h = re.sub(r"^[a-z][a-z0-9+.-]*://", "", str(host or "").strip().lower()).split("/")[0]
+    for a in parse_scope_allows(scope):
+        if h == a or h.endswith("." + a):
+            return True
+    return False
+
+
+def _parse_ts_ms(v):
+    """ISO/epoch 字符串 → epoch ms(纯函数); 失败返回 0。"""
+    if v is None:
+        return 0
+    if isinstance(v, (int, float)):
+        return int(v)
+    try:
+        return int(str(v).strip())
+    except ValueError:
+        pass
+    try:
+        s = str(v).strip().replace("Z", "+00:00")
+        d = datetime.fromisoformat(s)
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        return int(d.timestamp() * 1000)
+    except Exception:
+        return 0
+
+
+def eng_time_windows(rows) -> list:
+    """Engagement 行({name, created_at} 或 (name, created_at)) → 按时间排序的归属窗口
+    [(name, start_ms, end_ms)]。end_ms = 下一 engagement 的 created_at(多开并行期归属先创建者),
+    末位到 +∞。无时间戳的行跳过。"""
+    pts = []
+    for r in rows or []:
+        if isinstance(r, dict):
+            name, ca = r.get("name"), r.get("created_at")
+        else:
+            name, ca = (r[0], r[1] if len(r) > 1 else None)
+        t = _parse_ts_ms(ca)
+        if t:
+            pts.append((t, str(name)))
+    pts.sort()
+    wins = []
+    for i, (t, name) in enumerate(pts):
+        end = pts[i + 1][0] if i + 1 < len(pts) else float("inf")
+        wins.append((name, t, end))
+    return wins
+
+
+def attribute_by_time(ts, windows) -> str:
+    """ts(ms) 按窗口归属 engagement 名(纯函数) — 落在窗口起点之前的孤儿数据不强行归属(返回 '')。"""
+    t = _parse_ts_ms(ts)
+    if not t:
+        return ""
+    for name, start, end in windows or []:
+        if start <= t < end:
+            return name
+    return ""
+
+
+def pick_write_eng(explicit, active_rows, hosts) -> str:
+    """写入打标归属决策(纯函数): ①显式 eng 字段且在 active 列表内 → 采用
+    ②恰一个 active → 它 ③多 active 时按载荷 host 命中 scope 投票(唯一命中者胜)
+    ④兜底 ''(面板按 eng='' 也可视, 不丢数据)。"""
+    names = []
+    for r in active_rows or []:
+        n = r.get("name") if isinstance(r, dict) else r[0]
+        names.append(str(n))
+    if explicit:
+        e = str(explicit).strip()
+        if e in names:
+            return e
+    if len(names) == 1:
+        return names[0]
+    if hosts:
+        votes = {}
+        for r in active_rows or []:
+            n = r.get("name") if isinstance(r, dict) else r[0]
+            sc = r.get("scope") if isinstance(r, dict) else (r[1] if len(r) > 1 else "")
+            hit = sum(1 for h in hosts if host_in_scope(h, sc))
+            if hit:
+                votes[str(n)] = votes.get(str(n), 0) + hit
+        if len(votes) == 1:
+            return next(iter(votes))
+    return ""
+
+
+def _backfill_eng(conn):
+    """存量混合池归属回填(启动时, 幂等只处理 eng=''):
+    ①有 ts 的表按 engagement created_at 时间窗归属 ②Endpoint 无 ts → 经 AT 边继承 Signal 归属
+    (多数票) ③仍空的 Endpoint 按 URL host 命中 scope 归属。多开并行的存量按先创建者窗口切分。"""
+    rows = conn.execute("MATCH (e:Engagement) RETURN e.name, e.created_at, e.scope")
+    engs = []
+    while rows.has_next():
+        n, ca, sc = rows.get_next()
+        engs.append({"name": str(n or ""), "created_at": str(ca or ""), "scope": str(sc or "")})
+    if not engs:
+        return {"touched": 0}
+    windows = eng_time_windows(engs)
+    touched = 0
+    # ① 时间窗归属(表, ts 列名)
+    for table, tscol in (("Signal_", "ts"), ("Finding", "ts"), ("Hypothesis", "ts"), ("Plan", "created_at")):
+        r = conn.execute(f"MATCH (x:{table}) WHERE x.eng = '' RETURN x.{tscol}, x.id")  # noqa: S608 — 表/列名为字面量枚举
+        batch = []
+        while r.has_next():
+            ts, rid = r.get_next()
+            eng = attribute_by_time(ts, windows)
+            if eng:
+                batch.append((eng, str(rid)))
+        for eng, rid in batch:
+            if table == "Signal_":
+                conn.execute("MATCH (x:Signal_ {id:$i}) SET x.eng = $e", parameters={"i": rid, "e": eng})
+            elif table == "Finding":
+                conn.execute("MATCH (x:Finding {id:$i}) SET x.eng = $e", parameters={"i": rid, "e": eng})
+            elif table == "Hypothesis":
+                conn.execute("MATCH (x:Hypothesis {id:$i}) SET x.eng = $e", parameters={"i": rid, "e": eng})
+            else:
+                conn.execute("MATCH (x:Plan {id:$i}) SET x.eng = $e", parameters={"i": rid, "e": eng})
+            touched += 1
+    # ② Endpoint 经 AT 边继承 Signal 归属(多数票, 平票取最早创建的 signal 之归属)
+    try:
+        r = conn.execute(
+            "MATCH (s:Signal_)-[:AT]->(e:Endpoint) WHERE e.eng = '' AND s.eng <> '' "
+            "RETURN e.id, s.eng, count(s)")
+        votes = {}
+        while r.has_next():
+            eid, seng, _c = r.get_next()
+            votes.setdefault(str(eid), {})
+            votes[str(eid)][str(seng)] = votes[str(eid)].get(str(seng), 0) + 1
+        for eid, vm in votes.items():
+            eng = max(vm.items(), key=lambda kv: kv[1])[0]
+            conn.execute("MATCH (x:Endpoint {id:$i}) SET x.eng = $e", parameters={"i": eid, "e": eng})
+            touched += 1
+    except Exception:
+        pass  # 旧库无 AT 边时跳过, ③兜底
+    # ③ Endpoint host 命中 scope 归属
+    r = conn.execute("MATCH (x:Endpoint) WHERE x.eng = '' RETURN x.id, x.url")
+    batch = []
+    while r.has_next():
+        eid, url = r.get_next()
+        h = re.sub(r"^[a-z][a-z0-9+.-]*://", "", str(url or "").strip().lower()).split("/")[0]
+        if not h:
+            continue
+        for g in engs:
+            if host_in_scope(h, g["scope"]):
+                batch.append((g["name"], str(eid)))
+                break
+    for eng, eid in batch:
+        conn.execute("MATCH (x:Endpoint {id:$i}) SET x.eng = $e", parameters={"i": eid, "e": eng})
+        touched += 1
+    return {"touched": touched}
+
+# R3: Finding 八态状态机（INTEGRATION-DAG 采纳项）—— 只允许合法迁移
+# needs-scope(evidence-gate 四态采纳): verify 无法判定时先归因授权边界(缺低权限账号/身份租户边界
+# 不明/目标归属存疑)而非硬判 rejected —— 过去这类样本被误杀且不可复查。授权澄清后可重新入验证
+# 或带补充证据直通 verified。
+FINDING_STATES = ("candidate", "triaged", "verified", "isolated", "reported", "accepted", "rejected", "needs-scope")
 FINDING_TRANSITIONS = {
-    "candidate": ("triaged", "verified", "isolated", "rejected"),
-    "triaged": ("verified", "isolated", "rejected"),
+    "candidate": ("triaged", "verified", "isolated", "rejected", "needs-scope"),
+    "triaged": ("verified", "isolated", "rejected", "needs-scope"),
     "verified": ("reported", "isolated"),
     "isolated": ("candidate", "rejected"),
     "reported": ("accepted", "rejected"),
     "accepted": (),
     "rejected": (),
+    "needs-scope": ("candidate", "triaged", "verified", "rejected"),
     # issue #88: 早期冻结逻辑写入的历史状态(frozen 不在七态内, 实测存量 301 条永久卡死)。
     # 兼容出口只开三条: 退回 candidate(重新入验证)/triaged(有证据直通)/rejected; 禁止 frozen→verified 越权直通。
     "frozen": ("candidate", "triaged", "rejected"),
@@ -225,13 +431,16 @@ def redact_pii(s):
     return s, n
 
 
-def upsert_endpoint(conn, url, tech="", business_chain="", param="", method="GET"):
+def upsert_endpoint(conn, url, tech="", business_chain="", param="", method="GET", eng=""):
     """#5: worker 可写的 Endpoint 通道 — url 幂等 upsert(存在则补指纹字段, 不存在则建)。
     此前 worker 只有 finding/signal/hypothesis 三个写端点而 /query 只读,
-    N2 规则(Signal-[:AT]->Endpoint)结构性落空(实证 endpoints=0, coverage 恒 0)。"""
-    r = conn.execute("MATCH (e:Endpoint {url:$u}) RETURN e.id AS id", parameters={"u": url})
+    N2 规则(Signal-[:AT]->Endpoint)结构性落空(实证 endpoints=0, coverage 恒 0)。
+    W5: eng 归属 — 新建即打标; 已有无主(eng='')行被归属时补写, 已归属行不抢占。"""
+    r = conn.execute("MATCH (e:Endpoint {url:$u}) RETURN e.id AS id, e.eng AS eng", parameters={"u": url})
     if r.has_next():
-        eid = str(r.get_next()[0])
+        row = r.get_next()
+        eid = str(row[0])
+        cur_eng = str(row[1] or "") if len(row) > 1 else ""
         sets, params = [], {"id": eid}
         if tech:
             sets.append("e.tech=$t"); params["t"] = str(tech)[:100]
@@ -239,13 +448,15 @@ def upsert_endpoint(conn, url, tech="", business_chain="", param="", method="GET
             sets.append("e.business_chain=$b"); params["b"] = str(business_chain)[:100]
         if sets:
             conn.execute(f"MATCH (e:Endpoint {{id:$id}}) SET {', '.join(sets)}", parameters=params)
+        if cur_eng == "" and eng:
+            conn.execute("MATCH (e:Endpoint {id:$id}) SET e.eng=$e", parameters={"id": eid, "e": str(eng)[:120]})
         return eid
     eid = f"e-{uuid.uuid4().hex[:12]}"
     conn.execute(
         "CREATE (e:Endpoint {id:$id, url:$u, param:$p, method:$m, tech:$t, business_chain:$b, "
-        "coverage_votes:0, exhausted:false})",
+        "coverage_votes:0, exhausted:false, eng:$eng})",
         parameters={"id": eid, "u": url, "p": str(param)[:200], "m": str(method)[:10],
-                    "t": str(tech)[:100], "b": str(business_chain)[:100]})
+                    "t": str(tech)[:100], "b": str(business_chain)[:100], "eng": str(eng)[:120]})
     return eid
 
 
@@ -296,6 +507,34 @@ def _d2d_paused() -> bool:
             _pause_mtime_cache[1] = False
         _pause_mtime_cache[0] = m
     return _pause_mtime_cache[1]
+
+
+_D2D_PAUSE_DIR = os.path.dirname(_D2D_PAUSE_FILE)
+_eng_pause_cache: dict = {}  # eng → [mtime, paused] — 多开隔离: 停 A 不 409 B 的写入
+
+
+def _eng_paused(eng: str) -> bool:
+    """W5: per-engagement 暂停开关 — stopAll(该 engagement 的 runner/调度器)写
+    config/paused-<eng>.json, 只有归属该 engagement 的写入被 409; 多开互不误伤。
+    旧版全局 paused.json 仍生效(向后兼容), 但新停机路径只写 per-eng 文件。"""
+    if not eng or "/" in eng or ".." in eng:
+        return False
+    p = f"{_D2D_PAUSE_DIR}/paused-{eng}.json"
+    try:
+        m = os.path.getmtime(p)
+    except OSError:
+        _eng_pause_cache.pop(eng, None)
+        return False
+    c = _eng_pause_cache.get(eng)
+    if c is None or m != c[0]:
+        try:
+            with open(p) as f:
+                v = bool(json.load(f).get("paused"))
+        except Exception:
+            v = False
+        _eng_pause_cache[eng] = [m, v]
+        return v
+    return c[1]
 
 
 def config_reject(sev: str, cat: str, title: str) -> tuple[bool, str]:
@@ -414,13 +653,13 @@ def prose_denylist_hit(text_lower: str, domains) -> str:
     """#73: denylist 兜底散文匹配(模块级纯函数供 pytest) — 与 R6 结构化字段扫描互为双保险。
 
     堵两个实证漏检形态(结构化正则左界字符类 [^a-z0-9.\\-] 排除了 '.'):
-      1) 父域条目(ztgame.com)对子域散文提及(mail.ztgame.com)不命中 —— 前导 '.' 被排除;
-      2) percent-encoded 点号形态(mail%2Eztgame%2Ecom)不命中。
+      1) 父域条目(demo-src.com)对子域散文提及(mail.demo-src.com)不命中 —— 前导 '.' 被排除;
+      2) percent-encoded 点号形态(mail%2Edemo-src%2Ecom)不命中。
     规则与 plugin/pentest-dsh/domain/scope.mjs 的 deniedHit 后缀匹配同口径: 域名条目须以
     「行首或非字母数字字符(含 '.')」为左界、以「串尾或非字母数字字符」为右界全段出现 ——
-    全段匹配不做子串误伤(ztgame.company / notztgame.com 不命中); 右界含 '-' 与 '.'
-    (散文红线零容忍, fail-closed: 'ztgame.com.cn' 这类更长域名的提及同样拒收)。
-    仅处理域名条目: 以 '.' 结尾的网段前缀条目(如 222.73.243.)不进本兜底, 由结构化扫描的
+    全段匹配不做子串误伤(demo-src.company / notdemo-src.com 不命中); 右界含 '-' 与 '.'
+    (散文红线零容忍, fail-closed: 'demo-src.com.cn' 这类更长域名的提及同样拒收)。
+    仅处理域名条目: 以 '.' 结尾的网段前缀条目(如 203.0.113.)不进本兜底, 由结构化扫描的
     \\d 主机位语义负责。
     text_lower 须为已 lower() 文本(调用方传 json.dumps(req).lower()); 内部对原文做至多两轮
     unquote(percent-decode, 覆盖双重编码), 原文/解码文任一命中即返回该域名条目, 未命中返回 ''。"""
@@ -521,7 +760,9 @@ class Handler(BaseHTTPRequestHandler):
         self._slowloris_arm()  # #73: 慢头部/慢 body 读全程受限(见 _slowloris_arm 注释)
         if self.path == "/health":
             # V-12: 不回显 DB_PATH(本机信息暴露面收敛)
-            self._send(200, {"ok": True})
+            # M8 守护自愈: version/pid/started_at — start-all 预检做"只杀自己人"三重校验
+            # (pidfile + /proc starttime + 版本握手, 任一不符视为外来者不接管)
+            self._send(200, {"ok": True, "version": VERSION, "pid": os.getpid(), "started_at": STARTED_AT})
         else:
             self._send(404, {"error": "unknown"})
 
@@ -604,7 +845,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self._auth("worker"):
                 return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
         # R6: 排除清单(denylist)硬拦截 —— 结构化写端点全字段扫描(禁引用: 载荷含排除资产即 403)。
-        # 实证通道: /write/signal 的 evidence 带 mail.ztgame.com 曾直穿(旧实现只扫 /query 变更类 cypher)。
+        # 实证通道: /write/signal 的 evidence 带 mail.demo-src.com 曾直穿(旧实现只扫 /query 变更类 cypher)。
         # /write/transition 豁免 —— 合规隔离转移的 reason 需要引用红线资产本身。
         if self.path.startswith("/write/") and self.path != "/write/transition":
             _denied = list(DENYLIST.get("domains", [])) + list(DENYLIST.get("cidr_prefix", []))
@@ -625,7 +866,7 @@ class Handler(BaseHTTPRequestHandler):
                 _blob = json.dumps(req, ensure_ascii=False).lower()
                 _hit = None
                 for _d in _denied:
-                    # 网段前缀条目(如 "222.73.243.")后接数字 IP 主机位; 域名条目要求词边界
+                    # 网段前缀条目(如 "203.0.113.")后接数字 IP 主机位; 域名条目要求词边界
                     if _d.endswith("."):
                         _pat = r"(?:^|[^a-z0-9.\-])" + re.escape(_d) + r"\d"
                     else:
@@ -635,7 +876,7 @@ class Handler(BaseHTTPRequestHandler):
                         break
                 if not _hit:
                     # #73 兜底(散文提及, 结构化检查之外的第二道): 结构化正则左界字符类排除 '.',
-                    # 父域条目(ztgame.com)对子域散文(mail.ztgame.com)与 percent-encoded 点号
+                    # 父域条目(demo-src.com)对子域散文(mail.demo-src.com)与 percent-encoded 点号
                     # (%2e)形态会漏检 —— 对整包小写文本 percent-decode 后再做词边界全段匹配。
                     # 双保险关系: 结构化扫描(含 CIDR 前缀与 https:// 快路径)为主, 本兜底仅补
                     # 域名条目的散文/编码形态; 任一命中即 403(红线散文提及零容忍, fail-closed)。
@@ -657,6 +898,26 @@ class Handler(BaseHTTPRequestHandler):
             with _locked():  # V-11: 锁带 5s deadline
                 try:
                     conn = kuzu.Connection(db())
+                    # W5: 写入归属 — 显式 eng > 唯一 active > 载荷 host 对 active scope 投票 > ''。
+                    # 多开并行时 worker JSON 带 "eng" 字段即精准归属; per-eng 暂停在此生效(停 A 不误伤 B)。
+                    _ar = conn.execute("MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name, e.scope")
+                    _actives = []
+                    while _ar.has_next():
+                        _row = _ar.get_next()
+                        _actives.append({"name": str(_row[0] or ""), "scope": str(_row[1] or "") if len(_row) > 1 else ""})
+                    _hosts = []
+                    for _fld in ("endpoint_url", "url", "repro", "title"):
+                        for _m in _URL_RE.finditer(str(req.get(_fld) or "")):
+                            try:
+                                from urllib.parse import urlparse as _up
+                                _h = _up(_m.group(0)).hostname
+                                if _h and _h not in ("127.0.0.1", "localhost"):
+                                    _hosts.append(str(_h).lower())
+                            except Exception:
+                                pass
+                    _eng = pick_write_eng(str(req.get("eng") or ""), _actives, _hosts)
+                    if _eng and _eng_paused(_eng):
+                        return self._send(409, {"ok": False, "error": f"d2d-paused({_eng}) — 该 engagement 已冻结, 任务立即收尾退出"})
                     if self.path == "/write/finding":
                         title = str(req.get("title") or "").strip()
                         if not title:
@@ -691,7 +952,8 @@ class Handler(BaseHTTPRequestHandler):
                         # candidate 积压水位门 — 积压超阈值时 low/medium/info 暂收(429), high/critical 不受限
                         _wm = int(os.environ.get("P2P_CANDIDATE_WATERMARK", "100"))
                         if _wm > 0:
-                            _bk = conn.execute("MATCH (f:Finding {gate_status:'candidate'}) RETURN count(f)")
+                            _bk = conn.execute("MATCH (f:Finding {gate_status:'candidate'}) WHERE f.eng = $e RETURN count(f)",
+                                               parameters={"e": _eng})
                             _backlog = int(list(_bk.get_next())[0]) if _bk.has_next() else 0
                             _wm_rej, _wm_reason = candidate_watermark_reject(sev, _backlog, _wm)
                             if _wm_rej:
@@ -706,8 +968,8 @@ class Handler(BaseHTTPRequestHandler):
                         _ftoks = title_tokens(title)
                         _rt = ""
                         if _norm or _fpath:
-                            _r = conn.execute("MATCH (f:Finding) WHERE f.category = $c RETURN f.id AS id, f.title AS t, f.repro AS r",
-                                              parameters={"c": cat})
+                            _r = conn.execute("MATCH (f:Finding) WHERE f.category = $c AND f.eng = $e RETURN f.id AS id, f.title AS t, f.repro AS r",
+                                              parameters={"c": cat, "e": _eng})
                             while _r.has_next():
                                 _row = _r.get_next()
                                 _eid, _etitle, _erepro = str(_row[0]), str(_row[1] or ""), str(_row[2] or "")
@@ -723,7 +985,7 @@ class Handler(BaseHTTPRequestHandler):
                                     _rt = _eid
                         conn.execute(
                             "CREATE (f:Finding {id:$id, title:$title, severity:$sev, cvss:$cvss, "
-                            "evidence_dir:$edir, repro:$repro, category:$cat, gate_status:'candidate', ts:$ts, related_to:$rt})",
+                            "evidence_dir:$edir, repro:$repro, category:$cat, gate_status:'candidate', ts:$ts, related_to:$rt, eng:$eng})",
                             parameters={"id": str(req.get("id") or f"f-{int(time.time()*1000)}"),
                                         "title": title, "sev": sev,
                                         "cvss": float(req.get("cvss") or 5.0),
@@ -731,6 +993,7 @@ class Handler(BaseHTTPRequestHandler):
                                         "repro": str(req.get("repro") or ""),
                                         "cat": cat,
                                         "rt": _rt,
+                                        "eng": _eng,
                                         "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat())})
                     elif self.path == "/write/signal":
                         # I-014: Signal.evidence 脱敏
@@ -738,21 +1001,22 @@ class Handler(BaseHTTPRequestHandler):
                         _ev_raw, _ = redact_pii(_ev_raw)
                         _sid = str(req.get("id") or f"s-{int(time.time()*1000)}")
                         conn.execute(
-                            "CREATE (s:Signal_ {id:$id, type:$t, weight:$w, status:$st, evidence:$ev, ts:$ts, ring:$ring})",
+                            "CREATE (s:Signal_ {id:$id, type:$t, weight:$w, status:$st, evidence:$ev, ts:$ts, ring:$ring, eng:$eng})",
                             parameters={"id": _sid,
                                         "t": str(req.get("type") or "unknown"),
                                         "w": float(req.get("weight") or 1.0),
                                         "st": str(req.get("status") or "open"),
                                         "ev": _ev_raw,
                                         "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat()),
-                                        "ring": str(req.get("ring") or "discovery")})
+                                        "ring": str(req.get("ring") or "discovery"),
+                                        "eng": _eng})
                         # #5: 内联 endpoint_url — graphd 代写 Endpoint 节点(缺则建) + AT 边,
                         # N2 规则(Signal-[:AT]->Endpoint)由此闭环(worker /query 只读无法自建边)。
                         _ep = str(req.get("endpoint_url") or "").strip()
                         if _ep and re.match(r"^https?://", _ep, re.I) and len(_ep) <= 500:
                             upsert_endpoint(conn, _ep,
                                             str(req.get("endpoint_tech") or ""),
-                                            str(req.get("endpoint_chain") or ""))
+                                            str(req.get("endpoint_chain") or ""), eng=_eng)
                             conn.execute(
                                 "MATCH (s:Signal_ {id:$sid}), (e:Endpoint {url:$u}) CREATE (s)-[:AT]->(e)",
                                 parameters={"sid": _sid, "u": _ep})
@@ -767,17 +1031,18 @@ class Handler(BaseHTTPRequestHandler):
                         eid = upsert_endpoint(conn, url, _tech,
                                               str(req.get("business_chain") or ""),
                                               str(req.get("param") or ""),
-                                              str(req.get("method") or "GET"))
+                                              str(req.get("method") or "GET"), eng=_eng)
                         return self._send(200, {"ok": True, "id": eid})
                     else:
                         # I-014: Hypothesis.text 脱敏
                         _txt_raw = str(req.get("text") or "")[:1500]
                         _txt_raw, _ = redact_pii(_txt_raw)
                         conn.execute(
-                            "CREATE (h:Hypothesis {id:$id, text:$txt, strategy:$strat, status:'open', ts:$ts})",
+                            "CREATE (h:Hypothesis {id:$id, text:$txt, strategy:$strat, status:'open', ts:$ts, eng:$eng})",
                             parameters={"id": str(req.get("id") or f"h-{int(time.time()*1000)}"),
                                         "txt": _txt_raw,
                                         "strat": str(req.get("strategy") or "inversion"),
+                                        "eng": _eng,
                                         "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat())})
                 except TimeoutError as _te:
                     return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
@@ -838,19 +1103,20 @@ class Handler(BaseHTTPRequestHandler):
         # 纵深防御: 写操作中的 URL host 必须在活跃 scope 内 — V-06: re.I + REMOVE
         import re as _re
         if _re.search(r"\b(CREATE|SET|MERGE|DELETE|REMOVE)\b", cypher_raw, _re.I):
-            # #4: 单 active engagement 门(写入侧 fail-closed) — 已有 active 时拒绝再建,
-            #     防"B 轮启动→stopAll 全局杀 worker→A 变僵尸 active"(实证 36 分钟零派发)。
-            #     续跑(P2P_RESUME)走同节点接管不建新 Engagement, 不受影响。
+            # #4→W5: 多开门(写入侧 fail-closed 收敛为容量上限) — 多 src 并行挖掘按 engagement
+            #     隔离池子(eng 列)+ 租约/取消令牌/per-eng 暂停防跨轮误伤; active+requested 总数
+            #     超 P2P_MAX_ACTIVE(默认 4)仍拒绝, 防失控堆叠。同目标重复 active 由调度器层拦截。
             if "Engagement" in cypher_raw and "CREATE" in cypher_raw.upper():
                 with _locked():
                     try:
                         _c1 = kuzu.Connection(db())
-                        _r1 = _c1.execute("MATCH (e:Engagement) WHERE e.status='active' RETURN e.name AS n LIMIT 1")
-                        if _r1.has_next():
-                            _n1 = str(_r1.get_next()[0] or "?")
-                            return self._send(409, {"ok": False, "error": f"active engagement exists: {_n1} — 同一时刻只允许一个(先 /pentest-stop 冻结, 或同目标 P2P_RESUME=1 续跑接管)"})
+                        _r1 = _c1.execute("MATCH (e:Engagement) WHERE e.status IN ['active','requested'] RETURN count(e)")
+                        _n_active = int(list(_r1.get_next())[0]) if _r1.has_next() else 0
+                        _cap = int(os.environ.get("P2P_MAX_ACTIVE", "4"))
+                        if _n_active >= _cap:
+                            return self._send(409, {"ok": False, "error": f"active engagements {_n_active} >= cap {_cap} — 先冻结部分 engagement 再新建(面板可管理)"})
                     except Exception as e:
-                        return self._send(503, {"ok": False, "error": f"single-active check failed (fail-closed): {str(e)[:120]}"})
+                        return self._send(503, {"ok": False, "error": f"max-active check failed (fail-closed): {str(e)[:120]}"})
             urls = _re.findall(r"https?://[A-Za-z0-9.\-]+", cypher_raw)
             hosts = set()
             for u in urls:
@@ -870,7 +1136,7 @@ class Handler(BaseHTTPRequestHandler):
                             while r.has_next():
                                 scope += str(r.get_next()[0] or "") + ","
                             # R6: scope 语法扩展 —— `!` 前缀条目 = 排除清单(denylist), 优先于白名单硬拦截。
-                            # 实证: 授权泛域(z tgame.com)的白名单天然放行排除资产子域(mail.ztgame.com),
+                            # 实证: 授权泛域(demo-src.com)的白名单天然放行排除资产子域(mail.demo-src.com),
                             # 简报红线(提示层)拦不住自主 worker → 需在写门控层 fail-closed。
                             allowed, denied = [], []
                             for s in scope.split(","):
@@ -973,7 +1239,8 @@ if __name__ == "__main__":
     # issue #88 防回归: 启动一致性检查 — gate_status 出现状态机之外的值时告警
     # (历史数据漂移必须被看见, 不再让 301 条 frozen 无感知堆积)
     try:
-        _rs = db().execute("MATCH (f:Finding) RETURN DISTINCT f.gate_status AS s")
+        _conn = kuzu.Connection(_db)
+        _rs = _conn.execute("MATCH (f:Finding) RETURN DISTINCT f.gate_status AS s")
         _known = set(FINDING_STATES) | {"frozen"}
         _unknown = []
         while _rs.has_next():
@@ -997,14 +1264,16 @@ if __name__ == "__main__":
 
     def _write_token_file(raw_path: str, data: str) -> str:
         """Mimosa 加固: 唯一 token 落盘点 — 路径白名单校验(_safe_token_path)后 O_NOFOLLOW+0600 写入,
-        三处写入点收敛至此, 防符号链接替换/任意路径写。"""
+        三处写入点收敛至此, 防符号链接替换/任意路径写。
+        返回值 = data 本身(调用方直接 os.environ 赋值)。0905 冒烟实证: 曾误返回 safe 路径,
+        env 被设成路径字符串 → 全新部署(无外部 P2P_HOST_TOKEN env)所有 host 认证全挂。"""
         safe = _safe_token_path(raw_path)
         os.makedirs(os.path.dirname(safe), exist_ok=True)
         fd = os.open(safe, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(data)
         os.chmod(safe, 0o600)
-        return safe
+        return data
 
     # #32: host token 持久化 —— 文件存在则加载进环境; 不存在则生成
     import secrets as _sec

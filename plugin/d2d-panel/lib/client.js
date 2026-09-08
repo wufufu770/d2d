@@ -186,55 +186,127 @@ window.__ModuleLoader__.load({
         items.map(([k, v]) => h('span', { key: k, ...panel.chip() }, h('b', null, String(v ?? 0)), h('span', panel.muted(), k))))
     }
 
-    // ---- Engagement 卡: 覆盖大数字 + 里程碑刻度(Handoff, hover 出 digest 摘要) ----
-    function EngagementCard({ snap }) {
+    // ---- Engagement 管理卡(W5): 多 src 项目并行/切换/回看 ----
+    // 列表 = 全部 engagement + 战果漏斗进度; 行操作: 选中(视图切换)/启动/续跑/停止。
+    // 其余卡片(finds/信号/端点/worker/轨迹)全部跟随选中 engagement(host 快照按 eng 过滤)。
+    const ENG_STATE_LABEL = {
+      active: '运行中', requested: '排队中', frozen: '已冻结',
+      completed: '已收工', exhausted: '已收工', superseded: '已过期',
+    }
+    function EngStartForm({ onDone }) {
+      const [open, setOpen] = useState(false)
+      const [target, setTarget] = useState('')
+      const [scope, setScope] = useState('')
+      const [instances, setInstances] = useState('2')
+      const [objective, setObjective] = useState('')
+      const [busy, setBusy] = useState(false)
+      const [msg, setMsg] = useState(null) // {ok, text}
+      if (!open) {
+        return h('button', { ...panel.btn({ borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)', alignSelf: 'flex-start' }), onClick: () => setOpen(true) }, '+ 新建 src 项目')
+      }
+      const submit = async () => {
+        setBusy(true); setMsg(null)
+        try {
+          const r = await postJson('start', { target, scope, instances, objective })
+          setMsg({ ok: true, text: r.note ?? '已入队' })
+          setTarget(''); setScope(''); setObjective('')
+          onDone?.()
+        } catch (e) { setMsg({ ok: false, text: String(e?.message ?? e) }) } finally { setBusy(false) }
+      }
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '5px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '6px' } },
+        h('input', { ...panel.input(), placeholder: '目标 URL, 如 https://src.example.com', value: target, onChange: (ev) => setTarget(ev.target.value) }),
+        h('input', { ...panel.input(), placeholder: '授权 scope(逗号分隔域名/IP 段, `!` 前缀=排除; 留空取目标域名)', value: scope, onChange: (ev) => setScope(ev.target.value) }),
+        h('div', { style: { display: 'flex', gap: '5px' } },
+          h('input', { ...panel.input({ maxWidth: '64px' }), title: 'discovery 并行实例数(1-4)', value: instances, onChange: (ev) => setInstances(ev.target.value) }),
+          h('input', { ...panel.input({ flex: 1 }), placeholder: '本次目标(可选, 如 SRC 漏洞挖掘/重点资产)', value: objective, onChange: (ev) => setObjective(ev.target.value) })),
+        h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+          h('button', { ...panel.btn({ borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' }), disabled: busy || !target.trim(), onClick: submit }, busy ? '入队中…' : '启动(入队)'),
+          h('button', { ...panel.btn(), disabled: busy, onClick: () => setOpen(false) }, '收起')),
+        msg ? h('div', { style: { fontSize: '10px', color: msg.ok ? 'var(--d2d-ok)' : 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, msg.text) : null)
+    }
+    function EngRow({ e, refresh }) {
+      const [busy, setBusy] = useState(false)
+      const [err, setErr] = useState('')
+      const act = async (fn) => { setBusy(true); setErr(''); try { await fn() ; refresh() } catch (ex) { setErr(String(ex?.message ?? ex)) } finally { setBusy(false) } }
+      const doSelect = () => act(() => postJson('eng', { op: 'select', name: e.name }))
+      const doStop = () => act(() => postJson('stop', { name: e.name }))
+      const doResume = () => act(() => postJson('eng', { op: 'resume', name: e.name }))
+      const running = e.status === 'active'
+      const queued = e.status === 'requested'
+      const terminal = ['frozen', 'completed', 'exhausted', 'superseded'].includes(e.status)
+      const p = e.progress ?? {}
+      return h('div', {
+        key: e.name,
+        onClick: e.selected ? undefined : doSelect,
+        title: e.selected ? '当前选中 — 其余卡片显示该项目的数据' : `点击切换到该项目(${e.name})`,
+        style: {
+          display: 'flex', flexDirection: 'column', gap: '3px', padding: '6px 8px', borderRadius: '6px', minWidth: 0,
+          border: `1px solid ${e.selected ? 'var(--d2d-brand)' : 'var(--d2d-line)'}`,
+          ...(e.selected ? { background: 'rgba(77,107,254,.06)' } : {}),
+          ...(e.selected ? {} : { cursor: 'pointer' }),
+        },
+      },
+        h('div', { style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
+          h('span', panel.dot(running ? 'var(--d2d-ok)' : queued ? 'var(--d2d-warn)' : 'rgba(128,140,165,.6)', running)),
+          h('span', { ...panel.mono, style: { ...panel.mono.style, fontSize: '11px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, e.name),
+          h('span', panel.chip({ borderColor: running ? 'var(--d2d-ok)' : 'var(--d2d-line-strong)' }), ENG_STATE_LABEL[e.status] ?? e.status),
+          e.selected ? h('span', panel.chip({ borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' }), '◆ 当前') : null),
+        h('div', { style: { display: 'flex', gap: '8px', alignItems: 'baseline', flexWrap: 'wrap', minWidth: 0 } },
+          h('span', panel.muted(0.55), `${e.target || '?'}`),
+          h('span', panel.muted(0.5), `活跃 ${p.active ?? 0} · 已验证 ${p.verified ?? 0} · 已交付 ${p.delivered ?? 0}`),
+          p.workers ? h('span', panel.muted(0.6), `⚙ ${p.workers}`) : null),
+        h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap' }, onClick: (ev) => ev.stopPropagation() },
+          !e.selected ? h('button', { ...panel.btn(), disabled: busy, onClick: doSelect, title: '面板/dsh 视图切换到该项目' }, '选中') : null,
+          running || queued ? h('button', { ...panel.btn({ borderColor: 'var(--d2d-sev-high)', color: 'var(--d2d-sev-high)' }), disabled: busy, onClick: doStop }, '停止') : null,
+          terminal ? h('button', { ...panel.btn({ borderColor: 'var(--d2d-ok)', color: 'var(--d2d-ok)' }), disabled: busy, onClick: doResume, title: '同 engagement 续挖 — 历史记录全保留' }, '续跑') : null,
+          err ? h('span', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', alignSelf: 'center', wordBreak: 'break-all' } }, err) : null))
+    }
+    function EngagementCard({ snap, refresh }) {
       const e = snap.engagement
       const cov = snap.coverage ?? { total: 0, covered: 0 }
       const pct = cov.total > 0 ? Math.round((cov.covered / cov.total) * 100) : null
       const [hoverMs, setHoverMs] = useState(null)
-      if (!e) {
-        return h(Card, { title: 'Engagement' },
-          h('div', panel.muted(), '无活跃 engagement — 用 /pentest 命令开始'))
-      }
-      const state = e.status === 'active' ? '运行中'
-        : e.status === 'frozen' ? '已冻结'
-        : e.status === 'exhausted' ? '已收工(exhausted)'
-        : e.status
-      const stale = e.status !== 'active'
+      const list = snap.engagements ?? []
       return h(Card, {
-        title: 'Engagement',
-        extra: h('span', { ...panel.chip({ borderColor: e.status === 'active' ? 'var(--d2d-ok)' : 'var(--d2d-line-strong)' }) }, state),
+        title: 'Engagement · 项目管理',
+        extra: h('span', panel.muted(0.5), `${list.length} 个项目 · 多开并行`),
       },
-        h('div', { ...panel.mono, style: { ...panel.mono.style, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, e.name),
-        h('div', panel.muted(0.55), `${e.target || '?'} · scope: ${e.scope || '?'}`),
-        // R6.3: 黑名单已独立成卡(DenylistCard, 可增删改) — 此处只留计数提示
-        (snap.denylist?.domains?.length || snap.denylist?.cidr_prefix?.length)
-          ? h('div', panel.muted(0.55), `⛔ 黑名单 ${(snap.denylist.domains?.length ?? 0) + (snap.denylist.cidr_prefix?.length ?? 0)} 条(独立卡片内可增删改)`) : null,
-        // R5: 非运行态明示"历史轮次" —— 与新任务区分, 避免误读为仍在跑
-        stale ? h('div', panel.muted(0.5), '历史轮次 — 发起新任务将创建新的 engagement(本卡片始终显示最新一条)') : null,
-        h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
-          h('span', { style: { fontSize: '22px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' } },
-            pct === null ? '—' : `${pct}%`),
-          h('span', panel.muted(0.55), `覆盖 ${cov.covered}/${cov.total} 端点`)),
-        snap.milestones?.length ? h('div', { style: { display: 'flex', alignItems: 'flex-end', gap: '3px', position: 'relative', flexWrap: 'wrap' } },
-          snap.milestones.map((m, i) => {
-            const isLast = i === snap.milestones.length - 1
-            return h('button', {
-              key: m.id,
-              title: `${m.created_at} · ${m.digest.slice(0, 120)}`,
-              onMouseEnter: () => setHoverMs(m.id),
-              onMouseLeave: () => setHoverMs(null),
-              style: {
-                border: 'none', background: 'transparent', padding: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', minWidth: '16px',
+        // 全部项目列表(含进度 + 操作)
+        list.length
+          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '320px', overflowY: 'auto', paddingRight: '2px' } },
+            list.map((x) => h(EngRow, { e: x, refresh })))
+          : h('div', panel.muted(), '尚无项目 — 用下方表单发起第一个 src 项目'),
+        h(EngStartForm, { onDone: refresh }),
+        // 选中项目详情(覆盖大数字 + 里程碑 + 计数) — 其余卡片同源跟随
+        e ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '6px' } },
+          h('div', { ...panel.mono, style: { ...panel.mono.style, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `◆ ${e.name}`),
+          h('div', panel.muted(0.55), `${e.target || '?'} · scope: ${e.scope || '?'}`),
+          (snap.denylist?.domains?.length || snap.denylist?.cidr_prefix?.length)
+            ? h('div', panel.muted(0.55), `⛔ 黑名单 ${(snap.denylist.domains?.length ?? 0) + (snap.denylist.cidr_prefix?.length ?? 0)} 条(独立卡片内可增删改)`) : null,
+          h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
+            h('span', { style: { fontSize: '22px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' } },
+              pct === null ? '—' : `${pct}%`),
+            h('span', panel.muted(0.55), `覆盖 ${cov.covered}/${cov.total} 端点`)),
+          snap.milestones?.length ? h('div', { style: { display: 'flex', alignItems: 'flex-end', gap: '3px', position: 'relative', flexWrap: 'wrap' } },
+            snap.milestones.map((m, i) => {
+              const isLast = i === snap.milestones.length - 1
+              return h('button', {
+                key: m.id,
+                title: `${m.created_at} · ${m.digest.slice(0, 120)}`,
+                onMouseEnter: () => setHoverMs(m.id),
+                onMouseLeave: () => setHoverMs(null),
+                style: {
+                  border: 'none', background: 'transparent', padding: '1px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', minWidth: '16px',
+                },
               },
-            },
-              h('span', { style: { width: '8px', height: `${8 + (i % 3) * 3}px`, borderRadius: '2px', background: isLast ? 'var(--d2d-brand)' : 'var(--d2d-line-strong)', opacity: isLast ? 1 : 0.7 } }),
-              h('span', { style: { fontSize: '8px', opacity: hoverMs === m.id ? 1 : 0.5 } }, `m${i + 1}`))
-          }),
-          h('span', { ...panel.muted(0.45), style: { marginLeft: '4px' } }, '· 里程碑(handoff)')) : null,
-        hoverMs ? h('div', { ...panel.mono, style: { ...panel.mono.style, opacity: '.6', wordBreak: 'break-all' } },
-          (snap.milestones.find((m) => m.id === hoverMs)?.digest ?? '').slice(0, 160)) : null,
-        h(CountStrip, { counts: snap.counts }))
+                h('span', { style: { width: '8px', height: `${8 + (i % 3) * 3}px`, borderRadius: '2px', background: isLast ? 'var(--d2d-brand)' : 'var(--d2d-line-strong)', opacity: isLast ? 1 : 0.7 } }),
+                h('span', { style: { fontSize: '8px', opacity: hoverMs === m.id ? 1 : 0.5 } }, `m${i + 1}`))
+            }),
+            h('span', { ...panel.muted(0.45), style: { marginLeft: '4px' } }, '· 里程碑(handoff)')) : null,
+          hoverMs ? h('div', { ...panel.mono, style: { ...panel.mono.style, opacity: '.6', wordBreak: 'break-all' } },
+            (snap.milestones.find((m) => m.id === hoverMs)?.digest ?? '').slice(0, 160)) : null,
+          h(CountStrip, { counts: snap.counts }))
+          : null)
     }
 
     // ---- Fleet 卡: 模型可点开选择列表(并集 + 自定义输入; backup 可清除) ----
@@ -369,7 +441,7 @@ window.__ModuleLoader__.load({
           adding ? [
             h('select', { key: 'k', value: draftKind, onChange: (e) => setDraftKind(e.target.value), style: { fontSize: '10px' } },
               h('option', { value: 'domains' }, '域名'), h('option', { value: 'cidr_prefix' }, 'IP段')),
-            h('input', { key: 'v', value: draftVal, autoFocus: true, placeholder: draftKind === 'domains' ? 'excluded.example.com' : '222.73.243.', onChange: (e) => setDraftVal(e.target.value), style: { flex: 1, minWidth: '80px', fontSize: '11px', ...panel.mono.style }, onKeyDown: (e) => { if (e.key === 'Enter') { act({ op: 'add', kind: draftKind, value: draftVal }); setAdding(false); setDraftVal('') } } }),
+            h('input', { key: 'v', value: draftVal, autoFocus: true, placeholder: draftKind === 'domains' ? 'excluded.example.com' : '203.0.113.', onChange: (e) => setDraftVal(e.target.value), style: { flex: 1, minWidth: '80px', fontSize: '11px', ...panel.mono.style }, onKeyDown: (e) => { if (e.key === 'Enter') { act({ op: 'add', kind: draftKind, value: draftVal }); setAdding(false); setDraftVal('') } } }),
             h('button', { key: 'ok', ...panel.btn({ padding: '1px 8px' }), disabled: busy, onClick: () => { act({ op: 'add', kind: draftKind, value: draftVal }); setAdding(false); setDraftVal('') } }, '加'),
             h('button', { key: 'no', ...panel.btn({ padding: '1px 8px' }), onClick: () => setAdding(false) }, '×'),
           ] : h('button', { ...panel.btn({ padding: '1px 10px' }), onClick: () => setAdding(true) }, '+ 添加排除资产'))
@@ -688,7 +760,7 @@ window.__ModuleLoader__.load({
       if (!snap) return h(Skeleton, null)
       return h('div', panel.root, Style(),
         h(ModuleToggles, { off, toggle }),
-        !off.has('eng') ? h(EngagementCard, { snap }) : null,
+        !off.has('eng') ? h(EngagementCard, { snap, refresh }) : null,
         !off.has('denylist') ? h(DenylistCard, { snap, refresh }) : null,
         !off.has('caps') ? h(CapsCard, { snap, refresh }) : null,
         !off.has('fleet') ? h(FleetCard, { fleet: snap.fleet, run: snap.run, refresh }) : null,
@@ -710,19 +782,21 @@ window.__ModuleLoader__.load({
     }
 
     // ══════════ FindingsView.js — d2d:findings tab(七态看板 · 筛选 + 人工裁决) ══════════
-    const STEPS = ['candidate', 'triaged', 'verified', 'reported', 'accepted'] // 主链; isolated/rejected 走分支
+    const STEPS = ['candidate', 'triaged', 'verified', 'reported', 'accepted'] // 主链; isolated/rejected/needs-scope 走分支
     const COLUMNS = [
       { key: 'active', label: '活跃', states: ['candidate', 'triaged'] },
       { key: 'verified', label: '已验证', states: ['verified', 'isolated'] },
       { key: 'delivered', label: '已交付', states: ['reported', 'accepted'] },
+      { key: 'needs-scope', label: '边界待澄清', states: ['needs-scope'] },
       { key: 'rejected', label: '已驳回', states: ['rejected'] },
     ]
     // 与 graphd/app.py FINDING_TRANSITIONS 同口径(镜像, 门在服务端)
     const TRANSITIONS = {
-      candidate: ['triaged', 'verified', 'isolated', 'rejected'],
-      triaged: ['verified', 'isolated', 'rejected'],
+      candidate: ['triaged', 'verified', 'isolated', 'rejected', 'needs-scope'],
+      triaged: ['verified', 'isolated', 'rejected', 'needs-scope'],
       verified: ['reported', 'isolated'],
       isolated: ['candidate', 'rejected'],
+      'needs-scope': ['candidate', 'triaged', 'verified', 'rejected'],
       reported: ['accepted', 'rejected'],
       accepted: [],
       rejected: [],

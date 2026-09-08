@@ -189,9 +189,10 @@ from graphd.app import FINDING_STATES, FINDING_TRANSITIONS, CONFIG_ADVICE_RE
 
 
 def test_r3_seven_states_complete():
-    assert set(FINDING_STATES) == {"candidate", "triaged", "verified", "isolated", "reported", "accepted", "rejected"}
+    # 八态: needs-scope(evidence-gate 四态采纳) — verify 无法判定先归因授权边界, 不硬判 rejected
+    assert set(FINDING_STATES) == {"candidate", "triaged", "verified", "isolated", "reported", "accepted", "rejected", "needs-scope"}
     for src, dsts in FINDING_TRANSITIONS.items():
-        # frozen 是唯一的历史别名例外(issue #88): 不属于七态, 仅提供解冻出口, 不可作为迁移目标
+        # frozen 是唯一的历史别名例外(issue #88): 不属于状态机, 仅提供解冻出口, 不可作为迁移目标
         if src == "frozen":
             assert set(dsts) <= {"candidate", "triaged", "rejected"}
             continue
@@ -199,6 +200,18 @@ def test_r3_seven_states_complete():
         for d in dsts:
             assert d in FINDING_STATES and d != src
     assert FINDING_TRANSITIONS["accepted"] == () and FINDING_TRANSITIONS["rejected"] == ()
+
+
+def test_r3_needs_scope_state_transitions():
+    # needs-scope: candidate/triaged 可进入; 澄清后可重新入验证/直通/驳回; 终态不可进入
+    assert "needs-scope" in FINDING_TRANSITIONS["candidate"]
+    assert "needs-scope" in FINDING_TRANSITIONS["triaged"]
+    assert set(FINDING_TRANSITIONS["needs-scope"]) == {"candidate", "triaged", "verified", "rejected"}
+    # needs-scope 的合法迁移必须过审计门(轨迹含 actor/reason)
+    ok, err, traj = transition_gate("candidate", "needs-scope", "verify", "missing low-priv account")
+    assert ok and traj["to"] == "needs-scope" and traj["from"] == "candidate"
+    ok2, err2, _ = transition_gate("verified", "needs-scope", "verify", "scope unclear")
+    assert not ok2 and "illegal transition" in err2
 
 
 def test_r3_config_advice_low_severity_matches():
@@ -290,12 +303,15 @@ def test_not_dup_empty():
 
 # ---- #5: /write/endpoint upsert(真实 kuzu) ----
 kuzu = pytest.importorskip("kuzu")
-from graphd.app import upsert_endpoint
+from graphd.app import upsert_endpoint, SCHEMA
 
 def _endpoint_conn(tmp_path):
     db = kuzu.Database(str(tmp_path / "kuzu_db"))
     conn = kuzu.Connection(db)
-    conn.execute("CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, PRIMARY KEY(id))")
+    # 表结构取生产 SCHEMA 的 Endpoint DDL(含 W5 eng 归属列), 避免测试夹具与生产漂移
+    for ddl in SCHEMA:
+        if "NODE TABLE IF NOT EXISTS Endpoint" in ddl:
+            conn.execute(ddl)
     return conn
 
 def test_upsert_endpoint_creates_then_updates(tmp_path):
@@ -356,21 +372,21 @@ def test_watermark_below_threshold_pass():
 def test_endpoint_sig_duplicate_same_host_path():
     ft = title_tokens("CORS reflection with credentials confirmed at gateway")
     et = title_tokens("CORS reflection with credentials found at gateway")
-    assert endpoint_sig_duplicate("api.changyan.com", "/v1/tokens", ft, "api.changyan.com", "/v1/tokens", et) == "dup"
+    assert endpoint_sig_duplicate("api.demo-src.com", "/v1/tokens", ft, "api.demo-src.com", "/v1/tokens", et) == "dup"
 
 def test_endpoint_sig_related_cross_host():
     ft = title_tokens("CORS reflection with credentials confirmed at gateway")
     et = title_tokens("CORS reflects any origin with credentials at gateway")
-    assert endpoint_sig_duplicate("api.changyan.com", "/v1/tokens", ft, "ktxinghuo-api.changyan.com", "/v1/tokens", et) == "related"
+    assert endpoint_sig_duplicate("api.demo-src.com", "/v1/tokens", ft, "kx-api.demo-src.com", "/v1/tokens", et) == "related"
 
 def test_endpoint_sig_low_similarity_passes():
     ft = title_tokens("SQL injection in search box")
     et = title_tokens("CORS reflection with credentials at gateway")
-    assert endpoint_sig_duplicate("api.changyan.com", "/v1/search", ft, "api.changyan.com", "/v1/tokens", et) == ""
+    assert endpoint_sig_duplicate("api.demo-src.com", "/v1/search", ft, "api.demo-src.com", "/v1/tokens", et) == ""
 
 def test_endpoint_sig_empty_path_never_flags():
     ft = title_tokens("CORS reflection with credentials at gateway")
-    assert endpoint_sig_duplicate("api.changyan.com", "", ft, "api.changyan.com", "/v1", ft) == ""
+    assert endpoint_sig_duplicate("api.demo-src.com", "", ft, "api.demo-src.com", "/v1", ft) == ""
 
 
 # ---- issue #88: frozen 历史状态兼容出口(解冻回验证管线, 禁止越权直通 verified) ----
@@ -406,53 +422,53 @@ from graphd.app import prose_denylist_hit, _read_denylist_file
 
 def test_prose73_hit_exact_asset_in_evidence():
     """实证回归形态: evidence 散文直接提及红线资产本身 → 命中"""
-    blob = json.dumps({"evidence": "切换验证时发现同时影响 mail.ztgame.com 的同型接口"},
+    blob = json.dumps({"evidence": "切换验证时发现同时影响 mail.demo-src.com 的同型接口"},
                       ensure_ascii=False).lower()
-    assert prose_denylist_hit(blob, ["mail.ztgame.com"]) == "mail.ztgame.com"
+    assert prose_denylist_hit(blob, ["mail.demo-src.com"]) == "mail.demo-src.com"
 
 def test_prose73_hit_subdomain_under_parent_entry():
-    """实证回归形态①: 父域条目(ztgame.com)对子域散文(mail.ztgame.com) —
+    """实证回归形态①: 父域条目(demo-src.com)对子域散文(mail.demo-src.com) —
     结构化正则左界排除 '.', 本兜底以非字母数字(含 '.')为左界命中"""
-    blob = json.dumps({"evidence": "we also saw mail.ztgame.com in the logs"}).lower()
-    assert prose_denylist_hit(blob, ["ztgame.com"]) == "ztgame.com"
+    blob = json.dumps({"evidence": "we also saw mail.demo-src.com in the logs"}).lower()
+    assert prose_denylist_hit(blob, ["demo-src.com"]) == "demo-src.com"
 
 def test_prose73_hit_percent_encoded():
     """实证回归形态②: percent-encoded 点号(%2e)形态 — percent-decode 后命中"""
-    blob = "redirect target=mail%2eztgame%2ecom confirmed"
-    assert prose_denylist_hit(blob, ["mail.ztgame.com"]) == "mail.ztgame.com"
+    blob = "redirect target=mail%2edemo-src%2ecom confirmed"
+    assert prose_denylist_hit(blob, ["mail.demo-src.com"]) == "mail.demo-src.com"
 
 def test_prose73_hit_double_percent_encoded():
     """双重编码 %252e → 两轮 unquote 后命中"""
-    assert prose_denylist_hit("go mail%252eztgame%252ecom now", ["mail.ztgame.com"]) == "mail.ztgame.com"
+    assert prose_denylist_hit("go mail%252edemo-src%252ecom now", ["mail.demo-src.com"]) == "mail.demo-src.com"
 
 def test_prose73_no_hit_normal_text():
     assert prose_denylist_hit("reflected xss at example.com/search?q=1 in login flow",
-                              ["mail.ztgame.com"]) == ""
-    assert prose_denylist_hit("正常证据文本, 无任何红线资产提及", ["mail.ztgame.com"]) == ""
+                              ["mail.demo-src.com"]) == ""
+    assert prose_denylist_hit("正常证据文本, 无任何红线资产提及", ["mail.demo-src.com"]) == ""
 
 def test_prose73_no_substring_false_positive():
     """全段匹配不做子串误伤: 前后紧贴字母数字不命中"""
-    assert prose_denylist_hit("we probed ztgame.company internal portal", ["ztgame.com"]) == ""
-    assert prose_denylist_hit("host notztgame.com was untouched", ["ztgame.com"]) == ""
+    assert prose_denylist_hit("we probed demo-src.company internal portal", ["demo-src.com"]) == ""
+    assert prose_denylist_hit("host notdemo-src.com was untouched", ["demo-src.com"]) == ""
 
 def test_prose73_empty_inputs_return_empty():
-    assert prose_denylist_hit("", ["ztgame.com"]) == ""
+    assert prose_denylist_hit("", ["demo-src.com"]) == ""
     assert prose_denylist_hit("anything", []) == ""
     assert prose_denylist_hit("anything", [None, "", "   "]) == ""
 
 def test_prose73_skips_cidr_prefix_entries():
     """网段前缀条目(以 '.' 结尾)不进散文兜底, 由结构化扫描的 \\d 语义负责"""
-    assert prose_denylist_hit("payload mentions 222.73.243.5", ["222.73.243."]) == ""
+    assert prose_denylist_hit("payload mentions 203.0.113.5", ["203.0.113."]) == ""
 
 
 # ---- issue #73: denylist 加载大小写一致性(R6.1 _read_denylist_file → lower()) ----
 def test_denylist73_loader_lowercases_domains(tmp_path, monkeypatch):
     f = tmp_path / "denylist.json"
-    f.write_text('{"domains": ["Mail.ZTGame.COM", "Evil.Example.ORG"], "cidr_prefix": ["222.73.243."]}')
+    f.write_text('{"domains": ["Mail.Demo-Src.COM", "Evil.Example.ORG"], "cidr_prefix": ["203.0.113."]}')
     monkeypatch.setenv("P2P_DENYLIST_FILE", str(f))
     dl = _read_denylist_file()
-    assert dl["domains"] == ["mail.ztgame.com", "evil.example.org"]
-    assert dl["cidr_prefix"] == ["222.73.243."]
+    assert dl["domains"] == ["mail.demo-src.com", "evil.example.org"]
+    assert dl["cidr_prefix"] == ["203.0.113."]
 
 
 # ---- issue #73: audit_event — JSONL 追加 / 0700 目录 / 0600 文件 / 写失败静默计数 ----
@@ -463,13 +479,13 @@ from graphd import audit as graphd_audit
 def test_audit73_jsonl_append_and_file_modes(tmp_path, monkeypatch):
     log = tmp_path / "logs" / "audit.log"
     monkeypatch.setenv("P2P_AUDIT_LOG", str(log))
-    assert graphd_audit.audit_event("denylist-hit", {"path": "/write/signal", "asset": "mail.ztgame.com"}) is True
+    assert graphd_audit.audit_event("denylist-hit", {"path": "/write/signal", "asset": "mail.demo-src.com"}) is True
     assert graphd_audit.audit_event("auth-fail-worker", {"path": "/query", "peer": "127.0.0.1:40000"}) is True
     # JSONL: 每行一个完整 JSON 对象, 追加不覆盖
     lines = log.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2
     ev1, ev2 = json.loads(lines[0]), json.loads(lines[1])
-    assert ev1["kind"] == "denylist-hit" and ev1["detail"]["asset"] == "mail.ztgame.com" and ev1["ts"]
+    assert ev1["kind"] == "denylist-hit" and ev1["detail"]["asset"] == "mail.demo-src.com" and ev1["ts"]
     assert ev2["kind"] == "auth-fail-worker" and ev2["detail"]["peer"] == "127.0.0.1:40000"
     # 0600 文件 / 0700 目录
     assert stat.S_IMODE(os.stat(log).st_mode) == 0o600
@@ -512,3 +528,72 @@ def test_d2d_paused_file_lifecycle(tmp_path, monkeypatch):
     assert app._d2d_paused() is False            # mtime 变化 = 重新加载
     pf.unlink()
     assert app._d2d_paused() is False            # 删除(startEngagement) = 解除
+
+
+# ---- W5: engagement 池子隔离(归属纯函数 + 真实 kuzu 回填) ----
+from graphd.app import host_in_scope, parse_scope_allows, eng_time_windows, attribute_by_time, pick_write_eng, _backfill_eng, SCHEMA
+
+def test_parse_scope_allows_and_host_match():
+    scope = "a.example.com, b.example.com, !secret.a.example.com, 203.0.113."
+    assert parse_scope_allows(scope) == ["a.example.com", "b.example.com", "203.0.113."]
+    assert host_in_scope("a.example.com", scope)
+    assert host_in_scope("x.a.example.com", scope)
+    assert not host_in_scope("a.example.com.evil.cn", scope)
+    assert not host_in_scope("", scope)
+
+def test_eng_time_windows_and_attribute_by_time():
+    rows = [
+        {"name": "e1", "created_at": "2026-09-01T10:00:00Z"},
+        {"name": "e2", "created_at": "2026-09-02T10:00:00Z"},
+    ]
+    wins = eng_time_windows(rows)
+    assert attribute_by_time("2026-09-01T12:00:00Z", wins) == "e1"
+    assert attribute_by_time("2026-09-02T09:59:00Z", wins) == "e1"
+    assert attribute_by_time("2026-09-02T10:00:00Z", wins) == "e2"
+    assert attribute_by_time("2026-09-05T10:00:00Z", wins) == "e2"  # 末位开放区间
+    assert attribute_by_time("2026-08-30T10:00:00Z", wins) == ""    # 窗口前的孤儿不强行归属
+    assert attribute_by_time("garbage", wins) == ""
+
+def test_pick_write_eng_priority():
+    actives = [
+        {"name": "e1", "scope": "a.example.com"},
+        {"name": "e2", "scope": "b.example.com"},
+    ]
+    assert pick_write_eng("e2", actives, []) == "e2"            # 显式 eng 且 active → 采用
+    assert pick_write_eng("e9", actives, []) == ""              # 显式 eng 不在 active → 落推断
+    assert pick_write_eng("", [actives[0]], []) == "e1"         # 恰一个 active → 直接归属
+    assert pick_write_eng("", actives, ["x.b.example.com"]) == "e2"  # 多 active → host-scope 投票
+    assert pick_write_eng("", actives, []) == ""                # 无法判定 → ''(不误归属)
+
+def test_eng_paused_per_engagement(tmp_path, monkeypatch):
+    """W5: per-eng 暂停只影响对应 engagement; 停 A 不误伤 B(多开硬需求)。"""
+    import graphd.app as app
+    pdir = tmp_path / "config"
+    pdir.mkdir()
+    monkeypatch.setattr(app, "_D2D_PAUSE_DIR", str(pdir))
+    pf = pdir / "paused-eng-a.json"
+    pf.write_text('{"paused": true}')
+    assert app._eng_paused("eng-a") is True
+    assert app._eng_paused("eng-b") is False
+    assert app._eng_paused("") is False
+    assert app._eng_paused("../evil") is False  # 路径注入拒绝
+
+def test_backfill_eng_on_real_kuzu(tmp_path):
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("CREATE (e:Engagement {name:'e1', target:'http://a.example.com', scope:'a.example.com', auth:'declared', status:'frozen', created_at:'2026-09-01T10:00:00Z'})")
+    conn.execute("CREATE (e:Engagement {name:'e2', target:'http://b.example.com', scope:'b.example.com', auth:'declared', status:'active', created_at:'2026-09-02T10:00:00Z'})")
+    # 无主 Finding: ts 落 e1 窗口 → 归 e1; 无 ts 的 Endpoint host 命中 b scope → 归 e2
+    conn.execute("CREATE (f:Finding {id:'F1', title:'t1', severity:'high', repro:'curl http://a.example.com/x', category:'sqli', gate_status:'candidate', ts:'2026-09-01T12:00:00Z'})")
+    conn.execute("CREATE (ep:Endpoint {id:'EP1', url:'http://b.example.com/y', eng:''})")
+    r = _backfill_eng(conn)
+    assert r["touched"] >= 2
+    got = conn.execute("MATCH (f:Finding {id:'F1'}) RETURN f.eng").get_next()[0]
+    assert got == "e1", f"F1 归属错误: {got}"
+    got = conn.execute("MATCH (e:Endpoint {id:'EP1'}) RETURN e.eng").get_next()[0]
+    assert got == "e2", f"EP1 归属错误: {got}"
+    _backfill_eng(conn)  # 幂等: 二次回填不改已归属行
+    got = conn.execute("MATCH (f:Finding {id:'F1'}) RETURN f.eng").get_next()[0]
+    assert got == "e1"

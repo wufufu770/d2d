@@ -2,7 +2,8 @@
 // 路由: ctx.webServer.register({kind:'prefix', path:'/d2d/api'}) — 与 dsh /api 同一道
 // 浏览器信任栅栏(Host loopback/受信 + sec-fetch-site + Origin 同源), 同源零跨域,
 // token 全程留 host 侧。机制参照 dsh-sidebar-leap 宿主半(生态已验证模式)。
-import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, transitionFinding, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs } from './snapshot.mjs'
+import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, transitionFinding, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement } from './snapshot.mjs'
+import { validateStartRequest } from './start-policy.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
 
@@ -58,18 +59,21 @@ export function apply(ctx, config = {}) {
     if (cache && Date.now() - cache.ts < MICRO_CACHE_MS) return cache.val
     if (inFlight) return inFlight
     inFlight = (async () => {
-      // 轨迹/用量区: 读 scheduler 落盘的 run-log.jsonl + model-usage.jsonl(engagement 名取图上最近一条)
-      let engName = ''
-      try {
-        const rows = await query(`MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name AS name ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`)
-        engName = String(rows?.[0]?.name ?? '')
-        if (!engName) {
-          const last = await query(`MATCH (e:Engagement) RETURN e.name AS name ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`)
-          engName = String(last?.[0]?.name ?? '')
-        }
-      } catch { /* 轨迹区降级为空, 快照主体不受影响 */ }
-      const runEvents = engName ? readRunEvents({ engName }) : { events: [], usage: {}, quotaHits: [] }
-      const val = await buildSnapshot(query, { fleet: readFleet(), runEvents })
+      // W5: 当前选中 engagement — 面板全部池子查询/轨迹区都按它过滤。selected 文件缺失
+      // (首次使用/未选过)时兜底最新 active, 再兜底最新任意 — 保证首屏就有数据可看。
+      let eng = readSelectedEngagement()
+      if (!eng) {
+        try {
+          const act = await query(`MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name AS name ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`)
+          eng = String(act?.[0]?.name ?? '')
+          if (!eng) {
+            const last = await query(`MATCH (e:Engagement) RETURN e.name AS name ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`)
+            eng = String(last?.[0]?.name ?? '')
+          }
+        } catch { /* 轨迹区/池子区降级为空, 快照主体不受影响 */ }
+      }
+      const runEvents = eng ? readRunEvents({ engName: eng }) : { events: [], usage: {}, quotaHits: [] }
+      const val = await buildSnapshot(query, { fleet: readFleet(), runEvents, eng })
       cache = { ts: Date.now(), val }
       return val
     })().finally(() => { inFlight = null })
@@ -175,6 +179,96 @@ export function apply(ctx, config = {}) {
           return send(200, { ok: true, caps: r })
         } catch (e) {
           return send(400, { ok: false, error: { code: 'caps-write-error', message: String(e?.message ?? e).slice(0, 160) } })
+        }
+      }
+      // ---- W5: engagement 管理面 — 多 src 项目并行/切换/回看 ----
+      // start: 新建 requested 节点(web 宿主调度器空闲时 ≤15s in-process 采纳, 忙时派独立 runner);
+      //        多开放行(同 target 唯一 + active 总数上限), 新建即选中。
+      // resume: frozen/completed → requested(同节点复用, 历史记录全保留)。
+      // select: 切换面板视图(纯文件写, 不启停任何 worker)。
+      if (method === 'eng') {
+        if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST required' } })
+        let body
+        try { body = await readBody(req) } catch (e) {
+          return send(400, { ok: false, error: { code: 'bad-request', message: String(e?.message ?? e) } })
+        }
+        const op = String(body.op ?? '')
+        try {
+          if (op === 'select') {
+            const n = String(body.name ?? '').trim()
+            const ex = await query(`MATCH (e:Engagement {name:$n}) RETURN e.name AS name`, { n })
+            if (!ex[0]?.name) return send(404, { ok: false, error: { code: 'not-found', message: `engagement 不存在: ${n}` } })
+            writeSelectedEngagement(n)
+            cache = null
+            return send(200, { ok: true, selected: n, note: '面板已切换视图 — 池子/战果/轨迹按该 engagement 过滤' })
+          }
+          if (op === 'resume') {
+            const n = String(body.name ?? '').trim()
+            const ex = await query(`MATCH (e:Engagement {name:$n}) RETURN e.name AS name, e.status AS st`, { n })
+            if (!ex[0]?.name) return send(404, { ok: false, error: { code: 'not-found', message: `engagement 不存在: ${n}` } })
+            if (!['frozen', 'completed', 'superseded', 'exhausted'].includes(String(ex[0].st))) {
+              return send(409, { ok: false, error: { code: 'bad-status', message: `${n} 状态 ${ex[0].st} 不可续跑(仅终态可 resume)` } })
+            }
+            await query(`MATCH (e:Engagement {name:$n}) SET e.status='requested', e.cancel='false'`, { n })
+            writeSelectedEngagement(n)
+            cache = null
+            return send(200, { ok: true, name: n, note: '已重新入队 — 调度器 ≤15s 采纳(历史记录保留)' })
+          }
+          return send(400, { ok: false, error: { code: 'bad-request', message: 'op 必须是 select/resume' } })
+        } catch (e) {
+          return send(503, { ok: false, error: { code: 'graphd-error', message: String(e?.message ?? e).slice(0, 160) } })
+        }
+      }
+      // ---- 0906: engagement 启停 — start 写 requested 队列节点(web 宿主调度器 ≤15s 采纳),
+      //      stop 置 cancel 令牌(调度器栅栏自停, 走既有 P0 取消流程)。目标政策见 start-policy.mjs。
+      if (method === 'start' || method === 'stop') {
+        if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST required' } })
+        let body
+        try { body = await readBody(req) } catch (e) {
+          return send(400, { ok: false, error: { code: 'bad-request', message: String(e?.message ?? e) } })
+        }
+        try {
+          if (method === 'start') {
+            const v = validateStartRequest(body)
+            if (!v.ok) return send(400, { ok: false, error: { code: 'bad-request', message: v.error } })
+            // W5 多开: 只拦同目标重复 + 总量上限(不再"同一时刻只允许一个")
+            const dup = await query(`MATCH (e:Engagement) WHERE e.status IN ['active','requested'] AND e.target=$t RETURN e.name AS n LIMIT 1`, { t: v.target })
+            if (dup[0]?.n) return send(409, { ok: false, error: { code: 'engagement-exists', message: `同目标 engagement ${dup[0].n} 已在跑/排队 — 续跑用「续跑」按钮` } })
+            const actives = await query(`MATCH (e:Engagement) WHERE e.status IN ['active','requested'] RETURN count(e) AS n`)
+            if (Number(actives[0]?.n ?? 0) >= 4) return send(409, { ok: false, error: { code: 'too-many', message: `已有 ${actives[0].n} 个并行 engagement(上限 4) — 先停掉部分再开` } })
+            await query(`CREATE (e:Engagement {name:$n, target:$t, scope:$s, auth:'declared', status:'requested', created_at:$ts, instances:$i, objective:$o})`, {
+              n: v.name, t: v.target, s: v.scope, ts: new Date().toISOString(), i: v.instances, o: v.objective,
+            })
+            writeSelectedEngagement(v.name)
+            cache = null
+            return send(200, { ok: true, name: v.name, note: '已入队 — 调度器 ≤15s 采纳(多开: 已有项目在跑时自动派独立 runner)' })
+          }
+          const n = String(body.name ?? '').trim() || readSelectedEngagement()
+          if (!n) return send(409, { ok: false, error: { code: 'no-active', message: '无选中 engagement — 先在列表里选择' } })
+          const ex = await query(`MATCH (e:Engagement {name:$n}) RETURN e.name AS name, e.status AS st, e.leased_by AS lb, e.lease_at AS la`, { n })
+          if (!ex[0]?.name) return send(404, { ok: false, error: { code: 'not-found', message: `engagement 不存在: ${n}` } })
+          if (ex[0].st !== 'active' && ex[0].st !== 'requested') return send(409, { ok: false, error: { code: 'bad-status', message: `${n} 状态 ${ex[0].st} 非运行态, 无需停止` } })
+          await query(`MATCH (e:Engagement {name:$n}) SET e.cancel='true'`, { n })
+          // 租约已死(持有者心跳超 TTL 或无租约) → 调度器不在了, cancel 永远没人消费 —
+          // 直接落 frozen + 写 per-eng 暂停文件(在跑的孤儿 worker 下次写图 409 自行收尾)。
+          const LEASE_TTL_MS = 120_000 // 与 scheduler LEASE_TTL_MS 同口径
+          const leaseAge = Date.now() - Number(ex[0].la ?? 0)
+          let frozen = false
+          if (!ex[0].lb || !Number.isFinite(leaseAge) || leaseAge > LEASE_TTL_MS) {
+            await query(`MATCH (e:Engagement {name:$n}) SET e.status='frozen', e.leased_by='', e.lease_at=0`, { n })
+            try {
+              const dir = `${process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config`
+              fs.mkdirSync(dir, { recursive: true })
+              fs.writeFileSync(`${dir}/paused-${String(n).replace(/[/\\]/g, '_')}.json`, JSON.stringify({ paused: true, eng: n, by: 'panel-stop', at: new Date().toISOString() }))
+            } catch { /* 文件失败不阻断: frozen 状态栅栏仍在 */ }
+            frozen = true
+          }
+          cache = null
+          return send(200, { ok: true, stopped: n, frozen, note: frozen
+            ? `已冻结 ${n}(原租约持有者已死亡) — 孤儿 worker 下次写图 409 自行收尾`
+            : `cancel 令牌已置 — 该 engagement 的调度器栅栏自停(其他项目不受影响)` })
+        } catch (e) {
+          return send(503, { ok: false, error: { code: 'graphd-error', message: String(e?.message ?? e).slice(0, 160) } })
         }
       }
       return send(404, { ok: false, error: { code: 'not-found', message: `unknown d2d API method "${method}"` } })
