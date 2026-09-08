@@ -112,6 +112,8 @@
 
 - `GET /d2d/api/snapshot`：**一条聚合响应** = engagement(active+attempts+gapHints 计数) + agents(五角色心跳) + signals tail(20) + findings 计数(七态) + fleet(每角色模型主备) + `now`
 - `GET /d2d/api/trajectory?worker=<id>`：鱼骨事件流（P3）
+- `POST /d2d/api/start` `{target, scope?, instances?, objective?}`：engagement 启动 API（0906 图队列）— 校验后写 `status='requested'` 节点，web 宿主调度器 ≤15s 采纳（adopt 置 active + 认领租约）；仅 http/https 公网域名（环回/私有/保留段拒绝，政策见 `start-policy.mjs`）；已有 active/requested → 409
+- `POST /d2d/api/stop`：对 active engagement 置 `cancel='true'` 令牌 — 调度器栅栏自停（P0 取消流程），无 active → 409
 - 轮询 2s，**visible 门控**（tab 不在前台完全静默）；stale-while-revalidate 切回
 - 浏览器永不碰凭证：host 侧读 `~/.config/d2d/host-token` 加 X-Auth 头；服务仅监听 127.0.0.1 + Host 头信任栅栏（better-sidebar `/sidebar/api/*` 同构）+ CORS 仅回显 loopback 来源
 - 快照聚合在 host 侧带 0.5s 微缓存 + 单飞合并（并发请求共享一次图读取），对 graphd `_lock` 争用窗口最小

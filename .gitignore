@@ -94,3 +94,5 @@ ev_*.txt
 obkm_*.py
 upload.out
 Finding.repro
+# study/promote 的导出产物(派生数据, 不入库)
+output/

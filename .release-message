@@ -1,0 +1,7 @@
+docs+fix: README 精简重写(仅介绍+使用, 示例全部占位化) + 厂商名清理 + 安装模板占位化
+
+- README 重写: 删除迭代说明/issue 引用/能力模块表/威胁模型等历史包袱, 只保留介绍/架构/安装/配置/使用/成本预算/SRC 口径/测试/授权声明
+- install.sh 生成的 provider 模板占位化(provider-a/provider-b/example 端点)
+- model-policies.example.json / models.json / model-rotate 用例占位化
+- doctor 余额探针改为可选配置驱动(DOCTOR_PROBE_URL/KEY/MODEL)
+- 清理 .pytest_cache/.release-message 等发布垃圾
