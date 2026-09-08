@@ -161,7 +161,9 @@ if (cmd === '--seed') {
   fs.mkdirSync(`${VERSIONS}/${next}`, { recursive: true })
   fs.copyFileSync(SEED, `${VERSIONS}/${next}/techniques.json`)
   fs.writeFileSync(`${VERSIONS}/${next}/manifest.json`, JSON.stringify({ created_at: new Date().toISOString(), status: 'current', parent_version: curBase || null, source_docs: ['builtin-seed'], bench_score: null }, null, 2))
-  try { fs.rmSync(`${BRAIN}/current`); } catch {}
+  // recursive+force: reset 流程会把 current 建成真实目录(非空), 无选项的 rmSync 会抛 ENOTEMPTY 被
+  // 本 catch 吞掉 → 下行 symlinkSync 撞 EEXIST, 冷启动播种永久失败(0906 实证)
+  try { fs.rmSync(`${BRAIN}/current`, { recursive: true, force: true }); } catch {}
   fs.symlinkSync(`${VERSIONS}/${next}`, `${BRAIN}/current`)
   // 旧 current 降为 retired(状态字段与软链一致, 便于审计)
   if (curBase) {
