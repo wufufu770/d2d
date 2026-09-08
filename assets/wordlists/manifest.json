@@ -1,0 +1,63 @@
+{
+  "$comment": "d2d 内置字典清单 — sha256 对应解压后的原始 txt(下载/更新用 scripts/recon/fetch-wordlists.mjs 复核)。tier: p0 默认(<2min) / p1 常规 / p2 深扫。license 全 MIT(来源仓库各自声明), 再分发保留来源标注即可。",
+  "version": 1,
+  "generated": "2026-09-07",
+  "files": [
+    {
+      "file": "subdomains/p0-top5000.txt.gz",
+      "tier": "p0",
+      "kind": "subdomain",
+      "entries": 5000,
+      "source": "SecLists Discovery/DNS/subdomains-top1million-5000.txt",
+      "source_url": "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt",
+      "license": "MIT (c) danielmiessler/SecLists contributors",
+      "sha256": "e331367c140298cb179114fdeefa78f58f696219f0dec017a28bb79487cfcf19"
+    },
+    {
+      "file": "subdomains/p1-top20000.txt.gz",
+      "tier": "p1",
+      "kind": "subdomain",
+      "entries": 20000,
+      "source": "SecLists Discovery/DNS/subdomains-top1million-20000.txt",
+      "source_url": "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-20000.txt",
+      "license": "MIT (c) danielmiessler/SecLists contributors",
+      "sha256": "685fad386d19c3b7ecbcd18645606bc5c47a3b2339fa3d79f44c46bd9e79c1ef"
+    },
+    {
+      "file": "subdomains/p2-top110000.txt.gz",
+      "tier": "p2",
+      "kind": "subdomain",
+      "entries": 110000,
+      "source": "SecLists Discovery/DNS/subdomains-top1million-110000.txt",
+      "source_url": "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-110000.txt",
+      "license": "MIT (c) danielmiessler/SecLists contributors",
+      "sha256": "7b8359732bdee838ecdb9ef2cd3bb9a792347dab0457fd9b33a9b152d8dc238d"
+    },
+    {
+      "file": "subdomains/p2-cn-extra.txt",
+      "tier": "p2",
+      "kind": "subdomain",
+      "entries": 253,
+      "source": "d2d 自维护 — 中文生态高频子域名(人工沉淀, 原创清单)",
+      "license": "MIT (c) d2d authors"
+    },
+    {
+      "file": "paths/p0-common.txt.gz",
+      "tier": "p0",
+      "kind": "path",
+      "entries": 4751,
+      "source": "SecLists Discovery/Web-Content/common.txt",
+      "source_url": "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt",
+      "license": "MIT (c) danielmiessler/SecLists contributors",
+      "sha256": "47fb86ca6fb3f97e5491161581900d6d99851fb16764eacddf16aa85617c956a"
+    },
+    {
+      "file": "resolvers/trusted.txt",
+      "tier": "p0",
+      "kind": "resolver",
+      "entries": 28,
+      "source": "d2d 自维护 — 全球+中国公共 DNS 可信集(解析失败换 NS 重试/可信复验用)",
+      "license": "MIT (c) d2d authors"
+    }
+  ]
+}

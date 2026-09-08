@@ -45,6 +45,27 @@ function findChrome() {
   }
   return ''
 }
+// ---------- 0906 跨进程单例锁(skyline web-access 采纳): 两实例同端口各拉 chrome 必冲突 ----------
+const SPA_LOCK = path.join(DATA_DIR, 'spa-render.lock')
+const LOCK_STALE_MS = 45_000
+const LOCK_WAIT_MS = 30_000
+function tryAcquireLock() {
+  try {
+    const st = fs.statSync(SPA_LOCK)
+    if (Date.now() - st.mtimeMs < LOCK_STALE_MS) return false // 他者新鲜持有(崩溃残留按过期接管)
+  } catch {}
+  try { fs.writeFileSync(SPA_LOCK, JSON.stringify({ pid: process.pid, at: Date.now() })); return true } catch { return false }
+}
+function releaseLock() { try { fs.rmSync(SPA_LOCK, { force: true }) } catch {} }
+async function waitLock() {
+  for (let i = 0; i < LOCK_WAIT_MS / 500; i++) {
+    if (tryAcquireLock()) return true
+    await new Promise((r) => setTimeout(r, 500))
+  }
+  return false
+}
+process.on('exit', releaseLock)
+
 async function ensureChrome() {
   if (cdpHttp) {
     try {
@@ -56,6 +77,8 @@ async function ensureChrome() {
   const bin = findChrome()
   if (!bin) return null
   if (!chromeProc) {
+    // 单例: 本进程已持有 chrome 则免锁; 否则拿锁(带 30s 等待)再拉起 — 拿不到=他实例在跑
+    if (!(tryAcquireLock() || (await waitLock()))) return null
     const port = 9333 + (process.pid % 100)
     chromeProc = spawn(bin, ['--headless=new', `--remote-debugging-port=${port}`, '--no-first-run', '--no-sandbox', '--disable-gpu', `--user-data-dir=${DATA_DIR}/spa-profile`], { stdio: 'ignore' })
     chromeProc.on('exit', () => { chromeProc = null })

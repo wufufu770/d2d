@@ -1,5 +1,5 @@
 {
- "_说明": "v1 知识基线(C-1 扩充 16→40) — 随产品发布的公开安全知识检索卡(源自 OWASP WSTG/PortSwigger Web Security Academy 类公开知识体系, 不含任何本机测试数据)。variants 字段(E-4 变体分析): 同类攻击在其他技术栈的等价形态, 净室/创造环注入驱动「已知模式→新面」迁移。",
+ "_说明": "v1 知识基线(C-1 扩充 16→40) — 随产品发布的公开安全知识检索卡(源自 OWASP WSTG/PortSwigger Web Security Academy 类公开知识体系, 不含任何本机测试数据)。variants 字段(E-4 变体分析): 同类攻击在其他技术栈的等价形态, 净室/创造环注入驱动「已知模式→新面」迁移。; 0906 策略卡富化: 全部卡片补齐 signals/negative_controls/adaptation_prompt(evidence-gate 方法论采纳)",
  "cards": [
   {
    "id": "card:sql-injection",
@@ -41,7 +41,17 @@
      "ref": "PortSwigger SQL injection cheat sheet"
     }
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "数字/排序/搜索/筛选参数进入查询",
+    "登录与查询表单",
+    "报错信息含 SQL 片段"
+   ],
+   "negative_controls": [
+    "参数经 ORM/预编译且注入探针无行为差异",
+    "输入被强类型转换后行为恒定"
+   ],
+   "adaptation_prompt": "对每个进入查询的参数按报错→布尔→时序顺序最小探测, 任一差异必须用第二次独立请求复核后才写 Finding"
   },
   {
    "id": "card:xss-reflected-stored",
@@ -61,7 +71,17 @@
    "refs": [
     "OWASP WSTG-INPV-02"
    ],
-   "category": "client"
+   "category": "client",
+   "signals": [
+    "用户输入在响应 HTML/属性/JS 中回显",
+    "评论/昵称/富文本等存储点",
+    "DOM sink(innerHTML/document.write/eval)"
+   ],
+   "negative_controls": [
+    "回显全程 HTML 实体编码且上下文不可闭合",
+    "严格 CSP+输出编码使构造不可执行"
+   ],
+   "adaptation_prompt": "先用无危害标记探针定位回显编码上下文, 再按上下文构造闭合, 以脚本实际执行或域外回调为最终证据"
   },
   {
    "id": "card:ssrf",
@@ -93,7 +113,15 @@
      "ref": "PortSwigger SSRF advanced exploits"
     }
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "头像/导入/webhook/URL 预览等服务端取 URL 参数",
+    "PDF 生成/文件拉取/导入功能"
+   ],
+   "negative_controls": [
+    "目标解析固定白名单+DNS 重绑定防护, 回调不可达且无响应差异"
+   ],
+   "adaptation_prompt": "用 OAST 回调域与 169.254.169.254 探测, 以回调命中或元数据回显为准; 内网段只做存在性证明不深入"
   },
   {
    "id": "card:ssti",
@@ -126,7 +154,17 @@
      "ref": "PortSwigger SSTI methodology"
     }
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "模板渲染的邮件/发票/昵称内容",
+    "数学表达式探针被计算后回显",
+    "报错暴露模板引擎名"
+   ],
+   "negative_controls": [
+    "表达式纯文本转义",
+    "数学探针无计算回显"
+   ],
+   "adaptation_prompt": "用跨引擎差异探针判定引擎族后再按族构造, 禁止未判族直接投放 RCE payload"
   },
   {
    "id": "card:idor-bola",
@@ -147,7 +185,17 @@
    "refs": [
     "OWASP API1:2023"
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "对象 id 自增数字或可枚举",
+    "接口响应含他人数据字段",
+    "前端隐藏 id 参数"
+   ],
+   "negative_controls": [
+    "对象为 UUID 且服务端校验属主",
+    "换 id 返回 403/404 属正常隔离"
+   ],
+   "adaptation_prompt": "双账号互换对象标识请求, 以低权限身份+他人对象+数据回显的请求响应对为唯一证据"
   },
   {
    "id": "card:auth-bypass-logic",
@@ -167,7 +215,16 @@
    "refs": [
     "OWASP WSTG-ATHN"
    ],
-   "category": "auth"
+   "category": "auth",
+   "signals": [
+    "多步流程可跳步",
+    "前端隐藏步骤/状态参数",
+    "响应字段可篡改控制流"
+   ],
+   "negative_controls": [
+    "服务端逐步校验状态机, 跳步被拒且状态不变"
+   ],
+   "adaptation_prompt": "以未授权身份跳步/篡改响应完成完整流程, 证据=流程终点状态实际达成而非仅响应差异"
   },
   {
    "id": "card:jwt-manipulation",
@@ -192,7 +249,17 @@
      "ref": "PortSwigger JWT attacks"
     }
    ],
-   "category": "auth"
+   "category": "auth",
+   "signals": [
+    "token 为 JWT 格式",
+    "头部含 alg/kid 自定义",
+    "会话仅凭 token 声明授权"
+   ],
+   "negative_controls": [
+    "算法白名单固定+密钥强度足够",
+    "篡改 token 一律被拒且告警"
+   ],
+   "adaptation_prompt": "解码验签段逐试 alg:none/弱密钥/算法混淆, 证据=篡改 token 被接受且身份或权限改变"
   },
   {
    "id": "card:race-condition",
@@ -218,7 +285,15 @@
      "ref": "PortSwigger race conditions with HTTP/2 single-packet attack"
     }
    ],
-   "category": "logic"
+   "category": "logic",
+   "signals": [
+    "转账/兑换/提现/券核销等限额端点",
+    "余额或次数服务端滞后校验"
+   ],
+   "negative_controls": [
+    "行锁/幂等键使并发后余额与次数精确一致"
+   ],
+   "adaptation_prompt": "同一请求 5 连发并发重放后查余额差, 以负值或超限的实际状态差为证据"
   },
   {
    "id": "card:path-traversal",
@@ -250,7 +325,17 @@
      "ref": "OWASP Path Traversal"
     }
    ],
-   "category": "files"
+   "category": "files",
+   "signals": [
+    "文件名/路径/下载/导出参数",
+    "静态资源代理",
+    "附件预览功能"
+   ],
+   "negative_controls": [
+    "基址拼接+规范化白名单",
+    "穿越变体一律 404/400"
+   ],
+   "adaptation_prompt": "../ 与编码变体(../..%2f..%2f)逐试, 以读出 root:x:0: 等已知文件特征为证据"
   },
   {
    "id": "card:file-upload-rce",
@@ -281,7 +366,16 @@
      "ref": "OWASP WSTG-BUSL-09"
     }
    ],
-   "category": "files"
+   "category": "files",
+   "signals": [
+    "头像/附件上传点",
+    "上传目录可猜测",
+    "服务端按扩展名或类型解析"
+   ],
+   "negative_controls": [
+    "随机重命名+存储桶不解析+强制下载响应头"
+   ],
+   "adaptation_prompt": "扩展名/类型/魔数组合绕过后, 必须实际访问到可解析执行路径才可写 Finding"
   },
   {
    "id": "card:deserialization",
@@ -301,7 +395,17 @@
    "refs": [
     "OWASP WSTG-INPV-15"
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "cookie/session 含 base64 序列化对象",
+    "viewstate/Java 序列化魔术头",
+    "参数含对象图结构"
+   ],
+   "negative_controls": [
+    "反序列化类型白名单/签名校验",
+    "gadget 探针无行为差异"
+   ],
+   "adaptation_prompt": "先识别序列化格式再用对应生态无害 gadget 探针验证, 禁止直接投放破坏性 payload"
   },
   {
    "id": "card:xxe",
@@ -320,7 +424,17 @@
    "refs": [
     "OWASP WSTG-INPV-07"
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "XML/SOAP/SVG 输入点",
+    "文件解析/导入功能",
+    "DTD 可控"
+   ],
+   "negative_controls": [
+    "解析器禁外部实体",
+    "探针无回显且 OOB 无回调"
+   ],
+   "adaptation_prompt": "file:// 读已知文件与外部 DTD 回调双路验证, OOB 回调命中即证据"
   },
   {
    "id": "card:open-redirect",
@@ -339,7 +453,16 @@
    "refs": [
     "OWASP WSTG-VAL-09"
    ],
-   "category": "client"
+   "category": "client",
+   "signals": [
+    "returnTo/redirect/next 类跳转参数",
+    "登录/支付后跳转链"
+   ],
+   "negative_controls": [
+    "跳转白名单严格前缀匹配",
+    "外部域一律拦截"
+   ],
+   "adaptation_prompt": "用外部域完整验证 30x Location 未被白名单拦截, 伪造子域/路径绕过逐一排除后仍可达才写 Finding"
   },
   {
    "id": "card:business-privilege-escalation",
@@ -358,7 +481,17 @@
    "refs": [
     "OWASP API5:2023"
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "管理端点混布普通用户可达路径",
+    "功能按钮仅前端隐藏",
+    "/admin/api 同域混布"
+   ],
+   "negative_controls": [
+    "服务端按角色鉴权",
+    "低权限会话一律 403"
+   ],
+   "adaptation_prompt": "用低权限会话直呼功能级管理端点, 证据=成功响应+系统状态实际变化(配置/数据)"
   },
   {
    "id": "card:graphql-abuse",
@@ -375,7 +508,17 @@
    "refs": [
     "OWASP GraphQL Cheat Sheet"
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "/graphql 端点",
+    "单一 POST 承载全部查询",
+    "响应为 data/errors 结构"
+   ],
+   "negative_controls": [
+    "introspection 关闭",
+    "字段级鉴权完整"
+   ],
+   "adaptation_prompt": "introspection 拉取 schema 后枚举未授权 field/mutation, 跨身份取数即证据"
   },
   {
    "id": "card:api-mass-assignment",
@@ -394,7 +537,17 @@
    "refs": [
     "OWASP API3:2023"
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "结构化 JSON API",
+    "注册/资料更新接口字段可枚举",
+    "API 文档暴露完整模型"
+   ],
+   "negative_controls": [
+    "DTO 白名单过滤",
+    "特权字段被静默忽略"
+   ],
+   "adaptation_prompt": "请求体注入 role/isAdmin/balance 类特权字段, 以权限或状态实际改变为证据"
   },
   {
    "id": "card:http-request-smuggling",
@@ -428,7 +581,16 @@
      "ref": "PortSwigger HTTP/2 desync"
     }
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "前后端服务器异构(CDN+源站)",
+    "Content-Length 与 Transfer-Encoding 处理不一致风险"
+   ],
+   "negative_controls": [
+    "前端规范化头/禁用 keep-alive 使走私不可达",
+    "探针无封装差异"
+   ],
+   "adaptation_prompt": "CL.TE/TE.CL/TE.TE 三态探针逐试, 以后续请求被污染的可见差异为证据; 生产环境避开峰值时段"
   },
   {
    "id": "card:web-cache-poisoning",
@@ -454,7 +616,17 @@
      "ref": "PortSwigger web cache poisoning"
     }
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "CDN/缓存层存在",
+    "响应头含缓存标识(X-Cache/Age)",
+    "页面反射 header 值"
+   ],
+   "negative_controls": [
+    "缓存键覆盖全部影响输出的输入",
+    "无 unkeyed 反射点"
+   ],
+   "adaptation_prompt": "逐 header/query 找 unkeyed 反射输入, 只有升级到可执行投毒才写 Finding, 反射文本仅记 signal"
   },
   {
    "id": "card:web-cache-deception",
@@ -471,7 +643,16 @@
    "refs": [
     "PortSwigger Web Security Academy: Web cache deception"
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "个人资料/账单等已认证敏感页",
+    "静态资源缓存层"
+   ],
+   "negative_controls": [
+    "缓存按 Content-Type/认证态区分",
+    "伪静态后缀不缓存"
+   ],
+   "adaptation_prompt": "已认证敏感页 URL 加 nonexistent.css 伪静态后缀, 未认证会话取到个人数据即证据"
   },
   {
    "id": "card:host-header-injection",
@@ -496,7 +677,16 @@
      "ref": "PortSwigger host header injection"
     }
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "应用用 Host 生成绝对链接(重置邮件/跳转)",
+    "代理转发头可控"
+   ],
+   "negative_controls": [
+    "Host 固定白名单",
+    "链接由配置域名生成"
+   ],
+   "adaptation_prompt": "改 Host/X-Forwarded-Host 观察生成的绝对链接, 重置投毒以实际收到的重置链接指向受控域为证据"
   },
   {
    "id": "card:crlf-injection",
@@ -513,7 +703,15 @@
    "refs": [
     "OWASP WSTG-INPV-15"
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "参数值进入响应头",
+    "旧框架或自研网关"
+   ],
+   "negative_controls": [
+    "现代框架对头值编码 %0d%0a"
+   ],
+   "adaptation_prompt": "参数注入 %0d%0a 观察响应头分裂, 成功注入 Set-Cookie/Location 即证据"
   },
   {
    "id": "card:command-injection",
@@ -540,7 +738,16 @@
      "ref": "OWASP Command Injection"
     }
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "导出/转换/诊断类功能点",
+    "文件名/主机名参数拼接系统命令"
+   ],
+   "negative_controls": [
+    "参数化 execArray",
+    "分隔符被过滤且时延无差异"
+   ],
+   "adaptation_prompt": "分隔符+编码变体+时延探针逐试, 以可控输出或稳定时延差为证据"
   },
   {
    "id": "card:password-reset-flaws",
@@ -558,7 +765,17 @@
    "refs": [
     "OWASP WSTG-ATHN"
    ],
-   "category": "auth"
+   "category": "auth",
+   "signals": [
+    "重置流程存在",
+    "token 出现在 URL",
+    "支持多邮箱参数"
+   ],
+   "negative_controls": [
+    "token 高熵一次性短时效且绑定账号",
+    "Host 头固定"
+   ],
+   "adaptation_prompt": "检查 token 熵/复用/跨账号, 试 host 投毒与多邮箱参数污染, 以未授权完成重置为证据"
   },
   {
    "id": "card:captcha-bypass",
@@ -576,7 +793,15 @@
    "refs": [
     "OWASP WSTG-ATHN"
    ],
-   "category": "auth"
+   "category": "auth",
+   "signals": [
+    "验证码保护登录/注册/短信发送",
+    "验证码校验在前端响应里"
+   ],
+   "negative_controls": [
+    "服务端强校验+一次性+行为风控"
+   ],
+   "adaptation_prompt": "四路逐试: 响应篡改/同码复用/参数删除/程序化识别, 以绕过后高频操作成功为证据"
   },
   {
    "id": "card:payment-logic-flaws",
@@ -602,7 +827,17 @@
      "ref": "OWASP Business Logic"
     }
    ],
-   "category": "logic"
+   "category": "logic",
+   "signals": [
+    "下单/支付请求含金额数量字段",
+    "前端计算价格",
+    "支持多币种"
+   ],
+   "negative_controls": [
+    "服务端按商品 id 重算价格",
+    "金额字段被忽略"
+   ],
+   "adaptation_prompt": "改价/负数量/币种混淆/0 元单逐试, 以异常价格订单实际成立并进入后续状态为证据"
   },
   {
    "id": "card:coupon-discount-abuse",
@@ -619,7 +854,17 @@
    "refs": [
     "OWASP WSTG-BUSL"
    ],
-   "category": "logic"
+   "category": "logic",
+   "signals": [
+    "优惠券/折扣码体系",
+    "折扣可叠加",
+    "券码格式可枚举"
+   ],
+   "negative_controls": [
+    "券绑定账号一次性",
+    "服务端互斥校验"
+   ],
+   "adaptation_prompt": "叠加/负值/重放/枚举逐试并与竞态卡联动, 以异常折扣订单成立为证据"
   },
   {
    "id": "card:order-flow-bypass",
@@ -638,7 +883,17 @@
    "refs": [
     "OWASP WSTG-BUSL"
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "订单状态由前端驱动",
+    "支付回调独立端点",
+    "状态字段在请求体"
+   ],
+   "negative_controls": [
+    "状态机服务端单向推进",
+    "回调验签+幂等"
+   ],
+   "adaptation_prompt": "篡改状态字段跨步跳转+回调重放, 以未支付订单进入已发货等越态为证据"
   },
   {
    "id": "card:refund-abuse",
@@ -655,7 +910,16 @@
    "refs": [
     "OWASP WSTG-BUSL"
    ],
-   "category": "logic"
+   "category": "logic",
+   "signals": [
+    "退款/售后流程",
+    "部分退款功能",
+    "退款与发货状态解耦"
+   ],
+   "negative_controls": [
+    "退款总额校验+幂等键+状态互锁"
+   ],
+   "adaptation_prompt": "部分退款超原额/重复请求/状态解耦逐试, 以账户实际多出资金为证据"
   },
   {
    "id": "card:csv-injection",
@@ -672,7 +936,15 @@
    "refs": [
     "OWASP WSTG-INPV"
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "导出功能(CSV/Excel)",
+    "用户输入进入导出字段"
+   ],
+   "negative_controls": [
+    "导出时对 =+@- 前缀转义"
+   ],
+   "adaptation_prompt": "可写字段注入 =HYPERLINK 类公式, 以导出文件含未转义公式为证据"
   },
   {
    "id": "card:xpath-injection",
@@ -689,7 +961,16 @@
    "refs": [
     "OWASP WSTG-INPV"
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "XML 数据源承载认证/查询",
+    "参数直拼查询表达式"
+   ],
+   "negative_controls": [
+    "参数化 XPath",
+    "注入无行为差异"
+   ],
+   "adaptation_prompt": "布尔差异探针验证查询语义改变, 以认证绕过或越权数据返回为证据"
   },
   {
    "id": "card:ldap-injection",
@@ -707,7 +988,16 @@
    "refs": [
     "OWASP WSTG-INPV"
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "LDAP 认证/目录查询",
+    "组织架构搜索功能"
+   ],
+   "negative_controls": [
+    "过滤器转义/参数化",
+    "注入无语义改变"
+   ],
+   "adaptation_prompt": "()*&| 变体改查询语义(通配枚举/条件恒真), 以未授权数据返回为证据"
   },
   {
    "id": "card:http-parameter-pollution",
@@ -725,7 +1015,16 @@
    "refs": [
     "OWASP WSTG-INPV"
    ],
-   "category": "web"
+   "category": "web",
+   "signals": [
+    "同名参数语义敏感(金额/角色)",
+    "中间层与后端双层解析"
+   ],
+   "negative_controls": [
+    "前后端取值一致",
+    "服务端参数白名单"
+   ],
+   "adaptation_prompt": "同名参数多次提交观察前后端取值差异, 与越权/支付逻辑联动放大后才写 Finding"
   },
   {
    "id": "card:oauth-misconfig",
@@ -745,7 +1044,17 @@
    "refs": [
     "OWASP OAuth Cheat Sheet"
    ],
-   "category": "auth"
+   "category": "auth",
+   "signals": [
+    "OAuth/OIDC 登录流",
+    "redirect_uri/state 可见",
+    "code 交换端点可辨识"
+   ],
+   "negative_controls": [
+    "redirect_uri 精确匹配",
+    "state 强校验+code 一次性"
+   ],
+   "adaptation_prompt": "redirect_uri 子域/路径/编码绕过逐试+state 缺失 CSRF+code 重放, 以接管授权码流为证据"
   },
   {
    "id": "card:websocket-hijacking",
@@ -763,7 +1072,17 @@
    "refs": [
     "PortSwigger Web Security Academy: WebSockets"
    ],
-   "category": "client"
+   "category": "client",
+   "signals": [
+    "ws/wss 通道推送敏感消息",
+    "握手仅靠 Cookie 认证",
+    "无 Origin 校验迹象"
+   ],
+   "negative_controls": [
+    "握手校验 Origin 白名单",
+    "连接需独立 token"
+   ],
+   "adaptation_prompt": "自建页发起跨站 ws 握手, 以能建立连接并读到敏感消息为证据(需控制端配合)"
   },
   {
    "id": "card:prototype-pollution",
@@ -789,7 +1108,16 @@
      "ref": "PortSwigger client-side prototype pollution"
     }
    ],
-   "category": "client"
+   "category": "client",
+   "signals": [
+    "JSON 深合并接口",
+    "前端 opts/config 可注入",
+    "Node.js 服务"
+   ],
+   "negative_controls": [
+    "合并基于 Object.create(null) 或键过滤"
+   ],
+   "adaptation_prompt": "__proto__.{key} 注入观察全局默认行为改变(新选项生效), 以污染后可观察行为差为证据"
   },
   {
    "id": "card:session-fixation",
@@ -806,7 +1134,15 @@
    "refs": [
     "OWASP WSTG-SESS-03"
    ],
-   "category": "auth"
+   "category": "auth",
+   "signals": [
+    "登录前发放会话标识",
+    "标识可经 URL/参数注入"
+   ],
+   "negative_controls": [
+    "登录成功后强制轮换会话 id"
+   ],
+   "adaptation_prompt": "预设标识→完成登录→以同标识接管验证, 以攻击者用固定标识获得受害者会话为证据"
   },
   {
    "id": "card:dom-clobbering",
@@ -824,7 +1160,16 @@
    "refs": [
     "PortSwigger Web Security Academy: DOM clobbering"
    ],
-   "category": "client"
+   "category": "client",
+   "signals": [
+    "页面脚本依赖 window 全局对象",
+    "用户内容可插入 DOM(id/name 可控)"
+   ],
+   "negative_controls": [
+    "脚本有 hasOwnProperty 防护",
+    "命名元素被过滤"
+   ],
+   "adaptation_prompt": "注入命名元素覆盖 window 属性改变脚本控制流, 以可观察的行为偏差为证据"
   },
   {
    "id": "card:css-injection",
@@ -841,7 +1186,16 @@
    "refs": [
     "PortSwigger Web Security Academy: CSS injection"
    ],
-   "category": "client"
+   "category": "client",
+   "signals": [
+    "自定义样式/主题注入点",
+    "富文本 style 属性保留"
+   ],
+   "negative_controls": [
+    "CSP style-src 限制",
+    "样式属性白名单"
+   ],
+   "adaptation_prompt": "属性选择器逐字符外带(背景图 URL 回调), 以回调按序收到目标 token 为证据"
   },
   {
    "id": "card:rate-limit-bypass",
@@ -859,7 +1213,15 @@
    "refs": [
     "OWASP WSTG-ATHN"
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "登录/短信/验证码接口有频控",
+    "429 响应出现"
+   ],
+   "negative_controls": [
+    "按账号+IP+设备多维限速且键不可轮换"
+   ],
+   "adaptation_prompt": "X-Forwarded-For 轮换/大小写/等价路径逐试, 以同账号超限请求持续成功为证据"
   },
   {
    "id": "card:sso-cross-domain",
@@ -878,7 +1240,16 @@
     "OWASP SAML Cheat Sheet",
     "OWASP Session Management"
    ],
-   "category": "auth"
+   "category": "auth",
+   "signals": [
+    "多域名共享登录(跳转认证)",
+    "注销入口单一"
+   ],
+   "negative_controls": [
+    "全域注销联动",
+    "断言接收域精确"
+   ],
+   "adaptation_prompt": "持多域身份逐域验证注销彻底性与断言域宽窄, 以跨域残留有效会话为证据"
   },
   {
    "id": "card:client-side-path-manipulation",
@@ -895,7 +1266,16 @@
    "refs": [
     "OWASP WSTG-CLNT"
    ],
-   "category": "client"
+   "category": "client",
+   "signals": [
+    "postMessage 监听器",
+    "iframe 嵌入第三方页面"
+   ],
+   "negative_controls": [
+    "origin 严格校验",
+    "frame-ancestors CSP 就位"
+   ],
+   "adaptation_prompt": "构造无 origin 校验的 postMessage 消息触发敏感操作, 以操作实际执行为证据"
   },
   {
    "id": "card:debug-endpoint-disclosure",
@@ -915,7 +1295,16 @@
    "refs": [
     "OWASP WSTG-INFO"
    ],
-   "category": "infra"
+   "category": "infra",
+   "signals": [
+    "非常规路径(/debug /actuator /swagger /console)",
+    "报错页带堆栈或配置片段"
+   ],
+   "negative_controls": [
+    "管理面仅内网可达或强鉴权",
+    "信息无利用性(纯版本号属 config-advice)"
+   ],
+   "adaptation_prompt": "探测后必须验证信息可利用(凭据/配置/操作面)才写 Finding, 仅版本指纹只写 signal"
   }
  ]
 }
