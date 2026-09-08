@@ -6,31 +6,35 @@
 import fs from 'node:fs'
 import os from 'node:os'
 
-export const FINDING_STATES = ['candidate', 'triaged', 'verified', 'isolated', 'reported', 'accepted', 'rejected']
+export const FINDING_STATES = ['candidate', 'triaged', 'verified', 'isolated', 'reported', 'accepted', 'rejected', 'needs-scope']
 export const MACRO_GROUPS = [
   { key: 'active', label: '活跃', states: ['candidate', 'triaged'] },
   { key: 'verified', label: '已验证', states: ['verified', 'isolated'] },
   { key: 'delivered', label: '已交付', states: ['reported', 'accepted'] },
+  { key: 'needs-scope', label: '边界待澄清', states: ['needs-scope'] },
   { key: 'rejected', label: '已驳回', states: ['rejected'] },
 ]
 export const ZOMBIE_MS = 30_000
 const MAX = { title: 200, scope: 200, target: 200, workers: 50, findings: 200, signals: 50, exp: 100, checkpoint: 400, todo: 400, traj: 400, digest: 160, usageLines: 2000, runLogLines: 400, sigEvidence: 0 }
 
 // 全部只读 MATCH; host token 通道下不触发 worker 只读白名单(本就放行)
+// W5: 池子查询全部按 $eng 过滤(engagement 池子隔离) — 面板只显示选中 engagement 的项目数据;
+// ExperienceWeight(经验)/模型策略跨项目共享, 不过滤。eng 列缺失的旧库行由 graphd 启动回填归属。
 const Q = {
-  engActive: `MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name AS name, e.target AS target, e.scope AS scope, e.status AS status, e.created_at AS created_at ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`,
-  engLast: `MATCH (e:Engagement) RETURN e.name AS name, e.target AS target, e.scope AS scope, e.status AS status, e.created_at AS created_at ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`,
-  agents: `MATCH (a:AgentIdentity) RETURN a.worker_id AS worker_id, a.ring AS ring, a.chain AS chain, a.status AS status, a.checkpoint AS checkpoint, a.todo AS todo, a.updated_at AS updated_at ORDER BY coalesce(a.updated_at, '') DESC LIMIT ${MAX.workers}`,
-  findingsByState: `MATCH (f:Finding) RETURN f.gate_status AS state, count(f) AS n`,
-  findingsList: `MATCH (f:Finding) RETURN f.id AS id, f.title AS title, f.severity AS severity, f.cvss AS cvss, f.gate_status AS state, f.category AS category, f.ts AS ts, f.verified_at AS verified_at, f.last_transition AS last_transition ORDER BY coalesce(f.ts, '') DESC LIMIT ${MAX.findings}`,
+  engList: `MATCH (e:Engagement) RETURN e.name AS name, e.target AS target, e.scope AS scope, e.status AS status, e.created_at AS created_at, e.instances AS instances, e.objective AS objective ORDER BY coalesce(e.created_at, '') DESC LIMIT 50`,
+  findingsByEng: `MATCH (f:Finding) RETURN f.eng AS eng, f.gate_status AS state, count(f) AS n`,
+  workersByEng: `MATCH (a:AgentIdentity) WHERE a.status = 'running' RETURN a.eng AS eng, count(a) AS n`,
+  agents: `MATCH (a:AgentIdentity) WHERE a.eng = $eng RETURN a.worker_id AS worker_id, a.ring AS ring, a.chain AS chain, a.status AS status, a.checkpoint AS checkpoint, a.todo AS todo, a.updated_at AS updated_at ORDER BY coalesce(a.updated_at, '') DESC LIMIT ${MAX.workers}`,
+  findingsByState: `MATCH (f:Finding) WHERE f.eng = $eng RETURN f.gate_status AS state, count(f) AS n`,
+  findingsList: `MATCH (f:Finding) WHERE f.eng = $eng RETURN f.id AS id, f.title AS title, f.severity AS severity, f.cvss AS cvss, f.gate_status AS state, f.category AS category, f.ts AS ts, f.verified_at AS verified_at, f.last_transition AS last_transition ORDER BY coalesce(f.ts, '') DESC LIMIT ${MAX.findings}`,
   experienceTail: `MATCH (x:ExperienceWeight) RETURN x.id AS id, x.pattern AS pattern, x.stack AS stack, x.prior AS prior, x.hits AS hits, x.wins AS wins, x.target_type AS target_type ORDER BY coalesce(x.prior, 1.0) DESC, coalesce(x.hits, 0) DESC LIMIT ${MAX.exp}`,
-  signalsTail: `MATCH (s:Signal_) WHERE s.status = 'open' RETURN s.id AS id, s.type AS type, s.weight AS weight, s.ts AS ts ORDER BY coalesce(s.ts, '') DESC LIMIT ${MAX.signals}`,
-  coverage: `MATCH (e:Endpoint) RETURN count(e) AS total, sum(CASE WHEN e.exhausted = true OR e.coverage_votes >= 2 THEN 1 ELSE 0 END) AS covered`,
-  gaps: `MATCH (e:Endpoint) WHERE e.exhausted = false AND e.coverage_votes < 2 RETURN DISTINCT e.business_chain AS bc LIMIT 3`,
-  handoffs: `MATCH (h:Handoff) RETURN h.id AS id, h.digest AS digest, h.model AS model, h.created_at AS created_at ORDER BY coalesce(h.created_at, '') DESC LIMIT 6`,
-  cntEndpoints: `MATCH (e:Endpoint) RETURN count(e) AS n`,
-  cntSignalsOpen: `MATCH (s:Signal_) WHERE s.status = 'open' RETURN count(s) AS n`,
-  cntHypsOpen: `MATCH (h:Hypothesis) WHERE h.status = 'open' RETURN count(h) AS n`,
+  signalsTail: `MATCH (s:Signal_) WHERE s.status = 'open' AND s.eng = $eng RETURN s.id AS id, s.type AS type, s.weight AS weight, s.ts AS ts ORDER BY coalesce(s.ts, '') DESC LIMIT ${MAX.signals}`,
+  coverage: `MATCH (e:Endpoint) WHERE e.eng = $eng RETURN count(e) AS total, sum(CASE WHEN e.exhausted = true OR e.coverage_votes >= 2 THEN 1 ELSE 0 END) AS covered`,
+  gaps: `MATCH (e:Endpoint) WHERE e.exhausted = false AND e.coverage_votes < 2 AND e.eng = $eng RETURN DISTINCT e.business_chain AS bc LIMIT 3`,
+  handoffs: `MATCH (h:Handoff) WHERE h.eng = $eng RETURN h.id AS id, h.digest AS digest, h.model AS model, h.created_at AS created_at ORDER BY coalesce(h.created_at, '') DESC LIMIT 6`,
+  cntEndpoints: `MATCH (e:Endpoint) WHERE e.eng = $eng RETURN count(e) AS n`,
+  cntSignalsOpen: `MATCH (s:Signal_) WHERE s.status = 'open' AND s.eng = $eng RETURN count(s) AS n`,
+  cntHypsOpen: `MATCH (h:Hypothesis) WHERE h.status = 'open' AND h.eng = $eng RETURN count(h) AS n`,
   cntExperience: `MATCH (x:ExperienceWeight) RETURN count(x) AS n`,
 }
 
@@ -97,7 +101,7 @@ export async function writeDenylist({ op, kind, value, from, to, graphdUrl, toke
   const cur = readDenylist(env)
   const items = cur[kind]
   const check = (v) => {
-    if (kind === 'cidr_prefix') { if (!_validCidr(v)) throw new Error(`IP 段必须以点结尾(如 222.73.243.): ${v}`); return v }
+    if (kind === 'cidr_prefix') { if (!_validCidr(v)) throw new Error(`IP 段必须以点结尾(如 203.0.113.): ${v}`); return v }
     if (!_validDomain(v)) throw new Error(`非法域名(纯 host, 不带协议/路径): ${v}`)
     return v
   }
@@ -129,7 +133,26 @@ export async function writeDenylist({ op, kind, value, from, to, graphdUrl, toke
   return { domains: cur.domains, cidr_prefix: cur.cidr_prefix, warn }
 }
 
-/** W4: 环容量热调(caps.json) — 面板容量卡片的读写源; 调度器每 tick 热读同一文件, 免重启生效。 */
+// ── W5: 当前选中 engagement(面板/dsh 会话共享的"项目视图"开关) ──
+// 纯视图概念: 切换只改本文件, 不启停任何 worker; 面板全部池子查询按它过滤, 切回旧项目记录全在。
+export const selectedFile = (env = process.env) =>
+  `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/selected-engagement.json`
+
+export function readSelectedEngagement(env = process.env) {
+  try { return String(JSON.parse(fs.readFileSync(selectedFile(env), 'utf8')).name ?? '').trim() } catch { return '' }
+}
+
+export function writeSelectedEngagement(name, env = process.env) {
+  const n = String(name ?? '').trim()
+  if (!n) throw new Error('engagement name required')
+  fs.mkdirSync(`${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config`, { recursive: true })
+  const tmp = `${selectedFile(env)}.tmp-${process.pid}-${Date.now()}`
+  fs.writeFileSync(tmp, JSON.stringify({ name: n, updated_at: new Date().toISOString() }, null, 2) + '\n')
+  fs.renameSync(tmp, selectedFile(env))
+  return n
+}
+
+/** W4: 容量热调(caps.json) — 面板容量卡片的读写源; 调度器每 tick 热读同一文件, 免重启生效。 */
 export function readCaps(env = process.env) {
   try {
     const p = env.P2P_CAPS_FILE ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/config/caps.json`
@@ -460,30 +483,65 @@ function projectEngagement(row) {
 }
 
 /**
- * buildSnapshot(query, { fleet, runEvents }) → 聚合快照(一条响应, PANEL-UI-SPEC §5)。
+ * buildSnapshot(query, { fleet, runEvents, eng }) → 聚合快照(一条响应, PANEL-UI-SPEC §5)。
  * query: async (cypher, params) => rows —— 任何一次图读取失败整体抛错(fail-closed,
  * 不下发过期/半截快照); 由 HTTP 层转 503。
  * runEvents: readRunEvents 产物(可选; 缺省时轨迹/用量区降级为空)。
+ * eng: 当前选中 engagement 名(W5 池子隔离过滤键; 空 = 无选中, 全部池子区为空)。
  */
-export async function buildSnapshot(query, { fleet = null, runEvents = null } = {}) {
+export async function buildSnapshot(query, { fleet = null, runEvents = null, eng = '' } = {}) {
   const strategies = await loadStrategies(process.env, query).catch(() => [])
-  const [engActiveRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows] = await Promise.all([
-    query(Q.engActive),
-    query(Q.agents),
-    query(Q.findingsByState),
-    query(Q.findingsList),
-    query(Q.signalsTail),
-    query(Q.cntEndpoints),
-    query(Q.cntSignalsOpen),
-    query(Q.cntHypsOpen),
+  const [engListRows, byEngRows, workersByEngRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows] = await Promise.all([
+    query(Q.engList),
+    query(Q.findingsByEng),
+    query(Q.workersByEng).catch(() => []),
+    query(Q.agents, { eng }),
+    query(Q.findingsByState, { eng }),
+    query(Q.findingsList, { eng }),
+    query(Q.signalsTail, { eng }),
+    query(Q.cntEndpoints, { eng }),
+    query(Q.cntSignalsOpen, { eng }),
+    query(Q.cntHypsOpen, { eng }),
     query(Q.cntExperience),
     query(Q.experienceTail),
-    query(Q.coverage),
-    query(Q.gaps),
-    query(Q.handoffs),
+    query(Q.coverage, { eng }),
+    query(Q.gaps, { eng }),
+    query(Q.handoffs, { eng }),
   ])
-  // 无 active 时带出最近终态供上下文(PANEL-UI-SPEC §7: 不做历史切换)
-  const engRows = engActiveRows?.length ? engActiveRows : await query(Q.engLast)
+
+  // W5: 选中 = 显式 selected 文件 > 最新 active > 最新任意(历史回看)。每 engagement 进度聚合。
+  const engRows = engListRows ?? []
+  const selected = engRows.find((e) => String(e.name ?? '') === eng)
+    ?? engRows.find((e) => String(e.status ?? '') === 'active')
+    ?? engRows[0] ?? null
+  const selName = String(selected?.name ?? '')
+  const funnelOf = (name) => {
+    const f = { active: 0, verified: 0, delivered: 0, 'needs-scope': 0, rejected: 0 }
+    for (const r of byEngRows ?? []) {
+      if (String(r.eng ?? '') !== String(name)) continue
+      const s = String(r.state ?? '')
+      if (s === 'candidate' || s === 'triaged') f.active += num(r.n)
+      else if (s === 'verified' || s === 'isolated') f.verified += num(r.n)
+      else if (s === 'reported' || s === 'accepted') f.delivered += num(r.n)
+      else if (s in f) f[s] += num(r.n)
+    }
+    return f
+  }
+  const runningOf = (name) => {
+    for (const r of workersByEngRows ?? []) if (String(r.eng ?? '') === String(name)) return num(r.n)
+    return 0
+  }
+  const engagements = engRows.map((e) => ({
+    name: cap(e.name, MAX.title),
+    target: cap(e.target, MAX.target),
+    scope: cap(e.scope, MAX.scope),
+    status: String(e.status ?? ''),
+    created_at: String(e.created_at ?? ''),
+    objective: cap(e.objective, 300),
+    instances: num(e.instances) || null,
+    selected: String(e.name ?? '') === selName,
+    progress: { ...funnelOf(String(e.name ?? '')), workers: runningOf(String(e.name ?? '')) },
+  }))
 
   const byState = {}
   for (const s of FINDING_STATES) byState[s] = 0
@@ -496,7 +554,7 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null } = 
   const covTotal = num(coverageRows?.[0]?.total)
   const covCovered = num(coverageRows?.[0]?.covered)
   // R6.1: 黑名单可视 —— 全局 denylist.json + 当前 engagement scope 的 `!` 条目合并展示
-  const scopeStr = String(engRows?.[0]?.scope ?? '')
+  const scopeStr = String(selected?.scope ?? '')
   const denyFromScope = scopeStr.split(',').map((s) => s.trim()).filter((s) => s.startsWith('!')).map((s) => s.slice(1))
   const gd = readDenylist()
   const denylist = {
@@ -506,7 +564,9 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null } = 
   return {
     ok: true,
     now: now.toISOString(),
-    engagement: projectEngagement(engRows?.[0] ?? null),
+    engagement: projectEngagement(selected),
+    engagements, // W5: 全部 engagement + 进度(管理卡数据源)
+    selected: selName,
     denylist,
     caps: readCaps(),
     counts: {

@@ -5,13 +5,14 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog } from '../lib/host/snapshot.mjs'
+import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement } from '../lib/host/snapshot.mjs'
 
-// fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应)
+// fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应); params 透传给断言用断言器
 function makeFake(t = {}) {
-  return async (cypher) => {
-    if (cypher.includes("status = 'active'")) return t.engActive ?? []
-    if (cypher.includes('e.name AS name')) return t.engLast ?? []
+  return async (cypher, params) => {
+    if (cypher.includes('e.instances AS instances')) return t.engList ?? [] // engList(全量 engagement)
+    if (cypher.includes('f.eng AS eng')) return t.findingsByEng ?? [] // 每 engagement 战果聚合
+    if (cypher.includes('a.eng AS eng, count(a)')) return t.workersByEng ?? [] // 每 engagement 在跑 worker
     if (cypher.includes('AgentIdentity')) return t.agents ?? []
     if (cypher.includes('f.id AS id')) return t.findings ?? [] // findingsList 亦含 'gate_status AS state', 须先判
     if (cypher.includes('gate_status AS state')) return t.byState ?? []
@@ -28,11 +29,11 @@ function makeFake(t = {}) {
   }
 }
 
-test('groupStates: 七态 → 4 宏观列(§4.4 列义)', () => {
+test('groupStates: 八态 → 5 宏观列(§4.4 列义 + needs-scope 边界待澄清)', () => {
   const byState = { candidate: 3, triaged: 2, verified: 5, isolated: 1, reported: 2, accepted: 1, rejected: 4 }
-  assert.deepEqual(groupStates(byState), { active: 5, verified: 6, delivered: 3, rejected: 4 })
-  assert.deepEqual(groupStates({}), { active: 0, verified: 0, delivered: 0, rejected: 0 })
-  assert.deepEqual(groupStates({ weird_state: 9 }), { active: 0, verified: 0, delivered: 0, rejected: 0 }) // 未知态忽略
+  assert.deepEqual(groupStates(byState), { active: 5, verified: 6, delivered: 3, 'needs-scope': 0, rejected: 4 })
+  assert.deepEqual(groupStates({}), { active: 0, verified: 0, delivered: 0, 'needs-scope': 0, rejected: 0 })
+  assert.deepEqual(groupStates({ weird_state: 9 }), { active: 0, verified: 0, delivered: 0, 'needs-scope': 0, rejected: 0 }) // 未知态忽略
 })
 
 test('markZombie: running 且心跳 >30s 才判 zombie(§4.6)', () => {
@@ -54,6 +55,8 @@ test('buildSnapshot: 空图 → engagement null + 七态零填充 + 空列表', 
   const s = await buildSnapshot(makeFake())
   assert.equal(s.ok, true)
   assert.equal(s.engagement, null)
+  assert.deepEqual(s.engagements, [])
+  assert.equal(s.selected, '')
   assert.deepEqual(Object.keys(s.findings.byState).sort(), [...FINDING_STATES].sort())
   assert.equal(s.findings.total ?? s.counts.findings, 0)
   assert.deepEqual(s.findings.list, [])
@@ -63,9 +66,15 @@ test('buildSnapshot: 空图 → engagement null + 七态零填充 + 空列表', 
   assert.ok(Date.parse(s.now) > 0)
 })
 
-test('buildSnapshot: 有数据 → 聚合/截断/排序字段齐备', async () => {
-  const s = await buildSnapshot(makeFake({
-    engActive: [{ name: 'eng-x', target: 'http://t.local', scope: 't.local', status: 'active', created_at: '2026-08-31T10:00:00Z' }],
+test('buildSnapshot: 有数据 → 聚合/截断/排序字段齐备 + eng 过滤参数下发', async () => {
+  const seenParams = []
+  const base = makeFake({
+    engList: [
+      { name: 'eng-x', target: 'http://t.local', scope: 't.local', status: 'active', created_at: '2026-08-31T10:00:00Z', instances: 2, objective: 'src 挖掘' },
+      { name: 'eng-old', target: 'http://old.local', scope: 'old.local', status: 'frozen', created_at: '2026-08-30T10:00:00Z', instances: 2, objective: '' },
+    ],
+    findingsByEng: [{ eng: 'eng-x', state: 'candidate', n: 2 }, { eng: 'eng-x', state: 'verified', n: 3 }, { eng: 'eng-old', state: 'verified', n: 7 }],
+    workersByEng: [{ eng: 'eng-x', n: 2 }],
     agents: [{ worker_id: 'w1', ring: 'discovery', chain: 'auth', status: 'running', checkpoint: '已枚举 /api', todo: '继续测 /login', updated_at: new Date().toISOString() }],
     byState: [{ state: 'candidate', n: 2 }, { state: 'verified', n: 3 }, { state: 'bogus', n: 99 }],
     findings: [{ id: 'F1', title: 'SQL injection in /login', severity: 'critical', cvss: 9.14, state: 'verified', category: 'sqli', ts: '2026-08-31T11:00:00Z', verified_at: '2026-08-31T11:05:00Z', last_transition: '{"from":"candidate","to":"verified","actor":"verify-w1","reason":"重放成立"}' }], // 键名与 Q.findingsList 的 RETURN 别名对齐
@@ -78,14 +87,28 @@ test('buildSnapshot: 有数据 → 聚合/截断/排序字段齐备', async () =
     signalsOpen: [{ n: 7 }],
     hyps: [{ n: 2 }],
     experience: [{ n: 9 }],
-  }), { fleet: { default: { primary: '', backup: '' }, roles: { deep: { primary: 'm/a', backup: 'm/b' } } }, runEvents: { events: [{ ts: '2026-08-31T11:00:00Z', kind: 'dispatch', worker: 'w1', ring: 'discovery', role: 'discovery', model: 'm/a' }], usage: { 'm/a': 3, 'm/b': 1 }, quotaHits: ['m/b'] } })
+  })
+  const q = async (cypher, params) => { seenParams.push({ cypher, params }); return base(cypher, params) }
+  const s = await buildSnapshot(q, { eng: 'eng-x', fleet: { default: { primary: '', backup: '' }, roles: { deep: { primary: 'm/a', backup: 'm/b' } } }, runEvents: { events: [{ ts: '2026-08-31T11:00:00Z', kind: 'dispatch', worker: 'w1', ring: 'discovery', role: 'discovery', model: 'm/a' }], usage: { 'm/a': 3, 'm/b': 1 }, quotaHits: ['m/b'] } })
   assert.equal(s.engagement.name, 'eng-x')
+  assert.equal(s.selected, 'eng-x')
+  assert.equal(s.engagements.length, 2)
+  assert.equal(s.engagements[0].selected, true) // 选中项标记
+  assert.equal(s.engagements[0].progress.active, 2)
+  assert.equal(s.engagements[0].progress.verified, 3)
+  assert.equal(s.engagements[0].progress.workers, 2)
+  assert.equal(s.engagements[1].progress.verified, 7) // 旧项目战果独立可见(切换即回看)
+  assert.equal(s.engagements[1].selected, false)
+  // W5: 池子查询全部携带 $eng 过滤参数
+  const filtered = seenParams.filter((x) => x.cypher.includes('f.eng = $eng'))
+  assert.ok(filtered.length >= 2)
+  assert.ok(filtered.every((x) => x.params?.eng === 'eng-x'))
   assert.equal(s.counts.endpoints, 12)
   assert.equal(s.counts.signals_open, 7)
   assert.equal(s.counts.findings, 5) // 2 candidate + 3 verified; bogus 态不计
   assert.equal(s.findings.byState.candidate, 2)
   assert.equal(s.findings.byState.verified, 3)
-  assert.deepEqual(s.findings.macro, { active: 2, verified: 3, delivered: 0, rejected: 0 })
+  assert.deepEqual(s.findings.macro, { active: 2, verified: 3, delivered: 0, 'needs-scope': 0, rejected: 0 })
   assert.equal(s.findings.list[0].cvss, 9.1) // fnum 一位小数
   assert.equal(s.findings.list[0].state, 'verified')
   assert.ok(s.findings.list[0].last_transition.includes('"to":"verified"'))
@@ -105,10 +128,17 @@ test('buildSnapshot: 有数据 → 聚合/截断/排序字段齐备', async () =
   assert.equal(s.fleet.roles.deep.backup, 'm/b')
 })
 
-test('buildSnapshot: 无 active → 带出最近终态 engagement 供上下文(§7)', async () => {
-  const s = await buildSnapshot(makeFake({ engLast: [{ name: 'eng-done', target: 'http://t', scope: 't', status: 'completed', created_at: '2026-08-30T00:00:00Z' }] }))
-  assert.equal(s.engagement.name, 'eng-done')
-  assert.equal(s.engagement.status, 'completed')
+test('buildSnapshot: selected 文件缺名 → 落最新 active; 全无 active → 最近终态(W5 兜底)', async () => {
+  const s1 = await buildSnapshot(makeFake({ engList: [
+    { name: 'eng-b', target: 'http://b', scope: 'b', status: 'frozen', created_at: '2026-08-30T00:00:00Z' },
+    { name: 'eng-a', target: 'http://a', scope: 'a', status: 'active', created_at: '2026-08-31T00:00:00Z' },
+  ] }), { eng: '' })
+  assert.equal(s1.engagement.name, 'eng-a') // active 优先
+  const s2 = await buildSnapshot(makeFake({ engList: [
+    { name: 'eng-done', target: 'http://t', scope: 't', status: 'completed', created_at: '2026-08-30T00:00:00Z' },
+  ] }), { eng: '' })
+  assert.equal(s2.engagement.name, 'eng-done')
+  assert.equal(s2.engagement.status, 'completed')
 })
 
 test('buildSnapshot: 任一图读取失败 → 整体抛错(fail-closed, 不下半截快照)', async () => {
@@ -231,16 +261,16 @@ test('parseProviderModels: settings.yaml 缩进形态(providers@2)', () => {
   const y = [
     'llm-pi-ai:',
     '  providers:',
-    '    opencode-go:',
+    '    provider-a:',
     '      models:',
-    '        - id: hy3',
-    '        - id: mimo-v2.5',
-    '      apiKeyEnv: OPENCODE_GO_API_KEY',
+    '        - id: model-y-fast',
+    '        - id: model-y',
+    '      apiKeyEnv: PROVIDER_A_API_KEY',
     'agent-default-model:',
-    '  provider: minimax-cn',
-    '  model: MiniMax-M3',
+    '  provider: provider-b',
+    '  model: model-x',
   ].join('\n')
-  assert.deepEqual(parseProviderModels(y), [{ provider: 'opencode-go', models: ['hy3', 'mimo-v2.5'], apiKeyEnv: 'OPENCODE_GO_API_KEY' }])
+  assert.deepEqual(parseProviderModels(y), [{ provider: 'provider-a', models: ['model-y-fast', 'model-y'], apiKeyEnv: 'PROVIDER_A_API_KEY' }])
 })
 
 test('parseProviderModels: cordis.patch.yml 缩进形态(providers@4, 块外 - id 不误收)', () => {
@@ -248,13 +278,13 @@ test('parseProviderModels: cordis.patch.yml 缩进形态(providers@4, 块外 - i
     '- id: llm-pi-ai',
     '  config:',
     '    providers:',
-    '      minimax-cn:',
+    '      provider-a:',
     '        models:',
-    '          - id: MiniMax-M2.7',
-    '          - id: MiniMax-M3',
+    '          - id: model-x-fast',
+    '          - id: model-x',
     '- id: pentest-worker-env',
   ].join('\n')
-  assert.deepEqual(parseProviderModels(y), [{ provider: 'minimax-cn', models: ['MiniMax-M2.7', 'MiniMax-M3'] }])
+  assert.deepEqual(parseProviderModels(y), [{ provider: 'provider-a', models: ['model-x-fast', 'model-x'] }])
 })
 
 test('loadDshCatalog: 合并 settings.yaml 与多 profile patch 并去重', () => {
@@ -264,26 +294,26 @@ test('loadDshCatalog: 合并 settings.yaml 与多 profile patch 并去重', () =
   fs.writeFileSync(path.join(dir, 'settings.yaml'), [
     'llm-pi-ai:',
     '  providers:',
-    '    opencode-go:',
+    '    provider-b:',
     '      models:',
-    '        - id: hy3',
-    '        - id: mimo-v2.5',
+    '        - id: model-y-fast',
+    '        - id: model-y',
   ].join('\n'))
   fs.writeFileSync(path.join(dir, 'profiles', 'headless', 'cordis.patch.yml'), [
     'x:',
     '  providers:',
-    '    opencode-go:',
+    '    provider-b:',
     '      models:',
-    '        - id: mimo-v2.5',
-    '        - id: mimo-v2.5-pro',
-    '    minimax-cn:',
+    '        - id: model-y',
+    '        - id: model-y-large',
+    '    provider-a:',
     '      models:',
-    '        - id: MiniMax-M3',
+    '        - id: model-x',
   ].join('\n'))
   const cat = loadDshCatalog({ DSH_HOME: dir })
   assert.deepEqual(cat, [
-    { provider: 'minimax-cn', models: ['MiniMax-M3'], apiKeyEnv: '', hasKey: false },
-    { provider: 'opencode-go', models: ['hy3', 'mimo-v2.5', 'mimo-v2.5-pro'], apiKeyEnv: '', hasKey: false },
+    { provider: 'provider-a', models: ['model-x'], apiKeyEnv: '', hasKey: false },
+    { provider: 'provider-b', models: ['model-y', 'model-y-fast', 'model-y-large'], apiKeyEnv: '', hasKey: false },
   ])
 })
 
@@ -295,20 +325,37 @@ test('readFleet: catalog 模型并入 models 并集(去重)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-data-'))
   fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'config', 'model-policies.json'), JSON.stringify({
-    default: { primary: 'opencode-go/hy3', backup: '' },
-    roles: { discovery: { primary: 'opencode-go/hy3', backup: 'minimax-cn/MiniMax-M3' } },
+    default: { primary: 'provider-b/model-y-fast', backup: '' },
+    roles: { discovery: { primary: 'provider-b/model-y-fast', backup: 'provider-a/model-x' } },
   }))
   const dshDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cat2-'))
   fs.writeFileSync(path.join(dshDir, 'settings.yaml'), [
     'llm-pi-ai:',
     '  providers:',
-    '    opencode-go:',
+    '    provider-b:',
     '      models:',
-    '        - id: hy3',
-    '        - id: mimo-v2.5',
+    '        - id: model-y-fast',
+    '        - id: model-y',
   ].join('\n'))
   const fleet = readFleet({ D2D_DATA_DIR: dir, DSH_HOME: dshDir })
-  assert.ok(fleet.catalog.some((p) => p.provider === 'opencode-go'))
-  assert.ok(fleet.models.includes('opencode-go/mimo-v2.5'))
-  assert.ok(fleet.models.includes('opencode-go/hy3'))
+  assert.ok(fleet.catalog.some((p) => p.provider === 'provider-b'))
+  assert.ok(fleet.models.includes('provider-b/model-y'))
+  assert.ok(fleet.models.includes('provider-b/model-y-fast'))
+})
+
+// ---- W5: selected engagement(项目视图切换) ----
+
+test('selected-engagement: 原子写 + 读回 + 空名拒绝 + 缺文件返回空', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-sel-'))
+  const env = { D2D_DATA_DIR: dir }
+  assert.equal(readSelectedEngagement(env), '') // 缺文件
+  writeSelectedEngagement('eng-a', env)
+  assert.equal(readSelectedEngagement(env), 'eng-a')
+  writeSelectedEngagement('eng-b', env) // 切换覆盖
+  assert.equal(readSelectedEngagement(env), 'eng-b')
+  const onDisk = JSON.parse(fs.readFileSync(`${dir}/config/selected-engagement.json`, 'utf8'))
+  assert.equal(onDisk.name, 'eng-b')
+  assert.ok(onDisk.updated_at) // ISO 时间戳
+  assert.throws(() => writeSelectedEngagement('', env), /name required/)
+  fs.rmSync(dir, { recursive: true, force: true })
 })
