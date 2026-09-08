@@ -1,0 +1,17 @@
+# 0906 浏览器渲染服务 — CDP 驱动 headless chromium, 补齐 SPA 渲染面(E-7)
+# 挂了自动拉起; 单例锁(spa-render.lock)防多实例同端口冲突
+[Unit]
+Description=d2d spa-render (CDP headless render :8892)
+After=network.target d2d-graphd.service
+
+[Service]
+ExecStart=/usr/bin/node %h/d2d/scripts/gateway/spa-render.mjs
+WorkingDirectory=%h/d2d
+Restart=on-failure
+RestartSec=5
+Environment=P2P_SPA_PORT=8892
+Environment=D2D_DATA_DIR=%h/.d2d-data
+# chrome 解析: P2P_CHROME_PATH=/usr/bin/chromium 缺省自动探测(本机 /usr/bin/chromium 已装)
+
+[Install]
+WantedBy=default.target

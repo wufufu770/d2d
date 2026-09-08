@@ -12,6 +12,12 @@ RestartSec=3
 Environment=P2P_GRAPHD=http://127.0.0.1:8766
 Environment=P2P_PROXY_URL=http://127.0.0.1:8888
 Environment=P2P_OAST_HOST=127.0.0.1:8890
+Environment=P2P_SPA_URL=http://127.0.0.1:8892
+# 0906 实证: systemd user 默认 PATH 缺 ~/.npm-global/bin → adapter spawn('dsh') 127 全灭
+Environment=PATH=%h/.npm-global/bin:/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
+# 🟢 日常档成本参数(0905 调优): step 硬上限 45 / 深环 600s; 冲刺档可临时改 60
+Environment=P2P_MAX_STEPS=45
+Environment=P2P_DEEP_TIMEOUT_MS=600000
 
 [Install]
 WantedBy=default.target
