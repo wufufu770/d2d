@@ -36,6 +36,13 @@ else
   ok "dsh $(dsh --version) 已安装"
 fi
 
+step "dsh 沙箱字段补丁(0908 实证: 防模型误用 sandbox_permissions 致 worker bash 全灭)"
+if node "$REPO_DIR/scripts/ops/patch-dsh-tool-fs.mjs"; then
+  ok "补丁就绪(dsh 升级后重跑: node scripts/ops/patch-dsh-tool-fs.mjs)"
+else
+  warn "补丁未生效 — 不影响安装, 首次派发前重跑上述命令即可"
+fi
+
 step "安装 kuzu(图数据库, graphd 依赖)"
 if python3 -c "import kuzu" 2>/dev/null; then
   ok "kuzu 已装: $(python3 -c 'import kuzu, importlib.metadata as m; print(m.version("kuzu"))' 2>/dev/null || echo '?')"
@@ -126,8 +133,7 @@ cat > "$DSH_HOME/profiles/web/package.json" <<EOF
 }
 EOF
 
-# web profile 补丁: LLM 路由 — 主聊天也能用 minimax-cn/opencode-go 模型
-# (否则主会话默认 deepseek-official/deepseek-v4-flash, 未配 DEEPSEEK_API_KEY 即 MISSING_CREDENTIAL)
+# web profile 补丁: LLM 路由 — 主聊天接入你在下方 provider 模板里配置的厂商
 # #2: patch 层对 settings.yaml 的 llm-pi-ai 段是整体覆盖语义 — 用户在 UI Models 页配好的
 #     provider 会被静默冲掉(实证: 模型选择器瘫痪/发送框禁用)。已配置则不生成模板, 保留用户配置。
 _GEN_LLM_BLOCK=1
@@ -148,45 +154,43 @@ if [ "$_GEN_LLM_BLOCK" = "1" ]; then
   name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
     providers:
-      minimax-cn:
-        displayName: MiniMax (via pi-ai)
-        apiKeyEnv: MINIMAX_API_KEY
+      # ↓ 占位示例: 换成你的厂商(改 displayName/baseURL/apiKeyEnv/models 四处),
+      #   provider 键名须与 model-policies.json 的 "provider/" 前缀一致
+      provider-a:
+        displayName: Provider A (via pi-ai)
+        apiKeyEnv: PROVIDER_A_API_KEY
         api: openai-completions
-        baseURL: https://api.minimax.chat/v1
+        baseURL: https://api.provider-a.example/v1
         compat:
           thinkingFormat: deepseek
           supportsDeveloperRole: false
           maxTokensField: max_tokens
         models:
-          - id: MiniMax-M2.7
-            name: MiniMax M2.7
+          - id: model-x-fast
+            name: Model X Fast
             contextWindow: 65536
             maxTokens: 8192
-          - id: MiniMax-M2.7-highspeed
-            name: MiniMax M2.7 highspeed
-            contextWindow: 65536
-            maxTokens: 8192
-          - id: MiniMax-M3
-            name: MiniMax M3
+          - id: model-x
+            name: Model X
             contextWindow: 131072
             maxTokens: 16384
-      opencode-go:
-        displayName: OpenCode Go (via pi-ai)
-        apiKeyEnv: OPENCODE_API_KEY
+      provider-b:
+        displayName: Provider B (via pi-ai)
+        apiKeyEnv: PROVIDER_B_API_KEY
         api: openai-completions
-        baseURL: https://opencode.ai/zen/go/v1
+        baseURL: https://api.provider-b.example/v1
         compat:
           thinkingFormat: deepseek
           supportsDeveloperRole: false
           maxTokensField: max_tokens
         models:
-          - id: mimo-v2.5
-            name: MiMo v2.5
+          - id: model-y
+            name: Model Y
             contextWindow: 262144
             maxTokens: 32768
-          - id: mimo-v2.5-pro
-            name: MiMo v2.5 Pro
-            contextWindow: 262144
+          - id: model-y-large
+            name: Model Y Large
+            contextWindow: 1000000
             maxTokens: 32768
 EOF
 fi
@@ -250,11 +254,22 @@ else
   warn "仓库缺 home/.dsh/skills/pentest(非发布树?) — 跳过"
 fi
 
+# ---------- 4.5 字典资产(资产面 P1/M3): 完整性校验 + resolver 池预热(皆非阻塞) ----------
+step "字典资产校验(assets/wordlists)"
+if node "$REPO_DIR/scripts/recon/wordlists.mjs" verify; then
+  ok "字典 sha256 锚校验通过"
+else
+  warn "字典缺失/哈希不符 — bash $REPO_DIR/scripts/recon/fetch-wordlists.mjs 重下(网络可达时)"
+fi
+node "$REPO_DIR/scripts/recon/wordlists.mjs" refresh-resolvers \
+  && ok "trickest resolver 池已缓存(24h TTL, 失败自动用可信集)" \
+  || warn "resolver 池拉取失败(无网?) — DNS 爆破用仓库可信集(28 条)"
+
 # ---------- 5. 默认模型 ----------
 step "设置主聊天默认模型"
-# dsh 出厂默认 deepseek-official/deepseek-v4-flash — 只配 MINIMAX/OPENCODE key 的
-# 机器上主会话直接 MISSING_CREDENTIAL。worker 不受影响(per-task 模型注入),
-# 这里只把「主聊天」指到已配置路由的 minimax 上。
+# dsh 出厂自带一个默认 provider — 只配第三方 provider key 的
+# 机器上主会话可能 MISSING_CREDENTIAL。worker 不受影响(per-task 模型注入),
+# 这里只把「主聊天」指到已配置路由的 provider 上。
 # #2: 用户已有自己的 llm-pi-ai provider 时不改默认(避免指到不存在的 provider)。
 SETTINGS="$DSH_HOME/settings.yaml"
 if [ "$_GEN_LLM_BLOCK" = "0" ]; then
@@ -262,15 +277,15 @@ if [ "$_GEN_LLM_BLOCK" = "0" ]; then
 elif [ ! -f "$SETTINGS" ]; then
   cat > "$SETTINGS" <<'EOF'
 agent-default-model:
-  provider: minimax-cn
-  model: MiniMax-M2.7
+  provider: provider-a
+  model: model-x
 EOF
-  ok "主聊天默认模型 → minimax-cn/MiniMax-M2.7(只需 MINIMAX_API_KEY)"
+  ok "主聊天默认模型 → provider-a/model-x(占位 — 换成你在 cordis.patch.yml 接入的 provider/model)"
 elif grep -q '^agent-default-model:' "$SETTINGS"; then
-  warn "settings.yaml 已有 agent-default-model — 保留你的选择(若为 deepseek-official 且未配 DEEPSEEK_API_KEY, 主聊天会 MISSING_CREDENTIAL, 改法见 README「默认模型」)"
+  warn "settings.yaml 已有 agent-default-model — 保留你的选择(若指向未配置 key 的 provider, 主聊天会 MISSING_CREDENTIAL, 改法见 README「默认模型」)"
 else
-  printf '\nagent-default-model:\n  provider: minimax-cn\n  model: MiniMax-M2.7\n' >> "$SETTINGS"
-  ok "已追加 agent-default-model → minimax-cn/MiniMax-M2.7"
+  printf '\nagent-default-model:\n  provider: provider-a\n  model: model-x\n' >> "$SETTINGS"
+  ok "已追加 agent-default-model → provider-a/model-x"
 fi
 
 # ---------- 6. 启动脚本 ----------
@@ -287,8 +302,8 @@ export P2P_HOST_TOKEN="\${P2P_HOST_TOKEN:-\$(cat $HOME/.config/d2d/host-token)}"
 export P2P_GRAPHD="http://127.0.0.1:$GRAPHD_PORT"
 
 # ↓↓↓ 按需注入你的模型 API key(与 cordis.patch.yml 的 apiKeyEnv 对应)
-# export MINIMAX_API_KEY=sk-...
-# export OPENCODE_API_KEY=sk-...
+# export PROVIDER_A_API_KEY=sk-...
+# export PROVIDER_B_API_KEY=sk-...
 
 # #14: 优雅停止 — graphd 持 kuzu WAL, kill -9 会丢未 checkpoint 的提交(实证全图数据丢失)。
 #      先 SIGTERM 等退出(≤5s), 仍存活才 SIGKILL 兜底。
@@ -303,13 +318,16 @@ stop_graceful() {
 stop_graceful "graphd/app.py"
 stop_graceful "gateway/egress-gateway.mjs"
 stop_graceful "gateway/oast.mjs"
+stop_graceful "browser/cdp-proxy.mjs"
 stop_graceful "dsh --profile web"
 sleep 1
 
-# graphd 以自身目录为 cwd 启动 — backup-graph.sh 按 /proc/<pid>/cwd 匹配实例做 SIGSTOP 停写快照
-( cd "$REPO_DIR/graphd" && nohup python3 app.py > "$D2D_DATA_DIR/graphd.log" 2>&1 & )
-echo "graphd → http://127.0.0.1:$GRAPHD_PORT"
-sleep 2
+# M8 守护自愈: preflight 三重校验(pidfile + /proc starttime + 版本握手) — 复用同版实例,
+# stale 旧实例优雅接管(只杀自己人), 端口被外来者占用自动换端口; 输出 GRAPHD_URL=<url>
+_GRAPHD_URL="\$(node "$REPO_DIR/scripts/ops/graphd-preflight.mjs" --repo "$REPO_DIR" --port "$GRAPHD_PORT" || true)"
+export P2P_GRAPHD="\${_GRAPHD_URL##GRAPHD_URL=}"
+[ -n "\$P2P_GRAPHD" ] || export P2P_GRAPHD="http://127.0.0.1:$GRAPHD_PORT"
+echo "graphd → \$P2P_GRAPHD"
 
 # V-08 出网治理网关: 连接层 scope 强制(每 30s 动态拉 Engagement.scope ∪ 静态白名单,
 # 子域通配/CIDR) + per-host 令牌桶限速 + 全量请求审计(→ DATA_DIR/evidence/proxy)。
@@ -327,12 +345,52 @@ export P2P_OAST_HOST="127.0.0.1:$OAST_PORT"
 # nohup node "$REPO_DIR/scripts/gateway/spa-render.mjs" > "$D2D_DATA_DIR/spa-render.log" 2>&1 &
 # export P2P_SPA_URL="http://127.0.0.1:8891"
 
+# M5 浏览器 CDP 执行面(登录态/JS 渲染目标; 需本机 chrome; D2D_CDP=1 启用):
+# worker 经 curl 调 127.0.0.1:8893(scope 白名单 + Fetch 请求级拦截, 见 SKILL.md 第 11 节)
+if [ "\${D2D_CDP:-0}" = "1" ]; then
+  P2P_CDP_PROXY_PORT=8893 nohup node "$REPO_DIR/scripts/browser/cdp-proxy.mjs" > "$D2D_DATA_DIR/cdp-proxy.log" 2>&1 &
+  echo "cdp-proxy → http://127.0.0.1:8893 (pid \$!)"
+fi
+
 nohup dsh --profile web --port $WEB_PORT --no-open --host 127.0.0.1 > "$D2D_DATA_DIR/dsh-web.log" 2>&1 &
 echo "dsh web → http://127.0.0.1:$WEB_PORT (pid \$!)"
 echo "打开浏览器 → 右侧边栏 'd2d' / 'd2d Findings' 两个 tab 即面板"
 EOF
 chmod +x "$REPO_DIR/ops/start-all.sh"
 ok "ops/start-all.sh(记得填 API key)"
+
+# ---------- 6.5 systemd 用户单元(推荐: 开机自启/与会话解耦/审计与代理随单元环境常驻) ----------
+# 0906 实证: 从终端/SSH/ZCode 直启 dsh web 也能跑, 但 (a)随会话死亡 (b)无 P2P_* 环境 →
+# worker 旁路 egress 强制与审计。adapter 已内置代理默认值兜底, 但调度常驻/图备份仍需单元。
+step "安装 systemd 用户单元(检测到 systemd 用户会话)"
+if command -v systemctl >/dev/null 2>&1 && systemctl --user show >/dev/null 2>&1; then
+  mkdir -p "$HOME/.config/systemd/user"
+  if [ -d "$REPO_DIR/ops/systemd" ]; then
+    _DSH_BIN="$(command -v dsh || echo '%h/.npm-global/bin/dsh')"
+    for _u in "$REPO_DIR"/ops/systemd/*.service; do
+      _name="$(basename "$_u")"
+      sed -e "s|%h/d2d/|$REPO_DIR/|g" -e "s|%h/.npm-global/bin/dsh|$_DSH_BIN|g" \
+        "$_u" > "$HOME/.config/systemd/user/$_name"
+    done
+    systemctl --user daemon-reload
+    # 已在跑的同名单元(如 start-all.sh 的 nohup 进程)不受影响 — 端口冲突时单元起不来,
+    # install 不强杀已有进程; 提示后由操作者选择。
+    systemctl --user enable d2d-graphd.service d2d-egress.service d2d-oast.service d2d-dsh-web.service >/dev/null 2>&1 \
+      && ok "单元已安装并设为自启(d2d-graphd/egress/oast/dsh-web; spa 默认不启)"
+    if systemctl --user is-active -q d2d-graphd.service d2d-egress.service d2d-oast.service d2d-dsh-web.service 2>/dev/null; then
+      ok "服务已在运行(保留现状)"
+    else
+      systemctl --user start d2d-graphd.service d2d-egress.service d2d-oast.service d2d-dsh-web.service 2>/dev/null \
+        && ok "服务已启动(graphd/egress/oast/dsh-web)" \
+        || warn "部分单元启动失败 — 多为端口被 nohup 旧进程占用: 先 bash $REPO_DIR/ops/start-all.sh 里的 stop 段清场后 systemctl --user start d2d-*"
+    fi
+    warn "改了 d2d 代码后必须: systemctl --user restart d2d-dsh-web.service(调度器随进程加载)"
+  else
+    warn "仓库缺 ops/systemd/ 模板 — 跳过(可用 ops/start-all.sh 前台启动)"
+  fi
+else
+  warn "无 systemd 用户会话(容器/无桌面) — 用 ops/start-all.sh 前台启动; worker 代理仍由 adapter 默认值兜底"
+fi
 
 # ---------- 7. 完整性 ----------
 step "完整性校验"
@@ -352,4 +410,5 @@ cat <<EOF
   5. 聊天输入: /pentest http://<授权目标> <scope> [instances]
 
 详细文档: $REPO_DIR/README.md
+服务管理: systemctl --user status/restart d2d-dsh-web  # 面板常驻(推荐); ops/start-all.sh 为前台备选
 EOF

@@ -1,0 +1,14 @@
+# P0-4 守护单元 — egress-gateway(:8888, worker 出口代理)
+[Unit]
+Description=d2d egress gateway (:8888)
+After=network.target d2d-graphd.service
+
+[Service]
+ExecStart=/usr/bin/node %h/d2d/scripts/gateway/egress-gateway.mjs
+WorkingDirectory=%h/d2d
+Restart=on-failure
+RestartSec=3
+# 0905 实证: ECONNRESET 未捕获即退出且无人拉起 — Restart=on-failure 是本单元存在的意义
+
+[Install]
+WantedBy=default.target
