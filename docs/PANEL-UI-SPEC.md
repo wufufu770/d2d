@@ -163,3 +163,136 @@
 - FIRST CVSS v4.0 规范：https://www.first.org/cvss/v4-0/cvss-v40-specification.pdf
 - DefectDojo finding 状态定义：https://docs.defectdojo.com/triage_findings/findings_workflows/finding_status_definitions/
 - dsh-web-ui（会话复盘范式）：https://github.com/zhu1090093659/dsh-web-ui
+
+## 11. 全页大屏设计稿（1.6-D，只写 spec 未实现）
+
+> 一句话：侧边栏保留现状；新增「全页模式」入口进入整页工作台，三个 tab（engagement 总览大屏 / finding 分板 / 覆盖矩阵），宿主半同源路由供数，安全配方与 §5 同源栅栏同构并补 CSRF token。
+> 状态：**设计稿，未实施**。本文给出可直接开工的布局/契约/安全/拆分，实现时逐批次对验收清单交差。
+
+### 11.1 布局
+
+**入口**：现有 `d2d:ops` tab 顶部（ModuleToggles 行尾）加一枚「⛶ 全页」按钮；better-sidebar v0.16.0 自由窗口能力可用时 `openTab({mode:'window'})` 拉独立窗口，不可用时 `window.open('/d2d-full/', '_blank')` 降级（同源）。现有侧边栏两 tab 完全保留、零改动。
+
+**Tab A — engagement 总览大屏**（`/d2d-full/`，默认 tab）：
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ d2d 全页大屏   [总览] [Findings 板] [覆盖矩阵]        eng: eng-x ▾   ⛶ 收起 │
+├────────────────────────────────────────────────────────────────────────────┤
+│ ┌─项目卡─────────┐ ┌─项目卡─────────┐ ┌─项目卡─────────┐ ┌─项目卡────────┐  │
+│ │● eng-x 运行中   │ │○ eng-y 排队    │ │○ eng-z 已收工  │ │ + 新建 src 项目│  │
+│ │ crit2 high5 med9│ │ —             │ │ high1 low4    │ │               │  │
+│ │ 活跃12 已验5 交2│ │ —             │ │ 活跃0  已验1 交0│ │               │  │
+│ │ 性价比 6.0/10万 │ │ —             │ │ 1.2/10万      │ │               │  │
+│ └────────────────┘ └────────────────┘ └───────────────┘ └───────────────┘  │
+│ ┌─选中项目七态漏斗(大)───────────┐ ┌─覆盖 M/N ──────┐ ┌─性价比·总消耗───────┐  │
+│ │ candidate ████████ 12        │ │ 34/120 端点     │ │ 6.0 findings/10万  │  │
+│ │ triaged   ███ 3              │ │ 28%            │ │ 2.0 triaged/10万   │  │
+│ │ verified  ██ 5 …             │ │ 缺口: checkout  │ │ 输入 12.3万 tok    │  │
+│ └──────────────────────────────┘ └────────────────┘ └────────────────────┘  │
+│ ┌─workers 泳道(discovery│deep│creative│verify)──┐ ┌─里程碑时间线────────────┐  │
+│ └──────────────────────────────────────────────┘ └────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+项目卡点击 = 切换选中 engagement（复用 `POST /d2d/api/eng {op:'select'}`）；卡片墙即多项目并行一屏总览。
+
+**Tab B — finding 分板页**（`/d2d-full/board`）：
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ [eng-x: 24] [eng-y: 0] [eng-z: 5]        ← 按 engagement 分组的板头(计数)     │
+│ ┌─统计卡(点击筛选)────────────────────────────────────────────────────────┐  │
+│ │ critical 2 │ high 5 │ medium 9 │ low 6 │ info 2  ‖ candidate12 triage3…│  │
+│ └───────────────────────────────────────────────────────────────────────┘  │
+│ ┌─漏洞板(当前筛选: eng-x × critical)──────────────────────────────────────┐  │
+│ │ ┌──────────────────────────────────────────────────────────────────┐   │  │
+│ │ │ █critical SQLi in /login   eng-x · sqli · candidate   [验证] [▸] │   │  │
+│ │ │ █critical 越权 /admin/pay  eng-x · authz · triaged    [验证] [▸] │   │  │
+│ │ └──────────────────────────────────────────────────────────────────┘   │  │
+│ │   [▸] 展开 = 详情抽屉: repro / verified_log / 转移审计 / 人工裁决按钮     │  │
+│ └───────────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+统计卡与板头都是筛选器（可叠加：eng × severity × state）；「验证」= 单条验证按钮，对单条 finding 触发验证环（L0/L1 语义、授权硬门与 validator 完全同轨，见 11.2 契约），按钮态：待验→验证中→verified/reached/quarantined。
+
+**Tab C — 覆盖矩阵页**（`/d2d-full/matrix`）：
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ eng: eng-x ▾   图例: ■已测有发现(金) □已测未命中 ░不适用 ▨预算停   [导出 CSV]   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 主类\子项        │ 未授权访问 │ 弱口令  │ 会话过期 │ 功能级越权 │ …          │
+│ ────────────────┼───────────┼────────┼─────────┼──────────┼──────────   │
+│ 1 认证          │    ■      │   □    │   ░     │    —     │             │
+│ 2 授权与越权     │    ■      │   —    │   ▨     │    □     │             │
+│ 3 注入          │    □      │   ▨    │   ░     │    ■     │             │
+│ …(共 13 主类)    │           │        │         │          │             │
+└──────────────────────────────────────────────────────────────────────────────┘
+  双击格子 = 派单: 把「eng-x × 认证 × 弱口令」任务块写入当前 engagement(确认弹窗列出将下发的 brief 摘要)
+```
+
+**四态点亮**（格子数据源 = finding 按 category 归格 ∪ 新 coverage 表，coverage 表状态优先）：
+
+| 态 | 色 | 判定 |
+|---|---|---|
+| 已测有发现 | 金（`#d8a021` 系，唯一 title 级高亮） | coverage.state='tested-hit' 或该格归并的 finding 数 > 0 |
+| 已测未命中 | 中性（边框点亮） | coverage.state='tested-miss'（测过、零 finding、有证据行） |
+| 不适用 | 低透明度灰 | coverage.state='na'（如无登录面的会话子项） |
+| 预算停 | 斜纹/半填充 | coverage.state='budget-stop'（测到一半被 75min/步数预算截断，恢复入口） |
+| （未测） | 空白 | 无 coverage 行 —— 矩阵默认底色，也是派单的主要目标 |
+
+**13 主类 × 子项分类学**（v1 定版，实现时落 `domain/categories.mjs` 单一来源；finding.category 归格用首段匹配，未匹配进「未归类」溢出行，不丢数据）：
+`1 认证(auth)`、`2 授权与越权(authz)`、`3 注入(injection)`、`4 XSS(xss)`、`5 SSRF/网络面(ssrf)`、`6 文件操作(file)`、`7 业务逻辑(logic)`、`8 竞态(race)`、`9 敏感信息泄露(info-leak)`、`10 配置与传输(config)`、`11 组件与已知漏洞(cve)`、`12 API 与接口(api)`、`13 信息与资产面(recon)`。每主类 3-8 个子项（如 authz → 水平越权/垂直越权/IDOR/功能级缺失），首批清单实现批次 4 时与 briefs 词表对齐后冻结。
+
+### 11.2 数据契约（每 tab 的 graphd 查询 / 快照字段清单）
+
+**Tab A 总览大屏**（大部分复用现有 snapshot，增量 2 项）：
+
+| 字段 | 来源 |
+|---|---|
+| `engagements[]`（name/status/progress/workers） | 已有：`Q.engList` / `Q.findingsByEng` / `Q.workersByEng` |
+| `engagements[].sev`（每项目 critical/high/medium/low/info 计数） | **新增**：`MATCH (f:Finding) RETURN f.eng AS eng, f.severity AS sev, count(f) AS n` |
+| `engagements[].cost`（每项目性价比） | **新增**：host 对每个 engagement 调 `readModelUsage({engName})` + `costEfficiency`（选中项目已有，扩展为全量；≤4 项目，成本可控） |
+| coverage M/N、gaps、milestones、agents | 已有：`Q.coverage` / `Q.gaps` / `Q.handoffs` / `Q.agents` |
+
+**Tab B finding 分板**：
+
+| 端点/字段 | 说明 |
+|---|---|
+| `GET /d2d-board/findings?eng=&severity=&state=&cursor=` | **新增**：全量分页列表（现有 snapshot findings list 截 200 条，分板页要全量）。graphd：`MATCH (f:Finding) WHERE f.eng=$eng [AND f.severity=$sev][AND f.gate_status=$state] RETURN f.id,f.title,f.severity,f.cvss,f.gate_status,f.category,f.ts,f.verified_at,f.last_transition ORDER BY f.ts DESC LIMIT 100`（wire 不带 repro/evidence 全文，§5 渲染安全契约不变） |
+| `GET /d2d-board/stats` | 计数聚合：`MATCH (f:Finding) WHERE f.eng=$eng RETURN f.severity AS sev, f.gate_status AS state, count(f) AS n`（一次查询前端两维展开） |
+| `POST /d2d-board/verify {id}` | **新增**：单条验证。host 侧读该 finding（`MATCH (f:Finding {id:$id})`）→ 调 validator `validateFinding(q, f, {level, eng})`（D2D_VERIFY_LEVEL/授权表/env 与验证环同源），返回 `{gate, verified_log}`；L1 未授权仍走 quarantined 硬门，面板按钮只展示不绕过 |
+| `POST /d2d-board/transition` | 已有 `POST /d2d/api/transition` 语义复用（actor=panel-board） |
+
+**Tab C 覆盖矩阵**：
+
+| 端点/字段 | 说明 |
+|---|---|
+| coverage 表（**新增节点** `CoverageCell`） | 属性：`{eng, main, sub, state('tested-hit'|'tested-miss'|'na'|'budget-stop'), votes, evidence_digest, updated_at, by}`；写门走 graphd `/write/coverage-cell`（eng 必须匹配 active engagement，枚举外 state 400，与七态门同风格）。归格兜底：无 coverage 行时由 finding `category` 首段归格推 'tested-hit' |
+| `GET /d2d-matrix/matrix?eng=` | **新增**：`MATCH (c:CoverageCell) WHERE c.eng=$eng RETURN c.main,c.sub,c.state,c.votes,c.updated_at` ∪ `MATCH (f:Finding) WHERE f.eng=$eng RETURN f.category AS cat, count(f) AS n`（两查询 host 合并成 `{main:[{sub, state, findings}]}` 树一次下发） |
+| `GET /d2d-matrix/taxonomy` | 13 主类 × 子项清单（`domain/categories.mjs` 导出，前端不内嵌分类学） |
+| `POST /d2d-matrix/dispatch {main, sub}` | **新增**：双击派单。host 校验格子与分类学合法 → 对当前选中 engagement 写任务块（`/write/signal` `type='matrix-dispatch'`，evidence 带 `main/sub/brief_digest`），下一轮 discovery/deep 取信号即消费；当前无 active engagement → 409 |
+
+轮询沿用 2s + visible 门控 + 0.5s 微缓存/单飞（§5）；矩阵页可降到 10s（格子变化频率低，graphd `_lock` 优先给调度器）。
+
+### 11.3 安全配方（与既有面板 API 同构 + CSRF 补强）
+
+- **路由前缀**：`/d2d-full/`（页面壳 HTML）、`/d2d-board/`、`/d2d-matrix/` 三个新前缀，全部经 `ctx.webServer.register({kind:'prefix'})` 挂载（与 `/d2d/api` 同一道）；前缀枚举外一律 404。
+- **loopback 栅栏**：复用 `isTrustedApiRequest`（Host 必须 loopback 或 webRuntime 受信清单；`sec-fetch-site: cross-site` 拒绝；Origin 存在时必须与 Host 同源）——全页三个前缀逐请求过同一函数，无例外。
+- **CSRF token**（新增，写端点专用）：宿主内存持随机 32 字节 token（进程启动生成），页面壳响应以 `Set-Cookie: d2d_csrf=<token>; SameSite=Strict; Path=/d2d-; HttpOnly=false` 下发（同源 JS 需读它做 double-submit）；所有 POST（verify/transition/dispatch/eng select）必须带 `X-D2D-CSRF` 头且与 cookie 值相等，不等 → 403。GET 只读端点不要求（Origin 栅栏已覆盖读侧）。token 不入图、不入日志、进程重启轮换。
+- **渲染安全契约不变**（§5）：全部文本走 React 文本节点，禁 `dangerouslySetInnerHTML`；wire 不带 evidence 全文与 repro 原文（分板页 repro 只在详情抽屉按需单条拉取：`GET /d2d-board/finding?id=`，输出仍经脱敏）。
+- **写端点通用**：body ≤ 8KB、method 白名单、`Cache-Control: no-store`、错误信息 160 字符截断（与现 host 半一致）；浏览器永不碰 host-token/worker-token。
+
+### 11.4 实施拆分（4 个可独立提交的批次）
+
+| 批次 | 内容 | 依赖 | 验收 |
+|---|---|---|---|
+| **批次1 数据面/快照字段** | ① `engagements[].sev` + `engagements[].cost` 进 snapshot（host 侧聚合）；② `CoverageCell` schema + graphd `/write/coverage-cell` 写门 + `tests/test_graphd_gates.py` 用例；③ `domain/categories.mjs` 13 主类分类学单一来源 + 单测；④ CSRF token 基建（host 半内存 token + double-submit 校验函数 + 单测） | 无（均可独立合入，先于任何 UI） | graphd pytest 增量全绿；snapshot 单测含 sev/cost 数组；CSRF 校验单测 |
+| **批次2 总览大屏** | `/d2d-full/` 页面壳 + Tab A（项目卡墙/大漏斗/覆盖 M/N/性价比/泳道/里程碑），模块开关与侧栏 tab 状态互通 | 批次1（sev/cost 字段） | 320/720/1280 三宽无横向溢出；四态（加载/503/空/归档）截图；轮询 visible 门控生效 |
+| **批次3 finding 分板** | `/d2d-board/` 分页列表 + 统计卡筛选 + 详情抽屉（按需拉 repro）+ 单条验证按钮 + 人工裁决 | 批次1（CSRF）；可与批次2 并行开发（同壳不同路由） | 筛选可叠加且 URL 可分享（query 持久化）；verify 按钮对未授权目标展示 quarantined 话术；审计 actor=panel-board 落图 |
+| **批次4 覆盖矩阵** | `/d2d-matrix/` 13×子项矩阵 + 四态点亮 + 双击派单 + CSV 导出 | 批次1（CoverageCell + taxonomy）；建议在批次2 后（复用壳与 eng 选择器） | 空库出全空矩阵；finding 归格兜底命中；双击派单后 Signal_ 可查且 discovery 消费；矩阵查询 10s 轮询不挤占 `_lock` |
+
+每批次独立可回滚：批次1 只加字段/表（向后兼容，旧快照消费方无感）；批次 2-4 各自独立前缀路由，任一未合入不影响其余与现有侧栏。
+
