@@ -1,0 +1,23 @@
+{
+  "_comment": "d2d caps 热调示例 — 复制到 $D2D_DATA_DIR/config/caps.json 生效(面板容量卡片同写此文件)。caps/deepParallel/maxAgents/backlogWatermark = 环容量(文件 > P2P_* env > 内置默认); tools 节 = 扫描器限速纪律覆盖(文件 > P2P_TOOL_POLICY env > domain/tool-policy.mjs 内置默认), 每工具浅覆盖, 正则/数值非法项整条丢弃。",
+  "caps": {
+    "recon": 2,
+    "deep-dive": 2,
+    "verify": 3
+  },
+  "deepParallel": 2,
+  "maxAgents": 4,
+  "backlogWatermark": 30,
+  "tools": {
+    "nmap": {
+      "fullPort": ["(?:^|\\s)-p-(?=\\s|$)", "(?:^|\\s)-p\\s*(?:1-65535|0-65535)(?=\\s|$)"],
+      "allowed": ["--max-rate[=\\s]*\\d", "(?:^|\\s)-T\\s?[0-3]\\b"],
+      "reason": "nmap 全端口扫描必须带限速参数(--max-rate 或 -T0..3)",
+      "fix": "补 --max-rate 300 或 -T2"
+    },
+    "masscan": { "flag": "--rate", "max": 1000, "fix": "改 --rate ≤1000(如 --rate 1000)" },
+    "ffuf": { "required": ["(?:^|\\s)-rate(?:=|\\s|$)"], "reason": "ffuf 缺必要限速 flag -rate", "fix": "补 -rate 50(建议默认 50)" },
+    "sqlmap": { "flag": "--threads", "max": 1, "fix": "改 --threads 1(默认并发=1)" },
+    "hydra": { "flag": "-t", "max": 16, "fix": "改 -t ≤16(如 -t 16)" }
+  }
+}
