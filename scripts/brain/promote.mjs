@@ -13,6 +13,8 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+// 1.6-A 记忆语义: 同题重写续期 + 双时长过期清扫(检测30天物理删/指纹180天退出召回)
+import { loadStore, saveStore, renewCards, sweepExpired } from '../../plugin/pentest-dsh/domain/memory-store.mjs'
 
 const REPO = process.env.D2D ?? `${os.homedir()}/d2d`
 const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
@@ -140,6 +142,20 @@ if (cmd === '--to-current') {
   try { fs.rmSync(`${BRAIN}/shadow`) } catch {}
   const manifest = JSON.parse(fs.readFileSync(`${shadowLink}/manifest.json`, 'utf8'))
   fs.writeFileSync(`${shadowLink}/manifest.json`, JSON.stringify({ ...manifest, status: 'current', promoted_at: new Date().toISOString(), field_evidence: g3.pass }, null, 2))
+  // 1.6-A: 双时长过期清扫 — 检测类超 30 天物理删(指纹类超 180 天保留, 检索带 [已过期] 标记)
+  try {
+    const memPath = `${BRAIN}/memory-usage.json`
+    const store = loadStore(memPath)
+    const raw = JSON.parse(fs.readFileSync(`${shadowLink}/techniques.json`, 'utf8'))
+    const pool = Array.isArray(raw) ? raw : (raw.cards ?? [])
+    const { keep, deleted } = sweepExpired(pool, store)
+    if (deleted.length) {
+      fs.writeFileSync(`${shadowLink}/techniques.json`, JSON.stringify({ cards: keep }, null, 1))
+      console.log(`🧹 过期清扫: 检测类超 30 天物理删 ${deleted.length} 张(${deleted.slice(0, 5).join(', ')}${deleted.length > 5 ? ' …' : ''})`)
+    }
+    renewCards(store, keep)
+    saveStore(memPath, store)
+  } catch (e) { console.error('memory sweep:', e?.message) }
   console.log(`✅ ${vdir} 已晋级 current${g3.pass.length ? `; 实战证据: ${g3.pass.join(', ')}` : ''}`)
   prune()
   process.exit(0)
@@ -211,6 +227,14 @@ if (cmd === '--to-shadow') {
   try { fs.rmSync(`${BRAIN}/shadow`) } catch {}
   fs.symlinkSync(`${VERSIONS}/${next}`, `${BRAIN}/shadow`)
   fs.rmSync(STAGED, { recursive: true, force: true })
+  // 1.6-A: 同题重写即续期 — 新版卡(含同题旧卡)刷新账本 renewed_at, 过期时钟重置
+  try {
+    const memPath = `${BRAIN}/memory-usage.json`
+    const store = loadStore(memPath)
+    const renewed = renewCards(store, finalCards)
+    saveStore(memPath, store)
+    console.log(`🧠 记忆账本续期 ${renewed.length} 张`)
+  } catch (e) { console.error('memory renew:', e?.message) }
   console.log(`✅ ${next} 已进入影子伴随(shadow); 现役 current 未动。实战命中后: promote.mjs --to-current`)
   prune()
   process.exit(0)
