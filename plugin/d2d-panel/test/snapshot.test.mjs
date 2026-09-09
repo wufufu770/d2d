@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement } from '../lib/host/snapshot.mjs'
+import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement } from '../lib/host/snapshot.mjs'
 
 // fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应); params 透传给断言用断言器
 function makeFake(t = {}) {
@@ -358,4 +358,84 @@ test('selected-engagement: 原子写 + 读回 + 空名拒绝 + 缺文件返回�
   assert.ok(onDisk.updated_at) // ISO 时间戳
   assert.throws(() => writeSelectedEngagement('', env), /name required/)
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+// ---- 阶段2: 性价比卡 — per-engagement token 账本聚合 + 产出密度公式 ----
+
+test('readModelUsage: per-eng 账本 input_tokens 求和 + 别名字段 + 坏行跳过 + 派发计数', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-cost-'))
+  const runs = `${dir}/runs`
+  fs.mkdirSync(`${runs}/eng-x`, { recursive: true })
+  fs.writeFileSync(`${runs}/eng-x/model-usage.jsonl`, [
+    JSON.stringify({ ts: '1', worker: 'eng-x-discovery-a1', role: 'discovery', model: 'm/a', input_tokens: 12000, output_tokens: 800 }),
+    JSON.stringify({ ts: '2', worker: 'eng-x-deep-b2', role: 'deep', model: 'm/b', inputTokens: 3000 }), // 驼峰别名兼容
+    JSON.stringify({ ts: '3', worker: 'eng-x-deep-b2', event: 'terminal', code: 0, ms: 60000, input_tokens: 500 }), // terminal 行 token 也算消耗
+    '{bad json',
+    '',
+  ].join('\n'))
+  const r = readModelUsage({ engName: 'eng-x', dataDir: dir }, fs, { D2D_DATA_DIR: dir })
+  assert.equal(r.source, 'per-eng')
+  assert.equal(r.inputTokens, 15500) // 12000 + 3000 + 500
+  assert.equal(r.outputTokens, 800)
+  assert.equal(r.dispatches, 2) // 只有带 model 且非 event 的行计派发
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('readModelUsage: per-eng 缺失 → 回落全局账本按 worker 前缀过滤(engagement 池子隔离)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-cost2-'))
+  const runs = `${dir}/runs`
+  fs.mkdirSync(`${runs}/eng-y`, { recursive: true }) // eng-y 有目录但无账本 → 仍算缺失
+  fs.writeFileSync(`${runs}/model-usage.jsonl`, [
+    JSON.stringify({ ts: '1', worker: 'eng-x-discovery-a1', model: 'm/a', input_tokens: 7000 }),
+    JSON.stringify({ ts: '2', worker: 'eng-y-discovery-z9', model: 'm/a' }), // 他项目行: 不计入 eng-x
+    JSON.stringify({ ts: '3', worker: 'eng-x-verify-c3', model: 'm/b', input_tokens: 500 }),
+  ].join('\n'))
+  const rx = readModelUsage({ engName: 'eng-x', dataDir: dir }, fs, { D2D_DATA_DIR: dir })
+  assert.equal(rx.source, 'global-filtered')
+  assert.equal(rx.inputTokens, 7500) // 只算 eng-x-* 前缀
+  assert.equal(rx.dispatches, 2)
+  // per-eng 文件存在时优先, 不读全局
+  fs.writeFileSync(`${runs}/eng-y/model-usage.jsonl`, JSON.stringify({ ts: '0', worker: 'w', model: 'm', input_tokens: 1 }))
+  const ry = readModelUsage({ engName: 'eng-y', dataDir: dir }, fs, { D2D_DATA_DIR: dir })
+  assert.equal(ry.source, 'per-eng')
+  assert.equal(ry.inputTokens, 1)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('readModelUsage: 无任何账本/空 eng 名 → source=none 全零(卡片空态, 不抛错)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-cost3-'))
+  const env = { D2D_DATA_DIR: dir }
+  assert.deepEqual(readModelUsage({ engName: 'eng-none', dataDir: dir }, fs, env), { inputTokens: 0, outputTokens: 0, dispatches: 0, source: 'none' })
+  assert.deepEqual(readModelUsage({ engName: '', dataDir: dir }, fs, env), { inputTokens: 0, outputTokens: 0, dispatches: 0, source: 'none' })
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('costEfficiency: findings/triaged ÷ 10万 input tokens(两位小数); tokens=0 → null 免除以零', () => {
+  const r = costEfficiency({ findingsTotal: 6, triagedTotal: 2, inputTokens: 50_000 })
+  assert.equal(r.findingsPer100k, 12) // 6 × 100000 / 50000
+  assert.equal(r.triagedPer100k, 4)
+  assert.equal(r.findings, 6)
+  assert.equal(r.triaged, 2)
+  assert.equal(r.inputTokens, 50000)
+  const r2 = costEfficiency({ findingsTotal: 1, triagedTotal: 0, inputTokens: 30_000 })
+  assert.equal(r2.findingsPer100k, 3.33) // 3.333… 两位小数
+  assert.equal(r2.triagedPer100k, 0) // 0 产出也是有效数(非 null)
+  const r0 = costEfficiency({ findingsTotal: 9, triagedTotal: 3, inputTokens: 0 })
+  assert.equal(r0.findingsPer100k, null)
+  assert.equal(r0.triagedPer100k, null)
+})
+
+test('buildSnapshot: modelUsage 注入 → cost 字段(当前 engagement findings/triaged × token 密度)', async () => {
+  const s = await buildSnapshot(makeFake({
+    byState: [{ state: 'candidate', n: 4 }, { state: 'triaged', n: 2 }],
+  }), { eng: 'eng-x', modelUsage: { inputTokens: 100_000, outputTokens: 8000, dispatches: 10, source: 'per-eng' } })
+  assert.deepEqual(
+    { findings: s.cost.findings, triaged: s.cost.triaged, findingsPer100k: s.cost.findingsPer100k, triagedPer100k: s.cost.triagedPer100k, source: s.cost.source },
+    { findings: 6, triaged: 2, findingsPer100k: 6, triagedPer100k: 2, source: 'per-eng' },
+  )
+  // 不传 modelUsage(旧调用方) → cost 全零降级, 快照不炸
+  const s2 = await buildSnapshot(makeFake({ byState: [{ state: 'candidate', n: 1 }] }))
+  assert.equal(s2.cost.inputTokens, 0)
+  assert.equal(s2.cost.findingsPer100k, null)
+  assert.equal(s2.cost.source, 'none')
 })
