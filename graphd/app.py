@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """graphd - Kuzu 单写者 sidecar。三环+插件全部经 HTTP 读写图,规避多进程锁。
-stdlib only (kuzu 除外). GET /health POST /query POST /reset
+stdlib only (kuzu 除外). GET /health GET /authorized POST /query POST /reset
 """
 import hmac
 import json
@@ -85,7 +85,7 @@ def db():
 
 SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, PRIMARY KEY(name))",
-    "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', authorized BOOL DEFAULT false, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', PRIMARY KEY(id))",
@@ -162,6 +162,12 @@ def init_schema(conn):
             conn.execute(_ddl)
         except Exception:
             pass
+    # L0/L1 分级验证(参照 dsh-hunter): Endpoint.authorized 授权资产标记 — L1 主动验证硬门的数据源。
+    # 新库由 SCHEMA 直接建全, 旧库 ALTER 迁移(与 W5 eng 列同款); 默认 false = 未授权(fail-safe)。
+    try:
+        conn.execute("ALTER TABLE Endpoint ADD authorized BOOL DEFAULT false")
+    except Exception:
+        pass
     # 存量混合池归属回填: 只处理 eng='' 的行, 幂等(每次启动 O(池子行数), 空转即跳过)。
     try:
         _backfill_eng(conn)
@@ -231,6 +237,58 @@ def host_in_scope(host, scope) -> bool:
         if h == a or h.endswith("." + a):
             return True
     return False
+
+
+# ── L0/L1 分级验证 + 授权资产硬门(参照 dsh-hunter) ─────────────────────────
+# L0 被动验证(GET 首页存活+指纹一致性比对): 任何 scope 内资产可做;
+# L1 主动最小验证(只读 curl 重放): 仅限授权表内(Endpoint.authorized=true)资产,
+#     互联网/未授权资产执行 L1 必须被硬门拒绝;
+# L2 完整 EXP: 永不自动执行(不存在该档, 传入即按未知档拒绝)。
+
+L1_DENY_REASON = "目标不在授权资产表，L1 主动验证被拒绝——仅可执行 L0 被动验证"
+
+
+def hostport_of(url) -> str:
+    """URL → host:port 授权比对键(纯函数, 与 validator.js hostportOf 同口径)。
+    显式端口照抄; 无端口按 scheme 补默认(http=:80, https=:443); 剥离 userinfo; 解析失败返回 ''。"""
+    s = str(url or "").strip().lower()
+    m = re.match(r"^[a-z][a-z0-9+.-]*://([^/?#]+)", s)
+    if not m:
+        return ""
+    hp = m.group(1)
+    at = hp.rfind("@")
+    if at >= 0:
+        hp = hp[at + 1:]
+    if ":" in hp and hp.rfind(":") > hp.rfind("]"):
+        h, _, p = hp.rpartition(":")
+        if p.isdigit():
+            return f"{h}:{p}"
+    return f"{hp}:{443 if s.startswith('https') else 80}"
+
+
+def l1_gate(level, hostport, authorized_hostports) -> tuple[bool, str]:
+    """L0/L1 分级硬门(纯函数供 pytest, 与 validator.js l1Gate 同语义):
+    L0 被动验证任何资产放行; L1 主动验证仅限授权表内资产 — 条目带端口=精确 host:port,
+    不带端口=该 host 任意端口(资产级授权); 其他档位(含 L2)一律拒绝 — L2 完整 EXP 永不自动执行。
+    未授权返回 L1_DENY_REASON 固定话术(validator 落 verified_log 审计, 两端同文可对账)。"""
+    lv = str(level or "").strip().upper()
+    if lv == "L0":
+        return True, ""
+    if lv != "L1":
+        return False, "未知验证档位(仅 L0/L1; L2 完整 EXP 永不自动执行)"
+    hp = str(hostport or "").strip().lower()
+    if not hp:
+        return False, L1_DENY_REASON
+    for e in authorized_hostports or []:
+        e = str(e or "").strip().lower()
+        if not e:
+            continue
+        if ":" in e and e.rfind(":") > e.rfind("]"):
+            if hp == e:
+                return True, ""
+        elif hp.rpartition(":")[0] == e:
+            return True, ""
+    return False, L1_DENY_REASON
 
 
 def _parse_ts_ms(v):
@@ -431,11 +489,13 @@ def redact_pii(s):
     return s, n
 
 
-def upsert_endpoint(conn, url, tech="", business_chain="", param="", method="GET", eng=""):
+def upsert_endpoint(conn, url, tech="", business_chain="", param="", method="GET", eng="", authorized=False):
     """#5: worker 可写的 Endpoint 通道 — url 幂等 upsert(存在则补指纹字段, 不存在则建)。
     此前 worker 只有 finding/signal/hypothesis 三个写端点而 /query 只读,
     N2 规则(Signal-[:AT]->Endpoint)结构性落空(实证 endpoints=0, coverage 恒 0)。
-    W5: eng 归属 — 新建即打标; 已有无主(eng='')行被归属时补写, 已归属行不抢占。"""
+    W5: eng 归属 — 新建即打标; 已有无主(eng='')行被归属时补写, 已归属行不抢占。
+    L0/L1 分级验证: authorized 授权资产标记 — 只升不降(显式 authorized=True 才打标,
+    常规 upsert 不清既有标记); HTTP 侧该字段仅 host token 可置(worker 不可自授权)。"""
     r = conn.execute("MATCH (e:Endpoint {url:$u}) RETURN e.id AS id, e.eng AS eng", parameters={"u": url})
     if r.has_next():
         row = r.get_next()
@@ -450,13 +510,16 @@ def upsert_endpoint(conn, url, tech="", business_chain="", param="", method="GET
             conn.execute(f"MATCH (e:Endpoint {{id:$id}}) SET {', '.join(sets)}", parameters=params)
         if cur_eng == "" and eng:
             conn.execute("MATCH (e:Endpoint {id:$id}) SET e.eng=$e", parameters={"id": eid, "e": str(eng)[:120]})
+        if authorized:
+            conn.execute("MATCH (e:Endpoint {id:$id}) SET e.authorized=true", parameters={"id": eid})
         return eid
     eid = f"e-{uuid.uuid4().hex[:12]}"
     conn.execute(
         "CREATE (e:Endpoint {id:$id, url:$u, param:$p, method:$m, tech:$t, business_chain:$b, "
-        "coverage_votes:0, exhausted:false, eng:$eng})",
+        "coverage_votes:0, exhausted:false, eng:$eng, authorized:$az})",
         parameters={"id": eid, "u": url, "p": str(param)[:200], "m": str(method)[:10],
-                    "t": str(tech)[:100], "b": str(business_chain)[:100], "eng": str(eng)[:120]})
+                    "t": str(tech)[:100], "b": str(business_chain)[:100], "eng": str(eng)[:120],
+                    "az": bool(authorized)})
     return eid
 
 
@@ -763,6 +826,25 @@ class Handler(BaseHTTPRequestHandler):
             # M8 守护自愈: version/pid/started_at — start-all 预检做"只杀自己人"三重校验
             # (pidfile + /proc starttime + 版本握手, 任一不符视为外来者不接管)
             self._send(200, {"ok": True, "version": VERSION, "pid": os.getpid(), "started_at": STARTED_AT})
+        elif self.path == "/authorized":
+            # L0/L1 分级验证: 授权资产集合查询 — L1 主动验证硬门的数据出口。
+            # 与 /query 同级认证(worker/host token); validator.js 亦可经 q() 直查同表
+            # (MATCH (e:Endpoint) WHERE e.authorized = true), 两口同源不双写。
+            if not self._auth("worker"):
+                return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
+            with _locked():  # V-11: 锁带 5s deadline
+                try:
+                    conn = kuzu.Connection(db())
+                    r = conn.execute("MATCH (e:Endpoint) WHERE e.authorized = true RETURN e.url")
+                    items = []
+                    while r.has_next():
+                        u = str(r.get_next()[0] or "")
+                        items.append({"url": u, "hostport": hostport_of(u)})
+                except TimeoutError as _te:
+                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
+                except Exception as e:
+                    return self._send(500, {"ok": False, "error": str(e)[:200]})
+            return self._send(200, {"ok": True, "authorized": items, "count": len(items)})
         else:
             self._send(404, {"error": "unknown"})
 
@@ -1028,11 +1110,17 @@ class Handler(BaseHTTPRequestHandler):
                         if not re.match(r"^https?://", url, re.I):
                             return self._send(400, {"ok": False, "error": "url must start with http(s)://"})
                         _tech, _ = redact_pii(str(req.get("tech") or "")[:100])
+                        # L0/L1 分级验证: authorized 标记仅 host token 可置 — worker 不可自授权
+                        # (worker 自标 = L1 硬门形同虚设); 未带 authorized 字段的常规 upsert 不受影响。
+                        _want_az = str(req.get("authorized") or "").strip().lower() in ("1", "true", "yes", "on")
+                        if _want_az and not self._auth("host"):
+                            return self._send(403, {"ok": False, "error": "authorized=true requires host token — 授权资产标记归宿主管, worker 不可自授权(L1 硬门)"})
                         eid = upsert_endpoint(conn, url, _tech,
                                               str(req.get("business_chain") or ""),
                                               str(req.get("param") or ""),
-                                              str(req.get("method") or "GET"), eng=_eng)
-                        return self._send(200, {"ok": True, "id": eid})
+                                              str(req.get("method") or "GET"), eng=_eng,
+                                              authorized=_want_az)
+                        return self._send(200, {"ok": True, "id": eid, "authorized": bool(_want_az)})
                     else:
                         # I-014: Hypothesis.text 脱敏
                         _txt_raw = str(req.get("text") or "")[:1500]
