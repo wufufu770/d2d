@@ -2,7 +2,7 @@
 // 路由: ctx.webServer.register({kind:'prefix', path:'/d2d/api'}) — 与 dsh /api 同一道
 // 浏览器信任栅栏(Host loopback/受信 + sec-fetch-site + Origin 同源), 同源零跨域,
 // token 全程留 host 侧。机制参照 dsh-sidebar-leap 宿主半(生态已验证模式)。
-import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, transitionFinding, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement } from './snapshot.mjs'
+import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, readModelUsage, transitionFinding, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement } from './snapshot.mjs'
 import { validateStartRequest } from './start-policy.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -73,7 +73,9 @@ export function apply(ctx, config = {}) {
         } catch { /* 轨迹区/池子区降级为空, 快照主体不受影响 */ }
       }
       const runEvents = eng ? readRunEvents({ engName: eng }) : { events: [], usage: {}, quotaHits: [] }
-      const val = await buildSnapshot(query, { fleet: readFleet(), runEvents, eng })
+      // 阶段2: 性价比卡 — per-engagement token 账本(runs/<eng>/model-usage.jsonl, 全局账本按 worker 前缀回落)
+      const modelUsage = eng ? readModelUsage({ engName: eng }) : null
+      const val = await buildSnapshot(query, { fleet: readFleet(), runEvents, modelUsage, eng })
       cache = { ts: Date.now(), val }
       return val
     })().finally(() => { inFlight = null })

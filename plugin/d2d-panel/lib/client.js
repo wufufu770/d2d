@@ -122,6 +122,7 @@ window.__ModuleLoader__.load({
       { key: 'fleet', label: 'fleet' },
       { key: 'strategies', label: '策略库' },
       { key: 'usage', label: '用量' },
+      { key: 'cost', label: '性价比' },
       { key: 'workers', label: 'workers' },
       { key: 'funnel', label: '漏斗' },
       { key: 'gaps', label: '缺口' },
@@ -588,6 +589,40 @@ window.__ModuleLoader__.load({
           h('span', { ...panel.mono, style: { ...panel.mono.style, opacity: '.7' } }, `${n} 次`, run?.quotaHits?.includes?.(m) ? ' ⚠' : '')))))
     }
 
+    // ---- 性价比卡(阶段2): 每 10 万 input tokens 的产出密度 — findings/triaged 两个口径。
+    //      公式: n_per_100k = n × 100000 ÷ input_tokens(host 侧 costEfficiency 预算, tokens=0 → null)。 ----
+    function fmtTokens(n) {
+      const v = Number(n ?? 0)
+      if (v >= 1e8) return `${(v / 1e8).toFixed(2)}亿`
+      if (v >= 1e4) return `${(v / 1e4).toFixed(1)}万`
+      return String(Math.round(v))
+    }
+    function CostCard({ snap }) {
+      const c = snap.cost
+      const has = Boolean(c && c.inputTokens > 0)
+      const row = (value, label) => h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 } },
+        h('span', { style: { fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', minWidth: '52px' } },
+          value === null || value === undefined ? '—' : String(value)),
+        h('span', panel.muted(0.55), label))
+      const srcLabel = c?.source === 'per-eng' ? '本项目账本'
+        : c?.source === 'global-filtered' ? '全局账本·按项目过滤'
+        : '无 token 账本'
+      return h(Card, {
+        title: '性价比 · 产出密度',
+        extra: h('span', panel.muted(0.45), srcLabel),
+      },
+        has
+          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px' } },
+            row(c.findingsPer100k, 'findings / 10万 input tokens'),
+            row(c.triagedPer100k, 'triaged / 10万 input tokens'))
+          : h('div', panel.muted(0.45), '尚无 input token 账本(runs/<eng>/model-usage.jsonl) — worker 跑起来后自动生成'),
+        h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } },
+          h('span', panel.chip({ borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' }), `输入 ${fmtTokens(c?.inputTokens)} tokens`),
+          h('span', panel.chip(), `输出 ${fmtTokens(c?.outputTokens)} tokens`),
+          h('span', panel.chip(), `派发 ${c?.dispatches ?? 0} 次`)),
+        has ? h('div', panel.muted(0.45), `总消耗 ${fmtTokens((c?.inputTokens ?? 0) + (c?.outputTokens ?? 0))} tokens · findings ${c?.findings ?? 0} / triaged ${c?.triaged ?? 0}`) : null)
+    }
+
     // ---- Worker 鱼骨抽屉: 执行轨迹(run-log.jsonl 事件 + checkpoint/todo 折叠) ----
     const EV_KIND = {
       dispatch: { label: 'DISPATCH', color: 'var(--d2d-ring-discovery)' },
@@ -765,6 +800,7 @@ window.__ModuleLoader__.load({
         !off.has('caps') ? h(CapsCard, { snap, refresh }) : null,
         !off.has('fleet') ? h(FleetCard, { fleet: snap.fleet, run: snap.run, refresh }) : null,
         !off.has('usage') ? h(UsageCard, { run: snap.run }) : null,
+        !off.has('cost') ? h(CostCard, { snap }) : null,
         !off.has('workers') ? h(WorkersCard, { snap, now }) : null,
         !off.has('funnel') ? h(FunnelCard, { snap }) : null,
         !off.has('gaps') ? h(GapsCard, { snap }) : null,

@@ -443,6 +443,66 @@ export function readRunEvents({ engName, dataDir }, fsImpl = fs, env = process.e
   return out
 }
 
+// ── 阶段2: 性价比卡 — per-engagement token 账本聚合(runs/<eng>/model-usage.jsonl) ──
+// 账本行是超集兼容形态(scheduler 既有 dispatch/terminal 行不含 token, 坏行跳过):
+//   {ts, worker, role, model, event?, input_tokens?, output_tokens?}
+// per-eng 账本缺失 → 回落全局 runs/model-usage.jsonl 按 worker 前缀过滤(worker id =
+// '<eng>-<ring>-<suffix>', scheduler 同名口径); source 标账本来源, 卡片展示口径防误读。
+export function readModelUsage({ engName, dataDir }, fsImpl = fs, env = process.env) {
+  const out = { inputTokens: 0, outputTokens: 0, dispatches: 0, source: 'none' }
+  const eng = String(engName ?? '').trim()
+  if (!eng) return out
+  const dir = env.D2D_DATA_DIR ?? dataDir ?? `${os.homedir()}/.d2d-data`
+  const runs = env.D2D_RUNS_DIR ?? env.P2P_RUNS_DIR ?? `${dir}/runs`
+  const posTok = (r, keys) => {
+    for (const k of keys) {
+      const n = Number(r?.[k])
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 0
+  }
+  const safeRead = (p) => {
+    try { return fsImpl.readFileSync(p, 'utf8').split('\n').filter(Boolean).slice(-MAX.usageLines) } catch { return null }
+  }
+  let lines = safeRead(`${runs}/${eng.replace(/[/\\]/g, '_')}/model-usage.jsonl`)
+  if (lines) out.source = 'per-eng'
+  else {
+    lines = safeRead(`${runs}/model-usage.jsonl`)
+    if (lines) {
+      out.source = 'global-filtered'
+      const prefix = `${eng}-`
+      lines = lines.filter((ln) => {
+        try { return String(JSON.parse(ln)?.worker ?? '').startsWith(prefix) } catch { return false }
+      })
+    }
+  }
+  for (const ln of lines ?? []) {
+    try {
+      const r = JSON.parse(ln)
+      if (r?.model && !r?.event) out.dispatches++
+      out.inputTokens += posTok(r, ['input_tokens', 'inputTokens'])
+      out.outputTokens += posTok(r, ['output_tokens', 'outputTokens'])
+    } catch {}
+  }
+  return out
+}
+
+/** 性价比纯计算(阶段2公式): 每 10 万 input tokens 的产出。tokens=0 → null(卡片渲染 '—',
+ *  免除以零出假高效); 保留两位小数。总消耗 = input+output 原始 token 数(前端格式化)。 */
+export function costEfficiency({ findingsTotal = 0, triagedTotal = 0, inputTokens = 0, outputTokens = 0, dispatches = 0, source = 'none' } = {}) {
+  const per100k = (n) => (inputTokens > 0 ? Math.round(((n * 100_000) / inputTokens) * 100) / 100 : null)
+  return {
+    findings: Math.max(0, Math.round(Number(findingsTotal) || 0)),
+    triaged: Math.max(0, Math.round(Number(triagedTotal) || 0)),
+    inputTokens: Math.max(0, Math.round(Number(inputTokens) || 0)),
+    outputTokens: Math.max(0, Math.round(Number(outputTokens) || 0)),
+    dispatches: Math.max(0, Math.round(Number(dispatches) || 0)),
+    source,
+    findingsPer100k: per100k(findingsTotal),
+    triagedPer100k: per100k(triagedTotal),
+  }
+}
+
 export function createGraphdQuery({ graphdUrl, token, fetchImpl = fetch, timeoutMs = 5000 }) {
   return async function query(cypher, params = {}) {
     const res = await fetchImpl(`${graphdUrl}/query`, {
@@ -483,13 +543,14 @@ function projectEngagement(row) {
 }
 
 /**
- * buildSnapshot(query, { fleet, runEvents, eng }) → 聚合快照(一条响应, PANEL-UI-SPEC §5)。
+ * buildSnapshot(query, { fleet, runEvents, modelUsage, eng }) → 聚合快照(一条响应, PANEL-UI-SPEC §5)。
  * query: async (cypher, params) => rows —— 任何一次图读取失败整体抛错(fail-closed,
  * 不下发过期/半截快照); 由 HTTP 层转 503。
  * runEvents: readRunEvents 产物(可选; 缺省时轨迹/用量区降级为空)。
+ * modelUsage: readModelUsage 产物(可选; 缺省时性价比卡降级为空态)。
  * eng: 当前选中 engagement 名(W5 池子隔离过滤键; 空 = 无选中, 全部池子区为空)。
  */
-export async function buildSnapshot(query, { fleet = null, runEvents = null, eng = '' } = {}) {
+export async function buildSnapshot(query, { fleet = null, runEvents = null, modelUsage = null, eng = '' } = {}) {
   const strategies = await loadStrategies(process.env, query).catch(() => [])
   const [engListRows, byEngRows, workersByEngRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows] = await Promise.all([
     query(Q.engList),
@@ -576,6 +637,15 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, eng
       findings: FINDING_STATES.reduce((a, s) => a + byState[s], 0),
       experience: num(experience?.[0]?.n),
     },
+    // 阶段2: 性价比卡 — 当前 engagement 产出 ÷ input tokens(产出=全部 findings 与 triaged 两个口径)
+    cost: costEfficiency({
+      findingsTotal: FINDING_STATES.reduce((a, s) => a + byState[s], 0),
+      triagedTotal: byState.triaged ?? 0,
+      inputTokens: modelUsage?.inputTokens ?? 0,
+      outputTokens: modelUsage?.outputTokens ?? 0,
+      dispatches: modelUsage?.dispatches ?? 0,
+      source: modelUsage?.source ?? 'none',
+    }),
     coverage: { total: covTotal, covered: covCovered },
     gaps: (gapRows ?? []).map((g) => String(g?.bc ?? '')).filter(Boolean),
     milestones: (handoffRows ?? []).map((h) => ({
