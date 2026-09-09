@@ -1,7 +1,7 @@
 // quake.mjs — Quake 360 客户端(P1/M1)。端点实证: quake.360.net/api/v3(search/quake_service + user/info)。
 // 认证: X-QuakeToken header。响应 code=0 为成功; 积分制按返回条数消耗。
 import { postJson } from './kit.mjs'
-import { translateQuery } from './query.mjs'
+import { translateQuery, relaxLadder, searchRelaxed, SEARCH_BUDGET } from './query.mjs'
 import { quakeRow } from './normalize.mjs'
 
 export const meta = {
@@ -15,12 +15,9 @@ export const meta = {
 const BASE = 'https://quake.360.net/api/v3'
 export function isConfigured(env = process.env) { return Boolean(String(env.D2D_QUAKE_TOKEN ?? '').trim()) }
 
-// → { provider, query, total, assets[] }
-export async function search(dsl, { size = 100, maxPages = 1, env = process.env, fetchImpl = fetch, timeoutMs = 15000 } = {}) {
-  const token = String(env.D2D_QUAKE_TOKEN ?? '').trim()
-  if (!token) throw new Error(`缺 ${meta.envKeys[0]} — ${meta.setup}`)
-  const query = translateQuery(dsl, 'quake')
-  const headers = { 'X-QuakeToken': token }
+// 蜜罐过滤: Quake 无 is_honeypot/is_fraud 等价公开字段 — 跳过(query.mjs withHoneypotFilter 按平台旁路)
+// 单查询串分页拉取(searchRelaxed 的 doSearch 通道); 资产截断到 size*maxPages 预算内
+async function searchPage(query, { headers, size, maxPages, fetchImpl, timeoutMs }) {
   const include = ['ip', 'port', 'hostname', 'service.http.host', 'service.http.title', 'service.http.name', 'service.name', 'service.transport', 'timestamp']
   const assets = []
   let total = 0
@@ -32,7 +29,18 @@ export async function search(dsl, { size = 100, maxPages = 1, env = process.env,
     for (const item of j.data ?? []) assets.push(quakeRow(item))
     if (assets.length >= total) break
   }
-  return { provider: meta.id, query, total, assets }
+  return { provider: meta.id, query, total, assets: assets.slice(0, size * Math.max(1, maxPages)) }
+}
+
+// → { provider, query, total, assets[], relaxRound?, relaxQueries? }
+// 放宽阶梯: DSL 含特征键(title/body/header/framework)时失败/零命中逐级放宽(最多 5 轮, 命中即停);
+// 默认 size=SEARCH_BUDGET(50), 调用方以 size 覆盖。
+export async function search(dsl, { size = SEARCH_BUDGET, maxPages = 1, env = process.env, fetchImpl = fetch, timeoutMs = 15000, relax = true } = {}) {
+  const token = String(env.D2D_QUAKE_TOKEN ?? '').trim()
+  if (!token) throw new Error(`缺 ${meta.envKeys[0]} — ${meta.setup}`)
+  const headers = { 'X-QuakeToken': token }
+  const rungs = relax ? relaxLadder(dsl, (q) => translateQuery(q, 'quake')) : [translateQuery(dsl, 'quake')]
+  return searchRelaxed(rungs, (query) => searchPage(query, { headers, size, maxPages, fetchImpl, timeoutMs }))
 }
 
 // 配额自省: POST /v3/user/info — 字段随账号类型浮动, 数值型配额字段尽力提取, 其余透传

@@ -2,7 +2,7 @@
 // 认证: api-key query 参数。配额: 按返回条数扣积分(1 条≈1 分), 响应 data.rest_quota 带剩余;
 // 只查数量用 page_size=1 省分 — check.mjs 走这条通道。
 import { getJson } from './kit.mjs'
-import { translateQuery } from './query.mjs'
+import { translateQuery, relaxLadder, searchRelaxed, SEARCH_BUDGET } from './query.mjs'
 import { hunterRow } from './normalize.mjs'
 
 export const meta = {
@@ -16,11 +16,9 @@ export const meta = {
 const BASE = 'https://hunter.qianxin.com/openApi/search'
 export function isConfigured(env = process.env) { return Boolean(String(env.D2D_HUNTER_KEY ?? '').trim()) }
 
-// → { provider, query, total, assets[], quota:{remaining} }
-export async function search(dsl, { size = 100, maxPages = 1, env = process.env, fetchImpl = fetch, timeoutMs = 15000 } = {}) {
-  const key = String(env.D2D_HUNTER_KEY ?? '').trim()
-  if (!key) throw new Error(`缺 ${meta.envKeys[0]} — ${meta.setup}`)
-  const query = translateQuery(dsl, 'hunter')
+// 蜜罐过滤: 鹰图无 is_honeypot/is_fraud 等价公开字段 — 跳过(query.mjs withHoneypotFilter 按平台旁路)
+// 单查询串分页拉取(searchRelaxed 的 doSearch 通道); 资产截断到 size*maxPages 预算内
+async function searchPage(query, { key, size, maxPages, fetchImpl, timeoutMs }) {
   const search = Buffer.from(query).toString('base64')
   const pageSize = Math.min(Math.max(size, 1), 500)
   const assets = []
@@ -35,7 +33,17 @@ export async function search(dsl, { size = 100, maxPages = 1, env = process.env,
     for (const item of j.data?.arr ?? []) assets.push(hunterRow(item))
     if (assets.length >= total) break
   }
-  return { provider: meta.id, query, total, assets, quota: { remaining } }
+  return { provider: meta.id, query, total, assets: assets.slice(0, size * Math.max(1, maxPages)), quota: { remaining } }
+}
+
+// → { provider, query, total, assets[], quota:{remaining}, relaxRound?, relaxQueries? }
+// 放宽阶梯: DSL 含特征键(title/body/header/framework)时失败/零命中逐级放宽(最多 5 轮, 命中即停);
+// 默认 size=SEARCH_BUDGET(50), 调用方以 size 覆盖。
+export async function search(dsl, { size = SEARCH_BUDGET, maxPages = 1, env = process.env, fetchImpl = fetch, timeoutMs = 15000, relax = true } = {}) {
+  const key = String(env.D2D_HUNTER_KEY ?? '').trim()
+  if (!key) throw new Error(`缺 ${meta.envKeys[0]} — ${meta.setup}`)
+  const rungs = relax ? relaxLadder(dsl, (q) => translateQuery(q, 'hunter')) : [translateQuery(dsl, 'hunter')]
+  return searchRelaxed(rungs, (query) => searchPage(query, { key, size, maxPages, fetchImpl, timeoutMs }))
 }
 
 // 鹰图无独立配额端点(rest_quota 只随 search 返回) — 探活即配额来源, quota() 返回指引

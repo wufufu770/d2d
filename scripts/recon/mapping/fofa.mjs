@@ -2,7 +2,7 @@
 // 认证: key-only(新版); 存量账号补 email(D2D_FOFA_EMAIL, 老 key-only 账号不用配)。
 // 限频: 官方 ~1qps — 页间 sleep 由调用方 collect 控, 本模块页间 1.1s 内置。
 import { getJson } from './kit.mjs'
-import { translateQuery } from './query.mjs'
+import { translateQuery, relaxLadder, searchRelaxed, withHoneypotFilter, SEARCH_BUDGET } from './query.mjs'
 import { fofaRow, FOFA_FIELDS } from './normalize.mjs'
 
 export const meta = {
@@ -17,15 +17,10 @@ export const meta = {
 const BASE = 'https://fofa.info'
 export function isConfigured(env = process.env) { return Boolean(String(env.D2D_FOFA_KEY ?? '').trim()) }
 
-// → { provider, query, total, assets[], note }
-export async function search(dsl, { size = 1000, maxPages = 1, env = process.env, fetchImpl = fetch, timeoutMs = 15000 } = {}) {
-  const key = String(env.D2D_FOFA_KEY ?? '').trim()
-  if (!key) throw new Error(`缺 ${meta.envKeys[0]} — ${meta.setup}`)
-  const query = translateQuery(dsl, 'fofa')
+// 单查询串分页拉取(searchRelaxed 的 doSearch 通道); 资产截断到 size*maxPages 预算内
+async function searchPage(query, { key, email, size, maxPages, fetchImpl, timeoutMs }) {
   const qbase64 = Buffer.from(query).toString('base64')
-  const auth = isConfigured(env) && String(env.D2D_FOFA_EMAIL ?? '').trim()
-    ? `email=${encodeURIComponent(String(env.D2D_FOFA_EMAIL).trim())}&key=${encodeURIComponent(key)}`
-    : `key=${encodeURIComponent(key)}`
+  const auth = email ? `email=${encodeURIComponent(email)}&key=${encodeURIComponent(key)}` : `key=${encodeURIComponent(key)}`
   const assets = []
   let total = 0
   for (let page = 1; page <= Math.max(1, maxPages); page++) {
@@ -37,7 +32,20 @@ export async function search(dsl, { size = 1000, maxPages = 1, env = process.env
     if (assets.length >= total) break
     if (page < maxPages) await new Promise((r) => setTimeout(r, 1100)) // ~1qps 限频
   }
-  return { provider: meta.id, query, total, assets }
+  return { provider: meta.id, query, total, assets: assets.slice(0, size * Math.max(1, maxPages)) }
+}
+
+// → { provider, query, total, assets[], relaxRound?, relaxQueries? }
+// 放宽阶梯: DSL 含特征键(title/body/header/framework)时失败/零命中逐级放宽(最多 5 轮, 命中即停);
+// FOFA 查询尾自动附加蜜罐过滤 (is_honeypot=false && is_fraud=false)(withHoneypotFilter);
+// 默认 size=SEARCH_BUDGET(50), 调用方以 size 覆盖。
+export async function search(dsl, { size = SEARCH_BUDGET, maxPages = 1, env = process.env, fetchImpl = fetch, timeoutMs = 15000, relax = true } = {}) {
+  const key = String(env.D2D_FOFA_KEY ?? '').trim()
+  if (!key) throw new Error(`缺 ${meta.envKeys[0]} — ${meta.setup}`)
+  const email = String(env.D2D_FOFA_EMAIL ?? '').trim()
+  const render = (q) => withHoneypotFilter(translateQuery(q, 'fofa'), 'fofa')
+  const rungs = relax ? relaxLadder(dsl, render) : [render(dsl)]
+  return searchRelaxed(rungs, (query) => searchPage(query, { key, email, size, maxPages, fetchImpl, timeoutMs }))
 }
 
 // 配额自省: info/my — F 点/会员级(剩余额度语义随账号类型, 透传数值)
