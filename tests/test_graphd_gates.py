@@ -597,3 +597,104 @@ def test_backfill_eng_on_real_kuzu(tmp_path):
     _backfill_eng(conn)  # 幂等: 二次回填不改已归属行
     got = conn.execute("MATCH (f:Finding {id:'F1'}) RETURN f.eng").get_next()[0]
     assert got == "e1"
+
+
+# ---- L0/L1 分级验证 + 授权资产硬门(参照 dsh-hunter): authorized 标记 / 授权集合 / L1 硬门 ----
+from graphd.app import L1_DENY_REASON, hostport_of, l1_gate, init_schema
+
+
+def test_hostport_of_normalization():
+    """授权比对键(与 validator.js hostportOf 同口径): 显式端口照抄/补默认端口/userinfo 剥离"""
+    assert hostport_of("http://1.2.3.4:8080/x") == "1.2.3.4:8080"
+    assert hostport_of("https://a.b.com/c") == "a.b.com:443"
+    assert hostport_of("http://a.b.com") == "a.b.com:80"
+    assert hostport_of("http://u:p@a.b.com:9000/x") == "a.b.com:9000"
+    assert hostport_of("http://[::1]:8080/") == "[::1]:8080"
+    assert hostport_of("garbage") == ""
+    assert hostport_of("") == ""
+    assert hostport_of(None) == ""
+
+
+def test_l1_gate_l0_passive_always_allowed():
+    """L0 被动验证(GET 首页存活+指纹比对): 任何 scope 内资产可做"""
+    ok, err = l1_gate("L0", "8.8.8.8:80", [])
+    assert ok and err == ""
+    assert l1_gate("l0", "8.8.8.8:80", None)[0]
+
+
+def test_l1_gate_unauthorized_denied_with_fixed_reason():
+    """互联网/未授权资产执行 L1 必须被硬门拒绝, 拒绝话术固定(与 validator.js 同文可对账)"""
+    ok, err = l1_gate("L1", "8.8.8.8:80", [])
+    assert not ok and err == L1_DENY_REASON
+    assert "授权" in err and "L0 被动验证" in err
+
+
+def test_l1_gate_authorized_exact_hostport():
+    """带端口条目 = 精确 host:port 命中; 端口不匹配 = 未授权"""
+    assert l1_gate("L1", "127.0.0.1:8888", ["127.0.0.1:8888"])[0]
+    assert not l1_gate("L1", "127.0.0.1:9999", ["127.0.0.1:8888"])[0]
+
+
+def test_l1_gate_authorized_host_level_entry():
+    """不带端口条目 = 该 host 任意端口放行(资产级授权)"""
+    assert l1_gate("L1", "10.1.2.3:8080", ["10.1.2.3"])[0]
+    assert l1_gate("L1", "10.1.2.3:443", ["10.1.2.3"])[0]
+
+
+def test_l1_gate_l2_never_allowed():
+    """L2 完整 EXP 永不自动执行(不存在该档); 未知档位一律拒绝"""
+    ok, err = l1_gate("L2", "127.0.0.1:8888", ["127.0.0.1:8888"])
+    assert not ok and "L2" in err
+    ok2, _ = l1_gate("", "127.0.0.1:8888", ["127.0.0.1:8888"])
+    assert not ok2
+
+
+def test_upsert_endpoint_authorized_flag(tmp_path):
+    """authorized 字段写入: 显式 authorized=True 打标; 默认 false = 未授权(fail-safe)"""
+    conn = _endpoint_conn(tmp_path)
+    a = upsert_endpoint(conn, "https://auth.example.com/", "nginx", "", authorized=True)
+    b = upsert_endpoint(conn, "https://plain.example.com/", "nginx", "")
+    r = conn.execute("MATCH (e:Endpoint) RETURN e.id AS i, e.authorized AS az ORDER BY e.id")
+    rows = {}
+    while r.has_next():
+        rid, az = r.get_next()
+        rows[str(rid)] = bool(az)
+    assert rows[a] is True and rows[b] is False
+
+
+def test_upsert_endpoint_authorized_set_sticky_on_reupsert(tmp_path):
+    """授权标记只升不降: authorized=True 打标后, 常规 upsert(补指纹)不清既有标记"""
+    conn = _endpoint_conn(tmp_path)
+    eid = upsert_endpoint(conn, "https://s.example.com/", "", "")
+    assert bool(conn.execute("MATCH (e:Endpoint {id:$i}) RETURN e.authorized",
+                             parameters={"i": eid}).get_next()[0]) is False
+    upsert_endpoint(conn, "https://s.example.com/", "nginx", "", authorized=True)
+    upsert_endpoint(conn, "https://s.example.com/", "nginx2", "")
+    assert bool(conn.execute("MATCH (e:Endpoint {id:$i}) RETURN e.authorized",
+                             parameters={"i": eid}).get_next()[0]) is True
+
+
+def test_authorized_set_query_lists_only_authorized(tmp_path):
+    """授权集合查询(GET /authorized 与 validator 查图同一条 cypher): 只列 authorized=true 资产"""
+    conn = _endpoint_conn(tmp_path)
+    upsert_endpoint(conn, "https://a.example.com/", "", "", authorized=True)
+    upsert_endpoint(conn, "https://b.example.com/", "", "")
+    r = conn.execute("MATCH (e:Endpoint) WHERE e.authorized = true RETURN e.url")
+    urls = []
+    while r.has_next():
+        urls.append(str(r.get_next()[0]))
+    assert urls == ["https://a.example.com/"]
+
+
+def test_authorized_column_migration_on_old_db(tmp_path):
+    """旧库 ALTER 迁移(W5 eng 列同款): 无 authorized 列的存量 Endpoint 表经 init_schema 补列且默认 false"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    conn.execute("CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, "
+                 "tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, "
+                 "eng STRING DEFAULT '', PRIMARY KEY(id))")
+    conn.execute("CREATE (e:Endpoint {id:'E0', url:'http://old.example.com/', eng:''})")
+    init_schema(conn)  # 幂等: 已存在的表 CREATE 跳过, 走 ALTER 补列
+    assert bool(conn.execute("MATCH (e:Endpoint {id:'E0'}) RETURN e.authorized").get_next()[0]) is False
+    init_schema(conn)  # 二次启动: 列已存在, ALTER 静默跳过不抛
+    assert bool(conn.execute("MATCH (e:Endpoint {id:'E0'}) RETURN e.authorized").get_next()[0]) is False
