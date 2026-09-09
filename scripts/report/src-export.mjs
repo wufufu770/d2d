@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import crypto from 'node:crypto'
+import { gateR } from '../../plugin/pentest-dsh/domain/gates.mjs'
 
 const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
 // 缺省参数修复: indexOf('--graph')=-1 时 +1 会取到 argv[0](node 路径) — 旧写法不带参即错位
@@ -60,9 +61,16 @@ for (const f of rows) {
 }
 vulns.sort((a, b) => (SEV_RANK[b.sev] ?? 0) - (SEV_RANK[a.sev] ?? 0))
 
+// 1.6-A Gate-R 报告门: 覆盖 M/N 算术对账(报告声明必须等于台账实测, 部分覆盖照实声明可过,
+// 虚报/漏报拒绝导出) + 未收口假设拦终版(挖一半就写报告防线; --draft 出草稿并显式标注)。
+const DRAFT = process.argv.includes('--draft')
+const openHyps = Number(gq(`MATCH (h:Hypothesis) WHERE h.status='open' RETURN count(h) AS c`)[0]?.c ?? 0)
+const totalNonAdvice = rows.filter((f) => f.cat !== 'config-advice').length
+
 const L = []
 L.push(`# SRC 提交报告 ${now}`)
 L.push(`\n> 由 d2d 自动生成; 共 ${vulns.length} 个可提交漏洞(${newFps.length} 个新指纹), ${advice.length} 条加固建议(不作漏洞结论)。`)
+L.push(`> 覆盖：${vulns.length}/${totalNonAdvice}(导出 / 图内非加固类台账; Gate-R 算术对账)${DRAFT && openHyps > 0 ? ` — 草稿(尚有 ${openHyps} 个未收口假设)` : ''}`)
 L.push(`\n## 漏洞清单\n`)
 for (const v of vulns) {
   // graphd 写入的 cvss 默认 5.0 占位: 非 medium 的 5.0 视为占位, 回退严重度基准分
@@ -81,6 +89,12 @@ for (const v of vulns) {
 if (advice.length) {
   L.push(`## 加固建议(单独归类, 不作漏洞结论)\n`)
   for (const a of advice) L.push(`- [${a.sev}] ${a.t}`)
+}
+// Gate-R 终检: 对账不符或未收口假设未以 --draft 声明 → 拒绝导出(报告文件不落盘)
+const gr = gateR({ reportText: L.join('\n'), tested: vulns.length, total: totalNonAdvice, openIntents: DRAFT ? 0 : openHyps })
+if (!gr.ok) {
+  console.error(`Gate-R 拦截报告导出: ${gr.missing.join('; ')}`)
+  process.exit(1)
 }
 const out = `${DATA_DIR}/evidence/src-report-${Date.now()}.md`
 fs.writeFileSync(out, L.join('\n') + '\n')
