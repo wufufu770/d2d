@@ -1,11 +1,14 @@
 // aggregate.mjs — 多平台测绘聚合(P1/M1): 逐家查询 → mergeAssets 跨平台去重(指纹并集)。
 // 单家失败不拖垮聚合(perProvider 带错误), 无一家配置时抛出带开通指引的聚合错误。
 import { mergeAssets } from './normalize.mjs'
+import { SEARCH_BUDGET } from './query.mjs'
 import { providers, quotaAll, orderByQuota } from './quota.mjs'
 
 // → { assets[], perProvider[{provider,ok,total?,count,error?}] }
+// 各平台 search 内置五轮放宽(命中即停)与蜜罐过滤(FOFA), 聚合层只做排序/容错/去重;
+// 默认 size=SEARCH_BUDGET(50), 调用方以 size 覆盖。
 export async function searchAll(dsl, {
-  order = null, size = 100, maxPages = 1,
+  order = null, size = SEARCH_BUDGET, maxPages = 1,
   env = process.env, fetchImpl = fetch, timeoutMs = 15000,
 } = {}) {
   let seq = order

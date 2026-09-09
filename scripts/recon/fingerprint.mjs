@@ -5,6 +5,7 @@
 // 语义: 单 matcher 内 words/patterns/hashes 按 condition(默认 or); 规则级 = 全部 matcher 命中(AND)。
 // header 匹配 = 任意头名或头值包含(小写)。全部纯函数, 零 IO — 规则加载与文件分离。
 import crypto from 'node:crypto'
+import { relaxLadder } from './mapping/query.mjs'
 
 const evidenceOf = (ev) => ({
   status: Number(ev?.status ?? 0),
@@ -92,4 +93,33 @@ export function loadRules(json) {
     else bad.push({ id: r?.id ?? '?', errors: v.errors })
   }
   return { rules: out, bad }
+}
+
+// ---- 指纹规则 → 测绘查询(P2 测绘放宽联动, 与 mapping/query.mjs 共用 relaxLadder):
+// 规则各面(title/body/header)取首个特征词生成特征键, product 兜底 framework — 经 relaxLadder
+// 生成五轮放宽查询序列, 供测绘侧按指纹规则反查资产面。纯函数: 正则特征剥语法取首段可读词,
+// 注入字符(引号/反斜杠/换行)与正则元字符剥除; base 为每轮保留的限定 DSL 键(如 {domain:'x.com'})。
+export function ruleToDsl(rule, base = {}) {
+  const featOf = (part) => {
+    const m = (rule?.matchers ?? []).find((x) => x?.part === part && (x?.words?.length || x?.patterns?.length))
+    const raw = m?.words?.length ? m.words[0] : String(m?.patterns?.[0] ?? '')
+    const token = String(raw)
+      .replace(/[\\^$.*+?()[\]{}|]/g, ' ')
+      .replace(/["\r\n]/g, '')
+      .trim()
+      .split(/\s+/)[0] ?? ''
+    return token.slice(0, 64)
+  }
+  const dsl = { ...base }
+  for (const k of ['title', 'body', 'header']) {
+    const v = featOf(k)
+    if (v) dsl[k] = v
+  }
+  if (String(rule?.product ?? '').trim()) dsl.framework = String(rule.product).trim().slice(0, 64)
+  return dsl
+}
+
+// 便捷: 规则 → 放宽阶梯查询串(默认 FOFA 语法; render 可传 (dsl)=>translateQuery(dsl,'hunter') 等)
+export function ruleQueryLadder(rule, base = {}, render = undefined) {
+  return relaxLadder(ruleToDsl(rule, base), render)
 }

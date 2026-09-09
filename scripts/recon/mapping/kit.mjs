@@ -39,3 +39,38 @@ export async function postJson(url, body, { headers = {}, timeoutMs = 15000, fet
 }
 
 const strErr = (j) => String(j?.message ?? j?.errmsg ?? j?.error ?? '').slice(0, 120) || '无错误详情'
+
+// ---- probeBatch — 测绘资产轻量存活批探测(P2 测绘放宽配套): 并发 5、单请求超时 3000ms、
+// GET 首页(无路径归一到 /, 30x 跟随), 失败不抛出只记 status:null。与 recon/probe.mjs 的
+// probeHosts(双协议试探+证据采集/favicon, 指纹面)互补不重复 — 本函数只做测绘结果集的批量
+// 存活复核: 每目标一次 GET, 不采 body/favicon。入参 target 可带 scheme; 无 scheme 默认 http://
+// (30x 跟随可达 https)。返回 Map(原始 target → {url, status, ok, error?})。
+export const PROBE_BATCH_CONCURRENCY = 5
+export const PROBE_BATCH_TIMEOUT_MS = 3000
+
+export async function probeBatch(targets, { concurrency = PROBE_BATCH_CONCURRENCY, timeoutMs = PROBE_BATCH_TIMEOUT_MS, fetchImpl = fetch } = {}) {
+  const list = [...new Set((targets ?? []).map((t) => String(t ?? '').trim()).filter(Boolean))]
+  const results = new Map()
+  const probeOne = async (raw) => {
+    const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`
+    let home = null
+    try { const u = new URL(url); home = `${u.protocol}//${u.host}/` } catch { /* 记失败 */ }
+    if (!home) { results.set(raw, { url: raw, status: null, ok: false, error: '非法目标' }); return }
+    try {
+      const res = await fetchImpl(home, { redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) })
+      results.set(raw, { url: home, status: res.status, ok: Boolean(res.ok) })
+    } catch (e) {
+      results.set(raw, { url: home, status: null, ok: false, error: String(e?.message ?? e).slice(0, 120) })
+    }
+  }
+  const queue = [...list]
+  async function worker() {
+    for (;;) {
+      const t = queue.shift()
+      if (t === undefined) return
+      await probeOne(t)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, queue.length)) }, worker))
+  return results
+}
