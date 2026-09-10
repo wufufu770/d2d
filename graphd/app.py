@@ -5,19 +5,6 @@ stdlib only (kuzu 除外). GET /health GET /authorized POST /query POST /reset
 import hmac
 import json
 import os
-
-# R6.1: 全局黑名单(denylist.json)运行时缓存 — 启动时从文件加载, 对所有 engagement 生效
-DENYLIST = {"domains": [], "cidr_prefix": []}
-
-
-def _read_denylist_file():
-    """R6.3: 读取 denylist.json → {domains, cidr_prefix}; 文件缺失/损坏抛异常,
-    fail-safe 语义由调用方决定(启动=保持空名单, /reload/denylist=保留旧名单)。"""
-    _dl_path = os.environ.get("P2P_DENYLIST_FILE", os.path.expanduser("~/.d2d-data/config/denylist.json"))
-    with open(_dl_path) as _dlf:
-        _dl = json.load(_dlf)
-    return {"domains": [str(x).lower() for x in _dl.get("domains", [])],
-            "cidr_prefix": [str(x) for x in _dl.get("cidr_prefix", [])]}
 import re
 import socket
 import sys
@@ -55,102 +42,38 @@ PORT = int(os.environ.get("P2P_GRAPH_PORT", "8766"))
 
 import kuzu
 
+# 巨型文件拆分(纯代码搬移, 逻辑零改动): 纯函数/表定义/门控逻辑移入 gd 子包, 此处统一 re-export
+# —— `from graphd.app import X` 的既有导入路径(tests/外部调用方)零改动。两种形态都接住:
+# 包内导入(graphd.gd —— pytest/调度器侧)与直接脚本运行(cd graphd && python3 app.py)。
+try:
+    from graphd.gd import (_URL_RE, DENYLIST, FINDING_STATES, FINDING_TRANSITIONS,
+                           JUNK_PATTERNS, L1_DENY_REASON, MAX_BODY_BYTES, MAX_QUERY_ROWS,
+                           CONFIG_ADVICE_RE, SCHEMA, _backfill_eng, _jsonify,
+                           _read_denylist_file, _safe_token_path, attribute_by_time,
+                           auth_check, bounded_rows, candidate_watermark_reject,
+                           canonical_cat, config_reject, content_length_gate,
+                           cvss_or_default, engagement_cap_gate, endpoint_sig_duplicate,
+                           eng_time_windows, finding_gates, host_in_scope, hostport_of,
+                           init_schema, is_engagement_create, l1_gate, legacy_token_ok,
+                           normalize_title, parse_scope_allows, pick_write_eng,
+                           prose_denylist_hit, redact_pii, repro_gate, title_tokens,
+                           titles_duplicate, transition_gate, url_sig, worker_query_allowed)
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd import (_URL_RE, DENYLIST, FINDING_STATES, FINDING_TRANSITIONS,
+                    JUNK_PATTERNS, L1_DENY_REASON, MAX_BODY_BYTES, MAX_QUERY_ROWS,
+                    CONFIG_ADVICE_RE, SCHEMA, _backfill_eng, _jsonify,
+                    _read_denylist_file, _safe_token_path, attribute_by_time,
+                    auth_check, bounded_rows, candidate_watermark_reject,
+                    canonical_cat, config_reject, content_length_gate,
+                    cvss_or_default, engagement_cap_gate, endpoint_sig_duplicate,
+                    eng_time_windows, finding_gates, host_in_scope, hostport_of,
+                    init_schema, is_engagement_create, l1_gate, legacy_token_ok,
+                    normalize_title, parse_scope_allows, pick_write_eng,
+                    prose_denylist_hit, redact_pii, repro_gate, title_tokens,
+                    titles_duplicate, transition_gate, url_sig, worker_query_allowed)
+
 _lock = threading.Lock()
 _db = None
-MAX_BODY_BYTES = 1_000_000  # V-11: 请求体上限, 防全量读入内存的 DoS
-
-
-def content_length_gate(raw, max_bytes=None):
-    """C7: Content-Length 解析门(纯函数供 pytest 锁回归)。返回 (n, err):
-    err 非 None 时调用方必须以 err[0] 的 HTTP 状态码拒绝。
-    审计 C7 实证: 旧实现 int('-1') = -1 通过 n > MAX_BODY_BYTES 检查后直落
-    rfile.read(-1) —— read(-1) 语义是读到 EOF, 即无上限把整个 socket 缓冲读进内存(DoS)。
-    故负数与非数字一律 400; 超上限 413; 缺失/空按 0(空 body 由后续 json 解析兜住)。"""
-    limit = MAX_BODY_BYTES if max_bytes is None else int(max_bytes)
-    try:
-        n = int(str(raw).strip()) if raw is not None and str(raw).strip() != "" else 0
-    except (TypeError, ValueError):
-        return 0, (400, "invalid Content-Length")
-    if n < 0:
-        return 0, (400, "invalid Content-Length")
-    if n > limit:
-        return n, (413, f"payload too large (> {limit} bytes)")
-    return n, None
-
-
-# H13: /query 结果行数上限 —— 大图上 `MATCH (n) RETURN n` 会把全图行缓冲进内存再一次性
-# json.dumps(OOM 面); 超限截断并以 truncated 标记告知调用方(可用 LIMIT/分页拿余量)。
-MAX_QUERY_ROWS = max(1, int(os.environ.get("P2P_MAX_QUERY_ROWS", "10000")))
-
-
-def bounded_rows(res, limit=None):
-    """H13: 消费 kuzu 结果集的行数上限封顶(鸭子类型 has_next/get_next, 纯逻辑供 pytest):
-    最多取 limit 行, 到顶即停(不再继续拉取)并返回 truncated=True。"""
-    limit = MAX_QUERY_ROWS if limit is None else int(limit)
-    rows, truncated = [], False
-    while res.has_next():
-        if len(rows) >= limit:
-            truncated = True
-            break
-        rows.append(res.get_next())
-    return rows, truncated
-
-
-def cvss_or_default(raw):
-    """中危审计修复(0910): CVSS=0 被 `or 5.0` 吞成 5.0 — 0 是合法评分(信息收集类漏洞)。
-    显式 None/非法判定: 缺失或无法解析 → 5.0 缺省; 合法数值(含 0)原样保留; 越界钳到 [0,10]。"""
-    if raw is None or str(raw).strip() == "":
-        return 5.0
-    try:
-        v = float(raw)
-    except (TypeError, ValueError):
-        return 5.0
-    if v != v:  # NaN
-        return 5.0
-    return min(10.0, max(0.0, v))
-
-
-def legacy_token_ok(got, tok, host="", worker=""):
-    """中危审计修复(11)(纯函数供 pytest): 遗留 P2P_TOKEN 门。优先级 —— host/worker token 为准,
-    P2P_TOKEN 仅兼容旧客户端: 三者任一与 X-Auth 恒等匹配即过(旧实现只认 P2P_TOKEN, 与
-    host/worker token 并存时形成认证矩阵死锁)。全部为空 → False(fail-closed)。"""
-    got = got or ""
-    if not got:
-        return False
-    if tok and hmac.compare_digest(got, tok):
-        return True
-    if host and hmac.compare_digest(got, host):
-        return True
-    if worker and hmac.compare_digest(got, worker):
-        return True
-    return False
-
-
-def _max_active_cap() -> int:
-    """H12: engagement 容量上限(环境变量可调, 非数字回退默认 4)。"""
-    try:
-        return int(os.environ.get("P2P_MAX_ACTIVE", "4"))
-    except ValueError:
-        return 4
-
-
-def is_engagement_create(cypher: str) -> bool:
-    """H12: 识别 Engagement CREATE 写入(纯函数供 pytest) — 与外层容量预检同一判定口径
-    (字符串包含而非正则, 与既有外层门一致: 注入面由 /query 只读门+host token 把守)。"""
-    c = str(cypher or "")
-    return "Engagement" in c and "CREATE" in c.upper()
-
-
-def engagement_cap_gate(n_active, cap=None) -> str:
-    """H12: engagement 容量栅栏判定(纯函数供 pytest) — active+requested 计数 ≥ cap 返回拦截话术,
-    否则返回 ''。审计 H12 结论: 旧实现该检查在独立锁窗口执行, CREATE 在 /query 的另一次
-    加锁里执行 —— 两请求可同时过检再双双 CREATE, 容量上限可被并发击穿(TOCTOU)。
-    修复: 权威判定移入 /query 执行锁内, 与 CREATE 同一把锁原子完成(见 do_POST /query 分支)。"""
-    cap = _max_active_cap() if cap is None else int(cap)
-    if int(n_active) >= cap:
-        return (f"active engagements {n_active} >= cap {cap} — "
-                f"先冻结部分 engagement 再新建(面板可管理)")
-    return ""
 
 
 @contextmanager
@@ -218,412 +141,6 @@ def reset_database():
         return {"ok": True}
 
 
-SCHEMA = [
-    "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, PRIMARY KEY(name))",
-    "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', authorized BOOL DEFAULT false, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', PRIMARY KEY(worker_id))",
-    "CREATE NODE TABLE IF NOT EXISTS Task(id STRING, eng STRING DEFAULT '', kind STRING, payload STRING, priority DOUBLE DEFAULT 1.0, status STRING DEFAULT 'pending', claimed_by STRING DEFAULT '', claimed_at STRING DEFAULT '', target_type STRING DEFAULT 'web', link_id STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Handoff(id STRING, eng STRING, digest STRING, model STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
-    "CREATE REL TABLE IF NOT EXISTS AT(FROM Signal_ TO Endpoint)",
-    "CREATE REL TABLE IF NOT EXISTS CONFIRMS(FROM Finding TO Signal_)",
-    "CREATE REL TABLE IF NOT EXISTS SUGGESTS(FROM Hypothesis TO Endpoint)",
-    "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM(FROM Signal_ TO Signal_)",
-    "CREATE REL TABLE IF NOT EXISTS PRIOR_FOR(FROM ExperienceWeight TO Signal_)",
-]
-
-
-def init_schema(conn):
-    for q in SCHEMA:
-        try:
-            conn.execute(q)
-        except Exception as e:
-            if "already exists" not in str(e):
-                raise
-    # R3: 旧库增量迁移 ExperienceWeight 结构化经验列（列已存在/引擎不支持时忽略，新库由 SCHEMA 直接建全）
-    # 列名为字面量枚举(无外部输入可拼入) — 上一版 f-string 写法触发扫描器 SIDI 判定, 改为逐条字面量
-    for _ddl in ("ALTER TABLE ExperienceWeight ADD recipe STRING DEFAULT ''",
-                 "ALTER TABLE ExperienceWeight ADD stack_fp STRING DEFAULT ''",
-                 "ALTER TABLE ExperienceWeight ADD payload_hint STRING DEFAULT ''"):
-        try:
-            conn.execute(_ddl)
-        except Exception:
-            pass
-    # P0 生命周期列迁移(0905 实证: 旧库无列时 SET/RETURN cancel 直接 Binder exception,
-    # 调度器侧 .catch 静默吞掉 → 栅栏/租约/取消令牌整体失效)
-    for _ddl in ("ALTER TABLE Engagement ADD cancel STRING DEFAULT 'false'",
-                 "ALTER TABLE Engagement ADD leased_by STRING DEFAULT ''",
-                 "ALTER TABLE Engagement ADD lease_at INT64 DEFAULT 0",
-                 # 0906 图队列采纳: panel POST /d2d/api/start 写 status='requested' 节点,
-                 # web 宿主调度器认领(adopt) — instances/objective 随节点传给 startEngagement
-                 "ALTER TABLE Engagement ADD instances INT64 DEFAULT 2",
-                 "ALTER TABLE Engagement ADD objective STRING DEFAULT ''"):
-        try:
-            conn.execute(_ddl)
-        except Exception:
-            pass
-    # R3: 旧库增量迁移 Finding.notify_sent（战果通知去重）与 Task.eng（任务归属 engagement）
-    try:
-        conn.execute("ALTER TABLE Finding ADD notify_sent BOOL DEFAULT false")
-    except Exception:
-        pass
-    try:
-        conn.execute("ALTER TABLE Task ADD eng STRING DEFAULT ''")
-    except Exception:
-        pass
-    # W1: 七态转换审计轨迹列(旧库迁移, 新库由 SCHEMA 直接建全)
-    try:
-        conn.execute("ALTER TABLE Finding ADD last_transition STRING DEFAULT ''")
-    except Exception:
-        pass
-    # 签名去重: 跨 host 同缺陷(同 path+同类别)的关联标记 — 指向既有 finding id
-    try:
-        conn.execute("ALTER TABLE Finding ADD related_to STRING DEFAULT ''")
-    except Exception:
-        pass
-    # W5(engagement 池子隔离): 池子表补 eng 归属列 — 新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。
-    # ExperienceWeight(经验)与模型策略刻意不加: 跨 src 项目共享(用户约定)。
-    for _ddl in ("ALTER TABLE Endpoint ADD eng STRING DEFAULT ''",
-                 "ALTER TABLE Signal_ ADD eng STRING DEFAULT ''",
-                 "ALTER TABLE Hypothesis ADD eng STRING DEFAULT ''",
-                 "ALTER TABLE Finding ADD eng STRING DEFAULT ''",
-                 "ALTER TABLE Plan ADD eng STRING DEFAULT ''",
-                 "ALTER TABLE AgentIdentity ADD eng STRING DEFAULT ''"):
-        try:
-            conn.execute(_ddl)
-        except Exception:
-            pass
-    # L0/L1 分级验证(参照 dsh-hunter): Endpoint.authorized 授权资产标记 — L1 主动验证硬门的数据源。
-    # 新库由 SCHEMA 直接建全, 旧库 ALTER 迁移(与 W5 eng 列同款); 默认 false = 未授权(fail-safe)。
-    try:
-        conn.execute("ALTER TABLE Endpoint ADD authorized BOOL DEFAULT false")
-    except Exception:
-        pass
-    # 存量混合池归属回填: 只处理 eng='' 的行, 幂等(每次启动 O(池子行数), 空转即跳过)。
-    try:
-        _backfill_eng(conn)
-    except Exception:
-        pass
-
-
-JUNK_PATTERNS = ["no rate limit", "missing rate limit", "lack of rate limiting",
-                 "rate limiting disabled", "限速缺失", "未限速",
-                 "security header", "安全头", "cors configuration",
-                 "sourcemap", "版本号指纹", "self-xss", "tls warning"]
-
-# R3: 配置建议归类 —— 加固建议不作为漏洞结论（原设定质量门控条目），降级为 config-advice 单独归类
-CONFIG_ADVICE_RE = re.compile(
-    r"(cors|security headers?|安全头|cookie (attrs?|attributes|属性)|httponly|samesite|"
-    r"secure flag|版本号|x-powered-by|server banner|version (disclosure|泄露)|missing security)",
-    re.I)
-
-# issue #89 前置: 类别名归一 — 同缺陷因命名漂移(chain 族 4 种写法等)逃逸签名去重与分类统计。
-# 写入时归一(canonical_cat) + 存量迁移(scripts/ops 层), canonical 选择取存量最高频写法。
-CAT_ALIASES = {
-    # chain 族
-    "exploit-chain": "attack-chain", "complete-abuse-chain": "attack-chain",
-    "auth-chain": "attack-chain", "chain": "attack-chain",
-    # cors 族
-    "cors-misconfig": "cors-misconfiguration", "cors-misc": "cors-misconfiguration",
-    "cors-session-theft": "cors-misconfiguration",
-    # auth 族
-    "authentication-bypass": "auth-bypass", "auth-bypass-partial": "auth-bypass",
-    "auth-bypass-attempt": "auth-bypass", "auth-bypass-vector": "auth-bypass",
-    # crypto 族
-    "crypto-bypass": "crypto-failure", "broken-crypto": "crypto-failure", "crypto-weakness": "crypto-failure",
-    # info 族
-    "info-leak": "info-disclosure", "information-disclosure": "info-disclosure",
-    # credential 族
-    "credential-theft": "credential-exposure", "credential-extraction": "credential-exposure",
-    "credential-abuse": "credential-exposure",
-    # config 族
-    "config-issue": "config-advice", "config-change": "config-advice",
-}
-
-
-def canonical_cat(c) -> str:
-    """类别归一(纯函数供 pytest) — 小写化后按别名表映射到 canonical 写法。"""
-    c = str(c or "").strip().lower()
-    return CAT_ALIASES.get(c, c)
-
-
-# ── W5: engagement 池子隔离 ─────────────────────────────────────────────
-# 池子数据(Finding/Signal_/Endpoint/Hypothesis/Plan)带 eng 归属; 面板按选中 engagement 过滤,
-# 经验(ExperienceWeight)与模型策略跨项目共享。存量混合池由 _backfill_eng 启动时一次性消化。
-
-def parse_scope_allows(scope) -> list:
-    """scope 字符串 → 授权(非 `!`)条目列表(纯函数)。与写门控同口径解析。"""
-    out = []
-    for s in str(scope or "").split(","):
-        s = s.strip().lower()
-        if s and not s.startswith("!"):
-            out.append(s)
-    return out
-
-
-def host_in_scope(host, scope) -> bool:
-    """host 是否落在 scope 授权条目内(纯函数) — 后缀匹配, 与写门控同口径。"""
-    h = re.sub(r"^[a-z][a-z0-9+.-]*://", "", str(host or "").strip().lower()).split("/")[0]
-    for a in parse_scope_allows(scope):
-        if h == a or h.endswith("." + a):
-            return True
-    return False
-
-
-# ── L0/L1 分级验证 + 授权资产硬门(参照 dsh-hunter) ─────────────────────────
-# L0 被动验证(GET 首页存活+指纹一致性比对): 任何 scope 内资产可做;
-# L1 主动最小验证(只读 curl 重放): 仅限授权表内(Endpoint.authorized=true)资产,
-#     互联网/未授权资产执行 L1 必须被硬门拒绝;
-# L2 完整 EXP: 永不自动执行(不存在该档, 传入即按未知档拒绝)。
-
-L1_DENY_REASON = "目标不在授权资产表，L1 主动验证被拒绝——仅可执行 L0 被动验证"
-
-
-def hostport_of(url) -> str:
-    """URL → host:port 授权比对键(纯函数, 与 validator.js hostportOf 同口径)。
-    显式端口照抄; 无端口按 scheme 补默认(http=:80, https=:443); 剥离 userinfo; 解析失败返回 ''。"""
-    s = str(url or "").strip().lower()
-    m = re.match(r"^[a-z][a-z0-9+.-]*://([^/?#]+)", s)
-    if not m:
-        return ""
-    hp = m.group(1)
-    at = hp.rfind("@")
-    if at >= 0:
-        hp = hp[at + 1:]
-    if ":" in hp and hp.rfind(":") > hp.rfind("]"):
-        h, _, p = hp.rpartition(":")
-        if p.isdigit():
-            return f"{h}:{p}"
-    return f"{hp}:{443 if s.startswith('https') else 80}"
-
-
-def l1_gate(level, hostport, authorized_hostports) -> tuple[bool, str]:
-    """L0/L1 分级硬门(纯函数供 pytest, 与 validator.js l1Gate 同语义):
-    L0 被动验证任何资产放行; L1 主动验证仅限授权表内资产 — 条目带端口=精确 host:port,
-    不带端口=该 host 任意端口(资产级授权); 其他档位(含 L2)一律拒绝 — L2 完整 EXP 永不自动执行。
-    未授权返回 L1_DENY_REASON 固定话术(validator 落 verified_log 审计, 两端同文可对账)。"""
-    lv = str(level or "").strip().upper()
-    if lv == "L0":
-        return True, ""
-    if lv != "L1":
-        return False, "未知验证档位(仅 L0/L1; L2 完整 EXP 永不自动执行)"
-    hp = str(hostport or "").strip().lower()
-    if not hp:
-        return False, L1_DENY_REASON
-    for e in authorized_hostports or []:
-        e = str(e or "").strip().lower()
-        if not e:
-            continue
-        if ":" in e and e.rfind(":") > e.rfind("]"):
-            if hp == e:
-                return True, ""
-        elif hp.rpartition(":")[0] == e:
-            return True, ""
-    return False, L1_DENY_REASON
-
-
-def _parse_ts_ms(v):
-    """ISO/epoch 字符串 → epoch ms(纯函数); 失败返回 0。"""
-    if v is None:
-        return 0
-    if isinstance(v, (int, float)):
-        return int(v)
-    try:
-        return int(str(v).strip())
-    except ValueError:
-        pass
-    try:
-        s = str(v).strip().replace("Z", "+00:00")
-        d = datetime.fromisoformat(s)
-        if d.tzinfo is None:
-            d = d.replace(tzinfo=timezone.utc)
-        return int(d.timestamp() * 1000)
-    except Exception:
-        return 0
-
-
-def eng_time_windows(rows) -> list:
-    """Engagement 行({name, created_at} 或 (name, created_at)) → 按时间排序的归属窗口
-    [(name, start_ms, end_ms)]。end_ms = 下一 engagement 的 created_at(多开并行期归属先创建者),
-    末位到 +∞。无时间戳的行跳过。"""
-    pts = []
-    for r in rows or []:
-        if isinstance(r, dict):
-            name, ca = r.get("name"), r.get("created_at")
-        else:
-            name, ca = (r[0], r[1] if len(r) > 1 else None)
-        t = _parse_ts_ms(ca)
-        if t:
-            pts.append((t, str(name)))
-    pts.sort()
-    wins = []
-    for i, (t, name) in enumerate(pts):
-        end = pts[i + 1][0] if i + 1 < len(pts) else float("inf")
-        wins.append((name, t, end))
-    return wins
-
-
-def attribute_by_time(ts, windows) -> str:
-    """ts(ms) 按窗口归属 engagement 名(纯函数) — 落在窗口起点之前的孤儿数据不强行归属(返回 '')。"""
-    t = _parse_ts_ms(ts)
-    if not t:
-        return ""
-    for name, start, end in windows or []:
-        if start <= t < end:
-            return name
-    return ""
-
-
-def pick_write_eng(explicit, active_rows, hosts) -> str:
-    """写入打标归属决策(纯函数): ①显式 eng 字段且在 active 列表内 → 采用
-    ②恰一个 active → 它 ③多 active 时按载荷 host 命中 scope 投票(唯一命中者胜)
-    ④兜底 ''(面板按 eng='' 也可视, 不丢数据)。"""
-    names = []
-    for r in active_rows or []:
-        n = r.get("name") if isinstance(r, dict) else r[0]
-        names.append(str(n))
-    if explicit:
-        e = str(explicit).strip()
-        if e in names:
-            return e
-    if len(names) == 1:
-        return names[0]
-    if hosts:
-        votes = {}
-        for r in active_rows or []:
-            n = r.get("name") if isinstance(r, dict) else r[0]
-            sc = r.get("scope") if isinstance(r, dict) else (r[1] if len(r) > 1 else "")
-            hit = sum(1 for h in hosts if host_in_scope(h, sc))
-            if hit:
-                votes[str(n)] = votes.get(str(n), 0) + hit
-        if len(votes) == 1:
-            return next(iter(votes))
-    return ""
-
-
-def _backfill_eng(conn):
-    """存量混合池归属回填(启动时, 幂等只处理 eng=''):
-    ①有 ts 的表按 engagement created_at 时间窗归属 ②Endpoint 无 ts → 经 AT 边继承 Signal 归属
-    (多数票) ③仍空的 Endpoint 按 URL host 命中 scope 归属。多开并行的存量按先创建者窗口切分。"""
-    rows = conn.execute("MATCH (e:Engagement) RETURN e.name, e.created_at, e.scope")
-    engs = []
-    while rows.has_next():
-        n, ca, sc = rows.get_next()
-        engs.append({"name": str(n or ""), "created_at": str(ca or ""), "scope": str(sc or "")})
-    if not engs:
-        return {"touched": 0}
-    windows = eng_time_windows(engs)
-    touched = 0
-    # ① 时间窗归属(表, ts 列名)
-    for table, tscol in (("Signal_", "ts"), ("Finding", "ts"), ("Hypothesis", "ts"), ("Plan", "created_at")):
-        r = conn.execute(f"MATCH (x:{table}) WHERE x.eng = '' RETURN x.{tscol}, x.id")  # noqa: S608 — 表/列名为字面量枚举
-        batch = []
-        while r.has_next():
-            ts, rid = r.get_next()
-            eng = attribute_by_time(ts, windows)
-            if eng:
-                batch.append((eng, str(rid)))
-        for eng, rid in batch:
-            if table == "Signal_":
-                conn.execute("MATCH (x:Signal_ {id:$i}) SET x.eng = $e", parameters={"i": rid, "e": eng})
-            elif table == "Finding":
-                conn.execute("MATCH (x:Finding {id:$i}) SET x.eng = $e", parameters={"i": rid, "e": eng})
-            elif table == "Hypothesis":
-                conn.execute("MATCH (x:Hypothesis {id:$i}) SET x.eng = $e", parameters={"i": rid, "e": eng})
-            else:
-                conn.execute("MATCH (x:Plan {id:$i}) SET x.eng = $e", parameters={"i": rid, "e": eng})
-            touched += 1
-    # ② Endpoint 经 AT 边继承 Signal 归属(多数票, 平票取最早创建的 signal 之归属)
-    try:
-        r = conn.execute(
-            "MATCH (s:Signal_)-[:AT]->(e:Endpoint) WHERE e.eng = '' AND s.eng <> '' "
-            "RETURN e.id, s.eng, count(s)")
-        votes = {}
-        while r.has_next():
-            eid, seng, _c = r.get_next()
-            votes.setdefault(str(eid), {})
-            votes[str(eid)][str(seng)] = votes[str(eid)].get(str(seng), 0) + 1
-        for eid, vm in votes.items():
-            eng = max(vm.items(), key=lambda kv: kv[1])[0]
-            conn.execute("MATCH (x:Endpoint {id:$i}) SET x.eng = $e", parameters={"i": eid, "e": eng})
-            touched += 1
-    except Exception:
-        pass  # 旧库无 AT 边时跳过, ③兜底
-    # ③ Endpoint host 命中 scope 归属
-    r = conn.execute("MATCH (x:Endpoint) WHERE x.eng = '' RETURN x.id, x.url")
-    batch = []
-    while r.has_next():
-        eid, url = r.get_next()
-        h = re.sub(r"^[a-z][a-z0-9+.-]*://", "", str(url or "").strip().lower()).split("/")[0]
-        if not h:
-            continue
-        for g in engs:
-            if host_in_scope(h, g["scope"]):
-                batch.append((g["name"], str(eid)))
-                break
-    for eng, eid in batch:
-        conn.execute("MATCH (x:Endpoint {id:$i}) SET x.eng = $e", parameters={"i": eid, "e": eng})
-        touched += 1
-    return {"touched": touched}
-
-# R3: Finding 八态状态机（INTEGRATION-DAG 采纳项）—— 只允许合法迁移
-# needs-scope(evidence-gate 四态采纳): verify 无法判定时先归因授权边界(缺低权限账号/身份租户边界
-# 不明/目标归属存疑)而非硬判 rejected —— 过去这类样本被误杀且不可复查。授权澄清后可重新入验证
-# 或带补充证据直通 verified。
-FINDING_STATES = ("candidate", "triaged", "verified", "isolated", "reported", "accepted", "rejected", "needs-scope")
-FINDING_TRANSITIONS = {
-    "candidate": ("triaged", "verified", "isolated", "rejected", "needs-scope"),
-    "triaged": ("verified", "isolated", "rejected", "needs-scope"),
-    "verified": ("reported", "isolated"),
-    "isolated": ("candidate", "rejected"),
-    "reported": ("accepted", "rejected"),
-    "accepted": (),
-    "rejected": (),
-    "needs-scope": ("candidate", "triaged", "verified", "rejected"),
-    # issue #88: 早期冻结逻辑写入的历史状态(frozen 不在七态内, 实测存量 301 条永久卡死)。
-    # 兼容出口只开三条: 退回 candidate(重新入验证)/triaged(有证据直通)/rejected; 禁止 frozen→verified 越权直通。
-    "frozen": ("candidate", "triaged", "rejected"),
-}
-
-def transition_gate(cur, to, actor, reason):
-    """W1: 七态转换审计门 — 纯函数单测真源(与 finding_gates 同模式)。
-    谁在何时推动了状态必须可追溯: actor(1-40字符) 与 reason(1-80字符) 必填,
-    合法迁移才产出轨迹 {ts, actor, reason, from, to}(宿主写入 Finding.last_transition)。"""
-    if to not in FINDING_STATES:
-        return False, f"to must be one of {list(FINDING_STATES)}", None
-    if to not in FINDING_TRANSITIONS.get(cur, ()):
-        return False, f"illegal transition {cur} -> {to}", None
-    actor = str(actor or "").strip()
-    reason = str(reason or "").strip()
-    if not actor or len(actor) > 40:
-        return False, "actor required (1-40 chars): 谁推动了状态", None
-    if not reason or len(reason) > 80:
-        return False, "reason required (1-80 chars): 为什么转换", None
-    traj = {"ts": datetime.now(timezone.utc).isoformat(), "actor": actor,
-            "reason": reason, "from": cur, "to": to}
-    return True, "", traj
-
-
-def redact_pii(s):
-    """I-014 + V-10: PII/凭据脱敏 —— 身份证/手机号(含分隔符)/邮箱(大小写)/AWS key/JWT/私钥/Authorization 头"""
-    import re as _p
-    n = 0
-    s, k = _p.subn(r"\b\d{17}[\dXx]\b", "[REDACTED:idcard]", s); n += k
-    s, k = _p.subn(r"\b1[3-9]\d[- ]?\d{4}[- ]?\d{4}\b", "[REDACTED:phone]", s); n += k
-    s, k = _p.subn(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[REDACTED:email]", s); n += k
-    s, k = _p.subn(r"\bAKIA[0-9A-Z]{16}\b", "[REDACTED:aws-key]", s); n += k
-    s, k = _p.subn(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b", "[REDACTED:jwt]", s); n += k
-    s, k = _p.subn(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
-                   "[REDACTED:private-key]", s); n += k
-    s, k = _p.subn(r"(?i)\b(authorization\s*:\s*(?:bearer\s+)?|api[_-]?key\s*[:=]\s*)[^\s\"',;)]{8,}",
-                   r"\1[REDACTED]", s); n += k
-    return s, n
-
-
 def upsert_endpoint(conn, url, tech="", business_chain="", param="", method="GET", eng="", authorized=False):
     """#5: worker 可写的 Endpoint 通道 — url 幂等 upsert(存在则补指纹字段, 不存在则建)。
     此前 worker 只有 finding/signal/hypothesis 三个写端点而 /query 只读,
@@ -656,33 +173,6 @@ def upsert_endpoint(conn, url, tech="", business_chain="", param="", method="GET
                     "t": str(tech)[:100], "b": str(business_chain)[:100], "eng": str(eng)[:120],
                     "az": bool(authorized)})
     return eid
-
-
-def normalize_title(t: str) -> str:
-    """#11: 标题归一化 — 小写 + 去非字母数字。"""
-    return re.sub(r"[^a-z0-9]+", "", str(t or "").lower())
-
-
-def titles_duplicate(a_norm: str, b_norm: str) -> bool:
-    """#11: 去重门判定(纯函数供 pytest) — normalized 精确相等或 trigram Jaccard > 0.9。"""
-    if not a_norm or not b_norm:
-        return False
-    if a_norm == b_norm:
-        return True
-    def _tg(s):
-        return {s[i:i + 3] for i in range(len(s) - 2)} if len(s) >= 3 else {s}
-    ta, tb = _tg(a_norm), _tg(b_norm)
-    inter = len(ta & tb)
-    return bool(inter) and inter / len(ta | tb) > 0.9
-
-
-def repro_gate(sev: str, repro) -> tuple[bool, str]:
-    """#6: repro 强制门(纯函数供 pytest) — severity != info 必须带可复现命令。
-    实证: 32 条 candidate repro 全空 → 验证环 mass-refute → 报告导出恒空。"""
-    if str(sev or "").lower() != "info" and not str(repro or "").strip():
-        return False, ("repro required for severity != info: 必须携带可复现命令/证据"
-                       "(完整 curl 单行+预期响应特征), 空 repro 会被验证环 refuted 且报告导出恒空")
-    return True, ""
 
 
 _D2D_PAUSE_FILE = os.environ.get("D2D_DATA_DIR", os.path.expanduser("~/.d2d-data")) + "/config/paused.json"
@@ -734,156 +224,6 @@ def _eng_paused(eng: str) -> bool:
         return v
     return c[1]
 
-
-def config_reject(sev: str, cat: str, title: str) -> tuple[bool, str]:
-    """垃圾拒收出口(纯函数供 pytest) — config/info 级加固建议不进漏洞库, /write/finding 直接 400。
-    此前行为是降级 config-advice 入库, 实证一轮 SRC 积压 165 条 config-advice 候选堆尸。
-    medium+ 仍降级入库供人工复核; worker 收到 400 后应改写 /write/signal 或升级证据重交。"""
-    s = str(sev or "").lower()
-    if s in ("low", "info"):
-        c = str(cat or "").lower()
-        if c in ("config", "config-advice", "hardening") or CONFIG_ADVICE_RE.search(str(title or "").lower()):
-            return True, ("config/info 级加固建议不入漏洞库: 加固项写 /write/signal(type='config-advice'); "
-                          "若确属可利用漏洞请提升 severity 并附凭证化证据(如 ACAC:true 回显)")
-    return False, ""
-
-
-def candidate_watermark_reject(sev: str, backlog: int, threshold: int) -> tuple[bool, str]:
-    """candidate 积压水位门(纯函数供 pytest) — 积压 ≥ 阈值时 low/medium/info 新 finding 暂收(429),
-    high/critical 不受限; 逼 worker 转写 signal/补证据, 防漏斗灌水(实证积压 258 条时验证环追不上)。"""
-    if int(backlog) >= int(threshold) and str(sev or "").lower() in ("low", "info", "medium"):
-        return True, (f"candidate 积压 {backlog}≥{threshold}: 暂收 low/medium/info Finding(只收 high/critical); "
-                      f"发现转写 /write/signal, 或为既有 candidate 补充证据")
-    return False, ""
-
-
-_URL_RE = re.compile(r"https?://[A-Za-z0-9.\-]+(?:/[A-Za-z0-9._~\-/?%=&]*)?")
-
-
-def url_sig(title: str, repro: str) -> tuple[str, str]:
-    """title+repro 首个 URL 的 (host, path); 无 URL/本地地址返回 ('','')(与 triage.mjs findingSig 同口径)。"""
-    m = _URL_RE.search(f"{title or ''} {repro or ''}")
-    if not m:
-        return "", ""
-    try:
-        from urllib.parse import urlparse
-        u = urlparse(m.group(0))
-        if u.hostname in ("127.0.0.1", "localhost"):
-            return "", ""
-        return (u.hostname or "").lower(), (u.path or "/").rstrip("/").lower()
-    except Exception:
-        return "", ""
-
-
-def title_tokens(t: str) -> set:
-    return {w for w in re.split(r"[^a-z0-9\u4e00-\u9fff]+", str(t or "").lower()) if len(w) >= 2}
-
-
-def token_jaccard(a: set, b: set) -> float:
-    if not a or not b:
-        return 0.0
-    inter = len(a & b)
-    return inter / (len(a) + len(b) - inter) if (len(a) + len(b) - inter) else 0.0
-
-
-def endpoint_sig_duplicate(fhost: str, fpath: str, ftoks: set, ehost: str, epath: str, etoks: set,
-                           j_threshold: float = 0.45) -> str:
-    """签名去重判定(纯函数供 pytest, 与 triage.mjs 问题签名同口径) —
-    'dup'=同 host+同 path 高相似(409 拒, 返回 existing_id); 'related'=跨 host 同 path 高相似(入库标 related_to); ''=放行。"""
-    if not fpath or not epath:
-        return ""
-    j = token_jaccard(ftoks, etoks)
-    if j < j_threshold:
-        return ""
-    if fhost and ehost:
-        if fhost == ehost and fpath == epath:
-            return "dup"
-        if fhost != ehost and fpath == epath:
-            return "related"
-    return ""
-
-
-def finding_gates(cypher: str) -> tuple[bool, str]:
-    """I-009: 三个门提取为模块级纯函数 — 空标题 / DDL / 垃圾清单
-    返回 (ok, err)：ok True 表示通过，False 表示被门拦截，err 为拦截原因
-    供 tests/test_graphd_gates.py import 实测，防复刻正则漏检（如 junk NameError）
-    """
-    import re as _re
-    # DDL 禁令 — schema 固定，运行期禁止建/删表（最优先，与 Finding 无关）
-    if _re.search(r"\b(CREATE|DROP)\s+(NODE\s+|REL\s+)?TABLE", cypher, _re.I):
-        return False, "DDL forbidden at runtime (schema is fixed)"
-    # Finding 相关门：仅当涉及 Finding CREATE 时检查
-    if "Finding" in cypher and "CREATE" in cypher.upper():
-        # 空标题门
-        m = _re.search(r"title\s*:", cypher + " ")
-        if m:
-            tail = cypher[m.end():].lstrip()[:2]
-            if tail[0:1] in (")", ",") or tail in ('""', "''"):
-                return False, "Finding.title must be non-empty"
-        # 垃圾洞清单门
-        t = _re.search(r"title\s*:\s*[\"'](.*?)[\"']", cypher)
-        if t:
-            tv = t.group(1).lower()
-            if any(j in tv for j in JUNK_PATTERNS):
-                return False, f"garbage-listed finding rejected: {tv[:60]}"
-    return True, ""
-
-
-# V-06: worker /query 只读判定提为纯函数(大小写不敏感)。
-# 原 :271/:273 正则区分大小写, Kuzu 关键字大小写不敏感 → 'MATCH (n) detach delete n' 绕过黑名单
-# 删任意节点(2026-08-29 隔离实例杀链实证: 写入→小写删除→复查=0)。提取纯函数供 pytest 锁回归。
-WORKER_READONLY_WHITELIST = re.compile(r"^(MATCH|RETURN|WITH|CALL)\b", re.I)
-WORKER_MUTATION_RE = re.compile(
-    r"\b(CREATE|MERGE|SET|DELETE|DETACH|DROP|REMOVE|COPY|EXPORT|IMPORT|ATTACH)\b", re.I)
-
-
-def worker_query_allowed(cypher: str) -> tuple[bool, str]:
-    """worker token /query 只读门: 白名单首词 + 全文变更关键字扫描(均大小写不敏感)。
-    误报取舍: 字符串字面量里含独立 'set/delete' 等词的查询会被拒 —— fail-closed 方向。"""
-    if not WORKER_READONLY_WHITELIST.match(cypher):
-        return False, "/query is read-only for workers (MATCH/RETURN/WITH/CALL only); use /write/* for mutations"
-    if WORKER_MUTATION_RE.search(cypher):
-        return False, "/query is read-only for workers: mutation keywords forbidden (case-insensitive)"
-    return True, ""
-
-
-def prose_denylist_hit(text_lower: str, domains) -> str:
-    """#73: denylist 兜底散文匹配(模块级纯函数供 pytest) — 与 R6 结构化字段扫描互为双保险。
-
-    堵两个实证漏检形态(结构化正则左界字符类 [^a-z0-9.\\-] 排除了 '.'):
-      1) 父域条目(demo-src.com)对子域散文提及(mail.demo-src.com)不命中 —— 前导 '.' 被排除;
-      2) percent-encoded 点号形态(mail%2Edemo-src%2Ecom)不命中。
-    规则与 plugin/pentest-dsh/domain/scope.mjs 的 deniedHit 后缀匹配同口径: 域名条目须以
-    「行首或非字母数字字符(含 '.')」为左界、以「串尾或非字母数字字符」为右界全段出现 ——
-    全段匹配不做子串误伤(demo-src.company / notdemo-src.com 不命中); 右界含 '-' 与 '.'
-    (散文红线零容忍, fail-closed: 'demo-src.com.cn' 这类更长域名的提及同样拒收)。
-    仅处理域名条目: 以 '.' 结尾的网段前缀条目(如 203.0.113.)不进本兜底, 由结构化扫描的
-    \\d 主机位语义负责。
-    text_lower 须为已 lower() 文本(调用方传 json.dumps(req).lower()); 内部对原文做至多两轮
-    unquote(percent-decode, 覆盖双重编码), 原文/解码文任一命中即返回该域名条目, 未命中返回 ''。"""
-    if not text_lower or not domains:
-        return ""
-    variants = [text_lower]
-    try:
-        from urllib.parse import unquote
-        _dec = text_lower
-        for _ in range(2):
-            _n = unquote(_dec).lower()
-            if _n == _dec:
-                break
-            _dec = _n
-            variants.append(_dec)
-    except Exception:
-        pass
-    for _raw in domains:
-        d = str(_raw or "").strip().lower()
-        if not d or "." not in d or d.endswith("."):
-            continue  # 空条目/无点条目/网段前缀不在散文兜底范围
-        pat = re.compile(r"(?:^|[^a-z0-9])" + re.escape(d) + r"(?:$|[^a-z0-9])")
-        for v in variants:
-            if pat.search(v):
-                return d
-    return ""
 
 # D-4: 并发连接上限 — ThreadingHTTPServer 每连接一线程, 慢连接可耗尽线程/内存(纵深防御)
 _INFLIGHT = threading.BoundedSemaphore(int(os.environ.get("P2P_MAX_CONNS", "32")))
@@ -997,31 +337,9 @@ class Handler(BaseHTTPRequestHandler):
         return ok
 
     def _auth_check(self, level):
-        """#73 拆分: 纯判定逻辑(_auth 负责失败审计包装), 判定规则与原 _auth 完全一致。"""
-        # #32 严格版: 无任何开放回退 —— 未配置 token 的端点一律拒绝
-        host = os.environ.get("P2P_HOST_TOKEN", "")
-        worker = os.environ.get("P2P_WORKER_TOKEN", "")
-        got = self.headers.get("X-Auth", "")
-        # 中危审计修复(12): P2P_TOKEN_REQUIRED=1(生产模式)此前只在启动日志打印, 判定处从不
-        # 消费 = 死开关。现接上: required 时对应级 token 未配置一律拒绝(不再退到开放回退)。
-        if os.environ.get("P2P_TOKEN_REQUIRED") == "1":
-            if level == "host" and not host:
-                return False
-            if level != "host" and not (worker or host):
-                return False
-        if level == "host":
-            return bool(host) and bool(got) and hmac.compare_digest(got, host)
-        # #33修复: host token 单独配置时也放行宿主写入
-        if worker:
-            if got and worker and hmac.compare_digest(got, worker):
-                return True
-            if got and host and hmac.compare_digest(got, host):
-                return True
-            return False
-        # I-013: range 开放改为显式 opt-in(P2P_OPEN_RANGE=1), 默认 fail-closed
-        if os.environ.get("P2P_OPEN_RANGE") == "1":
-            return True
-        return False
+        """#73 拆分: 纯判定逻辑(_auth 负责失败审计包装), 判定规则与原 _auth 完全一致。
+        (判定主体搬移至 gd.auth.auth_check 纯函数, 此处仅读取 X-Auth 头后委托 —— 行为零改动。)"""
+        return auth_check(level, self.headers.get("X-Auth", ""))
 
     def do_POST(self):
         self._slowloris_arm()  # #73: 慢头部/慢 body 读全程受限(见 _slowloris_arm 注释)
@@ -1468,12 +786,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "unknown"})
 
 
-def _jsonify(v):
-    if isinstance(v, (int, float, str, bool)) or v is None:
-        return v
-    return str(v)
-
-
 if __name__ == "__main__":
     # #14: 实例互斥(flock) — kuzu 无文件锁, 两个 graphd 并发打开同一 DB 会互相覆盖
     #      (实证: worker 自主拉起第二实例 + kill -9 → 377 findings 全图丢失)。
@@ -1506,14 +818,7 @@ if __name__ == "__main__":
     except Exception as _e:
         print(f"[graphd] gate_status 一致性检查跳过: {_e}", flush=True)
 
-    def _safe_token_path(p):
-        """路径参数白名单: token 文件仅允许位于 ~/.config/d2d/ 下(防 env 污染导向任意路径读写)"""
-        base = os.path.realpath(os.path.expanduser("~/.config/d2d"))
-        r = os.path.realpath(os.path.expanduser(p))
-        if not r.startswith(base + os.sep):
-            print(f"[graphd] token path rejected (outside {base}): {p}", flush=True)
-            sys.exit(1)
-        return r
+    # _safe_token_path 已搬移至 gd.auth(路径白名单纯函数), 由模块顶部 re-export 提供同名实现。
 
     def _write_token_file(raw_path: str, data: str) -> str:
         """Mimosa 加固: 唯一 token 落盘点 — 路径白名单校验(_safe_token_path)后 O_NOFOLLOW+0600 写入,
