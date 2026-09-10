@@ -23,7 +23,7 @@
 
 ## 安装
 
-前置：Node.js ≥ 18、Python ≥ 3.10（`pip install kuzu`）、pnpm。
+前置：Node.js ≥ 22.5、Python ≥ 3.10（`pip install kuzu`）、pnpm。
 
 ```bash
 git clone https://github.com/wufufu770/d2d && cd d2d

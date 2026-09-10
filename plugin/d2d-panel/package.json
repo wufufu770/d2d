@@ -1,6 +1,6 @@
 {
   "name": "d2d-panel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "d2d 面板 — dsh Web UI 侧栏观测台(better-sidebar tab): 三环 worker 心跳 + 七态 findings 只读看板, host 半同源路由聚合快照, token 不出 host",
   "type": "module",
   "main": "./lib/host/index.mjs",
