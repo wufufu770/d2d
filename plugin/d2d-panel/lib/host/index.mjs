@@ -110,8 +110,11 @@ export function apply(ctx, config = {}) {
           return send(503, { ok: false, error: { code: 'graphd-unreachable', message: `fail-closed: ${String(e?.message ?? e).slice(0, 140)}` } })
         }
       }
-      // ---- 写端点: 面板交互(fleet 模型切换 / finding 人工裁决) ----
-      if (method === 'fleet' || method === 'transition') {
+      // ---- 写端点: 面板交互(fleet 模型切换 / finding 人工裁决 / 供应商凭据落盘) ----
+      // H17 修复(外部审计): credential 块原嵌在 `fleet || transition` 分支内 — method 为 'credential'
+      // 时外层条件恒假, 整块死代码, POST /d2d/api/credential 恒 404。外层门放入 credential 即可
+      // (共用 POST 校验 + readBody), 分支内按 method 分派顺序不变。
+      if (method === 'fleet' || method === 'transition' || method === 'credential') {
         if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST required' } })
         let body
         try { body = await readBody(req) } catch (e) {
@@ -138,6 +141,8 @@ export function apply(ctx, config = {}) {
             const credPath = `${home}/.credentials.yaml`
             const merged = mergeCredentialRefs(fs.readFileSync(credPath, 'utf8'), p.apiKeyEnv, key)
             fs.writeFileSync(credPath, merged, { mode: 0o600 })
+            // writeFileSync 的 mode 只在新建时生效 — 预存文件可能是宽松权限, 密钥落盘后强制收口 0600
+            fs.chmodSync(credPath, 0o600)
             cache = null
             return send(200, { ok: true, provider: body.provider, env: p.apiKeyEnv })
           } catch (e) {
