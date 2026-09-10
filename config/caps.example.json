@@ -8,6 +8,16 @@
   "deepParallel": 2,
   "maxAgents": 4,
   "backlogWatermark": 30,
+  "deepWake": {
+    "crossSourceMin": 2,
+    "crossWeight": 3.0,
+    "maxWeight": 3.5,
+    "typeFloor": {
+      "hardcoded-secret": 3.0,
+      "js-secret": 3.0
+    },
+    "_comment": "deepWake/assetConverge 节 = 深环唤醒/资产环收敛调参(parseRingTuning 白名单解析, 文件 > 内置默认)。typeFloor(0909 新增): 信号类型→权重下限 — 该类型信号单源(无交叉印证)也直接抬到下限, 保证深环唤醒; 不配则用内置默认 {hardcoded-secret:3.0, js-secret:3.0}, 配了则整体替换默认映射; 值域 [0,10], 仍受 maxWeight 钳位"
+  },
   "tools": {
     "nmap": {
       "fullPort": ["(?:^|\\s)-p-(?=\\s|$)", "(?:^|\\s)-p\\s*(?:1-65535|0-65535)(?=\\s|$)"],
