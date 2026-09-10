@@ -53,13 +53,30 @@ export function matchRule(rule, evidence) {
   return rule.matchers.every((m) => matcherHit(m, ev))
 }
 
-// → [{product, vendor, tags}] 命中产品列表(去重, 保规则序)
+// #49(OSINT 自动喂送): 高价值指纹 tag 词表 — 中间件/DevOps/数据面等基础设施产品值得反查测绘面
+// (cms/framework/php 等泛型 tag 不触发)。autofeed 只对 osintCandidate=true 的命中自动喂送。
+export const OSINT_HIGH_VALUE_TAGS = new Set([
+  'middleware', 'devops', 'ci', 'k8s', 'registry', 'db', 'monitor', 'oa', 'erp', 'bi', 'pm', 'storage',
+])
+export function isOsintCandidate(tags) {
+  return (tags ?? []).some((t) => OSINT_HIGH_VALUE_TAGS.has(String(t).toLowerCase()))
+}
+
+// → [{product, vendor, tags}] 命中产品列表(去重, 保规则序); 高价值命中(#49)额外带 osintCandidate:true —
+// 纯增量字段, 既有消费方只读 product/vendor/tags 不受影响。
 export function detectFingerprint(rules, evidence) {
   const out = []
   const seen = new Set()
   for (const r of rules ?? []) {
     if (!r?.product || seen.has(r.product)) continue
-    try { if (matchRule(r, evidence)) { seen.add(r.product); out.push({ product: r.product, vendor: r.vendor ?? '', tags: r.tags ?? [] }) } } catch { /* 单规则坏不拖垮 */ }
+    try {
+      if (matchRule(r, evidence)) {
+        seen.add(r.product)
+        const hit = { product: r.product, vendor: r.vendor ?? '', tags: r.tags ?? [] }
+        if (isOsintCandidate(hit.tags)) hit.osintCandidate = true
+        out.push(hit)
+      }
+    } catch { /* 单规则坏不拖垮 */ }
   }
   return out
 }

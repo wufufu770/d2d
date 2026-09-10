@@ -1,0 +1,14 @@
+# #49 OSINT 自动喂送守护 — autofeed --watch(指纹命中 → 测绘反查 → asset-perimeter 回图)
+# 凭据缺失/无活跃 engagement 时静默跳过只记审计, 不退出 — Restart=on-failure 兜底真崩溃(图不可达写超时等)
+[Unit]
+Description=d2d OSINT auto-feed (fingerprint -> mapping -> graph, #49)
+After=network.target d2d-graphd.service
+
+[Service]
+ExecStart=/usr/bin/node %h/d2d/scripts/recon/autofeed.mjs --watch
+WorkingDirectory=%h/d2d
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

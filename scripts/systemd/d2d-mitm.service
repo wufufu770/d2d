@@ -1,0 +1,15 @@
+# #44 MITM 拦截面 — mitm-capture(:8895, D2D_MITM=1 才启用拦截)
+# HTTP 明文全量捕获 + TLS opt-in(自签 CA) + 证据落盘 + 聚合回图; worker 指向 http://127.0.0.1:8895 即接管
+[Unit]
+Description=d2d MITM capture proxy (:8895, #44)
+After=network.target d2d-graphd.service
+
+[Service]
+ExecStart=/usr/bin/node %h/d2d/scripts/gateway/mitm-capture.mjs
+WorkingDirectory=%h/d2d
+Environment=D2D_MITM=1
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
