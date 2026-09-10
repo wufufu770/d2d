@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
-import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement } from '../lib/host/snapshot.mjs'
+import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs } from '../lib/host/snapshot.mjs'
 import { apply as applyHostRoutes } from '../lib/host/index.mjs'
 
 // fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应); params 透传给断言用断言器
@@ -499,7 +499,8 @@ test('host 路由 H17: POST /d2d/api/credential 真实可达 — 凭据落 0600 
     assert.ok(!r.raw.includes('sk-test-'), '凭据值不得回显进响应')
     const credPath = path.join(home, '.credentials.yaml')
     const merged = fs.readFileSync(credPath, 'utf8')
-    assert.ok(merged.includes('  PROV_A_API_KEY: sk-test-12345678'), merged)
+    // 中危审计修复(0910): 值统一双引号包裹(YAML 注入面归零)
+    assert.ok(merged.includes('  PROV_A_API_KEY: "sk-test-12345678"'), merged)
     assert.equal(fs.statSync(credPath).mode & 0o777, 0o600, '凭据文件必须 0600')
   } finally {
     fs.rmSync(home, { recursive: true, force: true })
@@ -548,4 +549,63 @@ test('host 路由 H17: fleet 分支不受影响(分派顺序不变, 校验错误
   const r = await driveRoute(handler, 'POST', '/d2d/api/fleet', { role: '', slot: 'primary', model: '' })
   assert.equal(r.code, 400)
   assert.equal(r.body.error?.code, 'fleet-write-error')
+})
+
+// ── 中危审计修复(0910): mergeCredentialRefs YAML 注入 + writeFleet 原型污染 ──
+test('mergeCredentialRefs 中危4: 值含 `: `/换行不再注入任意 YAML(双引号包裹+转义)', () => {
+  const evil = 'sk-1: injected\n  EVIL_KEY: owned # comment'
+  const out = mergeCredentialRefs('version: 1\n', 'PROV_A_API_KEY', evil)
+  const lines = out.split('\n')
+  // 新值必须落在单行内且为双引号标量 — 换行被转义为 \n 字面量, 不能产生新 YAML 键
+  assert.ok(lines.every((l) => !/^  EVIL_KEY:/.test(l)), out)
+  assert.ok(out.includes('  PROV_A_API_KEY: "sk-1: injected\\n  EVIL_KEY: owned # comment"'), out)
+  // 再合并(读回形态)不破坏 refs 段识别
+  const out2 = mergeCredentialRefs(out, 'PROV_B_API_KEY', 'sk-2')
+  assert.ok(out2.includes('  PROV_B_API_KEY: "sk-2"'), out2)
+  assert.ok(out2.includes('  PROV_A_API_KEY:'), out2)
+})
+
+test('mergeCredentialRefs 中危4: 反斜杠/双引号/回车/制表符均转义, 值永远单标量', () => {
+  const out = mergeCredentialRefs('version: 1\n', 'K', 'a\\b"c\rd\te')
+  assert.ok(out.includes('  K: "a\\\\b\\"c\\rd\\te"'), out)
+  assert.equal(out.split('\n').length, 4) // 'version: 1' + 尾空行 + 'refs:' + 单行条目
+})
+
+test('writeFleet 中危5: __proto__/constructor/prototype 角色名拒绝(原型污染归零)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-panel-pollution-'))
+  const env = { D2D_DATA_DIR: dir }
+  try {
+    fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'config', 'model-policies.json'), JSON.stringify({ default: { primary: '', backup: '' }, roles: { deep: { primary: 'p/1', backup: '' } } }))
+    assert.throws(() => writeFleet({ role: '__proto__', slot: 'primary', model: 'a/b' }, env), /bad role id/)
+    assert.throws(() => writeFleet({ role: 'constructor', slot: 'primary', model: 'a/b' }, env), /bad role id/)
+    assert.throws(() => writeFleet({ role: 'prototype', slot: 'backup', model: 'a/b' }, env), /bad role id/)
+    assert.equal(({}).primary, undefined, 'Object.prototype 不得被污染')
+    assert.equal(({}).backup, undefined)
+    // 正常角色照旧
+    const f = writeFleet({ role: 'deep', slot: 'primary', model: 'p/z' }, env)
+    assert.equal(f.roles.deep.primary, 'p/z')
+    // 非法词形(注入符号/过长)同样拒绝
+    assert.throws(() => writeFleet({ role: 'a'.repeat(65), slot: 'primary', model: 'a/b' }, env), /bad role id/)
+    assert.throws(() => writeFleet({ role: 'x/y', slot: 'primary', model: 'a/b' }, env), /bad role id/)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('readFleet 中危5: 手改文件带 __proto__ 键不并入(读侧过滤)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-panel-pollution-read-'))
+  const env = { D2D_DATA_DIR: dir }
+  try {
+    fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
+    // JSON.parse 对 __proto__ 生成 own property(可直接序列化回文件)
+    const raw = '{"default":{"primary":"","backup":""},"roles":{"__proto__":{"primary":"evil/1","backup":""},"deep":{"primary":"p/1","backup":""}}}'
+    fs.writeFileSync(path.join(dir, 'config', 'model-policies.json'), raw)
+    const f = readFleet(env)
+    assert.ok(!Object.hasOwn(f.roles, '__proto__'), '读侧必须过滤 __proto__ 键(不得并入 roles)')
+    assert.ok(!('primary' in {}), 'Object.prototype 不得被污染')
+    assert.equal(f.roles.deep.primary, 'p/1')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

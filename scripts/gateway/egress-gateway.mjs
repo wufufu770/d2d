@@ -11,12 +11,23 @@ import dns from 'node:dns'
 import { mkdirSync, appendFileSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
-const PORT = parseInt(process.env.P2P_PROXY_PORT ?? '8888', 10)
+// 中危审计修复(13): env 解析 NaN 兜底 — 旧版 parseInt/parseFloat 无回退, env 填垃圾 →
+// listen(NaN) 启动即崩 / RATE=NaN 使 allowRate 恒 false(全限死)。非法值一律回退默认。
+const _envInt = (v, dflt) => { const n = parseInt(v ?? '', 10); return Number.isFinite(n) && n > 0 && n <= 65535 ? n : dflt }
+const _envFloat = (v, dflt) => { const n = parseFloat(v ?? ''); return Number.isFinite(n) && n > 0 ? n : dflt }
+const PORT = _envInt(process.env.P2P_PROXY_PORT, 8888)
 const GRAPHS = (process.env.P2P_GRAPHD ?? 'http://127.0.0.1:8766,http://127.0.0.1:8767,http://127.0.0.1:8768').split(',').map(s => s.trim()).filter(Boolean)
 const TOKEN_FILE = process.env.P2P_HOST_TOKEN_FILE ?? `${process.env.HOME}/.config/d2d/host-token`
 const STATIC_ALLOW = new Set((process.env.P2P_PROXY_ALLOW ?? '127.0.0.1,localhost')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean))
-const RATE = parseFloat(process.env.P2P_PROXY_RATE ?? '5')
+const RATE = _envFloat(process.env.P2P_PROXY_RATE, 5)
+// 中危审计修复(9): 上游请求/隧道超时 — 旧版 http.request/net.connect 无任何超时, 上游挂住 =
+// worker 连接与 socket 永久悬挂。默认 30s, P2P_PROXY_TIMEOUT_MS 可调(非法/非正值回退默认)。
+const UPSTREAM_TIMEOUT_MS = _envInt(process.env.P2P_PROXY_TIMEOUT_MS, 30_000)
+// 中危审计修复(9): 审计 bucket/DNS 缓存容量上限 — 旧版 Map 无限增长(每 host 一条, 永不回收)。
+// 超上限时按插入序淘汰最旧条目(Map 迭代序=插入序, 等效 LRU 粗版; 刷新由令牌桶 last/DNS ts 自带)。
+const MAP_CAP = 4096
+const _capMap = (m) => { while (m.size >= MAP_CAP) { const oldest = m.keys().next().value; if (oldest === undefined) break; m.delete(oldest) } }
 // M6 企业代理链: 企业网出网走公司代理(形态 host:port)。scope/限速/审计仍在本网关强制;
 // 回环/私有目标绕过上游直连(CDP proxy/graphd 等本地面)。
 const UPSTREAM = (() => {
@@ -164,6 +175,7 @@ async function resolvedIpsAllowed(host, resolve = _dnsLookupAll) {
     const addrs = await resolve(h)
     ok = Array.isArray(addrs) && addrs.length > 0 && addrs.every((a) => !isForbiddenTarget(a?.address ?? a))
   } catch { ok = false } // 解析失败/超时 → fail-closed
+  _capMap(_dnsCache) // 中危审计修复(9): 容量上限(旧版过期条目也永不回收)
   _dnsCache.set(h, { ts: Date.now(), ok })
   return ok
 }
@@ -173,6 +185,7 @@ const _setDynScope = (s) => { dynScope = s instanceof Set ? s : new Set() }
 
 const buckets = new Map()
 function allowRate(host) {
+  _capMap(buckets) // 中危审计修复(9): 容量上限, 防海量 host 撑爆内存
   const now = Date.now()
   let b = buckets.get(host)
   if (!b) { b = { tokens: RATE, last: now }; buckets.set(host, b) }
@@ -217,9 +230,12 @@ const server = http.createServer(async (req, res) => {
     const reqOpts = upstreamFor
       ? { host: upstreamFor.host, port: upstreamFor.port, path: `http://${u.host}${u.pathname}${u.search}`, method: req.method, headers: { ...req.headers, host: u.host } }
       : { host, port: u.port || 80, path: u.pathname + u.search, method: req.method, headers: { ...req.headers, host: u.host } }
+    // 中危审计修复(9): 上游超时 — timeout 只报警不销毁, 必须显式 destroy → 走 error → 502
+    reqOpts.timeout = UPSTREAM_TIMEOUT_MS
     const up = http.request(reqOpts, (r) => {
       res.writeHead(r.statusCode, r.headers); r.pipe(res)
     })
+    up.on('timeout', () => up.destroy(new Error(`upstream timeout ${UPSTREAM_TIMEOUT_MS}ms`)))
     up.on('error', () => { try { res.writeHead(502); res.end() } catch {} })
     req.pipe(up)
   } catch { deny(res, host, 'bad upstream') }
@@ -229,7 +245,7 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
   // H14: CONNECT 目标可能是 [v6]:port 形态 — 旧版 split(':')[0] 会把它截成 "[::ffff"(比对必然失真)
   const cm = String(req.url ?? '').match(/^(?:\[([^\]]+)\]|([^:]+))(?::(\d+))?$/)
   const host = normalizeHost(cm?.[1] ?? cm?.[2] ?? '')
-  const port = parseInt(cm?.[3] ?? '443', 10)
+  const port = _envInt(cm?.[3], 443) // 中危审计修复(13): 端口 NaN/越界兜底(旧版 parseInt 原样透传给 net.connect)
   if (isForbiddenTarget(host)) return _sockDeny(sock, host, 'metadata/link-local/CGNAT/0-net 硬黑面(H14), scope 声明也不放行')
   if (!hostAllowed(host)) { audit({ event: 'deny', host, why: 'CONNECT not in scope' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
   if (!allowRate(host)) { sock.end('HTTP/1.1 429 Too Many Requests\r\n\r\n'); return }
@@ -237,23 +253,28 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
   audit({ event: 'connect', host })
   import('node:net').then(({ default: net }) => {
     // M6 企业代理链: CONNECT 经企业代理二次 CONNECT 隧道(握手 200 才放行), 否则直连
+    // 中危审计修复(9): 隧道两侧都挂超时 — 上游挂住/握手不回时销毁, socket 不再永久悬挂
     const upstreamFor = UPSTREAM && !isLocalHost(host) ? UPSTREAM : null
     if (!upstreamFor) {
       const up = net.connect(port, host, () => {
+        up.setTimeout(0) // 隧道已建立: 解除握手超时(长连接空闲属正常, 挂死风险只在握手窗口)
         sock.write('HTTP/1.1 200 Connection Established\r\n\r\n'); up.write(head); up.pipe(sock); sock.pipe(up)
       })
+      up.setTimeout(UPSTREAM_TIMEOUT_MS, () => { try { up.destroy(); sock.end() } catch {} })
       up.on('error', () => sock.end())
       return
     }
     const up = net.connect(upstreamFor.port, upstreamFor.host, () => {
       up.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`)
     })
+    up.setTimeout(UPSTREAM_TIMEOUT_MS, () => { try { up.destroy(); sock.end() } catch {} })
     let buf = ''
     up.on('data', function onData(d) {
       buf += d.toString('latin1')
       if (!buf.includes('\r\n\r\n')) return
       up.removeListener('data', onData)
       if (/^HTTP\/1\.[01] 200/.test(buf)) {
+        up.setTimeout(0) // 隧道已建立: 解除握手超时(同直连路径)
         sock.write('HTTP/1.1 200 Connection Established\r\n\r\n')
         if (head.length) up.write(head)
         up.pipe(sock); sock.pipe(up)
@@ -274,4 +295,4 @@ if (IS_MAIN) {
   server.listen(PORT, '127.0.0.1', () => console.log(`[egress-gateway] :${PORT} allow=${[...STATIC_ALLOW]} + dynamic scope from ${GRAPHS.join(',')}`))
 }
 
-export { normalizeHost, isForbiddenTarget, hostAllowed, allowRate, resolvedIpsAllowed, refreshScope, server, _setDynScope, _clearDnsCache }
+export { normalizeHost, isForbiddenTarget, hostAllowed, allowRate, resolvedIpsAllowed, refreshScope, server, _setDynScope, _clearDnsCache, UPSTREAM_TIMEOUT_MS, MAP_CAP, buckets as _buckets, _dnsCache }
