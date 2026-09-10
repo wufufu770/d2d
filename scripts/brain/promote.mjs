@@ -15,6 +15,8 @@ import os from 'node:os'
 import path from 'node:path'
 // 1.6-A 记忆语义: 同题重写续期 + 双时长过期清扫(检测30天物理删/指纹180天退出召回)
 import { loadStore, saveStore, renewCards, sweepExpired } from '../../plugin/pentest-dsh/domain/memory-store.mjs'
+// #86 进化显式回路(消费端): 进化台账(brain/evolution.jsonl)聚合 → 降级复审清单(只报告不自动删)
+import { evolutionStats, downgradeReview } from '../../plugin/pentest-dsh/domain/strategy-evolution.mjs'
 
 const REPO = process.env.D2D ?? `${os.homedir()}/d2d`
 const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
@@ -121,10 +123,26 @@ function gate3(ev) {
   return { ok: pass.length > 0, pass, detail }
 }
 
+// #86 进化显式回路(消费端): 晋级检查附加「降级复审」报告 — 进化台账 refuted≥3 且 validated=0
+// 的卡(多面被证伪且无一次实证背书)列入清单输出; 只报告不自动删, 留人工决定下架/改写。
+function downgradeReviewReport(poolCards) {
+  const inPool = new Set((poolCards ?? []).map((c) => String(c.id ?? '').toLowerCase().replace(/^card:/, '')).filter(Boolean))
+  const review = downgradeReview(evolutionStats(BRAIN)).filter((id) => inPool.has(id.replace(/^card:/, '')))
+  if (review.length) console.log(`⚠️ 降级复审清单(进化台账 refuted≥3 且 validated=0, 不自动删): ${review.join(', ')}`)
+  return review
+}
+
 const cmd = process.argv[2]
 if (cmd === '--to-current') {
   const shadowLink = (() => { try { return fs.readlinkSync(`${BRAIN}/shadow`) } catch { return null } })()
   if (!shadowLink) { console.error('无 shadow 版本'); process.exit(1) }
+  // #86: 晋级检查先出降级复审报告(读 shadow 版本卡池 ∩ 进化台账, 只报告不阻断)
+  downgradeReviewReport((() => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(`${shadowLink}/techniques.json`, 'utf8'))
+      return Array.isArray(raw) ? raw : (raw.cards ?? [])
+    } catch { return [] }
+  })())
   const g3 = gate3(fieldEvidence())
   if (!g3.ok) {
     // #74/P0: --force 废除 — 门禁③证据(卡片实战命中)由命中归因自动累积:
