@@ -1,6 +1,6 @@
 {
   "name": "d2d",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "d2d — 三环并行渗透测试框架(发现环/深度攻击环/创造探索环 并行自主挖掘, dsh 插件形态)",
@@ -10,6 +10,6 @@
   },
   "scripts": {
     "test": "node --test plugin/d2d-panel/test/*.test.mjs && cd plugin/pentest-dsh && npm test",
-    "lint": "for f in $(find scripts plugin -name '*.mjs' -type f -not -path '*/node_modules/*'); do node --check \"$f\" || exit 1; done"
+    "lint": "node scripts/lint.mjs"
   }
 }

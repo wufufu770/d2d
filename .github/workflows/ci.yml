@@ -1,0 +1,21 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 插件测试(pentest-dsh)
+        run: cd plugin/pentest-dsh && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npx mocha "test/*.test.mjs"
+      - name: 面板测试(d2d-panel)
+        run: cd plugin/d2d-panel && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npm test
+      - name: graphd 门禁测试
+        run: pip install kuzu pytest && python -m pytest tests/test_graphd_gates.py -q
+      - name: lint
+        run: node scripts/lint.mjs
