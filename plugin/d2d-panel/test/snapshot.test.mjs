@@ -5,7 +5,9 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { EventEmitter } from 'node:events'
 import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement } from '../lib/host/snapshot.mjs'
+import { apply as applyHostRoutes } from '../lib/host/index.mjs'
 
 // fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应); params 透传给断言用断言器
 function makeFake(t = {}) {
@@ -438,4 +440,112 @@ test('buildSnapshot: modelUsage 注入 → cost 字段(当前 engagement finding
   assert.equal(s2.cost.inputTokens, 0)
   assert.equal(s2.cost.findingsPer100k, null)
   assert.equal(s2.cost.source, 'none')
+})
+
+// ── H17(外部审计): host/index.mjs 的 credential 路由曾嵌死在 `fleet || transition` 外层分支内 ──
+// method='credential' 时外层条件恒假 → 整块处理逻辑是死代码, POST /d2d/api/credential 恒 404。
+// 回归(黑盒驱动真实 handler): credential 路由须真实可达(200/405/400 分型正确),
+// fleet 分派不受影响; 凭据值只落 0600 文件, 不得回显进响应。
+function mountPanelHost(config = {}) {
+  let handler = null
+  applyHostRoutes({
+    log: () => {},
+    effect: (fn) => fn(),
+    webServer: { register: (route) => { handler = route.handler } },
+    webRuntime: { trustedHosts: [] },
+  }, { graphdUrl: 'http://127.0.0.1:1', ...config })
+  return handler
+}
+
+async function driveRoute(handler, method, pathname, body) {
+  const req = new EventEmitter()
+  req.method = method
+  req.url = pathname
+  req.headers = { host: '127.0.0.1:3000' } // loopback → 过浏览器信任栅栏
+  const res = {
+    code: 0, raw: '',
+    writeHead(code) { this.code = code },
+    end(b) { this.raw = String(b ?? '') },
+  }
+  const p = handler(req, res)
+  await new Promise((r) => setImmediate(r))
+  if (body !== undefined) req.emit('data', Buffer.from(JSON.stringify(body)))
+  req.emit('end')
+  await p
+  let json = {}
+  try { json = JSON.parse(res.raw || '{}') } catch {}
+  return { code: res.code, body: json, raw: res.raw }
+}
+
+test('host 路由 H17: POST /d2d/api/credential 真实可达 — 凭据落 0600 refs, 值不回显', async () => {
+  const saved = { DSH_HOME: process.env.DSH_HOME, P2P_HOST_TOKEN: process.env.P2P_HOST_TOKEN }
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-panel-h17-'))
+  process.env.DSH_HOME = home
+  process.env.P2P_HOST_TOKEN = 'test-token'
+  try {
+    // dsh 供应商目录(settings.yaml, providers@2 缩进形态) + 已存在的 credentials refs 文件
+    fs.writeFileSync(path.join(home, 'settings.yaml'), [
+      'providers:',
+      '  prov-a:',
+      '    - id: model-a',
+      '      apiKeyEnv: PROV_A_API_KEY',
+      '',
+    ].join('\n'))
+    fs.writeFileSync(path.join(home, '.credentials.yaml'), 'version: 1\n', { mode: 0o664 }) // 预存宽松权限: handler 落盘后必须收口 0600
+    const handler = mountPanelHost()
+    const r = await driveRoute(handler, 'POST', '/d2d/api/credential', { provider: 'prov-a', key: 'sk-test-12345678' })
+    assert.equal(r.code, 200, r.raw)
+    assert.deepEqual(r.body, { ok: true, provider: 'prov-a', env: 'PROV_A_API_KEY' })
+    assert.ok(!r.raw.includes('sk-test-'), '凭据值不得回显进响应')
+    const credPath = path.join(home, '.credentials.yaml')
+    const merged = fs.readFileSync(credPath, 'utf8')
+    assert.ok(merged.includes('  PROV_A_API_KEY: sk-test-12345678'), merged)
+    assert.equal(fs.statSync(credPath).mode & 0o777, 0o600, '凭据文件必须 0600')
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true })
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  }
+})
+
+test('host 路由 H17: GET /d2d/api/credential → 405(旧版落不到写端点门, 恒 404)', async () => {
+  process.env.P2P_HOST_TOKEN = 'test-token'
+  const handler = mountPanelHost()
+  const r = await driveRoute(handler, 'GET', '/d2d/api/credential', undefined)
+  assert.equal(r.code, 405)
+  assert.equal(r.body.error?.code, 'method-error')
+})
+
+test('host 路由 H17: credential 校验分型 — 未知供应商 400 / 短 key 400', async () => {
+  const saved = { DSH_HOME: process.env.DSH_HOME, P2P_HOST_TOKEN: process.env.P2P_HOST_TOKEN }
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-panel-h17-'))
+  process.env.DSH_HOME = home
+  process.env.P2P_HOST_TOKEN = 'test-token'
+  try {
+    fs.writeFileSync(path.join(home, 'settings.yaml'), 'providers:\n  prov-a:\n    - id: model-a\n      apiKeyEnv: PROV_A_API_KEY\n')
+    fs.writeFileSync(path.join(home, '.credentials.yaml'), 'version: 1\n')
+    const handler = mountPanelHost()
+    const bad = await driveRoute(handler, 'POST', '/d2d/api/credential', { provider: 'nope', key: 'sk-test-12345678' })
+    assert.equal(bad.code, 400)
+    assert.equal(bad.body.error?.code, 'unknown-provider')
+    const short = await driveRoute(handler, 'POST', '/d2d/api/credential', { provider: 'prov-a', key: 'short' })
+    assert.equal(short.code, 400)
+    assert.equal(short.body.error?.code, 'bad-request')
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true })
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  }
+})
+
+test('host 路由 H17: fleet 分支不受影响(分派顺序不变, 校验错误仍 400 fleet-write-error)', async () => {
+  process.env.P2P_HOST_TOKEN = 'test-token'
+  const handler = mountPanelHost()
+  const r = await driveRoute(handler, 'POST', '/d2d/api/fleet', { role: '', slot: 'primary', model: '' })
+  assert.equal(r.code, 400)
+  assert.equal(r.body.error?.code, 'fleet-write-error')
 })
