@@ -60,6 +60,69 @@ _db = None
 MAX_BODY_BYTES = 1_000_000  # V-11: 请求体上限, 防全量读入内存的 DoS
 
 
+def content_length_gate(raw, max_bytes=None):
+    """C7: Content-Length 解析门(纯函数供 pytest 锁回归)。返回 (n, err):
+    err 非 None 时调用方必须以 err[0] 的 HTTP 状态码拒绝。
+    审计 C7 实证: 旧实现 int('-1') = -1 通过 n > MAX_BODY_BYTES 检查后直落
+    rfile.read(-1) —— read(-1) 语义是读到 EOF, 即无上限把整个 socket 缓冲读进内存(DoS)。
+    故负数与非数字一律 400; 超上限 413; 缺失/空按 0(空 body 由后续 json 解析兜住)。"""
+    limit = MAX_BODY_BYTES if max_bytes is None else int(max_bytes)
+    try:
+        n = int(str(raw).strip()) if raw is not None and str(raw).strip() != "" else 0
+    except (TypeError, ValueError):
+        return 0, (400, "invalid Content-Length")
+    if n < 0:
+        return 0, (400, "invalid Content-Length")
+    if n > limit:
+        return n, (413, f"payload too large (> {limit} bytes)")
+    return n, None
+
+
+# H13: /query 结果行数上限 —— 大图上 `MATCH (n) RETURN n` 会把全图行缓冲进内存再一次性
+# json.dumps(OOM 面); 超限截断并以 truncated 标记告知调用方(可用 LIMIT/分页拿余量)。
+MAX_QUERY_ROWS = max(1, int(os.environ.get("P2P_MAX_QUERY_ROWS", "10000")))
+
+
+def bounded_rows(res, limit=None):
+    """H13: 消费 kuzu 结果集的行数上限封顶(鸭子类型 has_next/get_next, 纯逻辑供 pytest):
+    最多取 limit 行, 到顶即停(不再继续拉取)并返回 truncated=True。"""
+    limit = MAX_QUERY_ROWS if limit is None else int(limit)
+    rows, truncated = [], False
+    while res.has_next():
+        if len(rows) >= limit:
+            truncated = True
+            break
+        rows.append(res.get_next())
+    return rows, truncated
+
+
+def _max_active_cap() -> int:
+    """H12: engagement 容量上限(环境变量可调, 非数字回退默认 4)。"""
+    try:
+        return int(os.environ.get("P2P_MAX_ACTIVE", "4"))
+    except ValueError:
+        return 4
+
+
+def is_engagement_create(cypher: str) -> bool:
+    """H12: 识别 Engagement CREATE 写入(纯函数供 pytest) — 与外层容量预检同一判定口径
+    (字符串包含而非正则, 与既有外层门一致: 注入面由 /query 只读门+host token 把守)。"""
+    c = str(cypher or "")
+    return "Engagement" in c and "CREATE" in c.upper()
+
+
+def engagement_cap_gate(n_active, cap=None) -> str:
+    """H12: engagement 容量栅栏判定(纯函数供 pytest) — active+requested 计数 ≥ cap 返回拦截话术,
+    否则返回 ''。审计 H12 结论: 旧实现该检查在独立锁窗口执行, CREATE 在 /query 的另一次
+    加锁里执行 —— 两请求可同时过检再双双 CREATE, 容量上限可被并发击穿(TOCTOU)。
+    修复: 权威判定移入 /query 执行锁内, 与 CREATE 同一把锁原子完成(见 do_POST /query 分支)。"""
+    cap = _max_active_cap() if cap is None else int(cap)
+    if int(n_active) >= cap:
+        return (f"active engagements {n_active} >= cap {cap} — "
+                f"先冻结部分 engagement 再新建(面板可管理)")
+    return ""
+
+
 @contextmanager
 def _locked(timeout: float = 5.0):
     """V-11: 锁获取带 deadline —— 慢查询持锁时其余请求 5s 后 503 而非无限等待"""
@@ -81,6 +144,48 @@ def db():
         conn = kuzu.Connection(_db)
         init_schema(conn)
     return _db
+
+
+def reset_database():
+    """H18: /reset 核心(handler 与 pytest 共用)。审计实证: 旧实现不 close Database 就
+    rmtree + ignore_errors=True —— 打开中的句柄下删除产生半删状态, 删除失败被静默吞掉,
+    且 kuzu 0.11.x 的 DB 是单文件(rmtree 对文件必抛) → /reset 实为静默 no-op。
+    现顺序: ①持全局写锁(与所有 DB 读写互斥, 确保无在途使用) ②close Database
+    ③删 DB(文件/目录双形态, 失败必须上报, 调用方回 500 而非假成功) ④清 .wal 残留
+    ⑤重新 init schema。返回 {"ok": bool, "error"?: str}。"""
+    global _db
+    with _lock:
+        old = _db
+        _db = None
+        if old is not None:
+            _close = getattr(old, "close", None)
+            if callable(_close):
+                try:
+                    _close()
+                except Exception:
+                    pass  # 句柄已坏不阻塞重置; 目录删不掉时由 rmtree 上报
+        import shutil
+        try:
+            if os.path.isdir(DB_PATH):
+                shutil.rmtree(DB_PATH)  # 旧版 kuzu: DB 为目录
+            else:
+                # kuzu 0.11.x: DB 落为单文件。审计 H18 加重实锤: 旧代码 rmtree(文件) 抛
+                # NotADirectoryError 被 ignore_errors=True 静默吞掉 → /reset 实为 no-op,
+                # 库从未被删掉, 面板却收到 200 ok。
+                os.remove(DB_PATH)
+        except FileNotFoundError:
+            pass  # 本就不存在: 幂等
+        except Exception as e:
+            return {"ok": False,
+                    "error": f"reset failed (DB 未删净, 请人工检查 {DB_PATH}): {str(e)[:200]}"}
+        try:
+            if os.path.exists(DB_PATH + ".wal"):
+                os.remove(DB_PATH + ".wal")  # wal 残留会在重建时被重放, 必须一并清除
+        except Exception as e:
+            return {"ok": False, "error": f"reset failed (wal 清理失败): {str(e)[:160]}"}
+        # 注意: DB_PATH.lock 不动 —— flock 由本存活进程持有, 删锁文件会破坏实例互斥(#14)
+        db()  # 重建并 init schema, 后续请求立即可用
+        return {"ok": True}
 
 
 SCHEMA = [
@@ -884,13 +989,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self._slowloris_arm()  # #73: 慢头部/慢 body 读全程受限(见 _slowloris_arm 注释)
 
-        # V-11: Content-Length 数值校验 + 1MB 上限(原 int() 对非数字头抛 ValueError 断连)
-        try:
-            n = int(self.headers.get("Content-Length", 0) or 0)
-        except (TypeError, ValueError):
-            return self._send(400, {"ok": False, "error": "invalid Content-Length"})
-        if n > MAX_BODY_BYTES:
-            return self._send(413, {"ok": False, "error": f"payload too large (> {MAX_BODY_BYTES} bytes)"})
+        # V-11 + C7: Content-Length 解析门(纯函数 content_length_gate 供 pytest 锁回归)。
+        # C7 实证: 负数(如 '-1')曾穿过 n > MAX_BODY_BYTES 检查 → rfile.read(-1) = 读到 EOF,
+        # 无上限读入内存(DoS)。现负数/非数字一律 400, 超上限 413。
+        n, _cl_err = content_length_gate(self.headers.get("Content-Length"))
+        if _cl_err is not None:
+            return self._send(_cl_err[0], {"ok": False, "error": _cl_err[1]})
         try:
             _body = self.rfile.read(n)  # #73: body 读取全程受 30s 读超时约束(慢 body 阶段)
         except socket.timeout:
@@ -1205,7 +1309,17 @@ class Handler(BaseHTTPRequestHandler):
                             return self._send(409, {"ok": False, "error": f"active engagements {_n_active} >= cap {_cap} — 先冻结部分 engagement 再新建(面板可管理)"})
                     except Exception as e:
                         return self._send(503, {"ok": False, "error": f"max-active check failed (fail-closed): {str(e)[:120]}"})
-            urls = _re.findall(r"https?://[A-Za-z0-9.\-]+", cypher_raw)
+            # H15 配套: Endpoint 写入的值改走 $params(spa-render 参数化)后不再出现在 cypher 文本,
+            # 红线/scope 扫描必须连 params 一起看, 否则形成「参数化即绕过 scope/denylist 门」的旁路。
+            # 仅限 cypher 触及 Endpoint 的写入 —— ExperienceWeight 等跨项目共享文本里的他项目 URL
+            # 不受影响(那是既有 params 旁路的已知留白, 不在本审计范围)。
+            _scan_blob = cypher_raw
+            if "Endpoint" in cypher_raw:
+                try:
+                    _scan_blob += " " + json.dumps(req.get("params") or {}, ensure_ascii=False)
+                except Exception:
+                    pass
+            urls = _re.findall(r"https?://[A-Za-z0-9.\-]+", _scan_blob)
             hosts = set()
             for u in urls:
                 h = u.split("://")[1].lower()
@@ -1275,15 +1389,24 @@ class Handler(BaseHTTPRequestHandler):
             with _locked():  # V-11: 锁带 5s deadline
                 try:
                     conn = kuzu.Connection(db())
+                    # H12: Engagement CREATE 的容量栅栏权威判定 — 必须与 CREATE 同一把锁原子完成。
+                    # 旧实现预检在外层独立锁窗口(:1197 一带), CREATE 在此处另一次加锁执行,
+                    # 两并发请求可同时过检再双双 CREATE, P2P_MAX_ACTIVE 上限被并发击穿(TOCTOU)。
+                    if is_engagement_create(cypher):
+                        _r1 = conn.execute("MATCH (e:Engagement) WHERE e.status IN ['active','requested'] RETURN count(e)")
+                        _n_active = int(list(_r1.get_next())[0]) if _r1.has_next() else 0
+                        _cap_err = engagement_cap_gate(_n_active)
+                        if _cap_err:
+                            return self._send(409, {"ok": False, "error": _cap_err})
                     res = conn.execute(cypher, params)
-                    rows = []
-                    while res.has_next():
-                        rows.append(res.get_next())
+                    # H13: 行数上限封顶(bounded_rows 纯逻辑供 pytest) — 大图全量缓冲 OOM 面
+                    rows, truncated = bounded_rows(res)
                     cols = res.get_column_names()
                     data = []
                     for r in rows:
                         data.append({cols[i]: _jsonify(r[i]) for i in range(len(cols))})
-                    return self._send(200, {"ok": True, "rows": data})
+                    return self._send(200, {"ok": True, "rows": data,
+                                            "count": len(data), "truncated": truncated})
                 except TimeoutError as _te:
                     return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
                 except Exception as e:
@@ -1293,11 +1416,10 @@ class Handler(BaseHTTPRequestHandler):
             # V-12: /reset 改认 HOST token(原仅认遗留 P2P_TOKEN, 与主鉴权体系脱节)
             if not self._auth("host"):
                 return self._send(403, {"ok": False, "error": "/reset requires host token"})
-            global _db
-            with _lock:
-                _db = None
-                import shutil
-                shutil.rmtree(DB_PATH, ignore_errors=True)
+            # H18: close DB → 删目录(失败上报, 不再 ignore_errors 假成功) → 重新 init schema
+            _out = reset_database()
+            if not _out.get("ok"):
+                return self._send(500, {"ok": False, "error": _out.get("error", "reset failed")})
             return self._send(200, {"ok": True})
         else:
             self._send(404, {"error": "unknown"})

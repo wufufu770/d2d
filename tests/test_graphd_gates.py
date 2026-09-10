@@ -698,3 +698,248 @@ def test_authorized_column_migration_on_old_db(tmp_path):
     assert bool(conn.execute("MATCH (e:Endpoint {id:'E0'}) RETURN e.authorized").get_next()[0]) is False
     init_schema(conn)  # 二次启动: 列已存在, ALTER 静默跳过不抛
     assert bool(conn.execute("MATCH (e:Endpoint {id:'E0'}) RETURN e.authorized").get_next()[0]) is False
+
+
+# =====================================================================
+# 外部审计修复回归(2026-09-10 批): C7 / H12 / H13 / H18 / H15 / H16
+# 与实现单点真源对接(纯函数直测), H15/H16 经 node 子进程驱动 spa-render.mjs 导出面
+# =====================================================================
+import graphd.app as graphd_app
+from graphd.app import (MAX_BODY_BYTES, MAX_QUERY_ROWS,
+                        content_length_gate, bounded_rows,
+                        is_engagement_create, engagement_cap_gate,
+                        reset_database)
+
+# ---- C7: Content-Length 负数/非数字必须 400(旧 int('-1') 穿过上限检查 → read(-1)=读到 EOF 的无上限内存 DoS) ----
+def test_c7_negative_content_length_rejected_400():
+    n, err = content_length_gate("-1")
+    assert err is not None and err[0] == 400 and "Content-Length" in err[1]
+
+@pytest.mark.parametrize("raw", ["abc", "1.5", "0x10", "-99", "  -1 "])
+def test_c7_non_numeric_or_negative_rejected(raw):
+    # 非数字/负数一律 400(负数曾直落 rfile.read(-1) = 读到 EOF 的无上限读)
+    n, err = content_length_gate(raw)
+    assert err is not None and err[0] == 400
+
+def test_c7_oversize_rejected_413():
+    n, err = content_length_gate(str(MAX_BODY_BYTES + 1))
+    assert err is not None and err[0] == 413 and n == MAX_BODY_BYTES + 1
+
+def test_c7_normal_and_missing_content_length_pass():
+    assert content_length_gate("5") == (5, None)
+    assert content_length_gate("0") == (0, None)
+    assert content_length_gate(None) == (0, None)
+    assert content_length_gate("") == (0, None)
+    assert content_length_gate(str(MAX_BODY_BYTES)) == (MAX_BODY_BYTES, None)  # 边界内放行
+
+
+# ---- H13: /query 结果行数上限(旧实现全量缓冲 → 大图 OOM) ----
+class _FakeResult:
+    """鸭子类型 kuzu 结果集: has_next/get_next"""
+    def __init__(self, total):
+        self._left = int(total)
+    def has_next(self):
+        return self._left > 0
+    def get_next(self):
+        self._left -= 1
+        return ("row",)
+
+def test_h13_row_cap_truncates_and_stops_pulling():
+    rows, truncated = bounded_rows(_FakeResult(50), limit=10)
+    assert len(rows) == 10 and truncated is True
+
+def test_h13_under_cap_not_truncated():
+    rows, truncated = bounded_rows(_FakeResult(3), limit=10)
+    assert len(rows) == 3 and truncated is False
+
+def test_h13_zero_rows_never_truncated():
+    assert bounded_rows(_FakeResult(0)) == ([], False)
+
+def test_h13_default_cap_is_meaningful():
+    assert MAX_QUERY_ROWS >= 10000
+
+
+# ---- H12: Engagement 容量栅栏与 CREATE 同锁(旧: 检查/CREATE 两把锁 → TOCTOU 击穿 P2P_MAX_ACTIVE) ----
+def test_h12_engagement_create_detection():
+    assert is_engagement_create("CREATE (e:Engagement {name:$n, status:'active'})")
+    assert is_engagement_create("create (:Engagement {name:'x'})")
+    assert not is_engagement_create("MATCH (e:Engagement) RETURN e.name")
+    assert not is_engagement_create("CREATE (f:Finding {id:'x', title:'t'})")
+    assert not is_engagement_create("")
+    assert not is_engagement_create(None)
+
+def test_h12_cap_gate_blocks_at_and_above_cap_only():
+    assert "cap 4" in engagement_cap_gate(4, cap=4)
+    assert engagement_cap_gate(9, cap=4) != ""
+    assert engagement_cap_gate(3, cap=4) == ""
+    assert engagement_cap_gate(0, cap=4) == ""
+
+def test_h12_cap_gate_against_real_kuzu_counts(tmp_path):
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    r = conn.execute("MATCH (e:Engagement) WHERE e.status IN ['active','requested'] RETURN count(e)")
+    n0 = int(list(r.get_next())[0]) if r.has_next() else 0
+    assert n0 == 0 and engagement_cap_gate(n0) == ""  # 空图放行
+    for i in range(4):
+        conn.execute("CREATE (e:Engagement {name:$n, target:'t', scope:'s', auth:'a', status:'active', created_at:'c'})",
+                     parameters={"n": f"e{i}"})
+    r = conn.execute("MATCH (e:Engagement) WHERE e.status IN ['active','requested'] RETURN count(e)")
+    n4 = int(list(r.get_next())[0])
+    assert n4 == 4 and engagement_cap_gate(n4) != ""  # 满载拦截(handler 同锁内以同口径 409)
+
+
+# ---- H18: /reset 先 close 再删再 init(旧: 不 close 就 rmtree + ignore_errors=True 半删) ----
+def test_h18_reset_closes_db_wipes_and_reinits(tmp_path, monkeypatch):
+    dbp = tmp_path / "kuzu_db"
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
+    db = kuzu.Database(str(dbp))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("CREATE (e:Engagement {name:'gone', target:'t', scope:'s', auth:'a', status:'active', created_at:'c'})")
+    conn = None  # 释放连接, 模拟请求间隙
+    closed = []
+    _real_close = db.close
+
+    class _Spy:
+        def close(self):
+            closed.append(True)
+            _real_close()
+
+    monkeypatch.setattr(graphd_app, "_db", _Spy())
+    out = reset_database()
+    assert out["ok"] is True and closed == [True]  # close 先于删除被调用
+    assert dbp.exists()  # 重建后目录在(schema 就绪)
+    r = kuzu.Connection(graphd_app._db).execute("MATCH (e:Engagement) RETURN count(*)")
+    assert r.get_next()[0] == 0  # 旧数据清零, 图可用
+
+def test_h18_reset_reports_delete_failure_instead_of_silent_half_delete(tmp_path, monkeypatch):
+    import shutil as _shutil
+    dbp = tmp_path / "kuzu_db"
+    dbp.mkdir()
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
+    monkeypatch.setattr(graphd_app, "_db", None)
+
+    def _boom(*a, **k):
+        raise OSError("disk busy")
+
+    monkeypatch.setattr(_shutil, "rmtree", _boom)
+    out = reset_database()
+    assert out["ok"] is False and "reset failed" in out["error"]  # 不再 ignore_errors 假成功
+
+def test_h18_reset_is_idempotent_on_missing_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(tmp_path / "never_created"))
+    monkeypatch.setattr(graphd_app, "_db", None)
+    out = reset_database()
+    assert out["ok"] is True  # FileNotFoundError 幂等放行
+    assert (tmp_path / "never_created").exists()  # 且重建了 schema
+
+
+# ---- H15: spa-render Cypher 注入修复(参数化) —— node 子进程驱动导出面 + 真实 kuzu 执行对抗载荷 ----
+import shutil
+import subprocess
+
+def _spa_eval(body, tmp_path):
+    """在 node 子进程里导入 scripts/gateway/spa-render.mjs(D2D_DATA_DIR 指向临时目录,
+    与生产锁/配置隔离)并执行 body, 返回 body 内 return 的对象的 JSON。"""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node unavailable")
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    mod = os.path.join(repo, "scripts", "gateway", "spa-render.mjs")
+    script = ("import fs from 'node:fs'\n"
+              f"const m = await import({json.dumps(mod)})\n"
+              "const out = await (async () => {\n" + body + "\n})()\n"
+              "console.log(JSON.stringify(out))\n")
+    env = dict(os.environ, D2D_DATA_DIR=str(tmp_path))
+    p = subprocess.run([node, "--input-type=module", "-e", script], env=env,
+                       capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, f"node subprocess failed: {p.stderr[-800:]}"
+    return json.loads(p.stdout.strip().splitlines()[-1])
+
+H15_EXPECTED_CYPHER = ("MERGE (e:Endpoint {id:$id}) SET e.url=$url, e.method=$method, "
+                       "e.tech=coalesce(e.tech,'spa-cdp')")
+
+def test_h15_payload_parameterized_method_whitelisted(tmp_path):
+    out = _spa_eval("""
+const p = m.endpointWritePayload({id:'ep-x', url:"http://e/x'; DETACH DELETE (s:Signal_) //", method:'TRACE'})
+return {cy: p.cypher, pr: p.params, norm: m.normalizeMethod("post"), bad: m.normalizeMethod("PROBE")}
+""", tmp_path)
+    assert out["cy"] == H15_EXPECTED_CYPHER  # Cypher 文本只含 $占位符, 无任何外部输入
+    assert out["pr"]["url"] == "http://e/x'; DETACH DELETE (s:Signal_) //"  # 对抗载荷原样进 params(不再拼接)
+    assert out["pr"]["method"] == "GET"   # 白名单外 method(TRACE)归 GET
+    assert out["norm"] == "POST" and out["bad"] == "GET"
+
+def test_h15_adversarial_payload_executes_safely_on_real_kuzu(tmp_path):
+    """含引号 + 反斜杠双形态对抗载荷经参数化通道在真实 kuzu 执行:
+    注入文本必须按字面值落库, 且不得产生任何额外语法效果(删除/多行)。"""
+    out = _spa_eval("""
+const quote = m.endpointWritePayload({id:'ep-q', url:"http://e/x'; DETACH DELETE (s:Signal_) //", method:'get'})
+const bslash = m.endpointWritePayload({id:'ep-b', url:'http://e/\\\\', method:'POST'})
+const tailBs = m.endpointWritePayload({id:'ep-t', url:"http://e/x\\\\'; DROP TABLE Endpoint //", method:'POST'})
+return {quote, bslash, tailBs}
+""", tmp_path)
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("CREATE (s:Signal_ {id:'victim', type:'t', evidence:'e', ts:'0', ring:'discovery'})")
+    for key in ("quote", "bslash", "tailBs"):
+        payload = out[key]
+        assert payload["cypher"] == H15_EXPECTED_CYPHER
+        conn.execute(payload["cypher"], parameters=payload["params"])  # 注入载荷原样绑定
+    assert conn.execute("MATCH (s:Signal_) RETURN count(*)").get_next()[0] == 1  # victim 未被 DETACH DELETE
+    assert conn.execute("MATCH (e:Endpoint) RETURN count(*)").get_next()[0] == 3  # 恰 3 个端点, 无越权副作用
+    rows = {}
+    r = conn.execute("MATCH (e:Endpoint) RETURN e.id, e.url, e.method")
+    while r.has_next():
+        rid, u, mth = r.get_next()
+        rows[str(rid)] = (str(u), str(mth))
+    assert rows["ep-q"] == ("http://e/x'; DETACH DELETE (s:Signal_) //", "GET")
+    assert rows["ep-b"] == ("http://e/\\", "POST")   # 旧 \\' 转义的尾随反斜杠绕过形态, 现按字面落库
+    assert rows["ep-t"] == ("http://e/x\\'; DROP TABLE Endpoint //", "POST")
+
+def test_h15_old_vulnerable_pattern_is_gone():
+    """锁定旧缺陷不复活: 源码不得再把外部值拼进 Cypher 字符串(\\' 前置转义)"""
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(repo, "scripts", "gateway", "spa-render.mjs"), encoding="utf-8").read()
+    assert "replace(/'/g" not in src  # 旧 url.replace(/'/g,"\\'") 已移除
+    assert "e.url=$url, e.method=$method" in src  # 值一律走 $params 绑定
+
+
+# ---- H16: spa-render 单例锁原子性(旧 statSync 后 writeFileSync 覆盖写的 TOCTOU) ----
+def test_h16_lock_acquire_is_exclusive(tmp_path):
+    out = _spa_eval("""
+const a = m.tryAcquireLock()
+const b = m.tryAcquireLock()
+const pid = JSON.parse(fs.readFileSync(m.SPA_LOCK, 'utf8')).pid === process.pid
+return {a, b, pid}
+""", tmp_path)
+    assert out == {"a": True, "b": False, "pid": True}  # O_EXCL: 同进程二次抢锁必失败
+
+def test_h16_lock_stale_takeover(tmp_path):
+    out = _spa_eval("""
+const a = m.tryAcquireLock()
+const old = new Date(Date.now() - 60000)
+fs.utimesSync(m.SPA_LOCK, old, old)
+const takeover = m.tryAcquireLock()
+return {a, takeover}
+""", tmp_path)
+    assert out == {"a": True, "takeover": True}  # 崩溃残留按过期接管
+
+def test_h16_release_only_by_owner(tmp_path):
+    out = _spa_eval("""
+fs.writeFileSync(m.SPA_LOCK, JSON.stringify({pid: 1}))  // 模拟他者(胜者)持锁
+m.releaseLock()                                          // 本进程从未持锁 → 不得删除
+const kept = fs.existsSync(m.SPA_LOCK)
+const old = new Date(Date.now() - 60000)
+fs.utimesSync(m.SPA_LOCK, old, old)
+const acq = m.tryAcquireLock()   // 过期接管
+m.releaseLock()                  // 持有者释放
+const gone = !fs.existsSync(m.SPA_LOCK)
+m.releaseLock()                  // 双重释放不抛不再删
+return {kept, acq, gone}
+""", tmp_path)
+    assert out == {"kept": True, "acq": True, "gone": True}
