@@ -1,7 +1,10 @@
 // lib/client.js — d2d-panel client 半(dsh web 浏览器侧)
+// 【生成物, 勿手改】由 scripts/build-client.mjs 按固定顺序逐字节拼接 lib/client/*.js 片段而成
+// (npm run build); test/client.test.mjs 守护"片段拼接 == 本文件"防漂移。改代码请改片段。
 // 格式: window.__ModuleLoader__.load({id, factory:(require)=>{...}}) — 生态静态插件
 // 客户端包标准格式(参照 dsh-sidebar-leap lib/client.js); require('react') 由宿主提供。
-// 本文件为手工内联打包(零构建, 与 d2d 仓库哲学一致); 各源模块以区块注释分节。
+// dsh 每包只投递 exports["./client"] 这一个文件(无相对 require / 无多文件机制), 故仍为单文件
+// 内联包(零构建工具链, 与 d2d 仓库哲学一致); 各源片段以区块注释分节。
 // 规范: DSH-better-sidebar docs/external-plugin-guide.md(v0.12.0+)
 window.__ModuleLoader__.load({
   id: 'd2d-panel',
@@ -177,7 +180,7 @@ window.__ModuleLoader__.load({
       return slash >= 0 ? s.slice(slash + 1) : s
     }
 
-    // ══════════ OpsView.js — d2d:ops tab(运营观测页 · 可交互) ══════════
+    // ══════════ cards.engagement.js — Engagement 管理卡(W5) + CountStrip(选中项目计数条) ══════════
     function CountStrip({ counts }) {
       const items = [
         ['端点', counts.endpoints], ['开放信号', counts.signals_open],
@@ -310,6 +313,7 @@ window.__ModuleLoader__.load({
           : null)
     }
 
+    // ══════════ cards.ops.js — 运营可交互卡: Fleet 模型矩阵 / 策略库 / 黑名单 / 环容量热调 / 用量 / 性价比 ══════════
     // ---- Fleet 卡: 模型可点开选择列表(并集 + 自定义输入; backup 可清除) ----
     function FleetModelPicker({ role, slot, current, models, catalog, quotaHits, onPick, onCredential, busy }) {
       const [custom, setCustom] = useState('')
@@ -623,6 +627,7 @@ window.__ModuleLoader__.load({
         has ? h('div', panel.muted(0.45), `总消耗 ${fmtTokens((c?.inputTokens ?? 0) + (c?.outputTokens ?? 0))} tokens · findings ${c?.findings ?? 0} / triaged ${c?.triaged ?? 0}`) : null)
     }
 
+    // ══════════ cards.workers.js — Workers 卡 + 鱼骨抽屉(执行轨迹) ══════════
     // ---- Worker 鱼骨抽屉: 执行轨迹(run-log.jsonl 事件 + checkpoint/todo 折叠) ----
     const EV_KIND = {
       dispatch: { label: 'DISPATCH', color: 'var(--d2d-ring-discovery)' },
@@ -716,6 +721,7 @@ window.__ModuleLoader__.load({
         agents.length ? h('div', panel.muted(0.4), '运行中置顶 · 点击行展开执行轨迹') : null)
     }
 
+    // ══════════ view.ops.js — d2d:ops tab(运营观测页 · 可交互): 漏斗/缺口/经验库卡 + 模块开关 + 页面装配 ══════════
     // ---- 漏斗卡: 七态条形, 点击聚焦该状态 findings 迷你列表 ----
     function FunnelCard({ snap }) {
       const [focus, setFocus] = useState(null)
@@ -817,7 +823,7 @@ window.__ModuleLoader__.load({
             : h('div', panel.muted(), '无开放信号 — discovery 环产出后自动入列')))
     }
 
-    // ══════════ FindingsView.js — d2d:findings tab(七态看板 · 筛选 + 人工裁决) ══════════
+    // ══════════ view.findings.js — d2d:findings tab(七态看板 · 筛选 + 人工裁决) ══════════
     const STEPS = ['candidate', 'triaged', 'verified', 'reported', 'accepted'] // 主链; isolated/rejected/needs-scope 走分支
     const COLUMNS = [
       { key: 'active', label: '活跃', states: ['candidate', 'triaged'] },
@@ -966,7 +972,7 @@ window.__ModuleLoader__.load({
         })))
     }
 
-    // ══════════ index.js — 插件入口: better-sidebar tab 注册(软依赖) ══════════
+    // ══════════ router.js — 插件入口: better-sidebar tab 注册(软依赖) ══════════
     // 软依赖: cordis inject=['betterSidebar'] 保证服务就绪才激活; 未安装 better-sidebar
     // 时本 client 恒 pending(dsh-sentinel 模式), host 半路由不受影响。
     const inject = ['betterSidebar']
