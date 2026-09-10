@@ -5,8 +5,8 @@
     "deep-dive": 2,
     "verify": 3
   },
-  "deepParallel": 2,
-  "maxAgents": 4,
+  "deepParallel": 3,
+  "maxAgents": 5,
   "backlogWatermark": 30,
   "deepWake": {
     "crossSourceMin": 2,
@@ -20,14 +20,38 @@
   },
   "tools": {
     "nmap": {
-      "fullPort": ["(?:^|\\s)-p-(?=\\s|$)", "(?:^|\\s)-p\\s*(?:1-65535|0-65535)(?=\\s|$)"],
-      "allowed": ["--max-rate[=\\s]*\\d", "(?:^|\\s)-T\\s?[0-3]\\b"],
+      "fullPort": [
+        "(?:^|\\s)-p-(?=\\s|$)",
+        "(?:^|\\s)-p\\s*(?:1-65535|0-65535)(?=\\s|$)"
+      ],
+      "allowed": [
+        "--max-rate[=\\s]*\\d",
+        "(?:^|\\s)-T\\s?[0-3]\\b"
+      ],
       "reason": "nmap 全端口扫描必须带限速参数(--max-rate 或 -T0..3)",
       "fix": "补 --max-rate 300 或 -T2"
     },
-    "masscan": { "flag": "--rate", "max": 1000, "fix": "改 --rate ≤1000(如 --rate 1000)" },
-    "ffuf": { "required": ["(?:^|\\s)-rate(?:=|\\s|$)"], "reason": "ffuf 缺必要限速 flag -rate", "fix": "补 -rate 50(建议默认 50)" },
-    "sqlmap": { "flag": "--threads", "max": 1, "fix": "改 --threads 1(默认并发=1)" },
-    "hydra": { "flag": "-t", "max": 16, "fix": "改 -t ≤16(如 -t 16)" }
+    "masscan": {
+      "flag": "--rate",
+      "max": 1000,
+      "fix": "改 --rate ≤1000(如 --rate 1000)"
+    },
+    "ffuf": {
+      "required": [
+        "(?:^|\\s)-rate(?:=|\\s|$)"
+      ],
+      "reason": "ffuf 缺必要限速 flag -rate",
+      "fix": "补 -rate 50(建议默认 50)"
+    },
+    "sqlmap": {
+      "flag": "--threads",
+      "max": 1,
+      "fix": "改 --threads 1(默认并发=1)"
+    },
+    "hydra": {
+      "flag": "-t",
+      "max": 16,
+      "fix": "改 -t ≤16(如 -t 16)"
+    }
   }
 }
