@@ -46,17 +46,33 @@ function findChrome() {
   return ''
 }
 // ---------- 0906 跨进程单例锁(skyline web-access 采纳): 两实例同端口各拉 chrome 必冲突 ----------
-const SPA_LOCK = path.join(DATA_DIR, 'spa-render.lock')
+// H16 审计修复: 旧实现 statSync(新鲜度)后 writeFileSync 直接覆盖写 —— 检查与写非原子(TOCTOU),
+// 两实例可同时读到「过期/不存在」再双双写入, 各自以为持锁。现改为 O_EXCL 独占创建
+// (writeFileSync flag:'wx', 内核级原子 create): 竞争创建只有一个成功; 过期锁先删再抢,
+// 删与建之间的窗口由 wx 兜底 —— 两实例同时抢删后的重建仍只有一个成功。
+const SPA_LOCK = path.join(DATA_DIR, 'spa-render.lock') // export 供 pytest 对抗用例取路径/篡改 mtime
+export { SPA_LOCK }
 const LOCK_STALE_MS = 45_000
 const LOCK_WAIT_MS = 30_000
-function tryAcquireLock() {
+let ownsLock = false
+export function tryAcquireLock() {
   try {
     const st = fs.statSync(SPA_LOCK)
     if (Date.now() - st.mtimeMs < LOCK_STALE_MS) return false // 他者新鲜持有(崩溃残留按过期接管)
-  } catch {}
-  try { fs.writeFileSync(SPA_LOCK, JSON.stringify({ pid: process.pid, at: Date.now() })); return true } catch { return false }
+    try { fs.rmSync(SPA_LOCK, { force: true }) } catch {} // 过期残留: 先删, 下方 wx 独占重建
+  } catch {} // 不存在: 直接独占创建
+  try {
+    fs.writeFileSync(SPA_LOCK, JSON.stringify({ pid: process.pid, at: Date.now() }), { flag: 'wx' })
+    ownsLock = true
+    return true
+  } catch { return false } // EEXIST = 他者抢先持锁
 }
-function releaseLock() { try { fs.rmSync(SPA_LOCK, { force: true }) } catch {} }
+export function releaseLock() {
+  // H16 配套: 只释放自己持有的锁(旧实现 exit 钩子无条件 rm, 抢锁失败的进程退出会删掉胜者的锁)
+  if (!ownsLock) return
+  ownsLock = false
+  try { fs.rmSync(SPA_LOCK, { force: true }) } catch {}
+}
 async function waitLock() {
   for (let i = 0; i < LOCK_WAIT_MS / 500; i++) {
     if (tryAcquireLock()) return true
@@ -145,14 +161,30 @@ async function renderPage(url, waitMs) {
 }
 
 // ---------- 图写入(MERGE 去重, tech=spa-cdp) ----------
+// H15 审计修复: 旧实现把 url/method 字符串拼接进 Cypher, url 的 ' 用 \\' 转义 ——
+// Kuzu/openCypher 标准转义是 '' 双写, 前置反斜杠可被绕过: url 以单个 \ 结尾时(无 ' 可转义,
+// 原样落串)把闭合引号吞成 \' 转义, 字符串边界后移, 后续文本变代码; method 完全未转义。
+// 现改为参数化: Cypher 文本只含 $占位符, 全部外部输入走 graphd /query 原生 params
+// (服务端按字面值绑定, 不再进入语法解析), 注入面归零。导出纯函数供 pytest 对抗用例锁定。
+const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'])
+export function normalizeMethod(m) {
+  const s = String(m ?? '').trim().toUpperCase()
+  return HTTP_METHODS.has(s) ? s : 'GET' // 白名单外(渲染页面可影响的 XHR method)一律归 GET
+}
+export function endpointWritePayload(e) {
+  return {
+    cypher: "MERGE (e:Endpoint {id:$id}) SET e.url=$url, e.method=$method, e.tech=coalesce(e.tech,'spa-cdp')",
+    params: { id: String(e.id), url: String(e.url), method: normalizeMethod(e.method) },
+  }
+}
 function writeEndpoints(port, endpoints) {
   let n = 0
   for (const e of endpoints.slice(0, 200)) {
     const id = `ep-${crypto.createHash('sha1').update(e.url).digest('hex').slice(0, 10)}`
     try {
+      const payload = endpointWritePayload({ id, url: e.url, method: e.method })
       execFileSync('curl', ['-s', '-m', '8', '-X', 'POST', `http://127.0.0.1:${port}/query`, '-H', 'Content-Type: application/json',
-        '-H', `X-Auth: ${hostToken}`, '-d', JSON.stringify({ cypher:
-          `MERGE (e:Endpoint {id:'${id}'}) SET e.url='${e.url.replace(/'/g, "\\'")}', e.method='${e.method}', e.tech=coalesce(e.tech,'spa-cdp')` })], { encoding: 'utf8' })
+        '-H', `X-Auth: ${hostToken}`, '-d', JSON.stringify(payload)], { encoding: 'utf8' })
       n++
     } catch {}
   }
