@@ -33,7 +33,8 @@
     }
   },
   "scripts": {
-    "test": "node --test test/snapshot.test.mjs test/start-policy.test.mjs",
+    "build": "node scripts/build-client.mjs",
+    "test": "node --test test/snapshot.test.mjs test/start-policy.test.mjs test/client.test.mjs",
     "standalone": "node lib/host/standalone.mjs"
   },
   "license": "MIT",
@@ -53,6 +54,7 @@
   ],
   "files": [
     "lib/",
+    "scripts/",
     "test/",
     "cordis.patch.yml"
   ],

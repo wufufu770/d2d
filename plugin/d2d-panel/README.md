@@ -60,8 +60,11 @@ node plugin/d2d-panel/lib/host/standalone.mjs          # 调试用 loopback 服�
 | `lib/host/snapshot.mjs` | 快照聚合纯逻辑(字段名与 graphd/app.py schema 逐字对齐)+ graphd 查询客户端 |
 | `lib/host/index.mjs` | 插件宿主入口: webServer 同源路由 + 信任栅栏 + 微缓存单飞 |
 | `lib/host/standalone.mjs` | 调试 CLI: loopback 观测服务(不依赖 dsh web) |
-| `lib/client.js` | 浏览器半(`__ModuleLoader__` 手工内联打包, 零构建; 分节对应原模块) |
+| `lib/client.js` | 浏览器半投递物(`__ModuleLoader__` 单文件包, dsh 每包只投递 `exports["./client"]` 这一个文件)。**生成物勿手改**: 由 `npm run build` 拼接 `lib/client/*.js` 而成 |
+| `lib/client/*.js` | 浏览器半源码片段(factory 体, 4 空格缩进): `api` 快照/写端点 · `ui` 令牌样式/原语/轮询 hook · `cards.engagement` · `cards.ops`(fleet/策略库/黑名单/环容量/用量/性价比) · `cards.workers` · `view.ops` · `view.findings` · `router`(tab 注册) |
+| `scripts/build-client.mjs` | 零依赖拼接脚本(逐字节 join, 无语法转换); `--check` 比对漂移 |
 | `test/snapshot.test.mjs` | 聚合逻辑单测(node:test) |
+| `test/client.test.mjs` | 浏览器半冒烟: 片段拼接防漂移 + 假 window 下 factory 注册 / tab 注册链路 |
 
 ## 状态
 
