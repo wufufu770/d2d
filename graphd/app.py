@@ -96,6 +96,36 @@ def bounded_rows(res, limit=None):
     return rows, truncated
 
 
+def cvss_or_default(raw):
+    """中危审计修复(0910): CVSS=0 被 `or 5.0` 吞成 5.0 — 0 是合法评分(信息收集类漏洞)。
+    显式 None/非法判定: 缺失或无法解析 → 5.0 缺省; 合法数值(含 0)原样保留; 越界钳到 [0,10]。"""
+    if raw is None or str(raw).strip() == "":
+        return 5.0
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return 5.0
+    if v != v:  # NaN
+        return 5.0
+    return min(10.0, max(0.0, v))
+
+
+def legacy_token_ok(got, tok, host="", worker=""):
+    """中危审计修复(11)(纯函数供 pytest): 遗留 P2P_TOKEN 门。优先级 —— host/worker token 为准,
+    P2P_TOKEN 仅兼容旧客户端: 三者任一与 X-Auth 恒等匹配即过(旧实现只认 P2P_TOKEN, 与
+    host/worker token 并存时形成认证矩阵死锁)。全部为空 → False(fail-closed)。"""
+    got = got or ""
+    if not got:
+        return False
+    if tok and hmac.compare_digest(got, tok):
+        return True
+    if host and hmac.compare_digest(got, host):
+        return True
+    if worker and hmac.compare_digest(got, worker):
+        return True
+    return False
+
+
 def _max_active_cap() -> int:
     """H12: engagement 容量上限(环境变量可调, 非数字回退默认 4)。"""
     try:
@@ -972,6 +1002,13 @@ class Handler(BaseHTTPRequestHandler):
         host = os.environ.get("P2P_HOST_TOKEN", "")
         worker = os.environ.get("P2P_WORKER_TOKEN", "")
         got = self.headers.get("X-Auth", "")
+        # 中危审计修复(12): P2P_TOKEN_REQUIRED=1(生产模式)此前只在启动日志打印, 判定处从不
+        # 消费 = 死开关。现接上: required 时对应级 token 未配置一律拒绝(不再退到开放回退)。
+        if os.environ.get("P2P_TOKEN_REQUIRED") == "1":
+            if level == "host" and not host:
+                return False
+            if level != "host" and not (worker or host):
+                return False
         if level == "host":
             return bool(host) and bool(got) and hmac.compare_digest(got, host)
         # #33修复: host token 单独配置时也放行宿主写入
@@ -1006,9 +1043,12 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(req, dict):
             return self._send(400, {"ok": False, "error": "body must be a JSON object"})
         # token 认证(未配置 P2P_TOKEN 时放行) — V-13: 恒定时间比较
+        # 中危审计修复(11): 判定收敛到 legacy_token_ok 纯函数 —— host/worker token 优先,
+        # P2P_TOKEN 仅兼容旧客户端, 任一匹配即过(旧实现三 token 并存时认证矩阵死锁)。
         tok = os.environ.get("P2P_TOKEN", "")
-        _got_tok = self.headers.get("X-Auth", "")
-        if tok and not (_got_tok and hmac.compare_digest(_got_tok, tok)):
+        if tok and not legacy_token_ok(self.headers.get("X-Auth", ""), tok,
+                                       os.environ.get("P2P_HOST_TOKEN", ""),
+                                       os.environ.get("P2P_WORKER_TOKEN", "")):
             return self._send(401, {"error": "unauthorized"})
         # R6.3: 黑名单热重载 —— 面板增删改 denylist.json 后免重启即时生效(仅 host token;
         # 不接受 worker token — 名单是全局红线, 只归宿主管)。加载失败保留旧名单(fail-safe)。
@@ -1034,8 +1074,11 @@ class Handler(BaseHTTPRequestHandler):
         # 实证通道: /write/signal 的 evidence 带 mail.demo-src.com 曾直穿(旧实现只扫 /query 变更类 cypher)。
         # /write/transition 豁免 —— 合规隔离转移的 reason 需要引用红线资产本身。
         if self.path.startswith("/write/") and self.path != "/write/transition":
-            _denied = list(DENYLIST.get("domains", [])) + list(DENYLIST.get("cidr_prefix", []))
             try:
+                # 中危审计修复(denylist 并发): 与 /reload/denylist 写者同锁做快照读 — 旧版无锁直读
+                # DENYLIST 两个键, 热重载(分键两次赋值)交错时可能读到「新 domains + 旧 cidr」的撕裂视图。
+                with _locked():
+                    _denied = list(DENYLIST.get("domains", [])) + list(DENYLIST.get("cidr_prefix", []))
                 with _locked():  # V-11: 锁带 5s deadline
                     _c = kuzu.Connection(db())
                     _r = _c.execute("MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.scope")
@@ -1174,7 +1217,7 @@ class Handler(BaseHTTPRequestHandler):
                             "evidence_dir:$edir, repro:$repro, category:$cat, gate_status:'candidate', ts:$ts, related_to:$rt, eng:$eng})",
                             parameters={"id": str(req.get("id") or f"f-{int(time.time()*1000)}"),
                                         "title": title, "sev": sev,
-                                        "cvss": float(req.get("cvss") or 5.0),
+                                        "cvss": cvss_or_default(req.get("cvss")),
                                         "edir": str(req.get("evidence_dir") or ""),
                                         "repro": str(req.get("repro") or ""),
                                         "cat": cat,

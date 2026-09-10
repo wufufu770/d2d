@@ -943,3 +943,89 @@ m.releaseLock()                  // 双重释放不抛不再删
 return {kept, acq, gone}
 """, tmp_path)
     assert out == {"kept": True, "acq": True, "gone": True}
+
+
+# ---- 中危审计修复(0910) ----
+from graphd.app import cvss_or_default
+
+
+def test_cvss_zero_is_legal_not_default():
+    # 中危3: 旧实现 `float(req.get("cvss") or 5.0)` 把合法 CVSS=0 吞成 5.0
+    assert cvss_or_default(0) == 0.0
+    assert cvss_or_default(0.0) == 0.0
+    assert cvss_or_default("0") == 0.0
+
+
+def test_cvss_missing_or_garbage_falls_back_default():
+    assert cvss_or_default(None) == 5.0
+    assert cvss_or_default("") == 5.0
+    assert cvss_or_default("abc") == 5.0
+    assert cvss_or_default(float("nan")) == 5.0
+
+
+def test_cvss_value_and_clamp():
+    assert cvss_or_default("7.5") == 7.5
+    assert cvss_or_default(15) == 10.0
+    assert cvss_or_default(-1) == 0.0
+
+
+# ---- 中危11/12: 认证矩阵(P2P_TOKEN 叠加死锁 / P2P_TOKEN_REQUIRED 死开关) ----
+from graphd.app import Handler, legacy_token_ok
+
+
+def _handler_with_auth(header_value):
+    h = object.__new__(Handler)
+
+    class _Headers:
+        def get(self, k, d=None):
+            return header_value if k == "X-Auth" else d
+
+    h.headers = _Headers()
+    return h
+
+
+def test_legacy_p2p_token_gate_accepts_all_three_tokens():
+    # 中危11: P2P_TOKEN(遗留)与 host/worker token 并存时旧实现要求 X-Auth 同时等于两套 → 全锁死。
+    # 现语义: host/worker token 优先, P2P_TOKEN 仅兼容旧客户端 —— 任一匹配即过本门。
+    assert legacy_token_ok("legacy-tok", "legacy-tok", "host-tok", "worker-tok") is True  # 旧客户端不断链
+    assert legacy_token_ok("worker-tok", "legacy-tok", "host-tok", "worker-tok") is True  # worker token 不再被遗留门 401
+    assert legacy_token_ok("host-tok", "legacy-tok", "host-tok", "worker-tok") is True    # host token 不再被遗留门 401
+    assert legacy_token_ok("wrong", "legacy-tok", "host-tok", "worker-tok") is False
+    assert legacy_token_ok("", "legacy-tok", "host-tok", "worker-tok") is False           # 空头 fail-closed
+    assert legacy_token_ok("x", "", "", "") is False                                       # 全未配置不放行
+    # 时序侧信道不回归: 单独配置时同款恒等比较
+    assert legacy_token_ok("h", "", "h", "") is True
+    assert legacy_token_ok("w", "", "", "w") is True
+
+
+def test_p2p_token_required_switch_is_live(monkeypatch):
+    # 中危12: P2P_TOKEN_REQUIRED=1 死开关接上 — 对应级 token 未配置时认证一律拒绝。
+    monkeypatch.setenv("P2P_TOKEN_REQUIRED", "1")
+    monkeypatch.delenv("P2P_HOST_TOKEN", raising=False)
+    monkeypatch.delenv("P2P_WORKER_TOKEN", raising=False)
+    monkeypatch.delenv("P2P_OPEN_RANGE", raising=False)
+    h = _handler_with_auth("anything")
+    assert h._auth_check("host") is False, "required 模式下 host token 未配置必须拒(旧版死开关放行)"
+    assert h._auth_check("worker") is False
+    # 显式开放回退(P2P_OPEN_RANGE=1)也不得越过 required 门
+    monkeypatch.setenv("P2P_OPEN_RANGE", "1")
+    assert h._auth_check("worker") is False
+
+
+def test_p2p_token_required_passes_when_configured(monkeypatch):
+    monkeypatch.setenv("P2P_TOKEN_REQUIRED", "1")
+    monkeypatch.setenv("P2P_HOST_TOKEN", "host-tok")
+    monkeypatch.setenv("P2P_WORKER_TOKEN", "worker-tok")
+    assert _handler_with_auth("host-tok")._auth_check("host") is True
+    assert _handler_with_auth("worker-tok")._auth_check("worker") is True
+    assert _handler_with_auth("host-tok")._auth_check("worker") is True
+    assert not (_handler_with_auth("nope")._auth_check("worker"))
+
+
+def test_p2p_token_required_unset_keeps_default_semantics(monkeypatch):
+    # 开关未置位时行为不回归: worker 未配置 + OPEN_RANGE=1 → 放行(range 模式)
+    monkeypatch.delenv("P2P_TOKEN_REQUIRED", raising=False)
+    monkeypatch.delenv("P2P_WORKER_TOKEN", raising=False)
+    monkeypatch.delenv("P2P_HOST_TOKEN", raising=False)
+    monkeypatch.setenv("P2P_OPEN_RANGE", "1")
+    assert _handler_with_auth("")._auth_check("worker") is True

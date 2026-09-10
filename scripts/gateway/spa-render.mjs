@@ -15,7 +15,9 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn, execFileSync } from 'node:child_process'
 
-const PORT = parseInt(process.env.P2P_SPA_PORT ?? '8892', 10)
+// 中危审计修复(13): env 解析 NaN 兜底 — 旧版 parseInt 无回退, P2P_SPA_PORT=垃圾 → listen(NaN) 启动即崩
+const _envInt = (v, dflt) => { const n = parseInt(v ?? '', 10); return Number.isFinite(n) && n > 0 && n <= 65535 ? n : dflt }
+const PORT = _envInt(process.env.P2P_SPA_PORT, 8892)
 const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
 const hostToken = (() => { try { return fs.readFileSync(`${os.homedir()}/.config/d2d/host-token`, 'utf8').trim() } catch { return '' } })()
 
@@ -111,6 +113,10 @@ async function ensureChromeRaw() {
 }
 
 // ---------- CDP 最小驱动(native WebSocket, 零依赖) ----------
+// 中危审计修复(0910): 会话生命周期收敛 — 旧版 renderPage 建 ws + createTarget 后:
+// ①导航/使能任一步抛错 → target 永不 close(chrome 里僵尸页累积); ②ws 从不 close →
+// 每次渲染泄漏一条 WebSocket(及随行事件缓冲)。现 renderPage 统一 try/finally:
+// finally 里 closeTarget(尽力) + ws.close; ws onclose 兜底清 pending, error 不再无监听。
 function cdpSession(cdpHttp) {
   let seq = 0
   const pending = new Map()
@@ -125,6 +131,8 @@ function cdpSession(cdpHttp) {
       if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
       else if (msg.method) events.push(msg)
     }
+    ws.onclose = () => { for (const fn of pending.values()) try { fn({ error: { message: 'cdp ws closed' } }) } catch {} ; pending.clear() }
+    ws.onerror = () => {}
   }
   const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
     const id = ++seq
@@ -132,7 +140,8 @@ function cdpSession(cdpHttp) {
     ws.send(JSON.stringify(sessionId ? { id, method, params, sessionId } : { id, method, params }))
     setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error(`cdp timeout: ${method}`)) } }, 30_000)
   })
-  return { connect, send, events }
+  const close = () => { try { if (ws && ws.readyState <= 1) ws.close() } catch {} }
+  return { connect, send, events, close }
 }
 
 async function renderPage(url, waitMs) {
@@ -140,24 +149,30 @@ async function renderPage(url, waitMs) {
   if (!mode) throw new Error('chrome 不可用(未安装且未设 P2P_CDP_URL) — 安装 chromium 或 P2P_CHROME_PATH/P2P_CDP_URL 后重试')
   const c = cdpSession(cdpHttp)
   await c.connect()
-  const { targetId } = await c.send('Target.createTarget', { url: 'about:blank' })
-  const { sessionId } = await c.send('Target.attachToTarget', { targetId, flatten: true })
-  await c.send('Page.enable', {}, sessionId)
-  await c.send('Network.enable', {}, sessionId)
-  const net = []
-  const onMsg = (msg) => { if (msg.method === 'Network.requestWillBeSent') { const r = msg.params.request; net.push({ url: r.url, method: r.method, type: msg.params.type }) } }
-  c.events.push = Array.prototype.push.bind(c.events) // keep default
-  const origPush = c.events.push.bind(c.events)
-  c.events.push = (m) => { try { onMsg(m) } catch {} ; return origPush(m) }
-  await c.send('Page.navigate', { url }, sessionId)
-  await new Promise((r) => setTimeout(r, waitMs || 4000))
-  let domLinks = []
+  let targetId = null
   try {
-    const ev = await c.send('Runtime.evaluate', { expression: `[...new Set([...document.querySelectorAll('a[href]')].map(a => a.href))].slice(0,300)`, returnByValue: true }, sessionId)
-    domLinks = ev.result?.value ?? []
-  } catch {}
-  try { await c.send('Target.closeTarget', { targetId }) } catch {}
-  return extractEndpoints(net, domLinks)
+    ;({ targetId } = await c.send('Target.createTarget', { url: 'about:blank' }))
+    const { sessionId } = await c.send('Target.attachToTarget', { targetId, flatten: true })
+    await c.send('Page.enable', {}, sessionId)
+    await c.send('Network.enable', {}, sessionId)
+    const net = []
+    const onMsg = (msg) => { if (msg.method === 'Network.requestWillBeSent') { const r = msg.params.request; net.push({ url: r.url, method: r.method, type: msg.params.type }) } }
+    c.events.push = Array.prototype.push.bind(c.events) // keep default
+    const origPush = c.events.push.bind(c.events)
+    c.events.push = (m) => { try { onMsg(m) } catch {} ; return origPush(m) }
+    await c.send('Page.navigate', { url }, sessionId)
+    await new Promise((r) => setTimeout(r, waitMs || 4000))
+    let domLinks = []
+    try {
+      const ev = await c.send('Runtime.evaluate', { expression: `[...new Set([...document.querySelectorAll('a[href]')].map(a => a.href))].slice(0,300)`, returnByValue: true }, sessionId)
+      domLinks = ev.result?.value ?? []
+    } catch {}
+    return extractEndpoints(net, domLinks)
+  } finally {
+    // 中危审计修复(0910): 断开/异常路径统一清理 — 关 target + 关 ws, 无僵尸页无 socket 泄漏
+    try { if (targetId) await c.send('Target.closeTarget', { targetId }) } catch {}
+    c.close()
+  }
 }
 
 // ---------- 图写入(MERGE 去重, tech=spa-cdp) ----------
@@ -192,6 +207,8 @@ function writeEndpoints(port, endpoints) {
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+// cdpSession 导出仅供测试(issues-0910: 会话清理回归用 fake WebSocket 注入)
+export { cdpSession }
 if (isMain) {
   http.createServer(async (req, res) => {
   const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)) }

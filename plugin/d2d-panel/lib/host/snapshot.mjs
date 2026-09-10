@@ -208,6 +208,8 @@ export function readFleet(env = process.env) {
     const p = JSON.parse(fs.readFileSync(`${dir}/config/model-policies.json`, 'utf8'))
     const roles = {}
     for (const [k, v] of Object.entries(p?.roles ?? {})) {
+      // 中危审计修复(0910): roles 键并入对象前过滤危险键(手改文件可带 __proto__/constructor)
+      if (/^(?:__proto__|constructor|prototype)$/i.test(String(k))) continue
       roles[k] = { primary: String(v?.primary ?? ''), backup: String(v?.backup ?? '') }
     }
     const fleet = { default: { primary: String(p?.default?.primary ?? ''), backup: String(p?.default?.backup ?? '') }, roles, models: [], catalog: [] }
@@ -285,9 +287,17 @@ export function credentialEnvNames(env = process.env) {
 }
 
 /** 凭据 refs 合并(纯函数供 pytest/node test) — dsh 管理的 {version, refs:{ENV: key}} 平文本形态:
- * 已有 refs: 段 → 在段尾插入新条目; 无 → 文件尾新建 refs: 段。env 名白名单校验。*/
+ * 已有 refs: 段 → 在段尾插入新条目; 无 → 文件尾新建 refs: 段。env 名白名单校验。
+ * 中危审计修复(0910): value 旧版原样插入 — 含 `: `/换行/` #` 时可注入任意 YAML 键(注入面)。
+ * 现统一双引号包裹 + YAML 双引号转义(`\ " \r \n \t`), 值永远解析为单个标量字符串。*/
 export function mergeCredentialRefs(text, envName, value) {
   if (!/^[A-Za-z0-9_]+$/.test(String(envName || ''))) throw new Error('invalid credential env name')
+  const yq = String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\t/g, '\\t')
   const lines = String(text ?? '').split(/\r?\n/)
   let refsStart = -1, refsEnd = -1
   lines.forEach((l, i) => {
@@ -297,7 +307,7 @@ export function mergeCredentialRefs(text, envName, value) {
     if (m[1] === '' && m[2] === 'refs') refsStart = i
     else if (refsStart >= 0 && m[1].startsWith('  ')) refsEnd = i
   })
-  const entry = `  ${envName}: ${value}`
+  const entry = `  ${envName}: "${yq}"`
   if (refsStart >= 0) lines.splice((refsEnd >= refsStart ? refsEnd : refsStart) + 1, 0, entry)
   else lines.push('refs:', entry)
   return lines.join('\n')
@@ -369,6 +379,12 @@ export function writeFleet({ role, slot, model }, env = process.env) {
   const slot_ = String(slot ?? '') === 'backup' ? 'backup' : 'primary'
   const model_ = String(model ?? '').trim()
   if (!role_) throw new Error('role required')
+  // 中危审计修复(0910): 原型污染 — role 直接作 p.roles 的键, `__proto__` 会把 {primary,backup}
+  // 写进 Object.prototype(污染宿主进程全局), `constructor` 会命中函数对象。键限安全字符集 +
+  // 显式黑名单(role 词形=模型角色 id: default/discovery/deep/creative/verify/study 等)。
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(role_) || /^(?:__proto__|constructor|prototype)$/i.test(role_)) {
+    throw new Error(`bad role id "${role_.slice(0, 40)}"`)
+  }
   if (model_ && !MODEL_RE.test(model_)) throw new Error(`bad model id "${model_}" (expect provider/model)`)
   const dir = env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
   const file = `${dir}/config/model-policies.json`

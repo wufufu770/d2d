@@ -4,6 +4,7 @@
 //   默认 dry-run 只打印提炼结果; --apply 写入 D2D_DATA_DIR/brain/staged 待晋级(晋级须过 promote.mjs 三层门禁)
 // 车道空闲时由 watchdog 调用; 或 /pentest-study 手动触发
 import { execFileSync, spawn } from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -17,6 +18,30 @@ const mi = process.argv.indexOf('--model')
 // 缺省参数修复: 同 src-export — 不带 --graph 时旧写法取到 argv[0]
 const _gi = process.argv.indexOf('--graph')
 const GRAPH = _gi > -1 ? (process.argv[_gi + 1] || '8766') : '8766'
+// 中危审计修复(0910): 批次超时 env 可调(旧版硬编码 900s), 默认 1800s; NaN/非法值回退默认
+const BATCH_TIMEOUT_S = (() => {
+  const n = parseInt(process.env.D2D_STUDY_BATCH_TIMEOUT ?? '1800', 10)
+  return Number.isFinite(n) && n > 0 ? n : 1800
+})()
+// 中危审计修复(0910): 已完成批次进度落盘 — 旧版进度只在内存, 中途崩溃/超时后重跑会重复蒸馏
+// 已完成批次(纯烧额度)。进度按语料 sha1 记账(staged 写盘成功后清除)。
+const PROGRESS_FILE = `${DATA_DIR}/brain/study-progress.json`
+const corpusHash = (corpus) => crypto.createHash('sha1').update(String(corpus ?? '')).digest('hex')
+function loadProgress() {
+  try {
+    const j = JSON.parse(fs.readFileSync(PROGRESS_FILE, 'utf8'))
+    return j && typeof j.done === 'object' && j.done ? j.done : {}
+  } catch { return {} }
+}
+function saveProgress(done) {
+  try {
+    fs.mkdirSync(path.dirname(PROGRESS_FILE), { recursive: true })
+    fs.writeFileSync(PROGRESS_FILE, JSON.stringify({ version: 1, done }, null, 1))
+  } catch (e) { console.error('[study] progress save:', e?.message) }
+}
+function clearProgress() {
+  try { fs.rmSync(PROGRESS_FILE, { force: true }) } catch {}
+}
 
 const readJson = (p, d = null) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return d } }
 function studyModel() {
@@ -124,7 +149,9 @@ console.log(`study worker 启动(model=${model || 'dsh 默认'}, ${batches.lengt
 function runBatch(corpus) {
   return new Promise((resolve) => {
     const prompt = batchPrompt(corpus)
-    const out = spawn('timeout', ['--signal=KILL', '--kill-after=5', '900', 'dsh', '--profile', 'headless', prompt], {
+    // timeout 包裹: GNU timeout 默认对子进程组建新进程组发信号(--kill-after 兜底 KILL),
+    // dsh 再派生的子进程一并被杀 — 超时永不卡死 study 进程; 时长 BATCH_TIMEOUT_S(env 可调)
+    const out = spawn('timeout', ['--signal=KILL', '--kill-after=5', String(BATCH_TIMEOUT_S), 'dsh', '--profile', 'headless', prompt], {
       cwd: REPO,
       env: { ...process.env, DSH_HOME: home ?? (process.env.P2P_DSH_HOME ?? `${os.homedir()}/.dsh`) },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -148,10 +175,26 @@ function runBatch(corpus) {
 ;(async () => {
   const all = []
   const byId = new Set()
+  const progress = loadProgress()
+  let resumed = 0
   let failed = 0
   for (let i = 0; i < batches.length; i++) {
+    const hash = corpusHash(batches[i].corpus)
+    // 中危审计修复(0910): 已完成批次直接复用进度(重跑不重复蒸馏); 只有未完成批次才付模型调用
+    if (progress[hash]?.cards?.length) {
+      resumed++
+      const r = progress[hash]
+      for (const c of r.cards) {
+        const id = String(c.id ?? '')
+        if (id && !byId.has(id)) { byId.add(id); all.push(c) }
+      }
+      console.log(`[批 ${i + 1}/${batches.length}] 复用上次进度(${r.cards.length} 张, ${r.at ?? '上次运行'})`)
+      continue
+    }
     const r = await runBatch(batches[i].corpus)
     if (r.err) { failed++; console.error(`[批 ${i + 1}/${batches.length}] 失败: ${r.err}`); continue }
+    progress[hash] = { cards: r.cards, at: new Date().toISOString() }
+    saveProgress(progress) // 每批完成即落盘 — 中途崩溃/被杀后重跑从断点继续
     let kept = 0
     for (const c of r.cards) {
       const id = String(c.id ?? '')
@@ -160,10 +203,13 @@ function runBatch(corpus) {
     }
     console.log(`[批 ${i + 1}/${batches.length}] 提炼 ${r.cards.length} 张(去重后 +${kept})`)
   }
+  if (resumed) console.log(`复用 ${resumed} 批上次进度`)
   try { if (home) fs.rmSync(home, { recursive: true, force: true }) } catch {}
   if (!all.length) { console.error('全部批次失败 — 未产出卡片'); process.exit(1) }
   console.log(`合计 ${all.length} 张卡(去重后, ${failed} 批失败):`)
   for (const c of all.slice(0, 20)) console.log(`  - ${c.id} ${c.title} [${(c.applies_to ?? []).slice(0, 4).join(',')}]`)
+  // 走到收尾(staged 写盘/队列消费)即整轮完成 — 清进度, 之后新语料从头记账
+  clearProgress()
   if (!APPLY) { console.log('(dry-run, 加 --apply 写入 staged 待晋级)'); return }
   const currentV = (() => { try { return fs.readlinkSync(`${DATA_DIR}/brain/current`) } catch { return '' } })()
   const manifest = {
