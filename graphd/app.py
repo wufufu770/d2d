@@ -46,26 +46,30 @@ import kuzu
 # —— `from graphd.app import X` 的既有导入路径(tests/外部调用方)零改动。两种形态都接住:
 # 包内导入(graphd.gd —— pytest/调度器侧)与直接脚本运行(cd graphd && python3 app.py)。
 try:
-    from graphd.gd import (_URL_RE, DENYLIST, FINDING_STATES, FINDING_TRANSITIONS,
-                           JUNK_PATTERNS, L1_DENY_REASON, MAX_BODY_BYTES, MAX_QUERY_ROWS,
+    from graphd.gd import (_URL_RE, DENYLIST, FINDING_DEDUP_SCAN_SQL, FINDING_STATES,
+                           FINDING_TRANSITIONS, JUNK_PATTERNS, L1_DENY_REASON, MAX_BODY_BYTES,
+                           MAX_QUERY_ROWS,
                            CONFIG_ADVICE_RE, SCHEMA, _backfill_eng, _jsonify,
                            _read_denylist_file, _safe_token_path, attribute_by_time,
                            auth_check, bounded_rows, candidate_watermark_reject,
                            canonical_cat, config_reject, content_length_gate,
-                           cvss_or_default, engagement_cap_gate, endpoint_sig_duplicate,
+                           cvss_or_default, dedup_cat, engagement_cap_gate,
+                           endpoint_sig_duplicate,
                            eng_time_windows, finding_gates, host_in_scope, hostport_of,
                            init_schema, is_engagement_create, l1_gate, legacy_token_ok,
                            normalize_title, parse_scope_allows, pick_write_eng,
                            prose_denylist_hit, redact_pii, repro_gate, title_tokens,
                            titles_duplicate, transition_gate, url_sig, worker_query_allowed)
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
-    from gd import (_URL_RE, DENYLIST, FINDING_STATES, FINDING_TRANSITIONS,
-                    JUNK_PATTERNS, L1_DENY_REASON, MAX_BODY_BYTES, MAX_QUERY_ROWS,
+    from gd import (_URL_RE, DENYLIST, FINDING_DEDUP_SCAN_SQL, FINDING_STATES,
+                    FINDING_TRANSITIONS, JUNK_PATTERNS, L1_DENY_REASON, MAX_BODY_BYTES,
+                    MAX_QUERY_ROWS,
                     CONFIG_ADVICE_RE, SCHEMA, _backfill_eng, _jsonify,
                     _read_denylist_file, _safe_token_path, attribute_by_time,
                     auth_check, bounded_rows, candidate_watermark_reject,
                     canonical_cat, config_reject, content_length_gate,
-                    cvss_or_default, engagement_cap_gate, endpoint_sig_duplicate,
+                    cvss_or_default, dedup_cat, engagement_cap_gate,
+                    endpoint_sig_duplicate,
                     eng_time_windows, finding_gates, host_in_scope, hostport_of,
                     init_schema, is_engagement_create, l1_gate, legacy_token_ok,
                     normalize_title, parse_scope_allows, pick_write_eng,
@@ -486,8 +490,10 @@ class Handler(BaseHTTPRequestHandler):
                         _crej, _crej_reason = config_reject(sev, str(req.get("category") or ""), title)
                         if _crej:
                             return self._send(400, {"ok": False, "error": _crej_reason})
-                        # issue #89 前置: 类别名归一(写入即 canonical, 防命名漂移逃逸去重)
-                        cat = canonical_cat(str(req.get("category") or "vuln"))
+                        # issue #89 前置: 类别名归一(写入即 canonical, 防命名漂移逃逸去重);
+                        # 缺省/空 category 归一默认类(dedup_cat, 与去重读侧同口径 — 否则缺省写入
+                        # 与显式 'vuln' 存量互不命中, 同标题去重被空类绕过)
+                        cat = dedup_cat(req.get("category"))
                         # R3: 配置建议归类 —— medium+ 的加固项仍降级 config-advice 入库供人工复核
                         if cat in ("config", "config-advice", "hardening") or \
                                 (sev in ("low", "info") and CONFIG_ADVICE_RE.search(tl)):
@@ -515,11 +521,16 @@ class Handler(BaseHTTPRequestHandler):
                         _ftoks = title_tokens(title)
                         _rt = ""
                         if _norm or _fpath:
-                            _r = conn.execute("MATCH (f:Finding) WHERE f.category = $c AND f.eng = $e RETURN f.id AS id, f.title AS t, f.repro AS r",
-                                              parameters={"c": cat, "e": _eng})
+                            # 缺省/空 category 去重域归一(读侧): 存量 ''/NULL 行(旧缺省写入)一并
+                            # 纳入候选(SQL 单点在 queries.FINDING_DEDUP_SCAN_SQL), 应用侧按
+                            # dedup_cat 归一比对 — 缺省写入与显式 'vuln' 互查命中; 显式跨类仍隔离。
+                            _r = conn.execute(FINDING_DEDUP_SCAN_SQL, parameters={"c": cat, "e": _eng})
                             while _r.has_next():
                                 _row = _r.get_next()
                                 _eid, _etitle, _erepro = str(_row[0]), str(_row[1] or ""), str(_row[2] or "")
+                                _ecat = str(_row[3] or "") if len(_row) > 3 else ""
+                                if dedup_cat(_ecat) != cat:
+                                    continue  # 归一后不同域 → 不互查(显式其他 category 仍隔离)
                                 if _norm and titles_duplicate(_norm, normalize_title(_etitle)):
                                     return self._send(409, {"ok": False, "existing_id": _eid,
                                                             "error": f"duplicate finding: 与 {_eid}('{_etitle[:60]}') 标题重复(category={cat}) — 请勿新建重复条目; 补充证据用 /write/signal 引用该 finding id"})

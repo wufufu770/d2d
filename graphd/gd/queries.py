@@ -25,3 +25,13 @@ def _jsonify(v):
     if isinstance(v, (int, float, str, bool)) or v is None:
         return v
     return str(v)
+
+
+# /write/finding 去重门的存量扫描 SQL(#11 标题去重与端点签名去重同源, 单点供 handler 与 pytest):
+# 除显式同类(category=$c)外, 缺省/空 category 行('' 或 NULL — 旧写入缺省)一并纳入候选,
+# 域归一由 gates.dedup_cat 在应用侧完成(缺省/空 ≡ 'vuln'), 显式其他 category 仍隔离。
+FINDING_DEDUP_SCAN_SQL = (
+    "MATCH (f:Finding) WHERE f.eng = $e AND "
+    "(f.category = $c OR f.category = '' OR f.category IS NULL) "
+    "RETURN f.id AS id, f.title AS t, f.repro AS r, f.category AS c"
+)

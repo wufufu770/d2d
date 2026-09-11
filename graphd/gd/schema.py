@@ -12,7 +12,7 @@ SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', PRIMARY KEY(worker_id))",
     "CREATE NODE TABLE IF NOT EXISTS Task(id STRING, eng STRING DEFAULT '', kind STRING, payload STRING, priority DOUBLE DEFAULT 1.0, status STRING DEFAULT 'pending', claimed_by STRING DEFAULT '', claimed_at STRING DEFAULT '', target_type STRING DEFAULT 'web', link_id STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Handoff(id STRING, eng STRING, digest STRING, model STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
@@ -36,6 +36,17 @@ def init_schema(conn):
     for _ddl in ("ALTER TABLE ExperienceWeight ADD recipe STRING DEFAULT ''",
                  "ALTER TABLE ExperienceWeight ADD stack_fp STRING DEFAULT ''",
                  "ALTER TABLE ExperienceWeight ADD payload_hint STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
+    # P0 计胜列迁移(实证: experience.mjs 的 EXP_UPSERT/CREDIT 写入 SET e.cls/e.win_day/e.wins_today,
+    # 旧库无列时 Binder 报错被 worker 侧 .catch 静默吞 → verified 战果积分永不上涨, 自进化闭环断链)。
+    # 列型与写入语句对齐: cls=归一漏洞类标注(STRING), win_day=当日窗口日期串 YYYY-MM-DD(STRING),
+    # wins_today=当日计胜数(INT64, 跨日 CASE 重置)。列名为字面量枚举(同上, 防扫描器 SIDI 判定)。
+    for _ddl in ("ALTER TABLE ExperienceWeight ADD cls STRING DEFAULT ''",
+                 "ALTER TABLE ExperienceWeight ADD win_day STRING DEFAULT ''",
+                 "ALTER TABLE ExperienceWeight ADD wins_today INT64 DEFAULT 0"):
         try:
             conn.execute(_ddl)
         except Exception:
