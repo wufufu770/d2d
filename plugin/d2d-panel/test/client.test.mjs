@@ -106,3 +106,110 @@ test('client: betterSidebar 服务缺失 → 记录日志并静默跳过(软依�
     assert.deepEqual(logs, ['d2d-panel: betterSidebar 服务不可用, tab 注册跳过'])
   }
 })
+
+// ══════════ bug 回归: 片段级行为探针 — 片段放进隔离 vm, 工厂作用域依赖(h/useState/panel/…)打桩后直接驱动组件 ══════════
+
+/** 把 lib/client/<frag> 片段源码放进隔离 vm 上下文(sloppy 模式, 顶层函数声明落全局),
+ *  sandbox 预置组件引用的工厂作用域符号桩; 返回上下文(可取 ctx.<组件函数>)。 */
+function loadFragment(frag, stubs) {
+  const src = fs.readFileSync(path.join(FRAG_DIR, frag), 'utf8')
+  const ctx = vm.createContext({ ...stubs })
+  vm.runInContext(src, ctx, { filename: `lib/client/${frag}` })
+  return ctx
+}
+
+/** h 桩: 记录每个创建的元素 {type, props, children}, 供渲染树断言。 */
+function makeH() {
+  const els = []
+  const h = (type, props, ...children) => {
+    const el = { type, props: props ?? {}, children }
+    els.push(el)
+    return el
+  }
+  return { h, els }
+}
+
+function panelStubs() {
+  return {
+    panel: { muted: () => ({ style: {} }), chip: () => ({}), btn: () => ({}), input: () => ({}), mono: { style: {} }, root: {} },
+  }
+}
+
+test('client(bug回归): OpsView 策略库卡 — 模块开启且有数据才渲染, 关闭或无数据隐藏(旧版条件反转: 开启反而隐藏)', () => {
+  const snap = { findings: { byState: {}, list: [] }, gaps: [], experience: [], counts: { signals_open: 0 }, signals: [], strategies: [{ id: 's1', title: 'T' }] }
+  const offBox = { set: new Set() }
+  const { h, els } = makeH()
+  const ctx = loadFragment('view.ops.js', {
+    h, useState: (init) => [init, () => {}],
+    useSnapshot: () => ({ snap, err: null, now: 0, refresh: () => {} }),
+    useModules: () => ({ off: offBox.set, toggle: () => {} }),
+    Card: function Card() {}, Style: () => null, FailClosedBanner: function F() {}, Skeleton: function S() {},
+    EngagementCard: function E() {}, DenylistCard: function D() {}, CapsCard: function C() {},
+    FleetCard: function F() {}, UsageCard: function U() {}, CostCard: function CO() {},
+    WorkersCard: function W() {}, FunnelCard: function FU() {}, GapsCard: function G() {},
+    ExperienceCard: function EX() {}, StrategiesCard: function ST() {}, MODULES: [],
+    ...panelStubs(),
+  })
+  const OpsView = ctx.OpsView
+  const rendered = () => els.some((e) => e.type === ctx.StrategiesCard)
+  offBox.set = new Set()
+  els.length = 0
+  OpsView({ visible: true })
+  assert.ok(rendered(), '模块开启 + 有数据 → 策略库卡应渲染(旧版 !off.has 反转: 开启反而 null)')
+  offBox.set = new Set(['strategies'])
+  els.length = 0
+  OpsView({ visible: true })
+  assert.ok(!rendered(), '模块关闭 → 隐藏')
+  offBox.set = new Set()
+  snap.strategies = []
+  els.length = 0
+  OpsView({ visible: true })
+  assert.ok(!rendered(), '模块开启但无数据 → 隐藏(空态守卫保留)')
+})
+
+test('client(bug回归): FleetCard.saveCredential — 成功路径不再引用未定义 setCredMsg(旧版 ReferenceError 且 refresh 不执行); 失败路径提示且不抛未处理拒绝', async () => {
+  const states = []
+  const stateInit = { 0: 'coder/primary' } // 第 0 个 useState(open) 初值覆盖 → 渲染出 picker 才能摘到 onCredential
+  let idx = 0
+  const useState = (init) => {
+    const k = idx++
+    const st = { value: k in stateInit ? stateInit[k] : init, set: (v) => { st.value = v } }
+    states.push(st)
+    return [st.value, st.set]
+  }
+  const posts = []
+  const refreshed = []
+  let respond = () => ({ ok: true })
+  const { h, els } = makeH()
+  const ctx = loadFragment('cards.ops.js', {
+    h, useState,
+    postJson: async (ep, body) => { posts.push([ep, body]); return respond() },
+    Card: function Card() {}, FleetModelPicker: function FM() {}, shortModel: (m) => String(m ?? '').split('/').pop(),
+    ...panelStubs(),
+  })
+  const FleetCard = ctx.FleetCard
+  const fleet = { roles: { coder: { primary: 'p/a', backup: '' } }, models: [], catalog: [] }
+  FleetCard({ fleet, run: {}, refresh: () => refreshed.push('r') })
+  const picker = els.find((e) => e.type === ctx.FleetModelPicker)
+  assert.ok(picker, 'open 槽应渲染 FleetModelPicker(onCredential 经 props 透出)')
+  const saveCredential = picker.props.onCredential
+  // 成功路径: 不抛错、写 credential、给出提示、refresh() 必须执行
+  await assert.doesNotReject(() => saveCredential('acme', 'sk-secret'))
+  assert.equal(posts.length, 1)
+  assert.equal(posts[0][0], 'credential')
+  assert.equal(posts[0][1].provider, 'acme') // vm 侧对象跨 realm, 不用 deepStrictEqual 比原型
+  assert.equal(posts[0][1].key, 'sk-secret')
+  assert.equal(refreshed.length, 1, '成功后必须 refresh()(旧版 setCredMsg ReferenceError 中断)')
+  const credState = states.find((s) => typeof s.value === 'string' && s.value.includes('acme'))
+  assert.ok(credState?.value.includes('凭据'), '成功提示置入本组件 credMsg state')
+  // 失败路径: 不再向调用方抛未处理拒绝(picker onClick 无 catch), 错误置入本组件 err state
+  posts.length = 0
+  respond = () => { throw new Error('boom') }
+  await assert.doesNotReject(() => saveCredential('acme', 'sk-2'))
+  assert.equal(posts.length, 1)
+  assert.equal(posts[0][0], 'credential')
+  assert.equal(posts[0][1].provider, 'acme')
+  assert.equal(posts[0][1].key, 'sk-2')
+  assert.equal(refreshed.length, 1, '失败不触发 refresh')
+  assert.equal(states[2].value, 'boom', '失败提示置入本组件 err state')
+})
