@@ -519,6 +519,7 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = useState(null) // `${role}/${slot}`
       const [busy, setBusy] = useState(false)
       const [err, setErr] = useState(null)
+      const [credMsg, setCredMsg] = useState(null) // 凭据保存结果提示(本组件作用域 — 旧版误引 FleetModelPicker 内部 setter, 成功也抛 ReferenceError 且 refresh 不执行)
       if (!fleet?.roles || !Object.keys(fleet.roles).length) {
         return h(Card, { title: 'Fleet 模型矩阵' }, h('div', panel.muted(), '未配置 model-policies(fleet 卡降级)'))
       }
@@ -531,12 +532,12 @@ window.__ModuleLoader__.load({
         } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
       }
       const saveCredential = async (provider, key) => {
-        setBusy(true); setErr(null)
+        setBusy(true); setErr(null); setCredMsg(null)
         try {
           await postJson('credential', { provider, key })
-          setCredMsg(null)
+          setCredMsg(`${provider} 凭据已存入 dsh credentials`)
           refresh()
-        } catch (e) { setErr(String(e?.message ?? e)); throw e } finally { setBusy(false) }
+        } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
       }
       return h(Card, { title: 'Fleet 模型矩阵', extra: h('span', panel.muted(0.45), '点击模型换槽') },
         Object.entries(fleet.roles).map(([role, m]) => {
@@ -564,7 +565,8 @@ window.__ModuleLoader__.load({
             open === key ? h(FleetModelPicker, { role, slot: 'primary', current: m.primary, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, onCredential: saveCredential, busy }) : null,
             open === keyB ? h(FleetModelPicker, { role, slot: 'backup', current: m.backup, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, onCredential: saveCredential, busy }) : null)
         }),
-        err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null)
+        err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null,
+        credMsg ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-brand)', wordBreak: 'break-all' } }, credMsg) : null)
     }
 
     // ---- 用量卡: 每模型调度次数(model-usage.jsonl 真实计数) ----
@@ -811,7 +813,7 @@ window.__ModuleLoader__.load({
         !off.has('funnel') ? h(FunnelCard, { snap }) : null,
         !off.has('gaps') ? h(GapsCard, { snap }) : null,
         !off.has('exp') ? h(ExperienceCard, { snap }) : null,
-        !off.has('strategies') || !snap.strategies?.length ? null : h(StrategiesCard, { strategies: snap.strategies }),
+        off.has('strategies') || !snap.strategies?.length ? null : h(StrategiesCard, { strategies: snap.strategies }),
         h(Card, { title: `开放信号 tail · ${snap.counts.signals_open}`, extra: h('span', panel.muted(0.45), `显示最近 ${snap.signals.length} 条`) },
           snap.signals.length
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },

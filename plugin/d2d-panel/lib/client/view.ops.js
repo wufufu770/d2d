@@ -88,7 +88,7 @@
         !off.has('funnel') ? h(FunnelCard, { snap }) : null,
         !off.has('gaps') ? h(GapsCard, { snap }) : null,
         !off.has('exp') ? h(ExperienceCard, { snap }) : null,
-        !off.has('strategies') || !snap.strategies?.length ? null : h(StrategiesCard, { strategies: snap.strategies }),
+        off.has('strategies') || !snap.strategies?.length ? null : h(StrategiesCard, { strategies: snap.strategies }),
         h(Card, { title: `开放信号 tail · ${snap.counts.signals_open}`, extra: h('span', panel.muted(0.45), `显示最近 ${snap.signals.length} 条`) },
           snap.signals.length
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },

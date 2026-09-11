@@ -204,6 +204,7 @@
       const [open, setOpen] = useState(null) // `${role}/${slot}`
       const [busy, setBusy] = useState(false)
       const [err, setErr] = useState(null)
+      const [credMsg, setCredMsg] = useState(null) // 凭据保存结果提示(本组件作用域 — 旧版误引 FleetModelPicker 内部 setter, 成功也抛 ReferenceError 且 refresh 不执行)
       if (!fleet?.roles || !Object.keys(fleet.roles).length) {
         return h(Card, { title: 'Fleet 模型矩阵' }, h('div', panel.muted(), '未配置 model-policies(fleet 卡降级)'))
       }
@@ -216,12 +217,12 @@
         } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
       }
       const saveCredential = async (provider, key) => {
-        setBusy(true); setErr(null)
+        setBusy(true); setErr(null); setCredMsg(null)
         try {
           await postJson('credential', { provider, key })
-          setCredMsg(null)
+          setCredMsg(`${provider} 凭据已存入 dsh credentials`)
           refresh()
-        } catch (e) { setErr(String(e?.message ?? e)); throw e } finally { setBusy(false) }
+        } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
       }
       return h(Card, { title: 'Fleet 模型矩阵', extra: h('span', panel.muted(0.45), '点击模型换槽') },
         Object.entries(fleet.roles).map(([role, m]) => {
@@ -249,7 +250,8 @@
             open === key ? h(FleetModelPicker, { role, slot: 'primary', current: m.primary, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, onCredential: saveCredential, busy }) : null,
             open === keyB ? h(FleetModelPicker, { role, slot: 'backup', current: m.backup, models: fleet.models ?? [], catalog: fleet.catalog ?? [], quotaHits: run?.quotaHits, onPick: pick, onCredential: saveCredential, busy }) : null)
         }),
-        err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null)
+        err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null,
+        credMsg ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-brand)', wordBreak: 'break-all' } }, credMsg) : null)
     }
 
     // ---- 用量卡: 每模型调度次数(model-usage.jsonl 真实计数) ----
