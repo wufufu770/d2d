@@ -1,5 +1,5 @@
 {
-  "_comment": "d2d caps 热调示例 — 复制到 $D2D_DATA_DIR/config/caps.json 生效(面板容量卡片同写此文件)。caps/deepParallel/maxAgents/backlogWatermark = 环容量(文件 > P2P_* env > 内置默认); tools 节 = 扫描器限速纪律覆盖(文件 > P2P_TOOL_POLICY env > domain/tool-policy.mjs 内置默认), 每工具浅覆盖, 正则/数值非法项整条丢弃。。并发说明: deepParallel/maxAgents 提升只增并行 worker 数, 单 worker 预算仍由 P2P_MAX_STEPS(默认45)+深环短超时约束——并发越高模型并发调用越多, 额度紧张时优先调低 deepParallel 而非 step 上限。",
+  "_comment": "d2d caps 热调示例 — 复制到 $D2D_DATA_DIR/config/caps.json 生效(面板容量卡片同写此文件)。caps/deepParallel/maxAgents/backlogWatermark = 环容量(文件 > P2P_* env > 内置默认); tools 节 = 扫描器限速纪律覆盖(文件 > P2P_TOOL_POLICY env > domain/tool-policy.mjs 内置默认), 每工具浅覆盖, 正则/数值非法项整条丢弃。并发说明: deepParallel/maxAgents 提升只增并行 worker 数, 单 worker 预算仍由 P2P_MAX_STEPS(默认45)+深环短超时约束——并发越高模型并发调用越多, 额度紧张时优先调低 deepParallel 而非 step 上限。",
   "caps": {
     "recon": 2,
     "deep-dive": 2,
