@@ -97,6 +97,17 @@ def canonical_cat(c) -> str:
     return CAT_ALIASES.get(c, c)
 
 
+# 缺省/空 category 去重域归一 — 标题/签名去重按 category 域隔离, 而历史写入路径可能落
+# category=''/NULL(缺省), 与显式 'vuln' 的同标题互不命中 → 去重被绕过(同标题重复条目堆积)。
+# 读写两侧统一经 dedup_cat 归一: 缺省/空 ≡ 默认类; 显式其他 category 仍隔离(不误伤跨类同标题)。
+DEFAULT_CATEGORY = "vuln"
+
+
+def dedup_cat(c) -> str:
+    """去重域归一(纯函数供 pytest) — canonical 归一后为空(None/''/纯空白)则落默认类 'vuln'。"""
+    return canonical_cat(c) or DEFAULT_CATEGORY
+
+
 # ── L0/L1 分级验证 + 授权资产硬门(参照 dsh-hunter) ─────────────────────────
 # L0 被动验证(GET 首页存活+指纹一致性比对): 任何 scope 内资产可做;
 # L1 主动最小验证(只读 curl 重放): 仅限授权表内(Endpoint.authorized=true)资产,
