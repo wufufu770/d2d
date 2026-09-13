@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// brief.mjs — hunt 式一键假设简报(P3/M7, skyline hunt/strategy-learn 采纳): 关键词/技术栈/CWE →
+// brief.mjs — hunt 式一键假设简报(P3/M7, hunt/strategy-learn 语义): 关键词/技术栈/CWE →
 //   固定 schema 的结构化简报(hypothesis/preconditions/test_plan/negative_controls/evidence_requirements/
 //   matched_strategies/references)。默认零 LLM 依赖 — 知识脑检索 + 卡片拼装; --deep 走可插拔 LLM
 //   扩写钩子(D2D_BRIEF_LLM_CMD: 收简报 JSON stdin, 回 markdown stdout, 由 study 通道同款模型驱动)。
