@@ -1137,3 +1137,57 @@ def test_bug4_explicit_other_category_still_isolated(tmp_path):
     assert scan("vuln") == ["F-vuln"], "缺省/'vuln' 域只命中同类, 不得误伤 sqli 同标题"
     assert scan("sqli") == ["F-sqli"], "显式 sqli 域照常命中自身"
     assert scan(dedup_cat("")) == ["F-vuln"], "空类归一默认域(读写两侧同口径)"
+
+
+# ---- 0913 双签断链修复: Signal_.verify_tries 与 Finding.dual_sign 缺列 → scheduler 侧
+#      消费/双签查询 Kuzu Binder 异常被 .catch(()=>[]) 静默吞掉 → 结论信号永不消费、
+#      双签(pending/disputed/signed)整段死代码。旧库 ALTER 补列 + 新库 SCHEMA 直接建全。 ----
+
+def test_signal_verify_tries_migration_on_old_db(tmp_path):
+    """旧库(无 verify_tries)经 init_schema 补列后, gates.mjs 消费路径同款查询/自增可落库;
+    二次启动幂等不抛。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    # 旧库形态: 与补列前的 Signal_ SCHEMA 同构
+    conn.execute("CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, "
+                 "weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, "
+                 "ts STRING, ring STRING, eng STRING DEFAULT '', PRIMARY KEY(id))")
+    conn.execute("CREATE (s:Signal_ {id:'sig-v1', type:'verify-result', weight:0.5, "
+                 "status:'open', evidence:'finding:f-9 verdict:confirmed 依据:x', ts:'t'})")
+    init_schema(conn)  # 启动迁移: ALTER ADD verify_tries
+    # gates.mjs 消费路径同款: RETURN s.verify_tries + 自增(不再 Binder 报错)
+    row = conn.execute("MATCH (s:Signal_ {id:'sig-v1'}) RETURN s.verify_tries").get_next()
+    assert int(row[0]) == 0, "默认 0(旧存量行不炸消费查询)"
+    conn.execute("MATCH (s:Signal_ {id:$id}) SET s.verify_tries=coalesce(s.verify_tries,0)+1",
+                 parameters={"id": "sig-v1"})
+    assert int(conn.execute("MATCH (s:Signal_ {id:'sig-v1'}) RETURN s.verify_tries").get_next()[0]) == 1
+    init_schema(conn)  # 幂等: 二次启动 ALTER 静默跳过不抛
+
+
+def test_finding_dual_sign_migration_on_old_db(tmp_path):
+    """旧库(无 dual_sign)经 init_schema 补列后, gates 双签查询 RETURN f.dual_sign 可用,
+    pending/signed 往返落库。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    conn.execute("CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, "
+                 "cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', "
+                 "gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', "
+                 "verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', "
+                 "eng STRING DEFAULT '', PRIMARY KEY(id))")
+    conn.execute("CREATE (f:Finding {id:'f-9', title:'t', severity:'critical', ts:'t'})")
+    init_schema(conn)
+    row = conn.execute("MATCH (f:Finding {id:'f-9'}) RETURN f.dual_sign").get_next()
+    assert str(row[0]) == "", "默认空串(frow 查询不再 Binder 失败)"
+    conn.execute("MATCH (f:Finding {id:$id}) SET f.dual_sign='pending'", parameters={"id": "f-9"})
+    conn.execute("MATCH (f:Finding {id:$id}) SET f.dual_sign='signed'", parameters={"id": "f-9"})
+    assert str(conn.execute("MATCH (f:Finding {id:'f-9'}) RETURN f.dual_sign").get_next()[0]) == "signed"
+
+
+def test_finding_dual_sign_on_new_db(tmp_path):
+    """新库 SCHEMA 直接建全 dual_sign 列(不依赖 ALTER 路径)。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("MERGE (f:Finding {id:$id}) SET f.dual_sign=$ds", parameters={"id": "f-new", "ds": "pending"})
+    assert str(conn.execute("MATCH (f:Finding {id:'f-new'}) RETURN f.dual_sign").get_next()[0]) == "pending"
