@@ -558,8 +558,16 @@ class Handler(BaseHTTPRequestHandler):
                         _ev_raw = str(req.get("evidence") or "")[:2000]
                         _ev_raw, _ = redact_pii(_ev_raw)
                         _sid = str(req.get("id") or f"s-{int(time.time()*1000)}")
+                        # 0913 星图层: surface/boundary 坐标枚举(软校验, 枚举外置空 — 覆盖图只认
+                        # 枚举坐标, 自由文本会碎象限; 具体描述留在 evidence)
+                        _surface = str(req.get("surface") or "").strip().lower()
+                        if _surface not in ("request", "response", "js", "business", "flow", "apk", "mini"):
+                            _surface = ""
+                        _boundary = str(req.get("boundary") or "").strip().lower()
+                        if _boundary not in ("outer", "inner", "cross"):
+                            _boundary = ""
                         conn.execute(
-                            "CREATE (s:Signal_ {id:$id, type:$t, weight:$w, status:$st, evidence:$ev, ts:$ts, ring:$ring, eng:$eng})",
+                            "CREATE (s:Signal_ {id:$id, type:$t, weight:$w, status:$st, evidence:$ev, ts:$ts, ring:$ring, eng:$eng, surface:$su, boundary:$bo})",
                             parameters={"id": _sid,
                                         "t": str(req.get("type") or "unknown"),
                                         "w": float(req.get("weight") or 1.0),
@@ -567,7 +575,9 @@ class Handler(BaseHTTPRequestHandler):
                                         "ev": _ev_raw,
                                         "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat()),
                                         "ring": str(req.get("ring") or "discovery"),
-                                        "eng": _eng})
+                                        "eng": _eng,
+                                        "su": _surface,
+                                        "bo": _boundary})
                         # #5: 内联 endpoint_url — graphd 代写 Endpoint 节点(缺则建) + AT 边,
                         # N2 规则(Signal-[:AT]->Endpoint)由此闭环(worker /query 只读无法自建边)。
                         _ep = str(req.get("endpoint_url") or "").strip()
@@ -598,6 +608,44 @@ class Handler(BaseHTTPRequestHandler):
                                               authorized=_want_az)
                         return self._send(200, {"ok": True, "id": eid, "authorized": bool(_want_az)})
                     else:
+                        # 0913 星图层: 假设生命周期(action=claim|resolve) — skyline 同款语义:
+                        # claim=CAS 认领(409 保护 + 15min 租约回收), resolve=裁决落定
+                        # (confirmed 必须带证据引用, 无证据强制降级 suspected; refuted 一等公民)。
+                        _hact = str(req.get("action") or "").strip().lower()
+                        _hid = str(req.get("id") or "").strip()
+                        if _hact == "claim":
+                            if not _hid:
+                                return self._send(400, {"ok": False, "error": "claim requires hypothesis id"})
+                            _stale = int(time.time() * 1000) - 15 * 60 * 1000
+                            _cr = conn.execute(
+                                "MATCH (h:Hypothesis {id:$id}) WHERE h.status='open' OR (h.status='claimed' AND h.claimed_at < $stale) "
+                                "SET h.status='claimed', h.claimed_by=$w, h.claimed_at=$at RETURN h.id AS id",
+                                parameters={"id": _hid, "w": _eng + ":" + str(req.get("worker") or "host"),
+                                            "at": int(time.time() * 1000), "stale": _stale})
+                            if not _cr.has_next():
+                                return self._send(409, {"ok": False,
+                                                        "error": f"hypothesis {_hid} 已被他人认领且租约未过期(15min) — 勿重复认领"})
+                            return self._send(200, {"ok": True, "claimed": str(_cr.get_next()[0])})
+                        if _hact == "resolve":
+                            if not _hid:
+                                return self._send(400, {"ok": False, "error": "resolve requires hypothesis id"})
+                            _verdict = str(req.get("verdict") or "").strip().lower()
+                            if _verdict not in ("confirmed", "refuted", "suspected"):
+                                return self._send(400, {"ok": False, "error": "verdict must be confirmed|refuted|suspected"})
+                            _evref = str(req.get("evidence_ref") or "").strip()[:200]
+                            # 证据门: confirmed 必须带证据引用(Finding/Signal_ id 或请求响应摘要);
+                            # 无证据的 confirmed 被系统强制降级 suspected(skyline 同款降级)。
+                            _downgraded = False
+                            if _verdict == "confirmed" and not _evref:
+                                _verdict, _downgraded = "suspected", True
+                            _rr = conn.execute(
+                                "MATCH (h:Hypothesis {id:$id}) SET h.status=$v, h.verdict=$v, h.evidence_ref=$ev, h.claimed_by='' "
+                                "RETURN h.id AS id",
+                                parameters={"id": _hid, "v": _verdict, "ev": _evref})
+                            if not _rr.has_next():
+                                return self._send(404, {"ok": False, "error": f"hypothesis {_hid} 不存在"})
+                            return self._send(200, {"ok": True, "resolved": _hid, "verdict": _verdict,
+                                                    "downgraded": _downgraded})
                         # I-014: Hypothesis.text 脱敏
                         _txt_raw = str(req.get("text") or "")[:1500]
                         _txt_raw, _ = redact_pii(_txt_raw)
@@ -639,10 +687,13 @@ class Handler(BaseHTTPRequestHandler):
                                       "actor": str(req.get("actor") or ""), "err": err})
                         return self._send(400, {"ok": False, "error": err})
                     traj_s = json.dumps(traj, ensure_ascii=False)
+                    # 0913 星图层: verified 时可附 replay 矩阵(scheduler 从结论信号原样透传) →
+                    # 落 replay_matrix 列, 报告/复核可直接读五段矩阵。
+                    _matrix = str(req.get("replay_matrix") or "").strip()[:2000]
                     if to == "verified":
                         conn.execute(
-                            "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.verified_at=$ts, f.last_transition=$traj",
-                            parameters={"id": fid, "to": to, "ts": traj["ts"], "traj": traj_s})
+                            "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.verified_at=$ts, f.last_transition=$traj, f.replay_matrix=$mx",
+                            parameters={"id": fid, "to": to, "ts": traj["ts"], "traj": traj_s, "mx": _matrix})
                     else:
                         conn.execute(
                             "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.last_transition=$traj",
