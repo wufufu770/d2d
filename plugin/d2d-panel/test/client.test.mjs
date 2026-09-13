@@ -7,6 +7,8 @@ import { test } from 'node:test'
 import vm from 'node:vm'
 import { buildClient, FRAG_DIR, ORDER, OUT } from '../scripts/build-client.mjs'
 
+// 0913 仓库治理: lib/client.js 是构建产物(已 gitignore) — 测试自行构建一次再读
+if (!fs.existsSync(OUT)) buildClient()
 const bundle = fs.readFileSync(OUT, 'utf8')
 
 /** 在隔离 vm 上下文里执行 bundle, 捕获 __ModuleLoader__.load 注册, 返回 {loaded, materialize}。 */
