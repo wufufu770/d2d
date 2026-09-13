@@ -128,8 +128,31 @@ def test_v06_remove_blocked():
     assert not ok
 
 def test_v06_legit_match_passes():
-    ok, _ = worker_query_allowed("MATCH (f:Finding) RETURN count(f) AS c")
+    # 0913 C10: 全表扫须带谓词 — {id:..} 点查与 WHERE eng 过滤放行
+    ok, _ = worker_query_allowed("MATCH (f:Finding {id:'f-1'}) RETURN f.repro AS r")
     assert ok
+    ok, _ = worker_query_allowed("MATCH (f:Finding) WHERE f.eng='eng-x' RETURN count(f) AS c")
+    assert ok
+    ok, _ = worker_query_allowed("MATCH (s:Signal_) WHERE s.eng=$e AND s.status='open' RETURN s.evidence AS ev LIMIT 20")
+    assert ok
+
+def test_0913_c10_fullscan_denied():
+    """0913 C10: 共享黑板表无谓词全表扫禁(worker 可横扫其他 engagement 数据, 读隔离此前只靠 brief 约定)"""
+    for cy in (
+        "MATCH (f:Finding) RETURN f.id AS id LIMIT 5",
+        "MATCH (s:Signal_) RETURN s.evidence AS ev LIMIT 10",
+        "MATCH (a:AgentIdentity) RETURN a.worker_id AS w",
+        "MATCH (t:Task) RETURN t.payload AS p LIMIT 5",
+    ):
+        ok, err = worker_query_allowed(cy)
+        assert not ok, cy
+        assert "full scan" in err
+
+def test_0913_c10_call_denied():
+    """0913 C10: CALL 从 worker 白名单移除(Kuzu 过程可枚举表结构/配置元数据)"""
+    for cy in ("CALL db.schema.visualization()", "call show_tables() RETURN *"):
+        ok, err = worker_query_allowed(cy)
+        assert not ok, cy
 
 def test_v06_mutation_first_word_blocked():
     ok, _ = worker_query_allowed("DELETE (f:Finding)")
