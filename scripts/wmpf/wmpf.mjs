@@ -85,4 +85,6 @@ async function main() {
   } finally { try { c.ws.close() } catch {} }
 }
 import fs from 'node:fs'
-main().catch((e) => { console.error(`✗ ${e?.message}`); process.exit(1) })
+if (process.argv[1]?.endsWith('wmpf.mjs')) {
+  main().catch((e) => { console.error(`✗ ${e?.message}`); process.exit(1) })
+}
