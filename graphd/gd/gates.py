@@ -338,18 +338,30 @@ def finding_gates(cypher: str) -> tuple[bool, str]:
 # V-06: worker /query 只读判定提为纯函数(大小写不敏感)。
 # 原 :271/:273 正则区分大小写, Kuzu 关键字大小写不敏感 → 'MATCH (n) detach delete n' 绕过黑名单
 # 删任意节点(2026-08-29 隔离实例杀链实证: 写入→小写删除→复查=0)。提取纯函数供 pytest 锁回归。
-WORKER_READONLY_WHITELIST = re.compile(r"^(MATCH|RETURN|WITH|CALL)\b", re.I)
+WORKER_READONLY_WHITELIST = re.compile(r"^(MATCH|RETURN|WITH)\b", re.I)
 WORKER_MUTATION_RE = re.compile(
-    r"\b(CREATE|MERGE|SET|DELETE|DETACH|DROP|REMOVE|COPY|EXPORT|IMPORT|ATTACH)\b", re.I)
+    r"\b(CREATE|MERGE|SET|DELETE|DETACH|DROP|REMOVE|COPY|EXPORT|IMPORT|ATTACH|CALL)\b", re.I)
+# 0913 C10: 跨 engagement 全表扫禁 — 共享黑板表的无谓词 MATCH 可横扫其他项目数据
+# (读隔离此前只靠 brief 里的 eng 约定, graphd 不拦)。带 WHERE 或 {prop:..} 锚(含按 id 点查)放行。
+WORKER_FULLSCAN_RE = re.compile(
+    r"MATCH\s*\(\s*\w+\s*:\s*(Finding|Signal_|Endpoint|Task|AgentIdentity|Hypothesis)\s*\)", re.I)
 
 
 def worker_query_allowed(cypher: str) -> tuple[bool, str]:
-    """worker token /query 只读门: 白名单首词 + 全文变更关键字扫描(均大小写不敏感)。
-    误报取舍: 字符串字面量里含独立 'set/delete' 等词的查询会被拒 —— fail-closed 方向。"""
+    """worker token /query 只读门: 白名单首词 + 全文变更关键字扫描 + CALL/跨项目全表扫禁(均大小写不敏感)。
+    误报取舍: 字符串字面量里含独立 'set/delete' 等词的查询会被拒 —— fail-closed 方向。
+    0913 C10: ①CALL 从白名单移除(Kuzu 过程调用可枚举表结构/配置元数据, worker 无需);
+    ②共享黑板表的无 WHERE/无属性锚 MATCH 拒收(须带 WHERE x.eng='<eng>' 或 {id:..} 点查)。
+    已知误报(fail-closed 可接受): 逗号连接的多标签 MATCH(如 MATCH (f:Finding),(s) WHERE ...) —
+    worker 简报不产生该形态。"""
     if not WORKER_READONLY_WHITELIST.match(cypher):
-        return False, "/query is read-only for workers (MATCH/RETURN/WITH/CALL only); use /write/* for mutations"
+        return False, "/query is read-only for workers (MATCH/RETURN/WITH only); use /write/* for mutations"
     if WORKER_MUTATION_RE.search(cypher):
         return False, "/query is read-only for workers: mutation keywords forbidden (case-insensitive)"
+    for m in WORKER_FULLSCAN_RE.finditer(cypher):
+        tail = cypher[m.end():].lstrip()
+        if not tail.startswith(("WHERE", "{", "WHERE".lower(), "{".lower())):
+            return False, "cross-engagement full scan forbidden: add WHERE <v>.eng='<engagement>' or an {id:..} predicate"
     return True, ""
 
 
