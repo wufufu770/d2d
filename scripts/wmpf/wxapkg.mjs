@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// wxapkg.mjs — 0913 小程序工具面: wxapkg 定位 + 解包(skyline wxapkg_locate/decompile 吸纳)
+// wxapkg.mjs — 0913 小程序工具面: wxapkg 定位 + 解包(wxapkg_locate/decompile 语义)
 // 用法:
 //   node scripts/wmpf/wxapkg.mjs locate --appid wx1234567890abcdef
 //   node scripts/wmpf/wxapkg.mjs decompile --pkg /path/__APP__.wxapkg --out ./recon-pkg

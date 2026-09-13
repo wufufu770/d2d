@@ -92,7 +92,7 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Finding ADD dual_sign STRING DEFAULT ''")
     except Exception:
         pass
-    # 0913 星图认知层(skyline-pi 吸纳): Signal_ 坐标枚举(surface/boundary) + Hypothesis 生命周期
+    # 0913 星图认知层: Signal_ 坐标枚举(surface/boundary) + Hypothesis 生命周期
     # (claim 租约/verdict/证据引用) + Finding replay 矩阵。新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。
     for _ddl in ("ALTER TABLE Signal_ ADD surface STRING DEFAULT ''",
                  "ALTER TABLE Signal_ ADD boundary STRING DEFAULT ''",
