@@ -469,6 +469,10 @@ class Handler(BaseHTTPRequestHandler):
                     _eng = pick_write_eng(str(req.get("eng") or ""), _actives, _hosts)
                     if _eng and _eng_paused(_eng):
                         return self._send(409, {"ok": False, "error": f"d2d-paused({_eng}) — 该 engagement 已冻结, 任务立即收尾退出"})
+                    # 0913 审查 H13: 结构化写入的 scope fail-closed — 载荷带 URL 但无活跃 engagement
+                    # 认领(=不在任何活跃 scope)时拒绝, 防 worker 把 scope 外目标写进黑板(原 eng='' 落库)
+                    if not _eng and _hosts:
+                        return self._send(403, {"ok": False, "error": "write rejected: payload URLs match no active engagement scope (fail-closed)"})
                     if self.path == "/write/finding":
                         title = str(req.get("title") or "").strip()
                         if not title:
