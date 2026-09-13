@@ -94,3 +94,50 @@ graphd/app.py         图服务(schema/写门/迁移/授权)
 | 判定层 vuln-judge[confirmed/否决] | verify 环+validator(Gate-V 确定性锚/L0-L1/授权硬门)+双签+auto-triage | 三态+否决要证据 |
 | report_generate | src-export+Gate-R(覆盖 M/N 对账) | |
 | [成功][反思]+策略沉淀/进化 | verify→evolution.jsonl(confirmed/refuted)→validated×1.1 检索强化+promote 降级复审+wins 回流+misses 选题 | 0910 补显式进化回路 |
+
+## 11. 模块清单（plugin/pentest-dsh）
+
+### scheduler/ — 编排子模块（ctx 工厂注入，scheduler.js 组装）
+| 模块 | 职责 |
+|---|---|
+| state.mjs | 内存状态工厂 + Engagement 视图/暂停文件/黑名单/归属解析 |
+| caps.mjs | 面板热调（容量 caps / deepWake / 资产收敛 / 工具治理），文件>env>默认 |
+| lease.mjs | 调度器租约 CAS（认领/接管/心跳续约，双主防护） |
+| gates.mjs | 四道门编排：Gate-D1 深环启动门 + verify-result 消费/双签（Gate-V） |
+| workers.mjs | 派生 runner（多开）、会话 token 解析、上下文引用收集 |
+| loop.mjs | tick 主循环：栅栏/心跳/裁决消费/自动分诊/信号加权/涟漪/跨模块/补给/派发/收敛 |
+| digest-bridge.mjs | 交接摘要（跨模型接管）+ verified 高危 webhook 通知 |
+| experience-bridge.mjs | 经验沉淀/去重/收割/聚簇反哺 + 自动 study 接线 |
+
+### domain/ — 域模块（可单测纯逻辑 + 图 IO 混合）
+| 模块 | 职责 |
+|---|---|
+| allocator.mjs | 补给/派发规划纯函数、深环路由（三级评分+prefer）、信号加权、覆盖象限、候选连线、跨模块配对 |
+| briefs.mjs | 全环简报文本（发现/深/创造/验证/任务工人 + 资产/信息专报 + CTF），硬规则 A-I 与产星契约 |
+| caps.mjs | caps.json 解析/合并白名单 |
+| digest.mjs | 交接摘要构建（fallback 逐段降级） |
+| experience.mjs | 经验 upsert（拉普拉斯先验）/dedupFindings(eng 隔离)/harvest/聚簇目录 |
+| failover.mjs | 失败分类/额度命中/熔断回路（网络宽限二分） |
+| gates.mjs | Gate-D1/V/P 纯判定 + needsDualSign |
+| knowledge-retrieval.mjs | L1 关键词 + L2 trigram 余弦混合检索，credits/heat/evolution 加权 |
+| lifecycle.mjs | 图状态栅栏/取消令牌/租约可写/孤儿判定（纯函数） |
+| memory-store.mjs | 知识脑记忆语义：热度衰减/读取记账/双时长过期/misses 台账 |
+| safe-url.mjs | 出站 URL 门禁 |
+| scope.mjs | scope 解析/hostAllowed/checkBash（curl 目标提取）/URL 版 hostOf |
+| strategy-card.mjs | 策略卡编译（单行作战指令） |
+| strategy-evolution.mjs | 进化台账（confirmed/refuted → validated 强化/降级复审） |
+| strategy-map.mjs | 技术栈别名/指纹匹配/多通道合并 |
+| tool-policy.mjs | 限速表/熔断/输出治理/六级兜底 |
+| triage.mjs | 自动分诊（Jaccard+trigram）/u\|host\|path 签名（hostOf 同名异义, 仅内部用） |
+| verify-verdicts.mjs | 裁决词表/证据解析/Gate-V 确定性锚 |
+
+### 入口文件
+- `scheduler.js` — createScheduler 组装 + runWorker 派发内核 + startEngagement/stopAll 生命周期 + 孤儿自愈
+- `planner.js` — 攻击假设规划（Plan 节点产出，eng 归属）
+- `validator.js` — L0/L1 分级验证器（worker 侧自证与独立重放）
+- `adapter-dsh.mjs` / `adapter-inprocess.mjs` — 宿主适配器（headless spawn / 进程内）
+
+### scripts（仓库级运行时）
+- `scripts/wmpf/wxapkg.mjs` — 小程序包定位/解包（未装工具如实阻塞）
+- `scripts/wmpf/wmpf.mjs` — WMPF 调试器 CDP 六动作（只连本机回环）
+- `scripts/brain/strategy-learn.mjs` — 从 URL/文件/文本学策略（出站 SSRF 防线）→ 知识脑草稿
