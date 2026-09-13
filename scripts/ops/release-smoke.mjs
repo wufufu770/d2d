@@ -23,7 +23,7 @@ const REQUIRED = [
   'plugin/pentest-dsh/domain/strategy-card.mjs', 'plugin/pentest-dsh/domain/verify-verdicts.mjs',
   'plugin/pentest-dsh/worker-env.js', 'plugin/d2d-panel/lib/host/index.mjs',
   'brain/seed/v0-techniques.json', 'scripts/ops/publish-clean.mjs', 'scripts/ops/verify-main.mjs',
-  'scripts/ops/release-smoke.mjs', 'tests/test_graphd_gates.py', 'docs/ARCHITECTURE.md',
+  'scripts/ops/release-smoke.mjs', 'tests/test_graphd_gates.py', 'ARCHITECTURE.md',
 ]
 
 const checks = []
