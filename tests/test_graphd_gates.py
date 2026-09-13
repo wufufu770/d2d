@@ -1214,3 +1214,45 @@ def test_finding_dual_sign_on_new_db(tmp_path):
         conn.execute(ddl)
     conn.execute("MERGE (f:Finding {id:$id}) SET f.dual_sign=$ds", parameters={"id": "f-new", "ds": "pending"})
     assert str(conn.execute("MATCH (f:Finding {id:'f-new'}) RETURN f.dual_sign").get_next()[0]) == "pending"
+
+
+# ---- 0913 星图认知层(skyline 吸纳): 假设生命周期(claim 租约/resolve 证据门) + 信号坐标枚举 ----
+
+def test_hypothesis_claim_lease_resolve(tmp_path):
+    """claim CAS: open 可认领; 租约期内二次认领 CAS 零命中(409 语义); 15min 租约过期可接管;
+    resolve 落 verdict/evidence_ref 并清认领者(refuted 一等公民)。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("CREATE (h:Hypothesis {id:'h-1', text:'t', strategy:'inversion', status:'open', ts:'t', eng:'e'})")
+    CLAIM = ("MATCH (h:Hypothesis {id:$id}) WHERE h.status='open' OR (h.status='claimed' AND h.claimed_at < $stale) "
+             "SET h.status='claimed', h.claimed_by=$w, h.claimed_at=$at RETURN h.id AS id")
+    r = conn.execute(CLAIM, parameters={"id": "h-1", "w": "e:workerA", "at": 1000, "stale": 0})
+    assert r.has_next(), "open 假设首次认领必须成功"
+    r = conn.execute(CLAIM, parameters={"id": "h-1", "w": "e:workerB", "at": 2000, "stale": 0})
+    assert not r.has_next(), "租约期内二次认领必须 CAS 零命中(409 语义)"
+    r = conn.execute(CLAIM, parameters={"id": "h-1", "w": "e:workerB", "at": 900001, "stale": 1001})
+    assert r.has_next(), "15min 租约过期后必须可接管"
+    conn.execute("MATCH (h:Hypothesis {id:$id}) SET h.status=$v, h.verdict=$v, h.evidence_ref=$ev, h.claimed_by=''",
+                 parameters={"id": "h-1", "v": "refuted", "ev": "s-9"})
+    assert str(conn.execute("MATCH (h:Hypothesis {id:'h-1'}) RETURN h.status").get_next()[0]) == "refuted"
+    conn.execute("MATCH (h:Hypothesis {id:$id}) SET h.status=$v, h.verdict=$v, h.evidence_ref=$ev",
+                 parameters={"id": "h-1", "v": "confirmed", "ev": "f-7"})
+    assert str(conn.execute("MATCH (h:Hypothesis {id:'h-1'}) RETURN h.verdict").get_next()[0]) == "confirmed"
+    assert str(conn.execute("MATCH (h:Hypothesis {id:'h-1'}) RETURN h.evidence_ref").get_next()[0]) == "f-7"
+
+
+def test_signal_coordinate_columns(tmp_path):
+    """Signal_ surface/boundary 坐标列: 新库直接建全; 未带坐标的存量读出默认空串(不炸消费查询)。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("MERGE (s:Signal_ {id:'s-1'}) SET s.surface=$su, s.boundary=$bo",
+                 parameters={"su": "request", "bo": "outer"})
+    conn.execute("CREATE (s:Signal_ {id:'s-old', type:'x', ts:'t'})")
+    row = conn.execute("MATCH (s:Signal_ {id:'s-1'}) RETURN s.surface, s.boundary").get_next()
+    assert (str(row[0]), str(row[1])) == ("request", "outer")
+    row2 = conn.execute("MATCH (s:Signal_ {id:'s-old'}) RETURN s.surface, s.boundary").get_next()
+    assert (str(row2[0]), str(row2[1])) == ("", "")

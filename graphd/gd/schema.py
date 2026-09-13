@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, PRIMARY KEY(name))",
     "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', authorized BOOL DEFAULT false, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', claimed_by STRING DEFAULT '', claimed_at INT64 DEFAULT 0, verdict STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', PRIMARY KEY(worker_id))",
@@ -91,6 +91,19 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Finding ADD dual_sign STRING DEFAULT ''")
     except Exception:
         pass
+    # 0913 星图认知层(skyline-pi 吸纳): Signal_ 坐标枚举(surface/boundary) + Hypothesis 生命周期
+    # (claim 租约/verdict/证据引用) + Finding replay 矩阵。新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。
+    for _ddl in ("ALTER TABLE Signal_ ADD surface STRING DEFAULT ''",
+                 "ALTER TABLE Signal_ ADD boundary STRING DEFAULT ''",
+                 "ALTER TABLE Hypothesis ADD claimed_by STRING DEFAULT ''",
+                 "ALTER TABLE Hypothesis ADD claimed_at INT64 DEFAULT 0",
+                 "ALTER TABLE Hypothesis ADD verdict STRING DEFAULT ''",
+                 "ALTER TABLE Hypothesis ADD evidence_ref STRING DEFAULT ''",
+                 "ALTER TABLE Finding ADD replay_matrix STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
     # 签名去重: 跨 host 同缺陷(同 path+同类别)的关联标记 — 指向既有 finding id
     try:
         conn.execute("ALTER TABLE Finding ADD related_to STRING DEFAULT ''")
