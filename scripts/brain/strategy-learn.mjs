@@ -32,6 +32,9 @@ export function assertSafeUrl(raw) {
 }
 
 const isPrivateIp = (ip) => {
+  // IPv4-mapped IPv6 归一(::ffff:a.b.c.d) — 原实现对 ::ffff:169.254.169.254 漏判(0913 审查 C8)
+  if (/^::ffff:/i.test(String(ip ?? ''))) ip = String(ip).replace(/^::ffff:/i, '')
+
   if (ip === '::1' || ip === '::') return true
   if (/^f[cd]/i.test(ip)) return true          // fc00::/7 unique local
   if (/^fe[89ab]/i.test(ip)) return true       // fe80::/10 link local
@@ -78,12 +81,25 @@ export async function learn({ url, file, text, dataDir = DATA_DIR, category = ''
   if (url) {
     const u = assertSafeUrl(url)
     await resolvePublicHost(u)
-    const res = await fetch(u, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), redirect: 'follow' })
-    if (!res.ok) throw new Error(`fetch ${res.status}`)
-    const ct = res.headers.get('content-type') ?? ''
-    const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.length > MAX_BYTES) throw new Error(`响应超限(${buf.length} > ${MAX_BYTES})`)
-    body = ct.includes('html') ? stripHtml(buf.toString('utf8')) : buf.toString('utf8')
+    // 0913 审查 C7: 关闭自动重定向 — 每一跳重做出站校验(防 302→元数据地址 SSRF), 至多 3 跳
+    let target = u, hops = 0
+    for (;;) {
+      const res = await fetch(target, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), redirect: 'manual' })
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get('location')
+        if (!loc || ++hops > 3) throw new Error(`重定向链异常(跳数 ${hops} 或缺失 location)`)
+        target = new URL(loc, target)
+        assertSafeUrl(target.href)
+        await resolvePublicHost(target)
+        continue
+      }
+      if (!res.ok) throw new Error(`fetch ${res.status}`)
+      const buf2 = Buffer.from(await res.arrayBuffer())
+      if (buf2.length > MAX_BYTES) throw new Error(`响应超限(${buf2.length} > ${MAX_BYTES})`)
+      const ct = res.headers.get('content-type') ?? ''
+      body = ct.includes('html') ? stripHtml(buf2.toString('utf8')) : buf2.toString('utf8')
+      break
+    }
     origin = String(url)
   } else if (file) {
     body = fs.readFileSync(file, 'utf8')
