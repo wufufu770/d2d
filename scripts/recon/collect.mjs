@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// collect.mjs — 资产面收集引擎(P1/M2, skyline auto/deep-collect 对标): 公司名/域名 →
+// collect.mjs — 资产面收集引擎(P1/M2, auto/deep-collect 对标): 公司名/域名 →
 //   Stage0 企业面(company-sweep ICP, --company 时) → Stage1 测绘聚合(mapping 四家, 命中子域
 //   source=mapping 反哺) → Stage2 被动子域(crt.sh 证书透明) → Stage3 字典爆破(自研 dgram 解析
 //   + 泛解析剪枝; tier 可调) → Stage4 探活+指纹(自研引擎 assets/fingerprints/rules.json)。

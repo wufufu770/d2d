@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// release-smoke.mjs — 发布前 smoke + 自修复闭环(0906 skyline release:smoke 采纳)。
+// release-smoke.mjs — 发布前 smoke + 自修复闭环(0906 release:smoke 语义)。
 // 语义: 全绿 → 可发布; 任一检查失败 → 输出结构化 Repair Brief(失败命令+stdoutTail/stderrTail+
 //       下一步指令), 把 brief 原样回灌给修复 agent(Claude/ZCode/worker)修完重跑本脚本, 直到全绿。
 // 用法:

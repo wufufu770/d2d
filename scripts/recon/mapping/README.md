@@ -1,6 +1,6 @@
 # scripts/recon/mapping — 空间测绘聚合层
 
-> skyline 资产面采纳(P1/M1)。FOFA / 鹰图 Hunter / Quake 360 / ZoomEye 四家开放 API 的自研
+> 资产面语义(P1/M1)。FOFA / 鹰图 Hunter / Quake 360 / ZoomEye 四家开放 API 的自研
 > Node 直连客户端 + 统一查询翻译 + 配额排序 + 跨平台去重。零第三方依赖, 凭据只走环境变量。
 
 ## 凭据(全部 env 注入, 不落盘)

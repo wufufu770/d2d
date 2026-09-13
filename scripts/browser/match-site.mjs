@@ -1,4 +1,4 @@
-// match-site.mjs — 站点经验库(skyline web-access 采纳): site-patterns/<domain>.md 按 host 匹配注入。
+// match-site.mjs — 站点经验库(web-access 语义): site-patterns/<domain>.md 按 host 匹配注入。
 // 用途: 调度器派发 discovery/deep worker 时, 目标 host 命中经验文件则把正文注入简报(站点专属打法)。
 // 用法(库): import { matchSite } from '.../match-site.mjs'; matchSite('gamm3.ztgame.com') → 正文 | ''
 // 用法(CLI): node match-site.mjs <host或URL>

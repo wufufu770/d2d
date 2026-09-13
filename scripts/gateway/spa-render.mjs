@@ -47,7 +47,7 @@ function findChrome() {
   }
   return ''
 }
-// ---------- 0906 跨进程单例锁(skyline web-access 采纳): 两实例同端口各拉 chrome 必冲突 ----------
+// ---------- 0906 跨进程单例锁(web-access 语义): 两实例同端口各拉 chrome 必冲突 ----------
 // H16 审计修复: 旧实现 statSync(新鲜度)后 writeFileSync 直接覆盖写 —— 检查与写非原子(TOCTOU),
 // 两实例可同时读到「过期/不存在」再双双写入, 各自以为持锁。现改为 O_EXCL 独占创建
 // (writeFileSync flag:'wx', 内核级原子 create): 竞争创建只有一个成功; 过期锁先删再抢,
