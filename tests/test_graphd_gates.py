@@ -1216,7 +1216,7 @@ def test_finding_dual_sign_on_new_db(tmp_path):
     assert str(conn.execute("MATCH (f:Finding {id:'f-new'}) RETURN f.dual_sign").get_next()[0]) == "pending"
 
 
-# ---- 0913 星图认知层(skyline 吸纳): 假设生命周期(claim 租约/resolve 证据门) + 信号坐标枚举 ----
+# ---- 0913 星图认知层: 假设生命周期(claim 租约/resolve 证据门) + 信号坐标枚举 ----
 
 def test_hypothesis_claim_lease_resolve(tmp_path):
     """claim CAS: open 可认领; 租约期内二次认领 CAS 零命中(409 语义); 15min 租约过期可接管;
