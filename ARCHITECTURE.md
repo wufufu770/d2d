@@ -26,7 +26,7 @@ d2d 是跑在 dsh（DeepSeek agent 宿主）上的自主渗透测试插件：三
 | 环 | 职责 | 角色 |
 |---|---|---|
 | discovery | 资产面+信息面侦察 | asset-recon(测绘/指纹/归属)/info-recon(端点/JS 入口/参数)/wmpf-recon(小程序/加密)/recon-generalist(任务通道) |
-| deep | 漏洞挖掘 | 10 个 specialist(auth-bypass/business-logic/crypto-audit/cve-chainer/deserialization/file-attack/frontend-attack/injection/misconfig/ssrf)+exploit-chainer 兜底，按 signal_affinity 路由 |
+| deep | 漏洞挖掘 | 16 角色: 10 个 specialist(auth-bypass/business-logic/crypto-audit/cve-chainer/deserialization/file-attack/frontend-attack/injection/misconfig/ssrf)+exploit-chainer 兜底, 另有 5 个专项(deepwater-operator 深水作战/modeling-specialist 建模/cloud-cred 云凭据/weak-cred 弱口令/mobile-dynamic 移动端动态), 按 signal_affinity 路由 |
 | creative | 创造性发现 | 反思唤醒(1/3)，唤醒耗尽→exhausted |
 | verify | 独立验证 | 不与 deep 争抢容量;validator 分级 L0/L1 |
 
