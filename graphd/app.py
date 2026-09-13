@@ -608,7 +608,7 @@ class Handler(BaseHTTPRequestHandler):
                                               authorized=_want_az)
                         return self._send(200, {"ok": True, "id": eid, "authorized": bool(_want_az)})
                     else:
-                        # 0913 星图层: 假设生命周期(action=claim|resolve) — skyline 同款语义:
+                        # 0913 星图层: 假设生命周期(action=claim|resolve) — 同款语义:
                         # claim=CAS 认领(409 保护 + 15min 租约回收), resolve=裁决落定
                         # (confirmed 必须带证据引用, 无证据强制降级 suspected; refuted 一等公民)。
                         _hact = str(req.get("action") or "").strip().lower()
@@ -634,7 +634,7 @@ class Handler(BaseHTTPRequestHandler):
                                 return self._send(400, {"ok": False, "error": "verdict must be confirmed|refuted|suspected"})
                             _evref = str(req.get("evidence_ref") or "").strip()[:200]
                             # 证据门: confirmed 必须带证据引用(Finding/Signal_ id 或请求响应摘要);
-                            # 无证据的 confirmed 被系统强制降级 suspected(skyline 同款降级)。
+                            # 无证据的 confirmed 被系统强制降级 suspected(同款降级)。
                             _downgraded = False
                             if _verdict == "confirmed" and not _evref:
                                 _verdict, _downgraded = "suspected", True
