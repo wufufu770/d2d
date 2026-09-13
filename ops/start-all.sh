@@ -21,6 +21,19 @@ mkdir -p "${RUN_DIR}"
 
 ACTION="${1:-start}"
 
+# 0913(审查采纳): 端口监听等待 — 进程存活但绑定失败不再误报成功。
+# /dev/tcp 探测 15×1s; 进程死亡提前退出并指认日志。
+wait_port() {         # $1=端口 $2=pid $3=名称 $4=日志路径
+  local port="$1" pid="$2" name="$3" logf="$4"
+  for _ in $(seq 1 15); do
+    (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null && { exec 3>&- 3<&- || true; return 0; }
+    kill -0 "$pid" 2>/dev/null || { echo "✗ ${name} 启动后即退出 — 查 ${logf}"; return 1; }
+    sleep 1
+  done
+  echo "✗ ${name} 端口 ${port} 15s 未监听 — 查 ${logf}"
+  return 1
+}
+
 # 优雅终止: PID 文件优先(TERM→等 5s→KILL), 兜底 pkill 只锚定本仓库绝对路径/端口
 kill_svc() {          # $1=名称 $2=匹配串(已含绝对路径锚或端口锚)
   local pf="${RUN_DIR}/$1.pid" pid=""
@@ -80,17 +93,14 @@ echo "graphd → http://127.0.0.1:8766 (pid ${GRAPHDPID}, /health OK)"
 nohup node "${D2D}/scripts/gateway/egress-gateway.mjs" > "${D2D_DATA_DIR}/egress-gateway.log" 2>&1 &
 EGRESSPID=$!
 echo "${EGRESSPID}" > "${RUN_DIR}/egress.pid"
-sleep 1
-kill -0 "${EGRESSPID}" 2>/dev/null || echo "⚠ egress-gateway 启动后即退出 — 查 ${D2D_DATA_DIR}/egress-gateway.log"
-echo "egress-gateway → http://127.0.0.1:8888 (pid ${EGRESSPID})"
+wait_port 8888 "${EGRESSPID}" "egress-gateway" "${D2D_DATA_DIR}/egress-gateway.log"
 export P2P_PROXY_URL="http://127.0.0.1:8888"
 
 # G2 带外回调服务(盲注自主确认): HTTP 通道; DNS 通道需公网部署(见 oast.mjs 头注释)
 nohup node "${D2D}/scripts/gateway/oast.mjs" > "${D2D_DATA_DIR}/oast.log" 2>&1 &
 OASTPID=$!
 echo "${OASTPID}" > "${RUN_DIR}/oast.pid"
-sleep 1
-kill -0 "${OASTPID}" 2>/dev/null || echo "⚠ oast 启动后即退出 — 查 ${D2D_DATA_DIR}/oast.log"
+wait_port 8890 "${OASTPID}" "oast" "${D2D_DATA_DIR}/oast.log"
 echo "oast → http://127.0.0.1:8890 (pid ${OASTPID})"
 export P2P_OAST_HOST="127.0.0.1:8890"
 
@@ -101,6 +111,7 @@ export P2P_OAST_HOST="127.0.0.1:8890"
 nohup dsh --profile web --port "${WEB_PORT}" --no-open --host 127.0.0.1 > "${D2D_DATA_DIR}/dsh-web.log" 2>&1 &
 DSHWBPID=$!
 echo "${DSHWBPID}" > "${RUN_DIR}/dshweb.pid"
+wait_port "${WEB_PORT}" "${DSHWBPID}" "dsh web" "${D2D_DATA_DIR}/dsh-web.log"
 echo "dsh web → http://127.0.0.1:${WEB_PORT} (pid ${DSHWBPID})"
 echo "打开浏览器 → 右侧边栏 'd2d' / 'd2d Findings' 两个 tab 即面板"
 echo "停止: ${D2D}/ops/start-all.sh stop"
