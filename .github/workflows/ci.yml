@@ -14,7 +14,7 @@ jobs:
       - name: 插件测试(pentest-dsh)
         run: cd plugin/pentest-dsh && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npx mocha "test/*.test.mjs"
       - name: 面板测试(d2d-panel)
-        run: cd plugin/d2d-panel && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npm test
+        run: cd plugin/d2d-panel && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && node scripts/build-client.mjs && npm test
       - name: graphd 门禁测试
         run: pip install kuzu pytest && python -m pytest tests/test_graphd_gates.py -q
       - name: lint

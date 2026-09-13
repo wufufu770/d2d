@@ -1,3 +1,4 @@
+// 测试范围: 面板快照数据组装(host API 聚合面)
 // snapshot.test.mjs — host 半聚合逻辑单测(node:test, 零依赖)
 // 运行: node --test plugin/d2d-panel/test/
 import test from 'node:test'
