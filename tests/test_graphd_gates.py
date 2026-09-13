@@ -128,8 +128,31 @@ def test_v06_remove_blocked():
     assert not ok
 
 def test_v06_legit_match_passes():
-    ok, _ = worker_query_allowed("MATCH (f:Finding) RETURN count(f) AS c")
+    # 0913 C10: 全表扫须带谓词 — {id:..} 点查与 WHERE eng 过滤放行
+    ok, _ = worker_query_allowed("MATCH (f:Finding {id:'f-1'}) RETURN f.repro AS r")
     assert ok
+    ok, _ = worker_query_allowed("MATCH (f:Finding) WHERE f.eng='eng-x' RETURN count(f) AS c")
+    assert ok
+    ok, _ = worker_query_allowed("MATCH (s:Signal_) WHERE s.eng=$e AND s.status='open' RETURN s.evidence AS ev LIMIT 20")
+    assert ok
+
+def test_0913_c10_fullscan_denied():
+    """0913 C10: 共享黑板表无谓词全表扫禁(worker 可横扫其他 engagement 数据, 读隔离此前只靠 brief 约定)"""
+    for cy in (
+        "MATCH (f:Finding) RETURN f.id AS id LIMIT 5",
+        "MATCH (s:Signal_) RETURN s.evidence AS ev LIMIT 10",
+        "MATCH (a:AgentIdentity) RETURN a.worker_id AS w",
+        "MATCH (t:Task) RETURN t.payload AS p LIMIT 5",
+    ):
+        ok, err = worker_query_allowed(cy)
+        assert not ok, cy
+        assert "full scan" in err
+
+def test_0913_c10_call_denied():
+    """0913 C10: CALL 从 worker 白名单移除(Kuzu 过程可枚举表结构/配置元数据)"""
+    for cy in ("CALL db.schema.visualization()", "call show_tables() RETURN *"):
+        ok, err = worker_query_allowed(cy)
+        assert not ok, cy
 
 def test_v06_mutation_first_word_blocked():
     ok, _ = worker_query_allowed("DELETE (f:Finding)")
@@ -1029,3 +1052,207 @@ def test_p2p_token_required_unset_keeps_default_semantics(monkeypatch):
     monkeypatch.delenv("P2P_HOST_TOKEN", raising=False)
     monkeypatch.setenv("P2P_OPEN_RANGE", "1")
     assert _handler_with_auth("")._auth_check("worker") is True
+
+
+# ---- P0(ExperienceWeight 计胜列迁移): 旧库无 cls/win_day/wins_today 时计胜写入 Binder 报错被
+#      worker 侧 .catch 静默吞 → verified 战果积分永不上涨(自进化闭环断链)。迁移后必须可写。 ----
+def test_ew_credit_columns_migration_on_old_db(tmp_path):
+    """旧库(三列缺失)经 init_schema ALTER 补列后, experience.mjs CREDIT 同款计胜写入可落库;
+    二次启动幂等(列已存在 ALTER 报错被吞)不抛且数据不损。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    # 旧库形态: 与补列前的 SCHEMA 同构(无 cls/win_day/wins_today)
+    conn.execute("CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, "
+                 "prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, "
+                 "target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', "
+                 "payload_hint STRING DEFAULT '', PRIMARY KEY(id))")
+    conn.execute("CREATE (e:ExperienceWeight {id:'card:demo', pattern:'hit:demo', stack:'web'})")
+    init_schema(conn)  # 启动迁移: ALTER ADD cls/win_day/wins_today
+    # 计胜写入(experience.mjs CREDIT_CYPHER 的写列集合, 含跨日 CASE 重置语义): 不再 Binder 报错
+    conn.execute(
+        "MERGE (e:ExperienceWeight {id:$id}) "
+        "SET e.wins=coalesce(e.wins,0) + $dw, e.hits=coalesce(e.hits,0) + 1, "
+        "e.wins_today=(CASE WHEN e.win_day = $day THEN coalesce(e.wins_today,0) ELSE 0 END) + $dw, "
+        "e.win_day=$day, e.pattern=$pat, e.cls=$cls",
+        parameters={"id": "card:demo", "dw": 1, "day": "2026-09-11", "pat": "hit:demo",
+                    "cls": "knowledge-card"})
+    row = conn.execute("MATCH (e:ExperienceWeight {id:'card:demo'}) "
+                       "RETURN e.wins, e.wins_today, e.win_day, e.cls").get_next()
+    assert (int(row[0]), int(row[1])) == (1, 1), "计胜必须落库(旧库静默丢写回归)"
+    assert str(row[2]) == "2026-09-11" and str(row[3]) == "knowledge-card"
+    init_schema(conn)  # 幂等: 二次启动 ALTER 静默跳过不抛
+    assert int(conn.execute("MATCH (e:ExperienceWeight {id:'card:demo'}) RETURN e.wins_today")
+               .get_next()[0]) == 1
+
+
+def test_ew_cls_annotation_roundtrip_on_new_db(tmp_path):
+    """cls 标注往返 + 新库 SCHEMA 直接建全三列(不依赖 ALTER 迁移路径)。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("MERGE (e:ExperienceWeight {id:$id}) SET e.cls=$cls, e.win_day=$d, e.wins_today=$w",
+                 parameters={"id": "succ:callback-forgery", "cls": "callback-forgery",
+                             "d": "2026-09-11", "w": 2})
+    row = conn.execute("MATCH (e:ExperienceWeight {id:'succ:callback-forgery'}) "
+                       "RETURN e.cls, e.win_day, e.wins_today").get_next()
+    assert str(row[0]) == "callback-forgery" and str(row[1]) == "2026-09-11" and int(row[2]) == 2
+
+
+# ---- Bug(缺 category 绕标题去重): 读写两侧把缺省/空 category 归一默认类('vuln'),
+#      缺省写入与显式同类同标题互查命中; 显式其他 category 仍隔离。 ----
+from graphd.app import dedup_cat, FINDING_DEDUP_SCAN_SQL
+
+
+def test_bug4_dedup_cat_normalizes_missing_to_default():
+    """缺省/空 → 默认类; 显式其他类 canonical 保留(仍隔离)。"""
+    assert dedup_cat(None) == "vuln"
+    assert dedup_cat("") == "vuln" and dedup_cat("   ") == "vuln"
+    assert dedup_cat("Vuln") == "vuln"      # 大小写归一后与缺省同域
+    assert dedup_cat(" SQLi ") == "sqli"    # 显式其他类不并入默认域
+
+
+def test_bug4_missing_category_hits_title_dedup_on_real_kuzu(tmp_path):
+    """缺省写入(归一 'vuln')与存量空类(''—旧缺省写入)同标题必须命中去重(真库扫描同源 SQL)。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    title = "SQL injection in login bypasses auth"
+    conn.execute("CREATE (f:Finding {id:'F-legacy', title:$t, severity:'high', repro:'curl http://a.example.com/x', "
+                 "category:'', gate_status:'candidate', ts:'t', eng:'e1'})", parameters={"t": title})
+    _norm = normalize_title("SQL Injection in Login Bypasses Auth")  # 新缺省写入(大小写漂移)
+    cat = dedup_cat(None)  # 缺省 → 'vuln'
+    r = conn.execute(FINDING_DEDUP_SCAN_SQL, parameters={"c": cat, "e": "e1"})
+    hit = None
+    while r.has_next():
+        fid, t, _rep, c = r.get_next()
+        if dedup_cat(c) != cat:
+            continue  # 归一后不同域 → 不互查(handler 同款过滤)
+        if titles_duplicate(_norm, normalize_title(str(t or ""))):
+            hit = str(fid)
+            break
+    assert hit == "F-legacy", f"缺省写入应与存量空类同标题命中去重, got {hit}"
+
+
+def test_bug4_explicit_other_category_still_isolated(tmp_path):
+    """显式其他 category 不被缺省域误伤: 同标题但 category='sqli' 的存量不命中 'vuln' 写入的去重。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    title = "SQL injection in login bypasses auth"
+    conn.execute("CREATE (f:Finding {id:'F-vuln', title:$t, severity:'high', repro:'curl http://a.example.com/x', "
+                 "category:'vuln', gate_status:'candidate', ts:'t', eng:'e1'})", parameters={"t": title})
+    conn.execute("CREATE (f:Finding {id:'F-sqli', title:$t, severity:'high', repro:'curl http://a.example.com/y', "
+                 "category:'sqli', gate_status:'candidate', ts:'t', eng:'e1'})", parameters={"t": title})
+    _norm = normalize_title(title)
+
+    def scan(cat):
+        ids = []
+        r = conn.execute(FINDING_DEDUP_SCAN_SQL, parameters={"c": cat, "e": "e1"})
+        while r.has_next():
+            fid, t, _rep, c = r.get_next()
+            if dedup_cat(c) == cat and titles_duplicate(_norm, normalize_title(str(t or ""))):
+                ids.append(str(fid))
+        return ids
+
+    assert scan("vuln") == ["F-vuln"], "缺省/'vuln' 域只命中同类, 不得误伤 sqli 同标题"
+    assert scan("sqli") == ["F-sqli"], "显式 sqli 域照常命中自身"
+    assert scan(dedup_cat("")) == ["F-vuln"], "空类归一默认域(读写两侧同口径)"
+
+
+# ---- 0913 双签断链修复: Signal_.verify_tries 与 Finding.dual_sign 缺列 → scheduler 侧
+#      消费/双签查询 Kuzu Binder 异常被 .catch(()=>[]) 静默吞掉 → 结论信号永不消费、
+#      双签(pending/disputed/signed)整段死代码。旧库 ALTER 补列 + 新库 SCHEMA 直接建全。 ----
+
+def test_signal_verify_tries_migration_on_old_db(tmp_path):
+    """旧库(无 verify_tries)经 init_schema 补列后, gates.mjs 消费路径同款查询/自增可落库;
+    二次启动幂等不抛。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    # 旧库形态: 与补列前的 Signal_ SCHEMA 同构
+    conn.execute("CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, "
+                 "weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, "
+                 "ts STRING, ring STRING, eng STRING DEFAULT '', PRIMARY KEY(id))")
+    conn.execute("CREATE (s:Signal_ {id:'sig-v1', type:'verify-result', weight:0.5, "
+                 "status:'open', evidence:'finding:f-9 verdict:confirmed 依据:x', ts:'t'})")
+    init_schema(conn)  # 启动迁移: ALTER ADD verify_tries
+    # gates.mjs 消费路径同款: RETURN s.verify_tries + 自增(不再 Binder 报错)
+    row = conn.execute("MATCH (s:Signal_ {id:'sig-v1'}) RETURN s.verify_tries").get_next()
+    assert int(row[0]) == 0, "默认 0(旧存量行不炸消费查询)"
+    conn.execute("MATCH (s:Signal_ {id:$id}) SET s.verify_tries=coalesce(s.verify_tries,0)+1",
+                 parameters={"id": "sig-v1"})
+    assert int(conn.execute("MATCH (s:Signal_ {id:'sig-v1'}) RETURN s.verify_tries").get_next()[0]) == 1
+    init_schema(conn)  # 幂等: 二次启动 ALTER 静默跳过不抛
+
+
+def test_finding_dual_sign_migration_on_old_db(tmp_path):
+    """旧库(无 dual_sign)经 init_schema 补列后, gates 双签查询 RETURN f.dual_sign 可用,
+    pending/signed 往返落库。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    conn.execute("CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, "
+                 "cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', "
+                 "gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', "
+                 "verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', "
+                 "eng STRING DEFAULT '', PRIMARY KEY(id))")
+    conn.execute("CREATE (f:Finding {id:'f-9', title:'t', severity:'critical', ts:'t'})")
+    init_schema(conn)
+    row = conn.execute("MATCH (f:Finding {id:'f-9'}) RETURN f.dual_sign").get_next()
+    assert str(row[0]) == "", "默认空串(frow 查询不再 Binder 失败)"
+    conn.execute("MATCH (f:Finding {id:$id}) SET f.dual_sign='pending'", parameters={"id": "f-9"})
+    conn.execute("MATCH (f:Finding {id:$id}) SET f.dual_sign='signed'", parameters={"id": "f-9"})
+    assert str(conn.execute("MATCH (f:Finding {id:'f-9'}) RETURN f.dual_sign").get_next()[0]) == "signed"
+
+
+def test_finding_dual_sign_on_new_db(tmp_path):
+    """新库 SCHEMA 直接建全 dual_sign 列(不依赖 ALTER 路径)。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("MERGE (f:Finding {id:$id}) SET f.dual_sign=$ds", parameters={"id": "f-new", "ds": "pending"})
+    assert str(conn.execute("MATCH (f:Finding {id:'f-new'}) RETURN f.dual_sign").get_next()[0]) == "pending"
+
+
+# ---- 0913 星图认知层: 假设生命周期(claim 租约/resolve 证据门) + 信号坐标枚举 ----
+
+def test_hypothesis_claim_lease_resolve(tmp_path):
+    """claim CAS: open 可认领; 租约期内二次认领 CAS 零命中(409 语义); 15min 租约过期可接管;
+    resolve 落 verdict/evidence_ref 并清认领者(refuted 一等公民)。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("CREATE (h:Hypothesis {id:'h-1', text:'t', strategy:'inversion', status:'open', ts:'t', eng:'e'})")
+    CLAIM = ("MATCH (h:Hypothesis {id:$id}) WHERE h.status='open' OR (h.status='claimed' AND h.claimed_at < $stale) "
+             "SET h.status='claimed', h.claimed_by=$w, h.claimed_at=$at RETURN h.id AS id")
+    r = conn.execute(CLAIM, parameters={"id": "h-1", "w": "e:workerA", "at": 1000, "stale": 0})
+    assert r.has_next(), "open 假设首次认领必须成功"
+    r = conn.execute(CLAIM, parameters={"id": "h-1", "w": "e:workerB", "at": 2000, "stale": 0})
+    assert not r.has_next(), "租约期内二次认领必须 CAS 零命中(409 语义)"
+    r = conn.execute(CLAIM, parameters={"id": "h-1", "w": "e:workerB", "at": 900001, "stale": 1001})
+    assert r.has_next(), "15min 租约过期后必须可接管"
+    conn.execute("MATCH (h:Hypothesis {id:$id}) SET h.status=$v, h.verdict=$v, h.evidence_ref=$ev, h.claimed_by=''",
+                 parameters={"id": "h-1", "v": "refuted", "ev": "s-9"})
+    assert str(conn.execute("MATCH (h:Hypothesis {id:'h-1'}) RETURN h.status").get_next()[0]) == "refuted"
+    conn.execute("MATCH (h:Hypothesis {id:$id}) SET h.status=$v, h.verdict=$v, h.evidence_ref=$ev",
+                 parameters={"id": "h-1", "v": "confirmed", "ev": "f-7"})
+    assert str(conn.execute("MATCH (h:Hypothesis {id:'h-1'}) RETURN h.verdict").get_next()[0]) == "confirmed"
+    assert str(conn.execute("MATCH (h:Hypothesis {id:'h-1'}) RETURN h.evidence_ref").get_next()[0]) == "f-7"
+
+
+def test_signal_coordinate_columns(tmp_path):
+    """Signal_ surface/boundary 坐标列: 新库直接建全; 未带坐标的存量读出默认空串(不炸消费查询)。"""
+    db = kuzu.Database(str(tmp_path / "kuzu_db"))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    conn.execute("MERGE (s:Signal_ {id:'s-1'}) SET s.surface=$su, s.boundary=$bo",
+                 parameters={"su": "request", "bo": "outer"})
+    conn.execute("CREATE (s:Signal_ {id:'s-old', type:'x', ts:'t'})")
+    row = conn.execute("MATCH (s:Signal_ {id:'s-1'}) RETURN s.surface, s.boundary").get_next()
+    assert (str(row[0]), str(row[1])) == ("request", "outer")
+    row2 = conn.execute("MATCH (s:Signal_ {id:'s-old'}) RETURN s.surface, s.boundary").get_next()
+    assert (str(row2[0]), str(row2[1])) == ("", "")

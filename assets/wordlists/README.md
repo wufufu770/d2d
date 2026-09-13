@@ -1,6 +1,6 @@
 # assets/wordlists — 内置字典资产
 
-> skyline 资产面采纳(P1/M3)。子域/路径字典 + resolver 池, 供资产收集引擎(`scripts/recon/collect.mjs`)
+> 参照实现 资产面采纳(P1/M3)。子域/路径字典 + resolver 池, 供资产收集引擎(`scripts/recon/collect.mjs`)
 > 与 DNS 爆破通道消费。加载入口统一走 `scripts/recon/wordlists.mjs`, 缺文件静默降级不阻塞。
 
 ## 分级

@@ -1,4 +1,4 @@
-// wordlists.mjs — 内置字典资产加载器(skyline 资产面采纳 P1/M3)
+// wordlists.mjs — 内置字典资产加载器(资产面语义 P1/M3)
 // 职责: ①按 kind(subdomain/path)+tier(p0/p1/p2) 解析字典文件并流式解压 ②resolver 池
 //       (可信集 + trickest 池 24h 缓存) ③manifest sha256 完整性校验(解压后哈希, 供应链防线)。
 // 缺文件一律返回 null(不抛) — 调用方跳过该阶段并告警, 字典缺失不阻塞收集流程。

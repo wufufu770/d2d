@@ -55,12 +55,11 @@ handoff*.md
 handoff-*/
 tmp-*.json
 cookies.txt
-*.html + recon*.py
-*.html
 recon*.py
 # 测试期一次性脚本默认不入库, 放行运维/接管脚本目录
 *.sh
 !scripts/**/*.sh
+!ops/*.sh
 !install.sh
 
 # 测试凭据与靶机证据(绝不入库)
@@ -96,3 +95,6 @@ upload.out
 Finding.repro
 # study/promote 的导出产物(派生数据, 不入库)
 output/
+.release-message
+# 浏览器半构建产物(片段在 lib/client/, node scripts/build-client.mjs 生成)
+plugin/d2d-panel/lib/client.js

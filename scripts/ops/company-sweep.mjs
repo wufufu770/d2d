@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// company-sweep.mjs — 企业风险轴 v1(0906 skyline 资产面采纳): 公司名/品牌名 → ICP 备案关联域名
+// company-sweep.mjs — 企业风险轴 v1(0906 资产面语义): 公司名/品牌名 → ICP 备案关联域名
 // → 写入 Signal_(type='asset-perimeter') 供人确认后再入 engagement scope(脚本本身不改 scope)。
 // 用法:
 //   node scripts/ops/company-sweep.mjs --company "某某网络科技" [--write] [--json]
