@@ -404,6 +404,8 @@ export function writeFleet({ role, slot, model }, env = process.env) {
 /** 运行事件(scheduler run-log.jsonl + model-usage.jsonl 的面板投影) — 只读 tail, 任意一行坏行跳过。
  *  产出: { events: 轨迹事件(升序), usage: {model: 调度次数}, quotaHits: [model...] } */
 export function readRunEvents({ engName, dataDir }, fsImpl = fs, env = process.env) {
+  // 0913 审查 H19: engName 未消毒拼路径 — 白名单字符外的全部剥除(防 ../ 路径穿越读任意 jsonl)
+  engName = String(engName ?? '').replace(/[^A-Za-z0-9._-]/g, '')
   const out = { events: [], usage: {}, quotaHits: [], cost: { dispatches24h: 0, terminals24h: 0, workerMin24h: 0, steps24h: 0, quotaEvents24h: 0 } }
   const dir = env.D2D_DATA_DIR ?? dataDir ?? `${os.homedir()}/.d2d-data`
   // 与 scheduler.js RUNS_BASE 同口径: P2P_RUNS_DIR/D2D_RUNS_DIR 优先, 否则 DATA_DIR/runs

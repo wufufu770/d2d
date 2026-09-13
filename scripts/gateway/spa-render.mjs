@@ -217,6 +217,8 @@ if (isMain) {
     return send(200, { ok: true, ready, chrome: ready ? (cdpHttp) : 'unavailable(安装 chromium 或设 P2P_CDP_URL)' })
   }
   if (req.method === 'POST' && req.url.split('?')[0] === '/render') {
+    // 0913 审查 C6: 本地任意进程可驱动 chrome → 配置了 host token 时强制鉴权(fail-closed)
+    if (hostToken && req.headers['x-auth'] !== hostToken) return send(401, { ok: false, error: 'X-Auth required' })
     let body = ''
     req.on('data', (d) => { body += d; if (body.length > 100_000) req.destroy() })
     req.on('end', async () => {
