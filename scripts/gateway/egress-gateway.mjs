@@ -21,6 +21,14 @@ const TOKEN_FILE = process.env.P2P_HOST_TOKEN_FILE ?? `${process.env.HOME}/.conf
 const STATIC_ALLOW = new Set((process.env.P2P_PROXY_ALLOW ?? '127.0.0.1,localhost')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean))
 const RATE = _envFloat(process.env.P2P_PROXY_RATE, 5)
+// 0911: 模型 API 主机豁免(scope 过滤外, 硬黑面内)——worker 的 LLM 调用是基础设施不是目标流量;
+// 默认覆盖常见 LLM 端点, D2D_EGRESS_MODEL_HOSTS 逗号分隔可增补。
+const MODEL_HOSTS = new Set([
+  'api.minimaxi.com', 'api.minimax.io', 'api.minimax.chat', 'api.opencode.ai',
+  'api.deepseek.com', 'api.openai.com', 'api.anthropic.com', 'open.bigmodel.cn',
+  'api.moonshot.cn', 'dashscope.aliyuncs.com',
+  ...(process.env.D2D_EGRESS_MODEL_HOSTS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+])
 // 中危审计修复(9): 上游请求/隧道超时 — 旧版 http.request/net.connect 无任何超时, 上游挂住 =
 // worker 连接与 socket 永久悬挂。默认 30s, P2P_PROXY_TIMEOUT_MS 可调(非法/非正值回退默认)。
 const UPSTREAM_TIMEOUT_MS = _envInt(process.env.P2P_PROXY_TIMEOUT_MS, 30_000)
@@ -153,6 +161,9 @@ function ipInCidr(ip, cidr) {
 function hostAllowed(host) {
   const h = normalizeHost(host)
   if (isForbiddenTarget(h)) return false // 硬黑面双保险(处理器层已先拒一次)
+  // 0911: 模型 API 豁免(基础设施, 非目标流量)——scope 只约束目标侧; LLM 端点不豁免会被
+  // engagement scope 全拦(worker 模型调用全部 TRANSPORT error)。硬黑面仍优先于本豁免。
+  if (MODEL_HOSTS.has(h)) return true
   if (STATIC_ALLOW.has(h)) return true
   for (const a of [...STATIC_ALLOW, ...dynScope]) {
     if (a.includes('/')) { if (ipInCidr(h, a)) return true }

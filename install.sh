@@ -199,6 +199,9 @@ fi
   || { echo "✗ web profile 装配失败(上方为 pnpm 完整输出; 常见原因: 网络/registry 权限)"; exit 1; }
 ok "web profile: d2d-panel + pentest-dsh + better-sidebar 装配完成"
 
+# 面板浏览器半(lib/client.js)是构建产物且已 gitignore — link: 依赖不触发 prepare, 此处显式构建
+node "$REPO_DIR/plugin/d2d-panel/scripts/build-client.mjs" && ok "d2d-panel client 构建完成" || warn "client 构建失败 — dsh web 启动时会抛插件组合错误, 手动: node $REPO_DIR/plugin/d2d-panel/scripts/build-client.mjs"
+
 # --- headless profile: worker 进程用(无 UI, 全权限, token 桥) ---
 cat > "$DSH_HOME/profiles/headless/package.json" <<EOF
 {
@@ -365,9 +368,9 @@ ok "ops/start-all.sh(记得填 API key)"
 step "安装 systemd 用户单元(检测到 systemd 用户会话)"
 if command -v systemctl >/dev/null 2>&1 && systemctl --user show >/dev/null 2>&1; then
   mkdir -p "$HOME/.config/systemd/user"
-  if [ -d "$REPO_DIR/ops/systemd" ]; then
+  if [ -d "$REPO_DIR/scripts/systemd" ]; then
     _DSH_BIN="$(command -v dsh || echo '%h/.npm-global/bin/dsh')"
-    for _u in "$REPO_DIR"/ops/systemd/*.service; do
+    for _u in "$REPO_DIR"/scripts/systemd/*.service; do
       _name="$(basename "$_u")"
       sed -e "s|%h/d2d/|$REPO_DIR/|g" -e "s|%h/.npm-global/bin/dsh|$_DSH_BIN|g" \
         "$_u" > "$HOME/.config/systemd/user/$_name"
@@ -386,7 +389,7 @@ if command -v systemctl >/dev/null 2>&1 && systemctl --user show >/dev/null 2>&1
     fi
     warn "改了 d2d 代码后必须: systemctl --user restart d2d-dsh-web.service(调度器随进程加载)"
   else
-    warn "仓库缺 ops/systemd/ 模板 — 跳过(可用 ops/start-all.sh 前台启动)"
+    warn "仓库缺 scripts/systemd/ 模板 — 跳过(可用 ops/start-all.sh 前台启动)"
   fi
 else
   warn "无 systemd 用户会话(容器/无桌面) — 用 ops/start-all.sh 前台启动; worker 代理仍由 adapter 默认值兜底"

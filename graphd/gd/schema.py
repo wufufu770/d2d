@@ -8,11 +8,11 @@ from datetime import datetime, timezone
 SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, PRIMARY KEY(name))",
     "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', authorized BOOL DEFAULT false, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', claimed_by STRING DEFAULT '', claimed_at INT64 DEFAULT 0, verdict STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', PRIMARY KEY(worker_id))",
     "CREATE NODE TABLE IF NOT EXISTS Task(id STRING, eng STRING DEFAULT '', kind STRING, payload STRING, priority DOUBLE DEFAULT 1.0, status STRING DEFAULT 'pending', claimed_by STRING DEFAULT '', claimed_at STRING DEFAULT '', target_type STRING DEFAULT 'web', link_id STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Handoff(id STRING, eng STRING, digest STRING, model STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
@@ -21,6 +21,7 @@ SCHEMA = [
     "CREATE REL TABLE IF NOT EXISTS SUGGESTS(FROM Hypothesis TO Endpoint)",
     "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM(FROM Signal_ TO Signal_)",
     "CREATE REL TABLE IF NOT EXISTS PRIOR_FOR(FROM ExperienceWeight TO Signal_)",
+    "CREATE REL TABLE IF NOT EXISTS RELATES(FROM Endpoint TO Endpoint)",
 ]
 
 
@@ -36,6 +37,17 @@ def init_schema(conn):
     for _ddl in ("ALTER TABLE ExperienceWeight ADD recipe STRING DEFAULT ''",
                  "ALTER TABLE ExperienceWeight ADD stack_fp STRING DEFAULT ''",
                  "ALTER TABLE ExperienceWeight ADD payload_hint STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
+    # P0 计胜列迁移(实证: experience.mjs 的 EXP_UPSERT/CREDIT 写入 SET e.cls/e.win_day/e.wins_today,
+    # 旧库无列时 Binder 报错被 worker 侧 .catch 静默吞 → verified 战果积分永不上涨, 自进化闭环断链)。
+    # 列型与写入语句对齐: cls=归一漏洞类标注(STRING), win_day=当日窗口日期串 YYYY-MM-DD(STRING),
+    # wins_today=当日计胜数(INT64, 跨日 CASE 重置)。列名为字面量枚举(同上, 防扫描器 SIDI 判定)。
+    for _ddl in ("ALTER TABLE ExperienceWeight ADD cls STRING DEFAULT ''",
+                 "ALTER TABLE ExperienceWeight ADD win_day STRING DEFAULT ''",
+                 "ALTER TABLE ExperienceWeight ADD wins_today INT64 DEFAULT 0"):
         try:
             conn.execute(_ddl)
         except Exception:
@@ -67,6 +79,32 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Finding ADD last_transition STRING DEFAULT ''")
     except Exception:
         pass
+    # 0913 双签断链修复: applyVerifyResults 消费查询 RETURN s.verify_tries — 旧库无此列时
+    # Kuzu Binder 异常被 scheduler 侧 .catch(()=>[]) 静默吞掉 → 结论信号永不消费 → 双签永不盖章。
+    # 新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。
+    try:
+        conn.execute("ALTER TABLE Signal_ ADD verify_tries INT64 DEFAULT 0")
+    except Exception:
+        pass
+    # 0913 同类修复: gates 双签查询 RETURN f.dual_sign — 缺列同款 Binder 静默失败 →
+    # frow 恒 null → 双签(pending/disputed/signed)整段死代码, critical/high 永远单签。
+    try:
+        conn.execute("ALTER TABLE Finding ADD dual_sign STRING DEFAULT ''")
+    except Exception:
+        pass
+    # 0913 星图认知层: Signal_ 坐标枚举(surface/boundary) + Hypothesis 生命周期
+    # (claim 租约/verdict/证据引用) + Finding replay 矩阵。新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。
+    for _ddl in ("ALTER TABLE Signal_ ADD surface STRING DEFAULT ''",
+                 "ALTER TABLE Signal_ ADD boundary STRING DEFAULT ''",
+                 "ALTER TABLE Hypothesis ADD claimed_by STRING DEFAULT ''",
+                 "ALTER TABLE Hypothesis ADD claimed_at INT64 DEFAULT 0",
+                 "ALTER TABLE Hypothesis ADD verdict STRING DEFAULT ''",
+                 "ALTER TABLE Hypothesis ADD evidence_ref STRING DEFAULT ''",
+                 "ALTER TABLE Finding ADD replay_matrix STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
     # 签名去重: 跨 host 同缺陷(同 path+同类别)的关联标记 — 指向既有 finding id
     try:
         conn.execute("ALTER TABLE Finding ADD related_to STRING DEFAULT ''")

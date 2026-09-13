@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// check.mjs — 测绘凭据活性检测(P1/M1, 对标 skyline 凭据页"检测"按钮)。
+// check.mjs — 测绘凭据活性检测(P1/M1, 对标凭据页"检测"按钮)。
 // 真实调平台接口(domain="example.com" 单条探针, 25s 超时; 鹰图按条扣分 — 探针成本 1 积分)。
 // 输出逐家状态与剩余额度; exit: 0=至少一家可用, 1=已配置但全部失败, 2=一家都没配。
 // 用法: node scripts/recon/mapping/check.mjs [--json] [--domain example.com]
