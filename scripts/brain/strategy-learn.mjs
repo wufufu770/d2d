@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// strategy-learn.mjs — 0913 星表反哺: 从 URL/文件/文本主动学策略(skyline /strategy learn 吸纳)
+// strategy-learn.mjs — 0913 星表反哺: 从 URL/文件/文本主动学策略(/strategy learn 语义)
 // 产出 = knowledge/inbox 草稿(人工审 + study 蒸馏 + promote 门禁, 对齐 d2d 学习闭环)。
 // 用法:
 //   node scripts/brain/strategy-learn.mjs --url https://blog.example.com/writeup [--category auth_bypass] [--source "标注"]
@@ -100,7 +100,7 @@ export async function learn({ url, file, text, dataDir = DATA_DIR, category = ''
   fs.mkdirSync(dir, { recursive: true })
   const out = path.join(dir, `strategy-learn-${ts}.md`)
   const head = [
-    `# 策略学习草稿(skyline strategy-learn 吸纳)`, '',
+    `# 策略学习草稿(strategy-learn 语义)`, '',
     `> 来源: ${origin}${source ? ` | 标注: ${source}` : ''}${category ? ` | 建议类目: ${category}` : ''} | 抓取时间: ${new Date().toISOString()}`,
     `> 状态: 草稿(人工审) — study 蒸馏 + promote 门禁③(wins≥3) 后入库; 本文件是 draft, 不是已确认策略。`, '',
   ].join('\n')
