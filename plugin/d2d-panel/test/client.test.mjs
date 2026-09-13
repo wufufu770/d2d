@@ -1,3 +1,4 @@
+// 测试范围: 浏览器半 bundle 拼接防漂移 + 假 window 注册/装配链路(产物 gitignore, 测试自建)
 // test/client.test.mjs — 浏览器半(lib/client.js)冒烟: 片段拼接防漂移 + 假 window 下注册/装配链路
 // 不依赖 react / DOM: factory 顶层只有声明, tab 注册只调 ctx.betterSidebar.registerTab, 全部可用假对象驱动。
 import { strict as assert } from 'node:assert'
@@ -8,7 +9,7 @@ import vm from 'node:vm'
 import { buildClient, FRAG_DIR, ORDER, OUT } from '../scripts/build-client.mjs'
 
 // 0913 仓库治理: lib/client.js 是构建产物(已 gitignore) — 测试自行构建一次再读
-if (!fs.existsSync(OUT)) buildClient()
+if (!fs.existsSync(OUT)) fs.writeFileSync(OUT, buildClient())
 const bundle = fs.readFileSync(OUT, 'utf8')
 
 /** 在隔离 vm 上下文里执行 bundle, 捕获 __ModuleLoader__.load 注册, 返回 {loaded, materialize}。 */

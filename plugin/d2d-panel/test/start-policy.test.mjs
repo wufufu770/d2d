@@ -1,3 +1,4 @@
+// 测试范围: 面板启动策略(requested 节点字段契约/采纳语义)
 import { strict as assert } from 'node:assert'
 import { test } from 'node:test'
 import { validateStartRequest } from '../lib/host/start-policy.mjs'

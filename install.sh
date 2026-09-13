@@ -200,7 +200,7 @@ fi
 ok "web profile: d2d-panel + pentest-dsh + better-sidebar 装配完成"
 
 # 面板浏览器半(lib/client.js)是构建产物且已 gitignore — link: 依赖不触发 prepare, 此处显式构建
-node "$REPO_DIR/plugin/d2d-panel/scripts/build-client.mjs" && ok "d2d-panel client 构建完成" || warn "client 构建失败 — 面板 tab 可能空白, 手动: node $REPO_DIR/plugin/d2d-panel/scripts/build-client.mjs"
+node "$REPO_DIR/plugin/d2d-panel/scripts/build-client.mjs" && ok "d2d-panel client 构建完成" || warn "client 构建失败 — dsh web 启动时会抛插件组合错误, 手动: node $REPO_DIR/plugin/d2d-panel/scripts/build-client.mjs"
 
 # --- headless profile: worker 进程用(无 UI, 全权限, token 桥) ---
 cat > "$DSH_HOME/profiles/headless/package.json" <<EOF

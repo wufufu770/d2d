@@ -26,7 +26,7 @@ d2d 是跑在 dsh（DeepSeek agent 宿主）上的自主渗透测试插件：三
 | 环 | 职责 | 角色 |
 |---|---|---|
 | discovery | 资产面+信息面侦察 | asset-recon(测绘/指纹/归属)/info-recon(端点/JS 入口/参数)/wmpf-recon(小程序/加密)/recon-generalist(任务通道) |
-| deep | 漏洞挖掘 | 8 个 specialist(auth-bypass/business-logic/crypto-audit/cve-chainer/deserialization/file-attack/frontend-attack/injection/misconfig/ssrf)+exploit-chainer 兜底，按 signal_affinity 路由 |
+| deep | 漏洞挖掘 | 10 个 specialist(auth-bypass/business-logic/crypto-audit/cve-chainer/deserialization/file-attack/frontend-attack/injection/misconfig/ssrf)+exploit-chainer 兜底，按 signal_affinity 路由 |
 | creative | 创造性发现 | 反思唤醒(1/3)，唤醒耗尽→exhausted |
 | verify | 独立验证 | 不与 deep 争抢容量;validator 分级 L0/L1 |
 
@@ -77,7 +77,7 @@ frozen(存量待迁移) / rejected(红线越权永久隔离)
 ```
 plugin/pentest-dsh/   scheduler.js(调度主线) adapter-dsh.mjs worker-env.js
   domain/             allocator briefs caps triage verify-verdicts failover memory-store tool-policy strategy-card strategy-map scope safe-url experience knowledge-retrieval lifecycle digest
-  roles/              asset-recon info-recon wmpf-recon + 8 specialist + exploit-chainer(redteam-theorist/dev-fresh-eyes)
+  roles/              asset-recon info-recon wmpf-recon + 10 specialist + exploit-chainer(redteam-theorist/dev-fresh-eyes) 等, 共 24 —— 全量清单见 plugin/pentest-dsh/roles/README.md
 scripts/              recon/(资产收集+测绘四平台) browser/(cdp-proxy/match-site) brain/(study/promote) ops/(doctor/scan-clean/verify-main/publish-clean…) systemd/
 graphd/app.py         图服务(schema/写门/迁移/授权)
 ```
@@ -108,6 +108,7 @@ graphd/app.py         图服务(schema/写门/迁移/授权)
 | loop.mjs | tick 主循环：栅栏/心跳/裁决消费/自动分诊/信号加权/涟漪/跨模块/补给/派发/收敛 |
 | digest-bridge.mjs | 交接摘要（跨模型接管）+ verified 高危 webhook 通知 |
 | experience-bridge.mjs | 经验沉淀/去重/收割/聚簇反哺 + 自动 study 接线 |
+| lifecycle-ops.mjs | engagement 生命周期编排: startEngagement/stopAll/adoptRequested/recoverOrphans/startRequestedWatcher(0913 拆分) |
 
 ### domain/ — 域模块（可单测纯逻辑 + 图 IO 混合）
 | 模块 | 职责 |
