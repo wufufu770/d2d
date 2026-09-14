@@ -59,7 +59,8 @@ try:
                            init_schema, is_engagement_create, l1_gate, legacy_token_ok,
                            normalize_title, parse_scope_allows, pick_write_eng,
                            prose_denylist_hit, redact_pii, repro_gate, title_tokens,
-                           titles_duplicate, transition_gate, url_sig, worker_query_allowed)
+                           titles_duplicate, transition_gate, url_sig, worker_query_allowed,
+                           SCHEMA_DEGRADED)
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd import (_URL_RE, DENYLIST, FINDING_DEDUP_SCAN_SQL, FINDING_STATES,
                     FINDING_TRANSITIONS, JUNK_PATTERNS, L1_DENY_REASON, MAX_BODY_BYTES,
@@ -74,7 +75,8 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
                     init_schema, is_engagement_create, l1_gate, legacy_token_ok,
                     normalize_title, parse_scope_allows, pick_write_eng,
                     prose_denylist_hit, redact_pii, repro_gate, title_tokens,
-                    titles_duplicate, transition_gate, url_sig, worker_query_allowed)
+                    titles_duplicate, transition_gate, url_sig, worker_query_allowed,
+                    SCHEMA_DEGRADED)
 
 _lock = threading.Lock()
 _db = None
@@ -304,7 +306,7 @@ class Handler(BaseHTTPRequestHandler):
             # V-12: 不回显 DB_PATH(本机信息暴露面收敛)
             # M8 守护自愈: version/pid/started_at — start-all 预检做"只杀自己人"三重校验
             # (pidfile + /proc starttime + 版本握手, 任一不符视为外来者不接管)
-            self._send(200, {"ok": True, "version": VERSION, "pid": os.getpid(), "started_at": STARTED_AT})
+            self._send(200, {"ok": True, "version": VERSION, "pid": os.getpid(), "started_at": STARTED_AT, **({"schema_degraded": list(SCHEMA_DEGRADED)} if SCHEMA_DEGRADED else {})})
         elif self.path == "/authorized":
             # L0/L1 分级验证: 授权资产集合查询 — L1 主动验证硬门的数据出口。
             # 与 /query 同级认证(worker/host token); validator.js 亦可经 q() 直查同表
