@@ -3,6 +3,7 @@
 纯代码搬移自 graphd/app.py(巨型文件拆分), 逻辑零改动;
 app.py 侧 re-export 保持 `from graphd.app import X` 既有导入路径不变。"""
 import re
+import sys
 from datetime import datetime, timezone
 
 SCHEMA = [
@@ -133,6 +134,57 @@ def init_schema(conn):
         _backfill_eng(conn)
     except Exception:
         pass
+    # 0915 B16/B17: 迁移收尾校验 — 上面 ALTER 全部 except pass, 列缺失时后续查询全 Binder 异常
+    # 被调用方 .catch 吞掉(实证: dual_sign/eng 缺列 → 双签与池隔离整段静默死代码, 而 /health
+    # 仍报健康)。此处**响亮记录 + 暴露降级状态**, 不抛异常阻断启动 — 启动期硬失败会把整个
+    # 作战面拖下水, 与"可见即可修"的目标不成比例(见 SCHEMA_DEGRADED, app.py /health 回显)。
+    _verify_critical_columns(conn)
+
+
+# 关键列清单: 缺失即核心功能静默失效(查询 Binder 异常被上层 catch 吞)。
+# 列名与读写语句必须一致 — 改动任何一处读写都要同步本表。
+_CRITICAL_COLUMNS = {
+    "Finding": ("dual_sign", "eng", "replay_matrix", "related_to", "last_transition"),
+    "Signal_": ("verify_tries", "eng", "surface", "boundary"),
+    "Endpoint": ("eng", "authorized"),
+    "Hypothesis": ("eng", "claimed_by", "verdict"),
+    "Engagement": ("leased_by", "lease_at", "cancel"),
+}
+
+# 迁移校验结果: 缺失关键列的 "表.列" 列表(空=健康)。app.py /health 回显此值,
+# 非空即代表有功能静默失效, 运维/面板据此察觉。
+SCHEMA_DEGRADED: list = []
+
+
+def _verify_critical_columns(conn) -> list:
+    """迁移后校验关键列; 缺失则记录到 SCHEMA_DEGRADED + stderr 告警(不抛异常)。
+
+    注意: 原地修改 SCHEMA_DEGRADED(clear/extend)而不是重新赋值 — app.py 在导入时绑定的是
+    同一个 list 对象, 重新赋值会让它永远看到空列表(import 绑定名字的经典陷阱)。
+    """
+    missing = []
+    for table, cols in _CRITICAL_COLUMNS.items():
+        try:
+            r = conn.execute(f"CALL table_info('{table}') RETURN *")
+            present = set()
+            while r.has_next():
+                present.add(str(r.get_next()[1]))
+        except Exception as e:
+            # table_info 不可用(旧版 kuzu/表不存在) — 无法判定, 不误报
+            print(f"[schema] {table} 列校验跳过: {type(e).__name__} {str(e)[:80]}", file=sys.stderr, flush=True)
+            continue
+        for c in cols:
+            if c not in present:
+                missing.append(f"{table}.{c}")
+    SCHEMA_DEGRADED.clear()
+    SCHEMA_DEGRADED.extend(missing)
+    if missing:
+        print(
+            "[schema] 迁移不完整, 缺失关键列: " + ", ".join(missing)
+            + " — 对应功能(双签/池隔离/星图坐标等)查询会 Binder 异常并被上层静默吞掉, 请检查 migrations",
+            file=sys.stderr, flush=True,
+        )
+    return missing
 
 
 # ── W5: engagement 池子隔离 ─────────────────────────────────────────────

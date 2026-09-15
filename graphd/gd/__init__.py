@@ -13,5 +13,5 @@ from .gates import (CONFIG_ADVICE_RE, DENYLIST, FINDING_STATES, FINDING_TRANSITI
                     redact_pii, repro_gate, title_tokens, titles_duplicate, transition_gate,
                     url_sig, worker_query_allowed)
 from .queries import FINDING_DEDUP_SCAN_SQL, MAX_QUERY_ROWS, _jsonify, bounded_rows  # noqa: F401
-from .schema import (SCHEMA, _backfill_eng, attribute_by_time, eng_time_windows,  # noqa: F401
-                     host_in_scope, init_schema, parse_scope_allows, pick_write_eng)
+from .schema import (SCHEMA, SCHEMA_DEGRADED, _backfill_eng, attribute_by_time,  # noqa: F401
+                     eng_time_windows, host_in_scope, init_schema, parse_scope_allows, pick_write_eng)
