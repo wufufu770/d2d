@@ -622,6 +622,17 @@ class Handler(BaseHTTPRequestHandler):
                         if _hact == "claim":
                             if not _hid:
                                 return self._send(400, {"ok": False, "error": "claim requires hypothesis id"})
+                            # 0916 修复(误导性 409): 原实现把「id 不存在」与「已被他人认领」都回 409
+                            # 已被他人认领 —— 排查被带偏(实证: 探针用不存在的 id 也得到「已被他人
+                            # 认领且租约未过期」)。先判存在与终态, 再走 CAS。
+                            _ex = conn.execute("MATCH (h:Hypothesis {id:$id}) RETURN h.status AS st",
+                                               parameters={"id": _hid})
+                            if not _ex.has_next():
+                                return self._send(404, {"ok": False, "error": f"hypothesis {_hid} 不存在"})
+                            _st_now = str(_ex.get_next()[0] or "")
+                            if _st_now not in ("open", "claimed"):
+                                return self._send(409, {"ok": False,
+                                                        "error": f"hypothesis {_hid} 已是终态 {_st_now} — 无需认领(需重验请新建假设)"})
                             _stale = int(time.time() * 1000) - 15 * 60 * 1000
                             _cr = conn.execute(
                                 "MATCH (h:Hypothesis {id:$id}) WHERE h.status='open' OR (h.status='claimed' AND h.claimed_at < $stale) "
@@ -854,6 +865,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "unknown"})
 
 
+# 0915 修复(调度停摆根因): socketserver 默认 request_queue_size=5 — 5 个 worker 并发写 +
+# 面板轮询(每 15s statusText/快照)时 accept 队列瞬间溢出, 内核记
+# "Possible SYN flooding on port 127.0.0.1:8766", 客户端成片 fetch failed; 调度器 tick 的
+# checkpoint/coverage-gap/reweightSignals 全数失败即静默停摆(实证 2026-09-15 19:06-19:08)。
+# backlog 提到 128 覆盖突发; 连接上限仍由 _INFLIGHT 信号量兜底(慢连接不吃线程)。
+class GraphdHTTPServer(ThreadingHTTPServer):
+    request_queue_size = 128
+
+
 if __name__ == "__main__":
     # #14: 实例互斥(flock) — kuzu 无文件锁, 两个 graphd 并发打开同一 DB 会互相覆盖
     #      (实证: worker 自主拉起第二实例 + kill -9 → 377 findings 全图丢失)。
@@ -937,7 +957,9 @@ if __name__ == "__main__":
         DENYLIST["cidr_prefix"] = _dl_new["cidr_prefix"]
     except Exception:
         pass
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    # 0915 修复(调度停摆根因): accept 队列深度见 GraphdHTTPServer — 默认 backlog 5 会把并发写
+    # 挤成内核 "SYN flooding" + 客户端成片 fetch failed, 调度器 tick 静默停摆。
+    srv = GraphdHTTPServer(("127.0.0.1", PORT), Handler)
     _tok = "required" if os.environ.get("P2P_TOKEN_REQUIRED") == "1" else "open"
     print(f"[graphd] listening :{PORT} db={DB_PATH} token_required={_tok} "
           f"host={'set' if os.environ.get('P2P_HOST_TOKEN') else 'unset'} "

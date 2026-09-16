@@ -1256,3 +1256,21 @@ def test_signal_coordinate_columns(tmp_path):
     assert (str(row[0]), str(row[1])) == ("request", "outer")
     row2 = conn.execute("MATCH (s:Signal_ {id:'s-old'}) RETURN s.surface, s.boundary").get_next()
     assert (str(row2[0]), str(row2[1])) == ("", "")
+
+
+# ---- 0915 accept 队列深度(调度停摆根因: backlog 5 → 并发写溢出 → fetch failed 连片) ----
+import pathlib as _pathlib
+from graphd.app import GraphdHTTPServer as _GraphdHTTPServer
+
+
+def test_accept_backlog_covers_concurrent_workers():
+    """backlog 须显著大于并发 worker 数 + 面板轮询 — socketserver 默认 5 时并发写会溢出
+    accept 队列(内核 "Possible SYN flooding", 客户端成片 fetch failed → 调度器 tick 停摆)。"""
+    assert _GraphdHTTPServer.request_queue_size >= 64
+
+
+def test_main_boots_backlog_tuned_server():
+    """真源锁: 起服务必须走 GraphdHTTPServer, 不得回退默认 backlog 的 ThreadingHTTPServer。"""
+    src = (_pathlib.Path(__file__).resolve().parents[1] / "graphd" / "app.py").read_text()
+    assert "srv = GraphdHTTPServer((" in src
+    assert "srv = ThreadingHTTPServer((" not in src
