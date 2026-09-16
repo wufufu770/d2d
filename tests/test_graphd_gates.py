@@ -79,6 +79,40 @@ def test_junk_titles_rejected(title):
 def test_real_titles_pass_junk_gate(title):
     assert not junk_rejected(f'CREATE (f:Finding {{id:"r", title:"{title}", severity:"high"}})')
 
+# ---- 0917 鉴权档位门: high/critical 必须注明档位(微博实证教训: 「零鉴权」头条实为游客态) ----
+from graphd.gd.gates import finding_gates as _fg
+
+
+def _finding(sev: str, repro: str) -> str:
+    return f'CREATE (f:Finding {{id:"a", title:"XSS in search", severity:"{sev}", repro:"{repro}"}})'
+
+
+def test_high_finding_without_tier_marker_rejected():
+    ok, err = _fg(_finding("high", "curl https://t.example/api"))
+    assert not ok and "鉴权档位" in err
+
+
+def test_critical_finding_without_tier_marker_rejected():
+    ok, err = _fg(_finding("critical", "curl https://t.example/api"))
+    assert not ok and "鉴权档位" in err
+
+
+def test_high_finding_with_tier_marker_passes():
+    for marker in ("鉴权档位: 游客态(增量: 泄露第三方 user_token)", "鉴权档位: 零cookie", "鉴权档位: 登录态(未测)"):
+        ok, err = _fg(_finding("high", f"{marker} curl https://t.example/api"))
+        assert ok, f"{marker} → {err}"
+
+
+def test_medium_and_low_findings_no_marker_needed():
+    for sev in ("medium", "low", "info"):
+        ok, err = _fg(_finding(sev, "curl https://t.example/api"))
+        assert ok, err
+
+
+def test_non_high_findings_unaffected_by_tier_gate():
+    ok, err = _fg('MATCH (f:Finding) RETURN f LIMIT 1')
+    assert ok and err == ""
+
 # ---- scope 启发式(写操作 URL 必须在 127.0.0.1/localhost) ----
 SCOPE_OK = {"127.0.0.1", "localhost"}
 URL = re.compile(r"https?://[A-Za-z0-9.\-]+")

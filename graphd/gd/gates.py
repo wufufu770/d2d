@@ -332,6 +332,15 @@ def finding_gates(cypher: str) -> tuple[bool, str]:
             tv = t.group(1).lower()
             if any(j in tv for j in JUNK_PATTERNS):
                 return False, f"garbage-listed finding rejected: {tv[:60]}"
+        # 0917: 鉴权档位门(微博实证教训固化) — high/critical 必须注明档位, 防 worker 过度宣称
+        # (实证: 「零鉴权」头条实为游客态可达, 零 cookie 302)。worker 收到本 400 后补测补标即可:
+        # 零cookie 才可 high/critical; 游客态可达且有超出游客 UI 的增量(第三方 token/无上限分页)最高 medium。
+        if "Finding" in cypher and "CREATE" in cypher.upper():
+            sev_hi = _re.search(r"severity\s*:\s*[\"'](high|critical)[\"']", cypher, _re.I)
+            if sev_hi and not _re.search(r"(鉴权档位|零\s*cookie|无\s*cookie|游客态|登录态)", cypher, _re.I):
+                return False, ("high/critical Finding 必须注明鉴权档位 — 在 repro 首行写 「鉴权档位: 零cookie|游客态|登录态」"
+                               "(三档都测: 零cookie 直连 / 游客系统匿名凭据 / 登录态未测则标注; "
+                               "零cookie 才可 high/critical, 游客态可达且有超出游客UI的增量最高 medium)")
     return True, ""
 
 
