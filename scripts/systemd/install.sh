@@ -11,10 +11,13 @@ for u in d2d-graphd d2d-egress d2d-oast d2d-dsh-web d2d-osint-feed d2d-mitm; do
   cp "$DIR/$u.service" "$USER_DIR/$u.service"
   echo "installed: $USER_DIR/$u.service"
 done
+# 0916: 哨兵常驻单元 — 原一次性脚本退出后无人拉起, 监视窗口断档三小时(实证); Restart=always 兜住
+cp "$DIR/d2d-sentinel.service" "$USER_DIR/d2d-sentinel.service"
+echo "installed: $USER_DIR/d2d-sentinel.service"
 systemctl --user daemon-reload
 echo "daemon-reload OK"
 if [[ "${1:-}" == "--start" ]]; then
-  systemctl --user enable --now d2d-graphd d2d-egress d2d-oast d2d-dsh-web d2d-osint-feed d2d-mitm
+  systemctl --user enable --now d2d-graphd d2d-egress d2d-oast d2d-dsh-web d2d-osint-feed d2d-mitm d2d-sentinel
   loginctl enable-linger "$USER" 2>/dev/null || echo "[提示] enable-linger 失败(不影响本次, 重启后需重新登录激活 user systemd)"
   systemctl --user --no-pager --plain list-units 'd2d-*'
 fi
