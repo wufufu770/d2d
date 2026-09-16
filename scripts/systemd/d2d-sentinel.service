@@ -1,0 +1,24 @@
+# P0-4 守护单元 — d2d-sentinel(值守哨兵: 单元掉线 / graphd 不可达 / engagement 状态变化)
+# 安装: scripts/systemd/install.sh --start  |  日志: journalctl --user -u d2d-sentinel -f
+#
+# 0916 加固: sentinel.sh 的原始设计是「异常即退出, 退出码唤醒值守 agent」一次性脚本 —— 现场没有
+# 任何东西把它拉起来, 实证 21:32 检测到 engagement 变化 exit 0 后, 从 21:32 到 00:30 三小时
+# 完全无人值守(两次熔断、一次僵尸 active 都发生在这段时间)。此处由 systemd 常驻守护:
+# 退出即 30s 后重启 → 变化事件照旧落 sentinel.log/journal(告警语义不变), 但监视窗口不再断。
+[Unit]
+Description=d2d sentinel (watchdog: units / graphd health / engagement state)
+After=network.target d2d-graphd.service
+Wants=d2d-graphd.service
+
+[Service]
+ExecStart=/usr/bin/bash %h/.d2d-data/ops/d2d-sentinel.sh
+WorkingDirectory=%h/.d2d-data/ops
+# 哨兵以退出码表达告警(异常 exit 1, 状态变化 exit 0) — 两种都要拉起, 否则监视断档
+Restart=always
+RestartSec=30
+# 防病态抖动: 5 分钟内最多 20 次重启, 超限停止并留 journal 痕迹(而非静默刷屏)
+StartLimitIntervalSec=300
+StartLimitBurst=20
+
+[Install]
+WantedBy=default.target

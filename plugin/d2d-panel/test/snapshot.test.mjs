@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
-import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs } from '../lib/host/snapshot.mjs'
+import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs, readCaps, writeCaps } from '../lib/host/snapshot.mjs'
 import { apply as applyHostRoutes } from '../lib/host/index.mjs'
 
 // fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应); params 透传给断言用断言器
@@ -606,6 +606,35 @@ test('readFleet 中危5: 手改文件带 __proto__ 键不并入(读侧过滤)', 
     assert.ok(!Object.hasOwn(f.roles, '__proto__'), '读侧必须过滤 __proto__ 键(不得并入 roles)')
     assert.ok(!('primary' in {}), 'Object.prototype 不得被污染')
     assert.equal(f.roles.deep.primary, 'p/1')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ── 0916: engConverge 节热调(writeCaps 透传 + 不丢节 + 白名单/钳位) ──
+test('writeCaps engConverge: 合法键写入, 其他 caps 写操作不丢该节, 未知键/越界拒绝', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-panel-engconv-'))
+  const env = { D2D_DATA_DIR: dir }
+  try {
+    // 既有节保留: 写 deepParallel 不应丢掉已配置的 engConverge(原实现按白名单重建会整节点丢失)
+    fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'config', 'caps.json'), JSON.stringify({ engConverge: { softDeadlineMin: 60, minVerified: 1 } }))
+    let r = writeCaps({ updates: { deepParallel: 3 } }, env)
+    assert.equal(r.engConverge.softDeadlineMin, 60, '既有 engConverge 节必须保留')
+    assert.equal(r.engConverge.minVerified, 1)
+    assert.equal(r.deepParallel, 3)
+    // 新键写入 + 空值清除
+    r = writeCaps({ updates: { engConverge: { findingStableRounds: 4, staleSignalTtlMin: '45' } } }, env)
+    assert.equal(r.engConverge.findingStableRounds, 4)
+    assert.equal(r.engConverge.staleSignalTtlMin, 45)
+    assert.equal(r.engConverge.softDeadlineMin, 60, '未提及键保留')
+    // 调度器读侧同源(白名单解析经 parseRingTuning): 写入值能被热读
+    r = writeCaps({ updates: { engConverge: { staleSignalTtlMin: null } } }, env)
+    assert.ok(!('staleSignalTtlMin' in r.engConverge), '空值 = 清除该覆盖')
+    // 非法输入
+    assert.throws(() => writeCaps({ updates: { engConverge: { bogus: 1 } } }, env), /未知 engConverge 键/)
+    assert.throws(() => writeCaps({ updates: { engConverge: { softDeadlineMin: 99999 } } }, env), /10-720/)
+    assert.throws(() => writeCaps({ updates: { engConverge: 'x' } }, env), /engConverge 必须是对象/)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
