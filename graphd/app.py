@@ -36,7 +36,7 @@ def _audit_event(kind, detail):
 DB_PATH = os.environ.get("P2P_GRAPH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kuzu_db"))
 # M8 守护自愈锚: /health 回显三要素。发版必须改 VERSION — preflight 据版本差异识别 stale 旧实例;
 # STARTED_AT 是本进程启动时间, 预检与 /proc/<pid> starttime 比对防 pid 复用误判。
-VERSION = "1.1.1"  # 0915: /health 增 schema_degraded 字段(迁移关键列缺失可见) — bump 让 preflight 不复用旧实例
+VERSION = "1.2.0"  # 0919: AgentIdentity.lease_id 迁移(P0 Turn lease) — bump 让 preflight 不复用旧实例
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 PORT = int(os.environ.get("P2P_GRAPH_PORT", "8766"))
 
@@ -54,7 +54,7 @@ try:
                            auth_check, bounded_rows, candidate_watermark_reject,
                            canonical_cat, config_reject, content_length_gate,
                            cvss_or_default, dedup_cat, engagement_cap_gate,
-                           endpoint_sig_duplicate,
+                           endpoint_sig_duplicate, auth_tier_gate,
                            eng_time_windows, finding_gates, host_in_scope, hostport_of,
                            init_schema, is_engagement_create, l1_gate, legacy_token_ok,
                            normalize_title, parse_scope_allows, pick_write_eng,
@@ -508,6 +508,12 @@ class Handler(BaseHTTPRequestHandler):
                         _ok_rp, _err_rp = repro_gate(sev, req.get("repro"))
                         if not _ok_rp:
                             return self._send(400, {"ok": False, "error": _err_rp})
+                        # 0917 C3: 鉴权档位门 — 结构化 JSON 路径与 host Cypher 路径(finding_gates)同规:
+                        # high/critical 必须注明档位(原门只挂在 cypher 路径, worker 推荐路径=死代码)。
+                        # 审计修正: 检查对象是结构化参数 title+repro, 不是 cypher 字符串。
+                        _ok_tier, _err_tier = auth_tier_gate(sev, title, str(req.get("repro") or ""))
+                        if not _ok_tier:
+                            return self._send(400, {"ok": False, "error": _err_tier})
                         # candidate 积压水位门 — 积压超阈值时 low/medium/info 暂收(429), high/critical 不受限
                         _wm = int(os.environ.get("P2P_CANDIDATE_WATERMARK", "100"))
                         if _wm > 0:
@@ -634,11 +640,13 @@ class Handler(BaseHTTPRequestHandler):
                                 return self._send(409, {"ok": False,
                                                         "error": f"hypothesis {_hid} 已是终态 {_st_now} — 无需认领(需重验请新建假设)"})
                             _stale = int(time.time() * 1000) - 15 * 60 * 1000
+                            # 0917 H6: eng 过滤同 resolve — 共享黑板跨项目隔离
+                            _creng = str(req.get("eng") or "").strip()
                             _cr = conn.execute(
-                                "MATCH (h:Hypothesis {id:$id}) WHERE h.status='open' OR (h.status='claimed' AND h.claimed_at < $stale) "
+                                "MATCH (h:Hypothesis {id:$id}) WHERE ($eng = '' OR h.eng = $eng) AND (h.status='open' OR (h.status='claimed' AND h.claimed_at < $stale)) "
                                 "SET h.status='claimed', h.claimed_by=$w, h.claimed_at=$at RETURN h.id AS id",
                                 parameters={"id": _hid, "w": _eng + ":" + str(req.get("worker") or "host"),
-                                            "at": int(time.time() * 1000), "stale": _stale})
+                                            "at": int(time.time() * 1000), "stale": _stale, "eng": _creng})
                             if not _cr.has_next():
                                 return self._send(409, {"ok": False,
                                                         "error": f"hypothesis {_hid} 已被他人认领且租约未过期(15min) — 勿重复认领"})
@@ -655,12 +663,16 @@ class Handler(BaseHTTPRequestHandler):
                             _downgraded = False
                             if _verdict == "confirmed" and not _evref:
                                 _verdict, _downgraded = "suspected", True
+                            # 0917 H6: eng 过滤 — 请求带 eng 时仅裁决本 engagement 的假设
+                            # (共享黑板跨项目 h-id 隔离; 未带 eng 的旧调用方维持原语义)
+                            _reng = str(req.get("eng") or "").strip()
                             _rr = conn.execute(
-                                "MATCH (h:Hypothesis {id:$id}) SET h.status=$v, h.verdict=$v, h.evidence_ref=$ev, h.claimed_by='' "
+                                "MATCH (h:Hypothesis {id:$id}) WHERE ($eng = '' OR h.eng = $eng) "
+                                "SET h.status=$v, h.verdict=$v, h.evidence_ref=$ev, h.claimed_by='' "
                                 "RETURN h.id AS id",
-                                parameters={"id": _hid, "v": _verdict, "ev": _evref})
+                                parameters={"id": _hid, "v": _verdict, "ev": _evref, "eng": _reng})
                             if not _rr.has_next():
-                                return self._send(404, {"ok": False, "error": f"hypothesis {_hid} 不存在"})
+                                return self._send(404, {"ok": False, "error": f"hypothesis {_hid} 不存在或归属其他 engagement"})
                             return self._send(200, {"ok": True, "resolved": _hid, "verdict": _verdict,
                                                     "downgraded": _downgraded})
                         # I-014: Hypothesis.text 脱敏
