@@ -8,18 +8,8 @@ name: dsh-compat
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'plugin/pentest-dsh/package.json'
-      - 'plugin/pentest-dsh/package-lock.json'
-      - 'scripts/check-dsh-compat.sh'
-      - '.github/workflows/dsh-compat.yml'
+    branches: ['**']
   pull_request:
-    paths:
-      - 'plugin/pentest-dsh/package.json'
-      - 'plugin/pentest-dsh/package-lock.json'
-      - 'scripts/check-dsh-compat.sh'
-      - '.github/workflows/dsh-compat.yml'
   workflow_dispatch:
 
 jobs:
