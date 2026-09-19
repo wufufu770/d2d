@@ -14,7 +14,7 @@ SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', PRIMARY KEY(worker_id))",
+    "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', lease_id STRING DEFAULT '', PRIMARY KEY(worker_id))",
     "CREATE NODE TABLE IF NOT EXISTS Task(id STRING, eng STRING DEFAULT '', kind STRING, payload STRING, priority DOUBLE DEFAULT 1.0, status STRING DEFAULT 'pending', claimed_by STRING DEFAULT '', claimed_at STRING DEFAULT '', target_type STRING DEFAULT 'web', link_id STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Handoff(id STRING, eng STRING, digest STRING, model STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE REL TABLE IF NOT EXISTS AT(FROM Signal_ TO Endpoint)",
@@ -129,6 +129,14 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Endpoint ADD authorized BOOL DEFAULT false")
     except Exception:
         pass
+    # P0 Turn lease: worker 身份租约列 — 终态写入 CAS 的钥匙(scheduler.js 派发点生成,
+    # stopAll/recoverOrphans 写终态时同语句置 '' 关闭; 迟到的旧 lease 回调 WHERE lease_id 零命中,
+    # 双写竞态收敛为唯一胜出方)。列名为字面量枚举(同上, 防扫描器 SIDI 判定)。
+    for _ddl in ("ALTER TABLE AgentIdentity ADD lease_id STRING DEFAULT ''",):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
     # 存量混合池归属回填: 只处理 eng='' 的行, 幂等(每次启动 O(池子行数), 空转即跳过)。
     try:
         _backfill_eng(conn)
@@ -149,6 +157,7 @@ _CRITICAL_COLUMNS = {
     "Endpoint": ("eng", "authorized"),
     "Hypothesis": ("eng", "claimed_by", "verdict"),
     "Engagement": ("leased_by", "lease_at", "cancel"),
+    "AgentIdentity": ("lease_id",),
 }
 
 # 迁移校验结果: 缺失关键列的 "表.列" 列表(空=健康)。app.py /health 回显此值,
