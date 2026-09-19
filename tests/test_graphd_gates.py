@@ -80,7 +80,8 @@ def test_real_titles_pass_junk_gate(title):
     assert not junk_rejected(f'CREATE (f:Finding {{id:"r", title:"{title}", severity:"high"}})')
 
 # ---- 0917 鉴权档位门: high/critical 必须注明档位(微博实证教训: 「零鉴权」头条实为游客态) ----
-from graphd.gd.gates import finding_gates as _fg
+from graphd.app import finding_gates as _fg
+from graphd.app import auth_tier_gate as _auth_tier_gate
 
 
 def _finding(sev: str, repro: str) -> str:
@@ -112,6 +113,28 @@ def test_medium_and_low_findings_no_marker_needed():
 def test_non_high_findings_unaffected_by_tier_gate():
     ok, err = _fg('MATCH (f:Finding) RETURN f LIMIT 1')
     assert ok and err == ""
+
+
+# ---- 0917 C3: 结构化 /write/finding 路径同门(auth_tier_gate 直测 JSON 参数, 非 cypher) ----
+def test_structured_path_high_without_tier_rejected():
+    ok, err = _auth_tier_gate("high", "未鉴权读取用户数据", "curl https://t.example/api -b a=1")
+    assert not ok and "鉴权档位" in err
+
+
+def test_structured_path_marker_in_repro_passes():
+    ok, err = _auth_tier_gate("critical", "读取任意用户", "鉴权档位: 零cookie; curl https://t.example/api")
+    assert ok and err == ""
+
+
+def test_structured_path_marker_in_title_passes():
+    ok, err = _auth_tier_gate("high", "游客态下泄露第三方 user_token", "curl https://t.example/api")
+    assert ok and err == ""
+
+
+def test_structured_path_non_high_exempt():
+    for sev in ("medium", "low", "info", "", None):
+        ok, err = _auth_tier_gate(sev, "无档位标题", "curl https://t.example/api")
+        assert ok and err == ""
 
 # ---- scope 启发式(写操作 URL 必须在 127.0.0.1/localhost) ----
 SCOPE_OK = {"127.0.0.1", "localhost"}

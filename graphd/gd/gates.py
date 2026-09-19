@@ -335,13 +335,30 @@ def finding_gates(cypher: str) -> tuple[bool, str]:
         # 0917: 鉴权档位门(微博实证教训固化) — high/critical 必须注明档位, 防 worker 过度宣称
         # (实证: 「零鉴权」头条实为游客态可达, 零 cookie 302)。worker 收到本 400 后补测补标即可:
         # 零cookie 才可 high/critical; 游客态可达且有超出游客 UI 的增量(第三方 token/无上限分页)最高 medium。
-        if "Finding" in cypher and "CREATE" in cypher.upper():
-            sev_hi = _re.search(r"severity\s*:\s*[\"'](high|critical)[\"']", cypher, _re.I)
-            if sev_hi and not _re.search(r"(鉴权档位|零\s*cookie|无\s*cookie|游客态|登录态)", cypher, _re.I):
-                return False, ("high/critical Finding 必须注明鉴权档位 — 在 repro 首行写 「鉴权档位: 零cookie|游客态|登录态」"
-                               "(三档都测: 零cookie 直连 / 游客系统匿名凭据 / 登录态未测则标注; "
-                               "零cookie 才可 high/critical, 游客态可达且有超出游客UI的增量最高 medium)")
+        sev_hi = _re.search(r"severity\s*:\s*[\"'](high|critical)[\"']", cypher, _re.I)
+        if sev_hi:
+            ok_tier, err_tier = auth_tier_gate(sev_hi.group(1).lower(), cypher, cypher)
+            if not ok_tier:
+                return False, err_tier
     return True, ""
+
+
+# 0917: 鉴权档位门纯函数 — host Cypher 路径(finding_gates)与 /write/finding 结构化 JSON 路径共用。
+# 高危结论必须回答「用什么身份可达」: 零cookie / 游客态 / 登录态(未测要如实标注)。
+# 只检查标注存在, 不判档位与严重度匹配(那是 auto-triage authTierMismatch 的钳位职责)。
+AUTH_TIER_MARKER_RE = re.compile(r"(鉴权档位|零\s*cookie|无\s*cookie|游客态|登录态)", re.I)
+
+
+def auth_tier_gate(severity: str, title: str, repro: str) -> tuple[bool, str]:
+    sev = str(severity or "").lower()
+    if sev not in ("high", "critical"):
+        return True, ""
+    text = f"{title or ''}\n{repro or ''}"
+    if AUTH_TIER_MARKER_RE.search(text):
+        return True, ""
+    return False, ("high/critical Finding 必须注明鉴权档位 — 在 repro 首行写 「鉴权档位: 零cookie|游客态|登录态」"
+                   "(三档都测: 零cookie 直连 / 游客系统匿名凭据 / 登录态未测则标注; "
+                   "零cookie 才可 high/critical, 游客态可达且有超出游客UI的增量最高 medium)")
 
 
 # V-06: worker /query 只读判定提为纯函数(大小写不敏感)。
