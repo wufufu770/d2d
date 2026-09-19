@@ -24,6 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
+          # node 22 有意保留：与仓库 engines(node>=22.5) 对齐（见本文件头第 7 行注释）；ci.yml 的 24 为测试轨另行选择
           node-version: 22
       - name: dsh 兼容冒烟(${{ matrix.channel }} 列)
         id: smoke
