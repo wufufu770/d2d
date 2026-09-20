@@ -1930,3 +1930,411 @@ def test_3e_transition_report_status_write_failure_degrades_not_blocks(tmp_path,
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# =====================================================================
+# 3.5-1(经验回流子系统 A 数据层): Experience 表 + /write/experience + /query/experience
+# 三处同步真源锁(仿 3B/3A/3E): SCHEMA CREATE(Experience 行) + init_schema 字面量 ALTER(幂等
+# try/except) + _CRITICAL_COLUMNS(Experience 元组, 缺列 SCHEMA_DEGRADED)。
+# 写/读端点经真 HTTP harness(3C/3E 同款: GraphdHTTPServer 随机端口 + 全新 tmp 库 + 真 POST)。
+# 规格: 方案 v2 逐列 14 列(规格标题"15 列"与逐列清单 14 列不一致, 按"下述逐列为准"实现 14 列)。
+# =====================================================================
+from datetime import datetime as _351_dt
+from graphd.gd.gates import experience_evidence_ref_rejected as _351_eref_rejected
+from graphd.app import _EXPERIENCE_CATEGORIES as _351_CATEGORIES
+
+# 方案 v2 逐列清单(权威口径) — CREATE/ALTER/_CRITICAL_COLUMNS/本清单同源对照
+_351_COLUMNS = ["id", "eng_id", "category", "scope", "title", "content", "evidence_ref",
+                "utility_score", "retrieval_count", "success_count", "created_at",
+                "last_used_at", "status", "provenance_hash"]
+
+
+def test_351_evidence_ref_gate_pure_function():
+    """evidence_ref 宽松格式确认纯函数锁: 空放行 / 非 'ev/' 前缀拒 / 穿越拒 / 非纯点段不误伤
+    (对齐 gd.gates._evidence_ref_part_rejected 拒收语义; 与 evidence_ref() 生成器差异见其 docstring)。"""
+    assert _351_eref_rejected("") is False and _351_eref_rejected(None) is False
+    assert _351_eref_rejected("   ") is False                      # 纯空白 = 空 → 放行
+    assert _351_eref_rejected("ev/eng-1/node-1.txt") is False      # 合法指针
+    assert _351_eref_rejected("http://x.example/a.txt") is True    # 非 ev/ 前缀 → 拒
+    assert _351_eref_rejected("ev") is True and _351_eref_rejected("ev/") is False  # 前缀判定按 'ev/'
+    assert _351_eref_rejected("ev/../secret") is True              # '..' 分段 → 拒
+    assert _351_eref_rejected("ev/a/./b.txt") is True              # '.' 分段 → 拒
+    assert _351_eref_rejected("ev/a\\b/c.txt") is True             # '\\' → 拒
+    assert _351_eref_rejected("ev/.../a.b.txt") is False           # 非纯点段不误伤(3C 边界同款)
+    assert set(_351_CATEGORIES) == {"success", "failure", "pitfall"}
+
+
+def _351_old_experience_db_conn(tmp_path, drop_col="", early=False):
+    """旧库形态(.kzdb 一次性文件): Experience 与本批次前的早期建表同构。
+    early=True → 仅 id 主键 + title/content 两列(更早期形态, 走全量 ALTER 补缺);
+    否则 = 全 14 列缺 drop_col 单列(降级路径测试用, 同 3A/3E 的缺单列形态)。"""
+    def _minus(cols, drop):
+        return ", ".join(c for c in cols if not (drop and c.split()[0] == drop))
+    _351_full = tuple(f"{n} STRING DEFAULT ''" for n in _351_COLUMNS[1:7]) + \
+        ("utility_score FLOAT DEFAULT 0.5", "retrieval_count INT64 DEFAULT 0",
+         "success_count INT64 DEFAULT 0",
+         "created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+         "last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+         "status STRING DEFAULT 'quarantined'", "provenance_hash STRING DEFAULT ''")
+    if early:
+        cols = "id STRING, title STRING DEFAULT '', content STRING DEFAULT ''"
+    else:
+        cols = _minus(("id STRING",) + _351_full, drop_col)
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    conn.execute(f"CREATE NODE TABLE Experience({cols}, PRIMARY KEY(id))")
+    return conn
+
+
+def test_351_new_db_experience_full_columns(tmp_path):
+    """新库 init_schema 后 Experience 含全 14 列(真库 table_info 逐列确认)且缺省值正确:
+    utility_score 0.5(EvolveR 冷启动)/计数 0/status 'quarantined'(写入即隔离)/时间列 epoch
+    (kuzu 0.11 DDL 无当前时刻函数默认 — now()/current_timestamp 不存在, 现场实证)。"""
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    init_schema(conn)
+    r = conn.execute("CALL table_info('Experience') RETURN *")
+    rows = []
+    while r.has_next():
+        rows.append(r.get_next())
+    assert [str(x[1]) for x in rows] == _351_COLUMNS, "列名/列序必须与方案 v2 逐列清单一致"
+    types = {str(x[1]): str(x[2]) for x in rows}
+    assert types["id"] == "STRING" and types["utility_score"] == "FLOAT"
+    assert types["retrieval_count"] == "INT64" and types["success_count"] == "INT64"
+    assert types["created_at"] == "TIMESTAMP" and types["last_used_at"] == "TIMESTAMP"
+    assert str(rows[0][4]) == "True", "id 必须是 PRIMARY KEY"
+    conn.execute("CREATE (x:Experience {id:'x-1'})")
+    row = conn.execute("MATCH (x:Experience {id:'x-1'}) RETURN x.utility_score, x.retrieval_count, "
+                       "x.success_count, x.status, x.created_at, x.last_used_at, x.eng_id").get_next()
+    assert float(row[0]) == 0.5 and int(row[1]) == 0 and int(row[2]) == 0
+    assert str(row[3]) == "quarantined", "status 缺省必须 'quarantined'(默认隔离)"
+    assert row[4] == _351_dt(1970, 1, 1) and row[5] == _351_dt(1970, 1, 1), "时间列缺省 epoch"
+    assert str(row[6]) == ""
+    # 列可写(写入语句形态: timestamp() 参数绑定 cast — 字符串直传 TIMESTAMP 列不受支持, 现场实证)
+    conn.execute("MATCH (x:Experience {id:'x-1'}) SET x.utility_score=$u, "
+                 "x.created_at=timestamp($ts), x.status=$st",
+                 parameters={"u": 0.875, "ts": "2026-09-20 10:00:00", "st": "active"})
+    row = conn.execute("MATCH (x:Experience {id:'x-1'}) RETURN x.utility_score, x.created_at, "
+                       "x.status").get_next()
+    assert float(row[0]) == 0.875 and row[1] == _351_dt(2026, 9, 20, 10, 0, 0)
+    assert str(row[2]) == "active"
+
+
+def test_351_alter_migration_on_old_db_and_idempotent(tmp_path):
+    """旧库(早期 3 列形态)经 init_schema 幂等 ALTER 补缺 11 列后可读写; 二次 init_schema 不抛且
+    存量数据/新列默认值不损(仿 3A/3E 同款模板)。"""
+    conn = _351_old_experience_db_conn(tmp_path, early=True)
+    conn.execute("CREATE (x:Experience {id:'x-old', title:'early row', content:'keep me'})")
+    init_schema(conn)  # 启动迁移: 字面量 ALTER ADD 13 列(id 主键不可 ALTER, 建表必有)
+    row = conn.execute("MATCH (x:Experience {id:'x-old'}) RETURN x.title, x.content, x.eng_id, "
+                       "x.utility_score, x.status, x.created_at").get_next()
+    assert (str(row[0]), str(row[1])) == ("early row", "keep me"), "迁移不得损存量数据"
+    assert (str(row[2]), float(row[3]), str(row[4])) == ("", 0.5, "quarantined")
+    assert row[5] == _351_dt(1970, 1, 1), "补列默认值 epoch(存量行不炸消费查询)"
+    # 补列后读写可用(蒸馏管道后续批次的写形态: 全列绑定 + timestamp cast)
+    conn.execute("MATCH (x:Experience {id:'x-old'}) SET x.utility_score=$u, x.retrieval_count=$n, "
+                 "x.last_used_at=timestamp($ts), x.provenance_hash=$ph",
+                 parameters={"u": 0.9, "n": 3, "ts": "2026-09-20 11:30:00", "ph": "ph-old"})
+    row = conn.execute("MATCH (x:Experience {id:'x-old'}) RETURN x.retrieval_count, "
+                       "x.last_used_at, x.provenance_hash").get_next()
+    assert int(row[0]) == 3 and row[1] == _351_dt(2026, 9, 20, 11, 30) and str(row[2]) == "ph-old"
+    init_schema(conn)  # 幂等: 列已存在 ALTER 抛错被吞, 不抛且数据不损
+    row = conn.execute("MATCH (x:Experience {id:'x-old'}) RETURN x.retrieval_count, "
+                       "x.provenance_hash").get_next()
+    assert int(row[0]) == 3 and str(row[1]) == "ph-old", "二次 init_schema 后数据不损"
+
+
+def test_351_critical_columns_cover_experience():
+    """_CRITICAL_COLUMNS 覆盖: Experience 元组纳入全部 14 列(缺一即 SCHEMA_DEGRADED 告警)。
+    全列拍板: 全新表整表即数据层载体, 任一列缺失都属 schema 损坏(无历史主功能列/迁移列之分)。"""
+    assert set(_gd_schema._CRITICAL_COLUMNS["Experience"]) == set(_351_COLUMNS)
+    assert len(_gd_schema._CRITICAL_COLUMNS["Experience"]) == 14
+
+
+def test_351_missing_column_degrades_to_schema_degraded(tmp_path, capsys):
+    """缺列降级: 缺 status 单列旧库走 _verify_critical_columns 路径 → SCHEMA_DEGRADED 点名
+    Experience.status + stderr 响亮告警(不抛异常); 随后 init_schema ALTER 修复 → 告警清空。"""
+    before = list(_gd_schema.SCHEMA_DEGRADED)
+    try:
+        conn = _351_old_experience_db_conn(tmp_path, drop_col="status")  # 旧库缺 status 一列
+        missing = _verify_critical_columns(conn)  # 直击校验路径(模拟 ALTER 未生效的存量库)
+        assert "Experience.status" in missing
+        assert "Experience.status" in _gd_schema.SCHEMA_DEGRADED
+        assert all(not m.startswith("Finding") for m in _gd_schema.SCHEMA_DEGRADED), "只缺一列不误报他表"
+        err = capsys.readouterr().err
+        assert "Experience.status" in err and "迁移不完整" in err, "stderr 必须响亮点名缺失列"
+        init_schema(conn)  # ALTER 修复后收尾校验 → 降级清单清空(/health 回显归零)
+        assert _gd_schema.SCHEMA_DEGRADED == [], "迁移修复后 SCHEMA_DEGRADED 必须清空"
+        capsys.readouterr()  # 丢弃 init_schema 期间输出, 不影响后续断言
+    finally:
+        _gd_schema.SCHEMA_DEGRADED.clear()
+        _gd_schema.SCHEMA_DEGRADED.extend(before)  # 还原全局状态, 不污染其他用例
+
+
+# ---- 3.5-1 写/读端点(真 HTTP harness, 3C/3E 同款形态) ----
+
+def _351_spawn_server(tmp_path, monkeypatch):
+    """3.5-1 端点专用: 同 3C harness 形态(GraphdHTTPServer 随机端口 + 全新 tmp 库), 配置 worker
+    token(两路由均为 worker 级认证)。无需预置 active engagement — eng_id 为显式入参(不走
+    pick_write_eng 归属), denylist 共享门在空名单下不拦。"""
+    for var in ("P2P_TOKEN", "P2P_HOST_TOKEN", "P2P_TOKEN_REQUIRED", "P2P_OPEN_RANGE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("P2P_WORKER_TOKEN", "t-351-worker")
+    monkeypatch.setattr(graphd_app, "_D2D_PAUSE_FILE", str(tmp_path / "paused.json"))
+    graphd_app._pause_mtime_cache[0], graphd_app._pause_mtime_cache[1] = None, False
+    dbp = tmp_path / "kuzu_db"
+    db = kuzu.Database(str(dbp))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    init_schema(conn)  # 与真实启动路径 db() 同款: SCHEMA + ALTER 迁移
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
+    monkeypatch.setattr(graphd_app, "_db", db)  # 预建库直接挂给 app(db() 直取, 不二次开文件)
+    srv = graphd_app.GraphdHTTPServer(("127.0.0.1", 0), graphd_app.Handler)
+    _threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_address[1]}", conn, srv
+
+
+def _351_post(base_url, path, payload, token="t-351-worker"):
+    """POST JSON; token 缺省 worker 级; 4xx/5xx 经 HTTPError 取回 (code, body)。"""
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Auth"] = token
+    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(), headers=headers)
+    try:
+        with _urllib_request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.load(resp)
+    except _urllib_request.HTTPError as e:
+        return e.code, json.load(e)
+
+
+def _351_valid_payload(**over):
+    """合法写入载荷基线(每个字段都在方案 v2 入参清单内) + 越权字段探针(应被忽略)。"""
+    p = {"eng_id": "eng-351", "category": "success", "scope": "probe.example.com",
+         "title": "SSRF via webhook callback verified",
+         "content": "curl -s https://probe.example.com/hook → 内网回显命中(可复现)",
+         "evidence_ref": "ev/eng-351/node-1.txt", "provenance_hash": "ph-" + "a" * 8,
+         # 越权字段探针: 数据层拍板 — id/状态/评分/计数/时间均服务端所有, 调用方传入一律忽略
+         "id": "caller-forged", "status": "active", "utility_score": 0.99,
+         "retrieval_count": 99, "success_count": 99,
+         "created_at": "1999-01-01 00:00:00", "last_used_at": "1999-01-01 00:00:00"}
+    p.update(over)
+    return p
+
+
+def test_351_write_experience_roundtrip_all_columns(tmp_path, monkeypatch):
+    """成功写入端到端: 回读全 14 列值正确(含 64 字符标题边界); id 服务端生成; 越权字段
+    (status/utility_score/计数/时间/id)全部被忽略, 恒服务端默认。"""
+    base_url, conn, srv = _351_spawn_server(tmp_path, monkeypatch)
+    try:
+        payload = _351_valid_payload(title="x" * 64)  # ≤64 边界内
+        status, out = _351_post(base_url, "/write/experience", payload)
+        assert status == 200 and out["ok"] is True, out
+        eid = str(out["id"])
+        assert eid.startswith("exp-") and eid != "caller-forged", "id 必须服务端生成(exp- 前缀)"
+        assert str(out["status"]) == "quarantined"
+        row = conn.execute(
+            "MATCH (x:Experience {id:$id}) RETURN x.id, x.eng_id, x.category, x.scope, x.title, "
+            "x.content, x.evidence_ref, x.utility_score, x.retrieval_count, x.success_count, "
+            "x.created_at, x.last_used_at, x.status, x.provenance_hash",
+            parameters={"id": eid}).get_next()
+        assert str(row[0]) == eid
+        assert (str(row[1]), str(row[2]), str(row[3])) == ("eng-351", "success", "probe.example.com")
+        assert str(row[4]) == "x" * 64 and str(row[5]).startswith("curl -s https://probe.example.com")
+        assert str(row[6]) == "ev/eng-351/node-1.txt"
+        assert float(row[7]) == 0.5, "utility_score 冷启动默认 0.5(调用方 0.99 被忽略)"
+        assert (int(row[8]), int(row[9])) == (0, 0), "计数列冷启动 0(调用方 99 被忽略)"
+        assert row[10] == row[11], "created_at == last_used_at(写入即当前时刻)"
+        assert isinstance(row[10], _351_dt) and row[10].year >= 2026, "时间列取服务端当前时刻(调用方 1999 被忽略)"
+        assert str(row[12]) == "quarantined", "status 恒隔离(调用方 active 被忽略)"
+        assert str(row[13]) == "ph-" + "a" * 8
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_351_write_experience_default_quarantined_status_param_ignored(tmp_path, monkeypatch):
+    """默认隔离语义专锁: 不带 status → 'quarantined'; 显式 status='active' → 仍 'quarantined'
+    (方案 v2: 转 active 是 3.5-2 蒸馏/评审管道的事, 本批次无该管道, 写入即隔离)。"""
+    base_url, conn, srv = _351_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _351_post(base_url, "/write/experience", _351_valid_payload())
+        assert status == 200 and out["ok"] is True, out
+        assert str(conn.execute("MATCH (x:Experience {id:$id}) RETURN x.status",
+                                parameters={"id": out["id"]}).get_next()[0]) == "quarantined"
+        status, out = _351_post(base_url, "/write/experience", _351_valid_payload(status="active"))
+        assert status == 200 and out["ok"] is True, out
+        assert str(conn.execute("MATCH (x:Experience {id:$id}) RETURN x.status",
+                                parameters={"id": out["id"]}).get_next()[0]) == "quarantined", \
+            "调用方传 status=active 必须被忽略(恒隔离)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_351_write_experience_validation_400s(tmp_path, monkeypatch):
+    """校验清单(400 带原因): 缺/空 provenance_hash / title 65 / content 513 / category=other
+    / category 缺省 / evidence_ref 穿越与非 ev/ 前缀; 全部 400 且不落库。"""
+    base_url, conn, srv = _351_spawn_server(tmp_path, monkeypatch)
+    try:
+        cases = [
+            (_351_valid_payload(provenance_hash=""), "provenance_hash"),
+            ({k: v for k, v in _351_valid_payload().items() if k != "provenance_hash"}, "provenance_hash"),
+            (_351_valid_payload(title="t" * 65), "title"),
+            (_351_valid_payload(content="c" * 513), "content"),
+            (_351_valid_payload(category="other"), "category"),
+            (_351_valid_payload(category=""), "category"),
+            (_351_valid_payload(evidence_ref="http://x.example/e.txt"), "evidence_ref"),
+            (_351_valid_payload(evidence_ref="ev/../secret.txt"), "evidence_ref"),
+            (_351_valid_payload(evidence_ref="ev/eng/../..//x"), "evidence_ref"),
+        ]
+        for payload, reason in cases:
+            code, out = _351_post(base_url, "/write/experience", payload)
+            assert code == 400, (payload.get("category"), str(payload.get("title", ""))[:10], code, out)
+            assert out.get("ok") is False and reason in str(out.get("error", "")), out
+        n = conn.execute("MATCH (x:Experience) RETURN count(x)").get_next()[0]
+        assert int(n) == 0, "被拒载荷一律不落库"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_351_write_experience_evidence_ref_empty_allowed(tmp_path, monkeypatch):
+    """evidence_ref 允许空(落库 '')— 宽松格式确认只约束非空值; scope/eng_id 允许空(拍板记录)。"""
+    base_url, conn, srv = _351_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _351_post(base_url, "/write/experience",
+                                _351_valid_payload(evidence_ref="", scope="", eng_id=""))
+        assert status == 200 and out["ok"] is True, out
+        row = conn.execute("MATCH (x:Experience {id:$id}) RETURN x.evidence_ref, x.scope, x.eng_id",
+                           parameters={"id": out["id"]}).get_next()
+        assert (str(row[0]), str(row[1]), str(row[2])) == ("", "", "")
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_351_endpoints_require_token_and_denylist_redline(tmp_path, monkeypatch):
+    """① 认证 401 沿现有: 未带/带错 X-Auth → 401(写/读两路由同款 worker 级)。
+    ② R6 denylist 红线共享门自动覆盖新路由(payload 含排除资产 → 403, 与 /write/finding 同源)。"""
+    base_url, conn, srv = _351_spawn_server(tmp_path, monkeypatch)
+    try:
+        code, out = _351_post(base_url, "/write/experience", _351_valid_payload(), token="")
+        assert code == 401 and out.get("ok") is False, out
+        code, out = _351_post(base_url, "/write/experience", _351_valid_payload(), token="wrong-tok")
+        assert code == 401, out
+        code, out = _351_post(base_url, "/query/experience", {}, token="")
+        assert code == 401 and out.get("ok") is False, out
+        # denylist 红线(save/restore 全局名单, 不污染其他用例)
+        saved_domains = list(graphd_app.DENYLIST["domains"])
+        saved_cidr = list(graphd_app.DENYLIST["cidr_prefix"])
+        try:
+            graphd_app.DENYLIST["domains"] = ["redline-asset.example"]
+            code, out = _351_post(base_url, "/write/experience",
+                                  _351_valid_payload(content="hit https://redline-asset.example/x confirmed"))
+            assert code == 403 and "redline-asset.example" in str(out.get("error", "")), out
+            n = conn.execute("MATCH (x:Experience) RETURN count(x)").get_next()[0]
+            assert int(n) == 0, "红线命中不落库(fail-closed)"
+        finally:
+            graphd_app.DENYLIST["domains"] = saved_domains
+            graphd_app.DENYLIST["cidr_prefix"] = saved_cidr
+        # worker token 放行(认证语义与 /write/* 同款: worker/host 均可)
+        code, out = _351_post(base_url, "/query/experience", {})
+        assert code == 200 and out.get("ok") is True and out.get("experiences") == [], out
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def _351_direct_exp(conn, eid, utility, created_at, status="active", scope="", category="success"):
+    """直库造行(读侧测试用 — status/utility 是服务端所有, 端点造不出任意组合)。"""
+    conn.execute(
+        "CREATE (x:Experience {id:$id, eng_id:'eng-351', category:$cat, scope:$scope, title:$t, "
+        "content:'c', status:$st, utility_score:$u, "
+        "created_at:timestamp($ca), last_used_at:timestamp($ca), provenance_hash:'ph-' + $id})",
+        parameters={"id": eid, "cat": category, "scope": scope, "t": f"title-{eid}", "st": status,
+                    "u": utility, "ca": created_at})
+
+
+def test_351_query_experience_quarantined_not_in_pool_default_active(tmp_path, monkeypatch):
+    """读侧核心语义: 写入后默认查不到(隔离不入池); 显式 status='quarantined' 可拉到(数据不丢,
+    留给 3.5-2 评审管道); 手工转 active 后默认可查到; 返回行带全 14 键; deprecated 亦默认排除。"""
+    base_url, conn, srv = _351_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _351_post(base_url, "/write/experience", _351_valid_payload())
+        assert status == 200 and out["ok"] is True, out
+        eid = out["id"]
+        # 默认(缺省 status=active): 隔离行不入池
+        code, out = _351_post(base_url, "/query/experience", {})
+        assert code == 200 and out["ok"] is True and out["count"] == 0 and out["experiences"] == [], out
+        # 显式拉隔离行(评审管道通道): 数据在, 全 14 键
+        code, out = _351_post(base_url, "/query/experience", {"status": "quarantined"})
+        assert code == 200 and out["count"] == 1, out
+        row = out["experiences"][0]
+        assert set(row.keys()) == set(_351_COLUMNS), "返回行必须含全 14 列键"
+        assert row["id"] == eid and row["status"] == "quarantined" and row["utility_score"] == 0.5
+        # 手工转 active(3.5-2 蒸馏/评审管道转正动作的手工等价形态) → 默认可查
+        conn.execute("MATCH (x:Experience {id:$id}) SET x.status='active'", parameters={"id": eid})
+        code, out = _351_post(base_url, "/query/experience", {})
+        assert code == 200 and out["count"] == 1 and out["experiences"][0]["id"] == eid, out
+        # deprecated 亦被默认排除
+        conn.execute("MATCH (x:Experience {id:$id}) SET x.status='deprecated'", parameters={"id": eid})
+        code, out = _351_post(base_url, "/query/experience", {})
+        assert code == 200 and out["count"] == 0, out
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_351_query_experience_min_utility_filter(tmp_path, monkeypatch):
+    """min_utility_score 剪枝(EvolveR 阈值 0.3): 0.5 行过线, 0.29 行被剪(两侧); 显式阈值放宽可取回;
+    非法阈值回退缺省(cvss_or_default 同哲学)。"""
+    base_url, conn, srv = _351_spawn_server(tmp_path, monkeypatch)
+    try:
+        _351_direct_exp(conn, "x-hi", 0.5, "2026-09-20 10:00:00")
+        _351_direct_exp(conn, "x-lo", 0.29, "2026-09-20 10:01:00")
+        code, out = _351_post(base_url, "/query/experience", {})  # 缺省 0.3
+        assert code == 200 and [r["id"] for r in out["experiences"]] == ["x-hi"], out
+        code, out = _351_post(base_url, "/query/experience", {"min_utility_score": 0.1})
+        assert code == 200 and sorted(r["id"] for r in out["experiences"]) == ["x-hi", "x-lo"], out
+        code, out = _351_post(base_url, "/query/experience", {"min_utility_score": 0.6})
+        assert code == 200 and out["count"] == 0, out
+        code, out = _351_post(base_url, "/query/experience", {"min_utility_score": "garbage"})
+        assert code == 200 and out["count"] == 1, "非法阈值回退缺省 0.3"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_351_query_experience_scope_exact_and_limit_order(tmp_path, monkeypatch):
+    """scope 精确匹配(拍板: 不做前缀泛化); utility_score DESC + created_at DESC 平局次级排序;
+    limit 缺省 10/显式生效/钳位/非法回退; 全参数绑定($scope/$st/$minu/$lim)。"""
+    base_url, conn, srv = _351_spawn_server(tmp_path, monkeypatch)
+    try:
+        # utility 值取 float32 精确表示(0.875/0.5/0.375), 排序断言不受单精度噪声影响;
+        # 全部 ≥ 0.3(缺省剪枝阈值之上 — 阈值两侧过滤由 min_utility 专项用例覆盖);
+        # B/C 同分(0.5), created_at 次级 DESC → 后建者 B 在前。
+        _351_direct_exp(conn, "x-a", 0.875, "2026-09-20 10:00:00", scope="a.example.com")
+        _351_direct_exp(conn, "x-b", 0.5, "2026-09-20 12:00:00", scope="a.example.com")
+        _351_direct_exp(conn, "x-c", 0.5, "2026-09-20 11:00:00", scope="b.example.com")
+        _351_direct_exp(conn, "x-d", 0.375, "2026-09-20 09:00:00", scope="")
+        code, out = _351_post(base_url, "/query/experience", {})
+        assert code == 200 and [r["id"] for r in out["experiences"]] == ["x-a", "x-b", "x-c", "x-d"], out
+        assert out["truncated"] is False
+        # 平局次级排序: created_at DESC
+        assert out["experiences"][1]["created_at"] >= out["experiences"][2]["created_at"]
+        # limit 生效
+        code, out = _351_post(base_url, "/query/experience", {"limit": 2})
+        assert code == 200 and [r["id"] for r in out["experiences"]] == ["x-a", "x-b"], out
+        # scope 精确匹配: 只回同标签行; 精确语义(非前缀/非后缀泛化)
+        code, out = _351_post(base_url, "/query/experience", {"scope": "a.example.com"})
+        assert code == 200 and [r["id"] for r in out["experiences"]] == ["x-a", "x-b"], out
+        code, out = _351_post(base_url, "/query/experience", {"scope": "a.example.com."})
+        assert code == 200 and out["count"] == 0, "scope 精确匹配"
+        # limit 钳位与回退: 超上限仍可用(结果不足不炸), 非法回退缺省 10
+        from graphd.app import MAX_QUERY_ROWS as _mqr
+        code, out = _351_post(base_url, "/query/experience", {"limit": _mqr + 500})
+        assert code == 200 and out["count"] == 4, out
+        code, out = _351_post(base_url, "/query/experience", {"limit": "garbage"})
+        assert code == 200 and out["count"] == 4, "非法 limit 回退缺省 10"
+    finally:
+        srv.shutdown()
+        srv.server_close()

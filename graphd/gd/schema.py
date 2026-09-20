@@ -18,6 +18,12 @@ SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', report_status STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, PRIMARY KEY(id))",
+    # 3.5-1(经验回流子系统 A 数据层): Experience 结构化经验表(方案 v2 逐列 14 列 — id 服务端生成,
+    # 写入即隔离 status='quarantined', utility_score FLOAT 默认 0.5 为 EvolveR 冷启动, 时间列
+    # DEFAULT epoch('1970-01-01 00:00:00' — kuzu 0.11 DDL 无当前时刻函数默认, 现场实证));
+    # 写入通道 /write/experience, 读取通道 /query/experience(蒸馏 3.5-2/注入 3.5-3 后续批次接线)。
+    # 与 ExperienceWeight 同名族不同表: 那是模式权重卡(cls/win_day 计胜), 本表是条目级经验回流。
+    "CREATE NODE TABLE IF NOT EXISTS Experience(id STRING, eng_id STRING DEFAULT '', category STRING DEFAULT '', scope STRING DEFAULT '', title STRING DEFAULT '', content STRING DEFAULT '', evidence_ref STRING DEFAULT '', utility_score FLOAT DEFAULT 0.5, retrieval_count INT64 DEFAULT 0, success_count INT64 DEFAULT 0, created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), status STRING DEFAULT 'quarantined', provenance_hash STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', lease_id STRING DEFAULT '', exit_class STRING DEFAULT '', PRIMARY KEY(worker_id))",
     "CREATE NODE TABLE IF NOT EXISTS Task(id STRING, eng STRING DEFAULT '', kind STRING, payload STRING, priority DOUBLE DEFAULT 1.0, status STRING DEFAULT 'pending', claimed_by STRING DEFAULT '', claimed_at STRING DEFAULT '', target_type STRING DEFAULT 'web', link_id STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Handoff(id STRING, eng STRING, digest STRING, model STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
@@ -168,6 +174,28 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Finding ADD report_status STRING DEFAULT ''")
     except Exception:
         pass
+    # 3.5-1(经验回流 A): Experience 表旧库逐列补缺迁移 —— 新表场景: 已存在但列缺失的 Experience
+    # (早期形态/半建表)由本段幂等 ALTER 补齐(列已存在时 ALTER 抛错被吞, 同 3B/3A/3E 先例)。
+    # 列名为字面量枚举(无外部输入可拼入, 防扫描器 SIDI 判定); 类型/默认值与 SCHEMA CREATE 逐字
+    # 同源(三处同步之二); id 为 PRIMARY KEY 不可 ALTER ADD(带 id 的表必含主键, 无此缺列形态)。
+    # 缺列即走 _CRITICAL_COLUMNS/SCHEMA_DEGRADED 降级告警(同 dual_sign 缺列静默死代码的兜底)。
+    for _ddl in ("ALTER TABLE Experience ADD eng_id STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD category STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD scope STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD title STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD content STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD evidence_ref STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD utility_score FLOAT DEFAULT 0.5",
+                 "ALTER TABLE Experience ADD retrieval_count INT64 DEFAULT 0",
+                 "ALTER TABLE Experience ADD success_count INT64 DEFAULT 0",
+                 "ALTER TABLE Experience ADD created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+                 "ALTER TABLE Experience ADD last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+                 "ALTER TABLE Experience ADD status STRING DEFAULT 'quarantined'",
+                 "ALTER TABLE Experience ADD provenance_hash STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
     # 存量混合池归属回填: 只处理 eng='' 的行, 幂等(每次启动 O(池子行数), 空转即跳过)。
     try:
         _backfill_eng(conn)
@@ -191,6 +219,14 @@ _CRITICAL_COLUMNS = {
     "Hypothesis": ("eng", "claimed_by", "verdict"),
     "Engagement": ("leased_by", "lease_at", "cancel"),
     "AgentIdentity": ("lease_id", "exit_class"),
+    # 3.5-1(经验回流 A): Experience 纳入全部列(含 id 主键) —— 与 Finding/Signal_ 只锁后期增量
+    # 关键子集不同: Experience 是本批次全新表, 整表即经验回流数据层的全部载体, 任何一列缺失都属
+    # schema 损坏(utility_score 缺→剪枝失效, created_at/last_used_at 缺→排序/时效失效, status 缺
+    # →隔离语义失效, provenance_hash 缺→溯源断链, 其余列缺→读写 Binder 异常被上层静默吞), 且无
+    # 历史存量需要区分"主功能列/迁移列"。全列校验成本同量级(table_info 单次调用), 不放子集。
+    "Experience": ("id", "eng_id", "category", "scope", "title", "content", "evidence_ref",
+                   "utility_score", "retrieval_count", "success_count", "created_at",
+                   "last_used_at", "status", "provenance_hash"),
 }
 
 # 迁移校验结果: 缺失关键列的 "表.列" 列表(空=健康)。app.py /health 回显此值,

@@ -531,6 +531,25 @@ def evidence_ref_disk(data_dir: str, eng: str, node_id: str) -> str:
     return f"{data_dir}/runs/{e}/{EVIDENCE_REF_PREFIX}/{n}.txt"
 
 
+def experience_evidence_ref_rejected(ref) -> bool:
+    """3.5-1(经验回流 A): /write/experience 入参 evidence_ref 的宽松格式确认(纯函数供 pytest
+    与 handler 同源)。复用/对齐本区 3B/3C 拒收语义 —— 与 evidence_ref() 的差异: 那里是服务端
+    由 eng+node_id 生成(拒收=返回 ''不落盘), 这里是调用方显式传入指针(拒收=handler 400)。
+    允许空(None/''/纯空白 → 放行, 落库 ''); 非空必须:
+      ① 以 'ev/' 前缀开头(3B 证据指针格式 ev/<eng>/<node-id>.txt, 与 evidence_ref() 产出同形);
+      ② 无穿越特征: 含 '\\' 即拒; 任一 '/' 分段恰为 '.'/'..' 即拒(对齐 _evidence_ref_part_rejected
+         的段级穿越判定; '...'/'a.b' 等非纯点段不误伤 — 同 3C 边界)。
+    返回 True=拒收(handler 400), False=放行。"""
+    s = str(ref or "").strip()
+    if not s:
+        return False
+    if not s.startswith(EVIDENCE_REF_PREFIX + "/"):
+        return True
+    if "\\" in s:
+        return True
+    return any(seg in (".", "..") for seg in s.split("/"))
+
+
 # ── 3C: 双哈希指纹(content_hash/source_hash) — 写入接线用纯函数, 无任何 IO ─────────────
 # 拍板口径: content_hash=对脱敏后完整落库终值取 SHA-256; source_hash=对规范化后来源 URL
 # (host+path 去 query)取 SHA-256。落库列 = schema.py 的 Finding/Signal_ 三列(3B 已迁移)。
