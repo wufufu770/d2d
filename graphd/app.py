@@ -78,6 +78,13 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
                     titles_duplicate, transition_gate, url_sig, worker_query_allowed,
                     SCHEMA_DEGRADED)
 
+# 3C: 双哈希 + 证据指针纯函数(gd/gates.py 纯函数区新增)。gd/__init__ 未聚合 3C 新名
+# (本批次授权改动仅 gates.py/app.py/tests 三文件) — 直接从子模块导入, 两种运行形态都接住。
+try:
+    from graphd.gd.gates import content_hash, evidence_ref, source_hash
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import content_hash, evidence_ref, source_hash
+
 _lock = threading.Lock()
 _db = None
 
@@ -553,10 +560,37 @@ class Handler(BaseHTTPRequestHandler):
                                                             "error": f"duplicate finding(端点签名): 与 {_eid}('{_etitle[:60]}') 同 host+path+category 高相似 — 补充证据用 /write/signal 引用该 finding id"})
                                 if _rel == "related" and not _rt:
                                     _rt = _eid
+                        # 3C: 双哈希 + 证据指针接线(CREATE 前; 列值一律取「脱敏后落库终值」)。
+                        # content_hash 部件顺序(拍板约定): (title, repro, evidence_dir) — 与下方
+                        # CREATE 绑定的 $title/$repro/$edir 参数表达式逐字同源(此处 title/repro/
+                        # evidence_dir 均已过 :上方 redact_pii 门)。
+                        # source_hash: 本端点无独立 URL 入参字段 — 现场 URL 载体是 title+repro 内嵌
+                        # URL(url_sig 同源), 取首个非本地(≠127.0.0.1/localhost)http(s) URL 做
+                        # 规范化指纹; 无 URL → ''(拍板: 确无 URL 字段写空)。
+                        # evidence_ref: 3B helper(eng + finding id), 本批次不落盘; eng=''(兜底归属)
+                        # 或被穿越防护拒收时自然为 ''。任一计算异常 → 列写 '', 不阻塞写入。
+                        _fid = str(req.get("id") or f"f-{int(time.time()*1000)}")
+                        _ch = _sh = _eref = ""
+                        try:
+                            _ch = content_hash(title, str(req.get("repro") or ""),
+                                               str(req.get("evidence_dir") or ""))
+                            for _m in _URL_RE.finditer(f"{title} {str(req.get('repro') or '')}"):
+                                try:
+                                    from urllib.parse import urlparse as _up3c
+                                    _h3c = _up3c(_m.group(0)).hostname
+                                except Exception:
+                                    continue
+                                if _h3c and _h3c not in ("127.0.0.1", "localhost"):
+                                    _sh = source_hash(_m.group(0))
+                                    break
+                            _eref = evidence_ref(_eng, _fid)
+                        except Exception:
+                            pass  # 哈希/路径失败不阻塞写入(列落 '' = schema DEFAULT 同语义)
                         conn.execute(
                             "CREATE (f:Finding {id:$id, title:$title, severity:$sev, cvss:$cvss, "
-                            "evidence_dir:$edir, repro:$repro, category:$cat, gate_status:'candidate', ts:$ts, related_to:$rt, eng:$eng})",
-                            parameters={"id": str(req.get("id") or f"f-{int(time.time()*1000)}"),
+                            "evidence_dir:$edir, repro:$repro, category:$cat, gate_status:'candidate', ts:$ts, related_to:$rt, eng:$eng, "
+                            "content_hash:$ch, source_hash:$sh, evidence_ref:$eref})",
+                            parameters={"id": _fid,
                                         "title": title, "sev": sev,
                                         "cvss": cvss_or_default(req.get("cvss")),
                                         "edir": str(req.get("evidence_dir") or ""),
@@ -564,12 +598,30 @@ class Handler(BaseHTTPRequestHandler):
                                         "cat": cat,
                                         "rt": _rt,
                                         "eng": _eng,
-                                        "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat())})
+                                        "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat()),
+                                        "ch": _ch, "sh": _sh, "eref": _eref})
                     elif self.path == "/write/signal":
                         # I-014: Signal.evidence 脱敏
                         _ev_raw = str(req.get("evidence") or "")[:2000]
                         _ev_raw, _ = redact_pii(_ev_raw)
                         _sid = str(req.get("id") or f"s-{int(time.time()*1000)}")
+                        _ep = str(req.get("endpoint_url") or "").strip()
+                        # 3C: 双哈希 + 证据指针接线(CREATE 前)。
+                        # content_hash 部件顺序(拍板约定): (evidence,) — 必须取 :上方截 2000 +
+                        # redact_pii 之后、CREATE 之前的最终值(先例 :I-014)。
+                        # source_hash: 本端点 URL 字段 = endpoint_url 入参; 仅当与 :下方内联
+                        # Endpoint upsert 同款接受(http(s) 前缀且 ≤500)才取指纹 — source_hash
+                        # 恒与「实际建了 Endpoint 的那个来源」对应; 缺失/非 http(s)/超长 → ''。
+                        # evidence_ref: 3B helper(eng + signal id), 本批次不落盘; eng=''(兜底)或
+                        # 被穿越防护拒收时自然为 ''。任一计算异常 → 列写 '', 不阻塞写入。
+                        _ch = _sh = _eref = ""
+                        try:
+                            _ch = content_hash(_ev_raw)
+                            if _ep and re.match(r"^https?://", _ep, re.I) and len(_ep) <= 500:
+                                _sh = source_hash(_ep)
+                            _eref = evidence_ref(_eng, _sid)
+                        except Exception:
+                            pass  # 哈希/路径失败不阻塞写入(列落 '' = schema DEFAULT 同语义)
                         # 0913 星图层: surface/boundary 坐标枚举(软校验, 枚举外置空 — 覆盖图只认
                         # 枚举坐标, 自由文本会碎象限; 具体描述留在 evidence)
                         _surface = str(req.get("surface") or "").strip().lower()
@@ -579,7 +631,8 @@ class Handler(BaseHTTPRequestHandler):
                         if _boundary not in ("outer", "inner", "cross"):
                             _boundary = ""
                         conn.execute(
-                            "CREATE (s:Signal_ {id:$id, type:$t, weight:$w, status:$st, evidence:$ev, ts:$ts, ring:$ring, eng:$eng, surface:$su, boundary:$bo})",
+                            "CREATE (s:Signal_ {id:$id, type:$t, weight:$w, status:$st, evidence:$ev, ts:$ts, ring:$ring, eng:$eng, surface:$su, boundary:$bo, "
+                            "content_hash:$ch, source_hash:$sh, evidence_ref:$eref})",
                             parameters={"id": _sid,
                                         "t": str(req.get("type") or "unknown"),
                                         "w": float(req.get("weight") or 1.0),
@@ -589,10 +642,10 @@ class Handler(BaseHTTPRequestHandler):
                                         "ring": str(req.get("ring") or "discovery"),
                                         "eng": _eng,
                                         "su": _surface,
-                                        "bo": _boundary})
+                                        "bo": _boundary,
+                                        "ch": _ch, "sh": _sh, "eref": _eref})
                         # #5: 内联 endpoint_url — graphd 代写 Endpoint 节点(缺则建) + AT 边,
                         # N2 规则(Signal-[:AT]->Endpoint)由此闭环(worker /query 只读无法自建边)。
-                        _ep = str(req.get("endpoint_url") or "").strip()
                         if _ep and re.match(r"^https?://", _ep, re.I) and len(_ep) <= 500:
                             upsert_endpoint(conn, _ep,
                                             str(req.get("endpoint_tech") or ""),

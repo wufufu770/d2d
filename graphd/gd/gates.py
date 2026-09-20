@@ -5,6 +5,7 @@ app.py 侧 re-export 保持 `from graphd.app import X` 既有导入路径不变�
 3B 新增: 证据文件指针 evidence_ref/evidence_ref_disk 纯函数 — 格式与落点已拍板
 (ev/<eng>/<node-id>.txt ↔ DATA_DIR/runs/<eng>/ev/<node-id>.txt), 写入逻辑由批次 2 的
 3C 接线, 本批次不落盘。"""
+import hashlib
 import json
 import os
 import re
@@ -475,8 +476,9 @@ def engagement_cap_gate(n_active, cap=None) -> str:
 # 写入逻辑由批次 2 的 3C 接线, 本批次不落盘 —— 本区只提供纯函数, 无任何文件 IO。
 # 同名不同义: Hypothesis.evidence_ref(schema.py)是验证引用文本(存 signal/finding id),
 # 此处产出的指针写 Finding/Signal_ 的 evidence_ref 列。
-# 3C 接线时注意: 清洗规则放行纯 '.' 段(如 eng='..' 清洗后仍为 '..'), 3C 落盘前应再拒收
-# ^\.+$ 段(防父目录穿越) — 本批次按拍板规则只做字符级清洗, 不越权加语义。
+# 3B 留痕的已知缺口(清洗放行纯 '.' 段)已由 3C 按拍板授权补上: 段级穿越校验见
+# _evidence_ref_part_rejected(清洗前含 '/'/'\\' 拒收; 清洗后恰为 '.'/'..' 拒收),
+# 拒收=返回空串, 调用方不得落盘 —— 除本函数区外 3B 语义零改动。
 EVIDENCE_REF_PREFIX = "ev"
 
 
@@ -488,10 +490,26 @@ def _evidence_ref_safe_part(part) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", s)
 
 
+def _evidence_ref_part_rejected(part) -> bool:
+    """3C: 段级穿越校验(纯函数) — 对「清洗前」的原始输入判定, 任一命中即拒收:
+      ① 原始输入含 '/' 或 '\\' (任意形态的路径分隔/多段路径) → 拒收;
+      ② 清洗后恰为 '.' 或 '..' (当前目录/父目录段名, 可拼出 ev/.. 穿越出 ev 根) → 拒收。
+    拒收语义 = evidence_ref/evidence_ref_disk 整体返回 ''(不生成路径, 调用方不得落盘)。
+    非段落名形态不误伤: 'a.b'/'...'/空白清洗后段照常放行(仅锁 '.'/'..' 两个穿越名)。"""
+    raw = str(part or "")
+    if "/" in raw or "\\" in raw:
+        return True
+    return _evidence_ref_safe_part(raw) in (".", "..")
+
+
 def evidence_ref(eng: str, node_id: str) -> str:
     """证据文件指针(纯函数, 无 IO): 返回 'ev/<eng>/<node-id>.txt'。
     eng/node_id 先做安全清洗(_evidence_ref_safe_part: 只保留 [A-Za-z0-9._-], 其余替 '_');
-    任一参数清洗后为空(None/''/空串)整体返回 ''(无指针)。写入由批次 2 的 3C 接线。"""
+    3C 穿越防护: 任一参数被拒收(清洗前含 '/'/'\\', 或清洗后恰为 '.'/'..')→ 整体返回 ''。
+    任一参数清洗后为空(None/''/空串/被拒收)返回 ''(无指针)。
+    拒收=返回空串, 调用方不得落盘。"""
+    if _evidence_ref_part_rejected(eng) or _evidence_ref_part_rejected(node_id):
+        return ""
     e = _evidence_ref_safe_part(eng)
     n = _evidence_ref_safe_part(node_id)
     if not e or not n:
@@ -501,10 +519,71 @@ def evidence_ref(eng: str, node_id: str) -> str:
 
 def evidence_ref_disk(data_dir: str, eng: str, node_id: str) -> str:
     """证据文件落盘路径(纯函数, 无 IO): 返回 '<data_dir>/runs/<eng>/ev/<node-id>.txt'。
-    与 evidence_ref() 同参一一对应(同 eng/node_id 指向同一份证据文件); eng/node_id 同款清洗,
-    任一为空返回 ''; data_dir 原样拼接(调用方传 DATA_DIR, 不做清洗)。写入由批次 2 的 3C 接线。"""
+    与 evidence_ref() 同参一一对应(同 eng/node_id 指向同一份证据文件); eng/node_id 同款清洗
+    +同款 3C 穿越防护(拒收=返回空串, 调用方不得落盘), 任一为空返回 '';
+    data_dir 原样拼接(调用方传 DATA_DIR, 不做清洗)。"""
+    if _evidence_ref_part_rejected(eng) or _evidence_ref_part_rejected(node_id):
+        return ""
     e = _evidence_ref_safe_part(eng)
     n = _evidence_ref_safe_part(node_id)
     if not e or not n:
         return ""
     return f"{data_dir}/runs/{e}/{EVIDENCE_REF_PREFIX}/{n}.txt"
+
+
+# ── 3C: 双哈希指纹(content_hash/source_hash) — 写入接线用纯函数, 无任何 IO ─────────────
+# 拍板口径: content_hash=对脱敏后完整落库终值取 SHA-256; source_hash=对规范化后来源 URL
+# (host+path 去 query)取 SHA-256。落库列 = schema.py 的 Finding/Signal_ 三列(3B 已迁移)。
+
+# 部件分隔符: ASCII 单元分隔符 0x1F — 消除部件边界歧义(("ab","c") ≠ ("a","bc")),
+# 正常业务文本不含该控制字符。仅参与哈希运算, 不落库。
+CONTENT_HASH_SEP = "\x1f"
+
+
+def content_hash(*parts: str) -> str:
+    """内容指纹(纯函数, 无 IO): 对「脱敏后完整落库终值」的部件组合取 SHA-256 hexdigest。
+    部件顺序由接线处固定(app.py /write/* 的 CREATE 之前), 拍板约定:
+      - Finding(/write/finding): (title, repro, evidence_dir) — 与 CREATE 绑定的
+        $title/$repro/$edir 参数表达式逐字同源;
+      - Signal_(/write/signal): (evidence,) — 即截 2000 + redact_pii 之后的落库终值
+        (哈希必须取 redact 之后、CREATE 之前的最终值)。
+    规则: 部件逐个 str() 化(None→''), 以 CONTENT_HASH_SEP 拼接后 utf-8 编码,
+    hashlib.sha256().hexdigest()。全部件为空(或无部件)→ 返回 ''(无内容不产生指纹,
+    落库按 schema DEFAULT '' 同语义)。"""
+    vals = [str(p or "") for p in parts]
+    if not any(vals):
+        return ""
+    return hashlib.sha256(CONTENT_HASH_SEP.join(vals).encode("utf-8")).hexdigest()
+
+
+def source_hash(url: str) -> str:
+    """来源 URL 指纹(纯函数, 无 IO): 规范化后取 host+path 的 SHA-256 hexdigest。
+    规范化规则(拍板口径: host+path 去 query — 逐条):
+      1) 仅接受 http/https scheme; 其余 scheme(ftp/file/javascript/无 scheme 等)返回 '';
+      2) scheme 与 host 统一小写(urlsplit 已归一, 此处再显式 lower() 兜底);
+      3) 去 query 与 fragment('?'/'#' 及其后内容一律不参与, 含 access_token 等敏感 query);
+      4) 去默认端口(http 默认 80, https 默认 443); 非默认端口保留为 host:port;
+      5) 去末尾斜杠: path 尾随 '/' 剥除, 根 '/' 归一为空 → 指纹即裸 host;
+      6) userinfo('@' 前凭据段)不参与指纹(与 hostport_of 同哲学);
+      7) scheme 不参与指纹(仅作准入; http/https 同 host+path 同指纹 — 拍板口径即 host+path)。
+    指纹串 = 规范化 host[:port] + 规范化 path, utf-8 编码 SHA-256 hexdigest。
+    输入空/空白/无法解析/端口非法 → ''(无有效来源不产生指纹)。"""
+    s = str(url or "").strip()
+    if not s:
+        return ""
+    try:
+        from urllib.parse import urlsplit
+        sp = urlsplit(s)
+        scheme = (sp.scheme or "").lower()
+        if scheme not in ("http", "https"):
+            return ""
+        host = (sp.hostname or "").lower()
+        if not host:
+            return ""
+        port = sp.port  # 端口非法(非数字/越界)在此抛 ValueError → 归入解析失败
+    except Exception:
+        return ""
+    default_port = 443 if scheme == "https" else 80
+    host_part = host if (port is None or port == default_port) else f"{host}:{port}"
+    path = (sp.path or "").rstrip("/")
+    return hashlib.sha256(f"{host_part}{path}".encode("utf-8")).hexdigest()
