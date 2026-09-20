@@ -780,6 +780,19 @@ class Handler(BaseHTTPRequestHandler):
                         conn.execute(
                             "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.last_transition=$traj",
                             parameters={"id": fid, "to": to, "traj": traj_s})
+                    # 3E 报告门: reported 态可选携带 report_status(report.mjs 统一过门的报告状态
+                    # 标记, 如 complete/incomplete/missing_evidence) → 落图供面板/复核读。
+                    # 现有七态机 transition_gate(actor/reason)语义零改动 — 仅扩展可选参数;
+                    # 缺列/写失败降级 stderr 不阻塞转换(schema.py 已三处同步 + SCHEMA_DEGRADED 兜底)。
+                    if to == "reported":
+                        _rs = str(req.get("report_status") or "").strip()[:200]
+                        if _rs:
+                            try:
+                                conn.execute("MATCH (f:Finding {id:$id}) SET f.report_status=$rs",
+                                             parameters={"id": fid, "rs": _rs})
+                            except Exception as _rs_err:
+                                print(f"[transition] report_status 写入失败(降级不阻塞): {_rs_err}",
+                                      file=sys.stderr, flush=True)
                 except TimeoutError as _te:
                     return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
                 except Exception as e:

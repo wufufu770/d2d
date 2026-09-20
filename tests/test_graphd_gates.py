@@ -1782,3 +1782,151 @@ def test_3c_write_finding_without_url_and_eng_writes_empty_columns(tmp_path, mon
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ---- 3E: Finding.report_status 报告门状态列(完全仿 3A/3B 三处同步) ----
+# 三处同步真源锁: SCHEMA CREATE(Finding 行) + init_schema 字面量 ALTER(幂等 try/except)
+# + _CRITICAL_COLUMNS(Finding 元组, 缺列 SCHEMA_DEGRADED)。
+# 写入侧真源在 graphd/app.py /write/transition: reported 态接受可选 report_status 并写该列
+# (transition_gate 的 actor/reason 语义零改动; 写失败降级 stderr 不阻塞) — 本文件锁 schema 侧
+# + 端到端写入映射(真 HTTP harness)。
+
+def _3e_old_finding_db_conn(tmp_path, drop_col=""):
+    """旧库形态: Finding 与补 report_status 列前的 SCHEMA 同构(3B 三列/related_to 均已迁入)。
+    drop_col 可构造缺单列的更旧库(降级路径测试用)。"""
+    def _minus(cols, drop):
+        return ", ".join(c for c in cols if not (drop and c.split()[0] == drop))
+    f_common = ("id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, "
+                "evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', "
+                "gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', "
+                "verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, "
+                "last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', "
+                "replay_matrix STRING DEFAULT '', related_to STRING DEFAULT ''")
+    _3e_cols = ("report_status STRING DEFAULT ''",)
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    conn.execute(f"CREATE NODE TABLE Finding({_minus((f_common,) + _3e_cols, drop_col)}, PRIMARY KEY(id))")
+    return conn
+
+
+def test_3e_new_db_has_report_status_column(tmp_path):
+    """新库 init_schema 后 Finding 含 report_status 且缺省读出 ''(CREATE 缺属性走 DEFAULT)。"""
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    init_schema(conn)
+    conn.execute("CREATE (f:Finding {id:'f-3e', title:'t', severity:'low', ts:'t'})")
+    row = conn.execute("MATCH (f:Finding {id:'f-3e'}) RETURN f.report_status").get_next()
+    assert str(row[0]) == "", "report_status 新列缺省必须 ''"
+    conn.execute("MATCH (f:Finding {id:'f-3e'}) SET f.report_status=$c", parameters={"c": "incomplete"})
+    assert str(conn.execute("MATCH (f:Finding {id:'f-3e'}) RETURN f.report_status").get_next()[0]) \
+        == "incomplete", "report_status 可写(报告门标记往返)"
+
+
+def test_3e_alter_migration_on_old_db_and_idempotent(tmp_path):
+    """旧库(缺 report_status)经 init_schema ALTER 补列后可写; 二次 init_schema 幂等不抛且数据不损。"""
+    conn = _3e_old_finding_db_conn(tmp_path)
+    conn.execute("CREATE (f:Finding {id:'f-3e-old', title:'t', severity:'low', ts:'t'})")
+    init_schema(conn)  # 启动迁移: 字面量 ALTER ADD report_status
+    assert str(conn.execute("MATCH (f:Finding {id:'f-3e-old'}) RETURN f.report_status").get_next()[0]) == ""
+    conn.execute("MATCH (f:Finding {id:'f-3e-old'}) SET f.report_status=$c", parameters={"c": "missing_evidence"})
+    init_schema(conn)  # 幂等: 列已存在 ALTER 报错被吞, 不抛且数据不损
+    assert str(conn.execute("MATCH (f:Finding {id:'f-3e-old'}) RETURN f.report_status").get_next()[0]) \
+        == "missing_evidence", "二次启动不得损数据"
+
+
+def test_3e_critical_columns_cover_report_status():
+    """_CRITICAL_COLUMNS 覆盖: Finding 元组含 report_status(缺一即 SCHEMA_DEGRADED 告警)。"""
+    assert "report_status" in _gd_schema._CRITICAL_COLUMNS["Finding"], "Finding 缺 report_status"
+
+
+def test_3e_missing_report_status_degrades_to_schema_degraded(tmp_path, capsys):
+    """缺列降级: 缺 report_status 单列旧库走 _verify_critical_columns 路径 → SCHEMA_DEGRADED
+    点名 Finding.report_status + stderr 响亮告警(不抛异常); 随后 init_schema ALTER 修复 → 清空。"""
+    before = list(_gd_schema.SCHEMA_DEGRADED)
+    try:
+        conn = _3e_old_finding_db_conn(tmp_path, drop_col="report_status")  # 旧库缺 report_status 一列
+        missing = _verify_critical_columns(conn)  # 直击校验路径(模拟 ALTER 未生效的存量库)
+        assert "Finding.report_status" in missing
+        assert "Finding.report_status" in _gd_schema.SCHEMA_DEGRADED
+        assert all(not m.startswith("Signal_") for m in _gd_schema.SCHEMA_DEGRADED), "只缺一列不误报他表"
+        err = capsys.readouterr().err
+        assert "Finding.report_status" in err and "迁移不完整" in err, "stderr 必须响亮点名缺失列"
+        init_schema(conn)  # ALTER 修复后收尾校验 → 降级清单清空(/health 回显归零)
+        assert _gd_schema.SCHEMA_DEGRADED == [], "迁移修复后 SCHEMA_DEGRADED 必须清空"
+        capsys.readouterr()  # 丢弃 init_schema 期间输出, 不影响后续断言
+    finally:
+        _gd_schema.SCHEMA_DEGRADED.clear()
+        _gd_schema.SCHEMA_DEGRADED.extend(before)  # 还原全局状态, 不污染其他用例
+
+
+def _3e_spawn_server(tmp_path, monkeypatch):
+    """3E transition 专用: 同 3C harness 形态, 但配置 HOST token(/write/transition 为 host-only)
+    并预置一条 candidate Finding。返回 (base_url, conn, srv)。"""
+    for var in ("P2P_TOKEN", "P2P_TOKEN_REQUIRED", "P2P_OPEN_RANGE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("P2P_HOST_TOKEN", "t-3e-host")
+    monkeypatch.setattr(graphd_app, "_D2D_PAUSE_FILE", str(tmp_path / "paused.json"))
+    graphd_app._pause_mtime_cache[0], graphd_app._pause_mtime_cache[1] = None, False
+    dbp = tmp_path / "kuzu_db"
+    db = kuzu.Database(str(dbp))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    init_schema(conn)  # 与真实启动路径同款: SCHEMA + ALTER 迁移
+    conn.execute("CREATE (f:Finding {id:'f-3e-tr', title:'3E transition probe', severity:'low', ts:'t'})")
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
+    monkeypatch.setattr(graphd_app, "_db", db)
+    srv = graphd_app.GraphdHTTPServer(("127.0.0.1", 0), graphd_app.Handler)
+    _threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_address[1]}", conn, srv
+
+
+def _3e_transition(base_url, payload):
+    """/write/transition(host-only) POST, 恒带 host token。"""
+    req = _urllib_request.Request(base_url + "/write/transition", data=json.dumps(payload).encode(),
+                                  headers={"Content-Type": "application/json", "X-Auth": "t-3e-host"})
+    with _urllib_request.urlopen(req, timeout=10) as resp:
+        return resp.status, json.load(resp)
+
+
+def test_3e_transition_reported_writes_report_status(tmp_path, monkeypatch):
+    """/write/transition 端到端映射: reported 态携带可选 report_status → 落 report_status 列;
+    无 report_status 的 reported 转换不覆盖既有值; 非 reported 态带该参数不写列(零改动语义)。"""
+    base_url, conn, srv = _3e_spawn_server(tmp_path, monkeypatch)
+    try:
+        # ① candidate → verified(不带 report_status): 列必须保持 ''(非 reported 态不写列)
+        status, out = _3e_transition(base_url, {"id": "f-3e-tr", "to": "verified",
+                                                "actor": "host", "reason": "3E probe"})
+        assert status == 200 and out["ok"] is True, out
+        assert str(conn.execute("MATCH (f:Finding {id:'f-3e-tr'}) RETURN f.report_status").get_next()[0]) == ""
+        # ② verified → reported 带 report_status='incomplete': 落列
+        status, out = _3e_transition(base_url, {"id": "f-3e-tr", "to": "reported", "actor": "host",
+                                                "reason": "3E probe", "report_status": "incomplete"})
+        assert status == 200 and out["ok"] is True, out
+        row = conn.execute("MATCH (f:Finding {id:'f-3e-tr'}) RETURN f.gate_status, f.report_status").get_next()
+        assert str(row[0]) == "reported" and str(row[1]) == "incomplete", "reported 态必须携带 report_status 落列"
+        # ③ 再次 reported 语义外的转换不带参数不覆盖 — 用另一条 finding 验证 reported 无参不写列
+        conn.execute("CREATE (f:Finding {id:'f-3e-tr2', title:'no-param probe', severity:'low', ts:'t'})")
+        conn.execute("MATCH (f:Finding {id:'f-3e-tr2'}) SET f.gate_status='verified'")
+        status, out = _3e_transition(base_url, {"id": "f-3e-tr2", "to": "reported",
+                                                "actor": "host", "reason": "no param"})
+        assert status == 200 and out["ok"] is True, out
+        assert str(conn.execute("MATCH (f:Finding {id:'f-3e-tr2'}) RETURN f.report_status").get_next()[0]) == "", \
+            "reported 无 report_status 参数时不得写列(保持 DEFAULT '')"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_3e_transition_report_status_write_failure_degrades_not_blocks(tmp_path, monkeypatch, capsys):
+    """拍板语义: report_status 写失败降级 stderr 不阻塞 — 缺列(模拟 ALTER 未生效的存量库)时
+    reported 转换必须仍 200(七态机主语句先行成功), 仅 stderr 留痕。"""
+    base_url, conn, srv = _3e_spawn_server(tmp_path, monkeypatch)
+    try:
+        conn.execute("ALTER TABLE Finding DROP report_status")  # 模拟存量库缺列(写入路径必抛)
+        conn.execute("MATCH (f:Finding {id:'f-3e-tr'}) SET f.gate_status='verified'")
+        status, out = _3e_transition(base_url, {"id": "f-3e-tr", "to": "reported", "actor": "host",
+                                                "reason": "degrade probe", "report_status": "complete"})
+        assert status == 200 and out["ok"] is True, out  # 转换本身不被 report_status 写失败阻塞
+        assert str(conn.execute("MATCH (f:Finding {id:'f-3e-tr'}) RETURN f.gate_status").get_next()[0]) == "reported"
+    finally:
+        srv.shutdown()
+        srv.server_close()
