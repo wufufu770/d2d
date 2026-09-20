@@ -1331,3 +1331,118 @@ def test_main_boots_backlog_tuned_server():
     src = (_pathlib.Path(__file__).resolve().parents[1] / "graphd" / "app.py").read_text()
     assert "srv = GraphdHTTPServer((" in src
     assert "srv = ThreadingHTTPServer((" not in src
+
+
+# ---- 3B: Finding/Signal_ 证据指纹三列迁移(content_hash/source_hash/evidence_ref) ----
+# 三处同步真源锁: SCHEMA CREATE + init_schema 字面量 ALTER + _CRITICAL_COLUMNS(缺列 SCHEMA_DEGRADED)。
+# 纯函数真源在 graphd/gd/gates.py(app.py 未 re-export 3B 新名, 直接 import 实现模块 — 同 I-009 哲学)。
+import graphd.gd.schema as _gd_schema
+from graphd.gd.schema import _verify_critical_columns
+from graphd.gd.gates import EVIDENCE_REF_PREFIX, evidence_ref, evidence_ref_disk
+
+
+def _3b_old_db_conn(tmp_path, drop_col="", drop_from="Finding"):
+    """旧库形态(.kzdb 一次性文件): Finding/Signal_ 与补 3B 三列前的 SCHEMA 同构。
+    drop_col + drop_from 可构造缺单列的更旧库(降级路径测试用, 默认只动 Finding)。"""
+    def _minus(cols, drop, active):
+        return ", ".join(c for c in cols if not (active and drop and c.split()[0] == drop))
+    f_common = ("id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, "
+                "evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', "
+                "gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', "
+                "verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, "
+                "last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', "
+                "replay_matrix STRING DEFAULT '', related_to STRING DEFAULT ''")
+    s_common = ("id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', "
+                "evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', "
+                "verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT ''")
+    _3b_cols = ("content_hash STRING DEFAULT ''", "source_hash STRING DEFAULT ''",
+                "evidence_ref STRING DEFAULT ''")
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    conn.execute(f"CREATE NODE TABLE Finding({_minus((f_common,) + _3b_cols, drop_col, drop_from == 'Finding')}, PRIMARY KEY(id))")
+    conn.execute(f"CREATE NODE TABLE Signal_({_minus((s_common,) + _3b_cols, drop_col, drop_from == 'Signal_')}, PRIMARY KEY(id))")
+    return conn
+
+
+def test_3b_new_db_has_three_columns(tmp_path):
+    """新库 init_schema 后 Finding/Signal_ 各含三列且缺省读出 ''(CREATE 缺属性走 DEFAULT)。"""
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    init_schema(conn)
+    conn.execute("CREATE (f:Finding {id:'f-b1', title:'t', severity:'low', ts:'t'})")
+    conn.execute("CREATE (s:Signal_ {id:'s-b1', type:'x', ts:'t'})")
+    row = conn.execute("MATCH (f:Finding {id:'f-b1'}) "
+                       "RETURN f.content_hash, f.source_hash, f.evidence_ref").get_next()
+    assert (str(row[0]), str(row[1]), str(row[2])) == ("", "", ""), "Finding 新列缺省必须 ''"
+    row = conn.execute("MATCH (s:Signal_ {id:'s-b1'}) "
+                       "RETURN s.content_hash, s.source_hash, s.evidence_ref").get_next()
+    assert (str(row[0]), str(row[1]), str(row[2])) == ("", "", ""), "Signal_ 新列缺省必须 ''"
+    conn.execute("MATCH (f:Finding {id:'f-b1'}) SET f.evidence_ref=$p", parameters={"p": "ev/e1/f-b1.txt"})
+    assert str(conn.execute("MATCH (f:Finding {id:'f-b1'}) RETURN f.evidence_ref").get_next()[0]) \
+        == "ev/e1/f-b1.txt", "新列可写(指针往返)"
+
+
+def test_3b_alter_migration_on_old_db_and_idempotent(tmp_path):
+    """旧库(三列缺失)经 init_schema ALTER 补列后三列可写; 二次 init_schema 幂等不抛且数据不损。"""
+    conn = _3b_old_db_conn(tmp_path)
+    conn.execute("CREATE (f:Finding {id:'f-old', title:'t', severity:'low', ts:'t'})")
+    init_schema(conn)  # 启动迁移: 逐条字面量 ALTER ADD 三列×2 表
+    row = conn.execute("MATCH (f:Finding {id:'f-old'}) "
+                       "RETURN f.content_hash, f.source_hash, f.evidence_ref").get_next()
+    assert (str(row[0]), str(row[1]), str(row[2])) == ("", "", "")
+    conn.execute("MATCH (f:Finding {id:'f-old'}) SET f.content_hash=$c, f.source_hash=$s",
+                 parameters={"c": "abc123", "s": "src9"})
+    conn.execute("MATCH (s:Signal_ {id:'none'}) SET s.evidence_ref=''")  # 空匹配不炸 = 列存在
+    init_schema(conn)  # 幂等: 列已存在 ALTER 报错被吞, 不抛且数据不损
+    row = conn.execute("MATCH (f:Finding {id:'f-old'}) "
+                       "RETURN f.content_hash, f.source_hash, f.evidence_ref").get_next()
+    assert (str(row[0]), str(row[1]), str(row[2])) == ("abc123", "src9", ""), "二次启动不得损数据"
+
+
+def test_3b_critical_columns_cover_finding_and_signal():
+    """_CRITICAL_COLUMNS 覆盖: Finding/Signal_ 元组各含三列名(缺一即 SCHEMA_DEGRADED 告警)。"""
+    for col in ("content_hash", "source_hash", "evidence_ref"):
+        assert col in _gd_schema._CRITICAL_COLUMNS["Finding"], f"Finding 缺 {col}"
+        assert col in _gd_schema._CRITICAL_COLUMNS["Signal_"], f"Signal_ 缺 {col}"
+
+
+def test_3b_missing_column_degrades_to_schema_degraded(tmp_path, capsys):
+    """缺列降级: 缺单列旧库走 _verify_critical_columns 路径 → SCHEMA_DEGRADED 点名 表.列 +
+    stderr 响亮告警(:168-196 机制, 不抛异常); 随后 init_schema ALTER 修复 → 告警清空。"""
+    before = list(_gd_schema.SCHEMA_DEGRADED)
+    try:
+        # graphd.app 绑定的必须是同一 list 对象(原地修改契约, 重赋值=永远看不到告警)
+        from graphd.app import SCHEMA_DEGRADED as _app_sd
+        assert _app_sd is _gd_schema.SCHEMA_DEGRADED
+        conn = _3b_old_db_conn(tmp_path, drop_col="content_hash")  # 旧库缺 Finding.content_hash 一列
+        missing = _verify_critical_columns(conn)  # 直击校验路径(模拟 ALTER 未生效的存量库)
+        assert "Finding.content_hash" in missing
+        assert "Finding.content_hash" in _gd_schema.SCHEMA_DEGRADED
+        assert all(not m.startswith("Signal_") for m in _gd_schema.SCHEMA_DEGRADED), "只缺一列不误报他列"
+        err = capsys.readouterr().err
+        assert "Finding.content_hash" in err and "迁移不完整" in err, "stderr 必须响亮点名缺失列"
+        init_schema(conn)  # ALTER 修复后收尾校验 → 降级清单清空(/health 回显归零)
+        assert _gd_schema.SCHEMA_DEGRADED == [], "迁移修复后 SCHEMA_DEGRADED 必须清空"
+        conn.execute("CREATE (f:Finding {id:'f-fix', title:'t', severity:'low', ts:'t'})")
+        row = conn.execute("MATCH (f:Finding {id:'f-fix'}) RETURN f.content_hash").get_next()
+        assert str(row[0]) == ""
+        capsys.readouterr()  # 丢弃 init_schema 期间输出, 不影响后续断言
+    finally:
+        _gd_schema.SCHEMA_DEGRADED.clear()
+        _gd_schema.SCHEMA_DEGRADED.extend(before)  # 还原全局状态, 不污染其他用例
+
+
+def test_3b_evidence_ref_pure_functions():
+    """evidence_ref/evidence_ref_disk 纯函数格式锁: 指针格式 / 落盘形态 / 一一对应 / 清洗负例。"""
+    assert EVIDENCE_REF_PREFIX == "ev"
+    assert evidence_ref("e1", "f-9") == "ev/e1/f-9.txt"
+    assert evidence_ref("a b/c", "n:1") == "ev/a_b_c/n_1.txt"          # 清洗: 空格/'/'/':' → '_'
+    assert evidence_ref("E-1.ok", "s_2.3") == "ev/E-1.ok/s_2.3.txt"    # 白名单字符原样保留
+    assert evidence_ref("", "n") == "" and evidence_ref("e", None) == ""  # 空值 → 无指针
+    assert evidence_ref(None, None) == ""
+    assert evidence_ref("   ", "n") == "ev/___/n.txt"  # 空白非空值: 按“其余替换 '_'”落 _
+    assert evidence_ref_disk("/data", "e1", "s-2") == "/data/runs/e1/ev/s-2.txt"
+    assert evidence_ref_disk("/data", "../evil", "n:1") == "/data/runs/.._evil/ev/n_1.txt"  # '/'→'_' 后单段无分隔, 不可穿越
+    assert evidence_ref_disk("/data", "", "n") == ""
+    # 同参一一对应: 指针段 [ev, <eng>, <nid>.txt] ↔ 盘上 <data_dir>/runs/<eng>/ev/<nid>.txt
+    for eng, nid in (("e1", "f-9"), ("a b", "n:1")):
+        seg = evidence_ref(eng, nid).split("/")  # ['ev', <eng>, '<nid>.txt']
+        assert evidence_ref_disk("/d", eng, nid) == f"/d/runs/{seg[1]}/{seg[0]}/{seg[2]}"
