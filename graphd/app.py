@@ -36,7 +36,7 @@ def _audit_event(kind, detail):
 DB_PATH = os.environ.get("P2P_GRAPH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kuzu_db"))
 # M8 守护自愈锚: /health 回显三要素。发版必须改 VERSION — preflight 据版本差异识别 stale 旧实例;
 # STARTED_AT 是本进程启动时间, 预检与 /proc/<pid> starttime 比对防 pid 复用误判。
-VERSION = "1.2.0"  # 0919: AgentIdentity.lease_id 迁移(P0 Turn lease) — bump 让 preflight 不复用旧实例
+VERSION = "1.3.0"  # 0920: Experience 表迁移(3.5-1 经验回流 A 数据层: 新表 CREATE+ALTER+关键列) — bump 让 preflight 不复用旧实例
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 PORT = int(os.environ.get("P2P_GRAPH_PORT", "8766"))
 
@@ -84,6 +84,13 @@ try:
     from graphd.gd.gates import content_hash, evidence_ref, source_hash
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import content_hash, evidence_ref, source_hash
+
+# 3.5-1(经验回流 A): evidence_ref 入参宽松格式确认(复用/对齐 gates.py 3B/3C 拒收语义)。
+# 同 3C 哲学: 直接从子模块导入, 不经 gd/__init__ 聚合, 两种运行形态都接住。
+try:
+    from graphd.gd.gates import experience_evidence_ref_rejected
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import experience_evidence_ref_rejected
 
 _lock = threading.Lock()
 _db = None
@@ -240,6 +247,11 @@ def _eng_paused(eng: str) -> bool:
 
 # D-4: 并发连接上限 — ThreadingHTTPServer 每连接一线程, 慢连接可耗尽线程/内存(纵深防御)
 _INFLIGHT = threading.BoundedSemaphore(int(os.environ.get("P2P_MAX_CONNS", "32")))
+
+# 3.5-1(经验回流 A): Experience.category 枚举(方案 v2 拍板三类) — 写入侧 400 门与读侧无枚举约束
+# (读按 status 过滤, 不按 category), 常量单点供 /write/experience 与 pytest 同源引用。
+_EXPERIENCE_CATEGORIES = ("success", "failure", "pitfall")
+
 
 class Handler(BaseHTTPRequestHandler):
     # #73 slowloris 第一道(慢头部): StreamRequestHandler.setup() 依据该类属性, 在连接的
@@ -744,6 +756,60 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(500, {"ok": False, "error": str(e)[:200]})
             return self._send(200, {"ok": True})
 
+        # ---- 3.5-1(经验回流子系统 A 数据层): /write/experience —— Experience 条目写入通道。
+        # 独立挂载(不并入 :451 结构化写分支, 该分支既有语句零改动); 认证/共享 _locked()/错误骨架
+        # 与 /write/* 同款(worker 级); 上方 do_POST 共享门对本路由自动生效(Content-Length 门/legacy
+        # token/R6 denylist 红线扫描 — 本 path 以 /write/ 开头)。写入即隔离: status 恒 'quarantined'
+        # (方案 v2 — 转 active 是 3.5-2 蒸馏/评审管道的事, 本批次无该管道, 入池必须显式);
+        # utility_score/retrieval_count/success_count/时间列同不接受调用方指定(恒服务端默认)。
+        if self.path == "/write/experience":
+            if not self._auth("worker"):
+                return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
+            _eng_id = str(req.get("eng_id") or "").strip()
+            _cat = str(req.get("category") or "").strip().lower()
+            _title = str(req.get("title") or "").strip()
+            _content = str(req.get("content") or "").strip()
+            _eref = str(req.get("evidence_ref") or "").strip()
+            _scope = str(req.get("scope") or "").strip()
+            _ph = str(req.get("provenance_hash") or "").strip()
+            # 校验(400 带原因字段): provenance_hash 必填 / title 1-64 / content 1-512 /
+            # category 枚举 / evidence_ref 宽松格式(gates.py 拒收语义对齐)。scope 允许空
+            # (跨 engagement 通用); eng_id 允许空(兜底 '' 归属, 与 W5 eng='' 可视哲学一致)。
+            if not _ph:
+                return self._send(400, {"ok": False, "error": "provenance_hash required: 经验回流溯源指纹必填(空拒绝)"})
+            if not _title or len(_title) > 64:
+                return self._send(400, {"ok": False, "error": "title must be 1-64 chars"})
+            if not _content or len(_content) > 512:
+                return self._send(400, {"ok": False, "error": "content must be 1-512 chars"})
+            if _cat not in _EXPERIENCE_CATEGORIES:
+                return self._send(400, {"ok": False, "error": f"invalid category: {_cat or '(empty)'} (must be one of success|failure|pitfall)"})
+            if experience_evidence_ref_rejected(_eref):
+                return self._send(400, {"ok": False, "error": "invalid evidence_ref: 非空时须为 'ev/<eng>/<id>.txt' 指针且无路径穿越(允许空)"})
+            # id 服务端生成(仓内 e-/f-/s- 短码风格: exp-<uuid 短码>, 随机防碰撞, 不拼接外部输入)
+            _exp_id = "exp-" + uuid.uuid4().hex[:12]
+            _now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            with _locked():  # V-11: 锁带 5s deadline
+                try:
+                    conn = kuzu.Connection(db())
+                    # 全参数绑定($x, 绝不拼接外部输入); status 内联字面量 'quarantined' —
+                    # 调用方即使传 status 字段也结构上无法入图(恒隔离, 见上方路由注释)。
+                    conn.execute(
+                        "CREATE (x:Experience {id:$id, eng_id:$eng, category:$cat, scope:$scope, title:$title, "
+                        "content:$content, evidence_ref:$eref, utility_score:$util, retrieval_count:$rc, "
+                        "success_count:$sc, created_at:timestamp($ca), last_used_at:timestamp($lu), "
+                        "status:'quarantined', provenance_hash:$ph})",
+                        parameters={"id": _exp_id, "eng": _eng_id, "cat": _cat, "scope": _scope,
+                                    "title": _title, "content": _content, "eref": _eref,
+                                    "util": 0.5, "rc": 0, "sc": 0, "ca": _now, "lu": _now, "ph": _ph})
+                except TimeoutError as _te:
+                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
+                except Exception as e:
+                    # 图写入失败: stderr 降级日志 + 500(不影响其他端点; 事务由 kuzu 单语句原子性保证)
+                    print(f"[experience] write failed (degraded): {type(e).__name__} {str(e)[:160]}",
+                          file=sys.stderr, flush=True)
+                    return self._send(500, {"ok": False, "error": str(e)[:200]})
+            return self._send(200, {"ok": True, "id": _exp_id, "status": "quarantined"})
+
         # R3: Finding 七态状态机转换（host 专属；worker 的 verified 结论仍须经验证器环独立重放背书）
         # #73 token 归属复核: 本端点已 host-only —— _auth("host") 只接受与 HOST_TOKEN 的恒等
         # 比较, worker token 无法通过(403), 无需改动。/query 维持 worker 级(见下方统一 _auth("worker"))。
@@ -889,6 +955,59 @@ class Handler(BaseHTTPRequestHandler):
                         except Exception as e:
                             # I-007: fail-closed — scope 校验自身故障时拒绝写入而非放行
                             return self._send(503, {"ok": False, "error": f"scope check failed (fail-closed): {str(e)[:120]}"})
+        # ---- 3.5-1(经验回流子系统 A 数据层): /query/experience —— 经验池读取通道(EvolveR 注入
+        # 数据源, 3.5-3 接线)。独立挂载于 /query 链之前(该链既有语句零改动, 本路由早退不触达
+        # else 404); 认证沿 /query 通道先例(worker 级); 查询全参数绑定($x), 行上限沿
+        # bounded_rows/MAX_QUERY_ROWS 现有约束同款。
+        if self.path == "/query/experience":
+            if not self._auth("worker"):
+                return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
+            # status: 缺省只返回 active(写入即隔离 — quarantined/deprecated 默认不入池);
+            # 显式传值则精确过滤(蒸馏/评审管道可显式拉 quarantined 复核, 数据层不设枚举白名单)。
+            _st = str(req.get("status") or "active").strip().lower() or "active"
+            # scope: 精确匹配(拍板 — 选「精确匹配」而非前缀: 经验 scope 是条目级归标签,
+            # 前缀语义在数据层引入隐式泛化, 留给调用方自行决定); 空值=不按 scope 过滤
+            # (($scope='' OR e.scope=$scope) 同 :699 Hypothesis eng 过滤的仓内先例形态)。
+            _scope = str(req.get("scope") or "").strip()
+            # min_utility_score: 缺省 0.3(EvolveR 剪枝阈值); 非法回退缺省(cvss_or_default 同哲学),
+            # NaN 归一缺省(NaN 比较恒 False 会让过滤静默清空)。
+            try:
+                _minu = float(req.get("min_utility_score"))
+            except (TypeError, ValueError):
+                _minu = 0.3
+            if _minu != _minu:
+                _minu = 0.3
+            # limit: 缺省 10, 钳位 [1, MAX_QUERY_ROWS](沿 /query 行上限约束); 参数化 LIMIT($lim
+            # 绑定, kuzu 0.11 现场实证支持) + bounded_rows 双保险。
+            try:
+                _lim = int(req.get("limit") or 10)
+            except (TypeError, ValueError):
+                _lim = 10
+            _lim = max(1, min(_lim, MAX_QUERY_ROWS))
+            # 排序: utility_score DESC, 平局按 created_at DESC 次级(新经验优先, 拍板记录)。
+            _cy = ("MATCH (x:Experience) WHERE x.status = $st AND x.utility_score >= $minu "
+                   "AND ($scope = '' OR x.scope = $scope) "
+                   "RETURN x.id AS id, x.eng_id AS eng_id, x.category AS category, x.scope AS scope, "
+                   "x.title AS title, x.content AS content, x.evidence_ref AS evidence_ref, "
+                   "x.utility_score AS utility_score, x.retrieval_count AS retrieval_count, "
+                   "x.success_count AS success_count, x.created_at AS created_at, "
+                   "x.last_used_at AS last_used_at, x.status AS status, x.provenance_hash AS provenance_hash "
+                   "ORDER BY x.utility_score DESC, x.created_at DESC LIMIT $lim")
+            _params = {"st": _st, "minu": _minu, "scope": _scope, "lim": _lim}
+            with _locked():  # V-11: 锁带 5s deadline
+                try:
+                    conn = kuzu.Connection(db())
+                    res = conn.execute(_cy, _params)
+                    # H13 同款: 行数上限封顶消费(超限停拉 + truncated 标记)
+                    rows, _trunc = bounded_rows(res, limit=_lim)
+                    cols = res.get_column_names()
+                    data = [{cols[i]: _jsonify(r[i]) for i in range(len(cols))} for r in rows]
+                except TimeoutError as _te:
+                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
+                except Exception as e:
+                    return self._send(400, {"ok": False, "error": str(e)[:200]})
+            return self._send(200, {"ok": True, "experiences": data,
+                                    "count": len(data), "truncated": _trunc})
         if self.path == "/query":
             cypher = req.get("cypher", "").strip()
             params = req.get("params") or {}
