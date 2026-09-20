@@ -1504,3 +1504,75 @@ def test_3b_evidence_ref_pure_functions():
     for eng, nid in (("e1", "f-9"), ("a b", "n:1")):
         seg = evidence_ref(eng, nid).split("/")  # ['ev', <eng>, '<nid>.txt']
         assert evidence_ref_disk("/d", eng, nid) == f"/d/runs/{seg[1]}/{seg[0]}/{seg[2]}"
+
+
+# ---- 3A: AgentIdentity.exit_class 七类失败分类落图列(完全仿 3B 三处同步) ----
+# 三处同步真源锁: SCHEMA CREATE(AgentIdentity 行) + init_schema 字面量 ALTER(幂等 try/except)
+# + _CRITICAL_COLUMNS(AgentIdentity 元组, 缺列 SCHEMA_DEGRADED)。
+# 写入侧真源在 plugin/pentest-dsh/scheduler.js(终态/崩溃两条 lease CAS 的 SET 列表原地并入,
+# WHERE lease_id 保证只在胜出路径写) — 本文件只锁 schema 侧。
+
+def _3a_old_agent_db_conn(tmp_path, drop_col=""):
+    """旧库形态: AgentIdentity 与 3A 补 exit_class 列前的 SCHEMA 同构(lease_id 已迁入)。
+    drop_col 可构造缺单列的更旧库(降级路径测试用)。"""
+    def _minus(cols, drop):
+        return ", ".join(c for c in cols if not (drop and c.split()[0] == drop))
+    a_common = ("worker_id STRING, ring STRING, chain STRING, status STRING, "
+                "checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', "
+                "lease_id STRING DEFAULT ''")
+    _3a_cols = ("exit_class STRING DEFAULT ''",)
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    conn.execute(f"CREATE NODE TABLE AgentIdentity({_minus((a_common,) + _3a_cols, drop_col)}, PRIMARY KEY(worker_id))")
+    return conn
+
+
+def test_3a_new_db_has_exit_class_column(tmp_path):
+    """新库 init_schema 后 AgentIdentity 含 exit_class 且缺省读出 ''(CREATE 缺属性走 DEFAULT)。"""
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    init_schema(conn)
+    conn.execute("CREATE (a:AgentIdentity {worker_id:'w-3a', ring:'discovery', chain:'c', status:'running', checkpoint:'', todo:'', updated_at:'t'})")
+    row = conn.execute("MATCH (a:AgentIdentity {worker_id:'w-3a'}) RETURN a.exit_class").get_next()
+    assert str(row[0]) == "", "exit_class 新列缺省必须 ''"
+    conn.execute("MATCH (a:AgentIdentity {worker_id:'w-3a'}) SET a.exit_class=$c", parameters={"c": "crash"})
+    assert str(conn.execute("MATCH (a:AgentIdentity {worker_id:'w-3a'}) RETURN a.exit_class").get_next()[0]) \
+        == "crash", "exit_class 可写(七类值往返)"
+
+
+def test_3a_alter_migration_on_old_db_and_idempotent(tmp_path):
+    """旧库(缺 exit_class)经 init_schema ALTER 补列后可写; 二次 init_schema 幂等不抛且数据不损。"""
+    conn = _3a_old_agent_db_conn(tmp_path)
+    conn.execute("CREATE (a:AgentIdentity {worker_id:'w-old', ring:'deep', chain:'c', status:'running', checkpoint:'', todo:'', updated_at:'t'})")
+    init_schema(conn)  # 启动迁移: 字面量 ALTER ADD exit_class
+    assert str(conn.execute("MATCH (a:AgentIdentity {worker_id:'w-old'}) RETURN a.exit_class").get_next()[0]) == ""
+    conn.execute("MATCH (a:AgentIdentity {worker_id:'w-old'}) SET a.exit_class=$c", parameters={"c": "scope_denied"})
+    init_schema(conn)  # 幂等: 列已存在 ALTER 报错被吞, 不抛且数据不损
+    assert str(conn.execute("MATCH (a:AgentIdentity {worker_id:'w-old'}) RETURN a.exit_class").get_next()[0]) \
+        == "scope_denied", "二次启动不得损数据"
+
+
+def test_3a_critical_columns_cover_agent_identity():
+    """_CRITICAL_COLUMNS 覆盖: AgentIdentity 元组含 lease_id 与 exit_class(缺一即 SCHEMA_DEGRADED 告警)。"""
+    for col in ("lease_id", "exit_class"):
+        assert col in _gd_schema._CRITICAL_COLUMNS["AgentIdentity"], f"AgentIdentity 缺 {col}"
+
+
+def test_3a_missing_exit_class_degrades_to_schema_degraded(tmp_path, capsys):
+    """缺列降级: 缺 exit_class 单列旧库走 _verify_critical_columns 路径 → SCHEMA_DEGRADED 点名
+    AgentIdentity.exit_class + stderr 响亮告警(不抛异常); 随后 init_schema ALTER 修复 → 告警清空。"""
+    before = list(_gd_schema.SCHEMA_DEGRADED)
+    try:
+        conn = _3a_old_agent_db_conn(tmp_path, drop_col="exit_class")  # 旧库缺 exit_class 一列
+        missing = _verify_critical_columns(conn)  # 直击校验路径(模拟 ALTER 未生效的存量库)
+        assert "AgentIdentity.exit_class" in missing
+        assert "AgentIdentity.exit_class" in _gd_schema.SCHEMA_DEGRADED
+        assert all(not m.startswith("Finding") for m in _gd_schema.SCHEMA_DEGRADED), "只缺一列不误报他表"
+        err = capsys.readouterr().err
+        assert "AgentIdentity.exit_class" in err and "迁移不完整" in err, "stderr 必须响亮点名缺失列"
+        init_schema(conn)  # ALTER 修复后收尾校验 → 降级清单清空(/health 回显归零)
+        assert _gd_schema.SCHEMA_DEGRADED == [], "迁移修复后 SCHEMA_DEGRADED 必须清空"
+        conn.execute("CREATE (a:AgentIdentity {worker_id:'w-fix', ring:'deep', chain:'c', status:'running', checkpoint:'', todo:'', updated_at:'t'})")
+        assert str(conn.execute("MATCH (a:AgentIdentity {worker_id:'w-fix'}) RETURN a.exit_class").get_next()[0]) == ""
+        capsys.readouterr()  # 丢弃 init_schema 期间输出, 不影响后续断言
+    finally:
+        _gd_schema.SCHEMA_DEGRADED.clear()
+        _gd_schema.SCHEMA_DEGRADED.extend(before)  # 还原全局状态, 不污染其他用例
