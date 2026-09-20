@@ -9,9 +9,13 @@ from datetime import datetime, timezone
 SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, PRIMARY KEY(name))",
     "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', authorized BOOL DEFAULT false, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
+    # 命名区分(3B): Hypothesis.evidence_ref = 验证引用文本(存 signal/finding id);
+    # Finding/Signal_ 的 evidence_ref 列(见下两行) = 证据文件指针 ev/<eng>/<node-id>.txt — 同名不同义。
     "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', claimed_by STRING DEFAULT '', claimed_at INT64 DEFAULT 0, verdict STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', PRIMARY KEY(id))",
+    # Finding/Signal_ 3B 三列(列名与 ALTER/_CRITICAL_COLUMNS 三处同步, 缺一即静默降级):
+    # content_hash=内容指纹(去重), source_hash=来源指纹, evidence_ref=证据文件指针(格式见 gd/gates.py evidence_ref)。
+    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', lease_id STRING DEFAULT '', PRIMARY KEY(worker_id))",
@@ -137,6 +141,21 @@ def init_schema(conn):
             conn.execute(_ddl)
         except Exception:
             pass
+    # 3B 证据指纹三列迁移(Finding/Signal_): content_hash(内容指纹去重)/source_hash(来源指纹)/
+    # evidence_ref(证据文件指针 ev/<eng>/<node-id>.txt, 纯指针不落内容 — 写入由批次 2 的 3C 接线)。
+    # 注意同名不同义: Hypothesis.evidence_ref=验证引用文本(存 signal/finding id), 此处是文件指针。
+    # 新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。列名为字面量枚举(同上, 防扫描器 SIDI 判定);
+    # 缺列即走 _CRITICAL_COLUMNS/SCHEMA_DEGRADED 降级告警(dual_sign 缺列静默死代码的同款兜底)。
+    for _ddl in ("ALTER TABLE Finding ADD content_hash STRING DEFAULT ''",
+                 "ALTER TABLE Finding ADD source_hash STRING DEFAULT ''",
+                 "ALTER TABLE Finding ADD evidence_ref STRING DEFAULT ''",
+                 "ALTER TABLE Signal_ ADD content_hash STRING DEFAULT ''",
+                 "ALTER TABLE Signal_ ADD source_hash STRING DEFAULT ''",
+                 "ALTER TABLE Signal_ ADD evidence_ref STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
     # 存量混合池归属回填: 只处理 eng='' 的行, 幂等(每次启动 O(池子行数), 空转即跳过)。
     try:
         _backfill_eng(conn)
@@ -152,8 +171,10 @@ def init_schema(conn):
 # 关键列清单: 缺失即核心功能静默失效(查询 Binder 异常被上层 catch 吞)。
 # 列名与读写语句必须一致 — 改动任何一处读写都要同步本表。
 _CRITICAL_COLUMNS = {
-    "Finding": ("dual_sign", "eng", "replay_matrix", "related_to", "last_transition"),
-    "Signal_": ("verify_tries", "eng", "surface", "boundary"),
+    "Finding": ("dual_sign", "eng", "replay_matrix", "related_to", "last_transition",
+                "content_hash", "source_hash", "evidence_ref"),
+    "Signal_": ("verify_tries", "eng", "surface", "boundary",
+                "content_hash", "source_hash", "evidence_ref"),
     "Endpoint": ("eng", "authorized"),
     "Hypothesis": ("eng", "claimed_by", "verdict"),
     "Engagement": ("leased_by", "lease_at", "cancel"),

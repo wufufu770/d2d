@@ -1,7 +1,10 @@
 """gd.gates — 写入门控/垃圾拒收/签名去重/denylist 加载与兜底/L0-L1 硬门/七态转换门
 等模块级纯函数(供 pytest 单测真源)。
 纯代码搬移自 graphd/app.py(巨型文件拆分), 判定逻辑与话术逐字保留零改动;
-app.py 侧 re-export 保持 `from graphd.app import X` 既有导入路径不变。"""
+app.py 侧 re-export 保持 `from graphd.app import X` 既有导入路径不变。
+3B 新增: 证据文件指针 evidence_ref/evidence_ref_disk 纯函数 — 格式与落点已拍板
+(ev/<eng>/<node-id>.txt ↔ DATA_DIR/runs/<eng>/ev/<node-id>.txt), 写入逻辑由批次 2 的
+3C 接线, 本批次不落盘。"""
 import json
 import os
 import re
@@ -455,3 +458,45 @@ def engagement_cap_gate(n_active, cap=None) -> str:
         return (f"active engagements {n_active} >= cap {cap} — "
                 f"先冻结部分 engagement 再新建(面板可管理)")
     return ""
+
+
+# ── 3B: 证据文件指针(evidence_ref)格式约定 ─────────────────────────────────────
+# 格式与落点已拍板: 图内指针 ev/<eng>/<node-id>.txt ↔ 落盘 DATA_DIR/runs/<eng>/ev/<node-id>.txt
+# (evidence_ref() 与 evidence_ref_disk() 同参一一对应: 同 eng 同 node_id 时, 盘上文件落在
+#  <data_dir>/runs/<eng>/ 目录下、文件名 ev 同款段 + <node-id>.txt)。
+# 写入逻辑由批次 2 的 3C 接线, 本批次不落盘 —— 本区只提供纯函数, 无任何文件 IO。
+# 同名不同义: Hypothesis.evidence_ref(schema.py)是验证引用文本(存 signal/finding id),
+# 此处产出的指针写 Finding/Signal_ 的 evidence_ref 列。
+# 3C 接线时注意: 清洗规则放行纯 '.' 段(如 eng='..' 清洗后仍为 '..'), 3C 落盘前应再拒收
+# ^\.+$ 段(防父目录穿越) — 本批次按拍板规则只做字符级清洗, 不越权加语义。
+EVIDENCE_REF_PREFIX = "ev"
+
+
+def _evidence_ref_safe_part(part) -> str:
+    """指针路径段安全清洗(纯函数): 只保留 [A-Za-z0-9._-], 其余替换 '_', 空值返回 ''。"""
+    s = str(part or "")
+    if not s:
+        return ""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", s)
+
+
+def evidence_ref(eng: str, node_id: str) -> str:
+    """证据文件指针(纯函数, 无 IO): 返回 'ev/<eng>/<node-id>.txt'。
+    eng/node_id 先做安全清洗(_evidence_ref_safe_part: 只保留 [A-Za-z0-9._-], 其余替 '_');
+    任一参数清洗后为空(None/''/空串)整体返回 ''(无指针)。写入由批次 2 的 3C 接线。"""
+    e = _evidence_ref_safe_part(eng)
+    n = _evidence_ref_safe_part(node_id)
+    if not e or not n:
+        return ""
+    return f"{EVIDENCE_REF_PREFIX}/{e}/{n}.txt"
+
+
+def evidence_ref_disk(data_dir: str, eng: str, node_id: str) -> str:
+    """证据文件落盘路径(纯函数, 无 IO): 返回 '<data_dir>/runs/<eng>/ev/<node-id>.txt'。
+    与 evidence_ref() 同参一一对应(同 eng/node_id 指向同一份证据文件); eng/node_id 同款清洗,
+    任一为空返回 ''; data_dir 原样拼接(调用方传 DATA_DIR, 不做清洗)。写入由批次 2 的 3C 接线。"""
+    e = _evidence_ref_safe_part(eng)
+    n = _evidence_ref_safe_part(node_id)
+    if not e or not n:
+        return ""
+    return f"{data_dir}/runs/{e}/{EVIDENCE_REF_PREFIX}/{n}.txt"
