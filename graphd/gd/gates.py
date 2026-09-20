@@ -550,6 +550,85 @@ def experience_evidence_ref_rejected(ref) -> bool:
     return any(seg in (".", "..") for seg in s.split("/"))
 
 
+# ── 3.5-4-1(写端增强): Experience 指令性文本检测词表 + 三档扫描纯函数 ─────────────
+# 词表唯一真源在 graphd 侧, 导出常量供 plugin/pentest-dsh/sanitize.js 同步(词表扩充)。
+# 审计实测中文缺口: 「忽略之前指令」「系统提示」独立短语不命中 sanitize.js:19-25 既有五条
+# 正则 —— 英文系(ignore/disregard/forget)不认中文; 中文复合条又要求「你必须」类前缀,
+# 独立短语全漏。本词表: 高置信集=独立短语(命中即 400 拒绝); 软命中集=复合形态
+# (五条正则语义移植 + 中文缺口补齐, 命中照写但 content 加 '[SUSPECT] ' 前缀 + 审计,
+# 经验池评审进程天然先见隔离行 → 置顶复核)。
+EXPERIENCE_INJECTION_HIGH = (
+    "忽略之前指令",
+    "ignore all previous instructions",
+)
+# system prompt 系(无空格/多空格变体, 与 sanitize.js 第 5 条 system\s*prompt 同形; re.I)
+_EXPERIENCE_INJECTION_HIGH_RES = (re.compile(r"system\s*prompt", re.I),)
+# 软命中: sanitize.js:19-25 五条正则语义移植(前四条) + 中文独立短语缺口补齐(末两条)。
+# 末第二条覆盖「无视上述规则/忘记先前的指示」等兄弟形态; 「忽略之前指令」是高置信,
+# 由 high 先判命中防降档。系统提示/系统提示词/系统提示音等「系统提示」前缀词面均算软命中
+# (软档不拒写只标注, 宁滥标不漏标 — 复核由评审进程裁决)。
+EXPERIENCE_INJECTION_SOFT_RES = (
+    re.compile(r"ignore\s+[\w\s]{0,24}?instructions", re.I),
+    re.compile(r"disregard\s+[\w\s]{0,24}?(instructions|rules)", re.I),
+    re.compile(r"forget\s+(everything|your)\s+(else|instructions)", re.I),
+    re.compile(r"你(的)?(可以|必须|禁止)[\s\S]{0,20}?(忽略|无视|忘记)"),
+    re.compile(r"(忽略|无视|忘记)[^\n]{0,6}(之前|以上|上述|先前|所有|全部)(的)?(指令|指示|规则)"),
+    re.compile(r"系统提示"),
+)
+
+
+def experience_injection_scan(text) -> str:
+    """3.5-4-1: Experience 指令性文本三档判定(纯函数供 pytest 与 handler 同源)。
+    返回 'high'(高置信独立短语 → handler 400 拒绝 + experience-injection-block 审计) /
+    'soft'(复合形态 → 照写但 content 加 '[SUSPECT] ' 前缀 + experience-injection-soft 审计) /
+    'clean'(未命中 → 现行为)。
+    判定顺序: high 优先(soft 词表是 high 的超集形态, 先判 high 防降档);
+    大小写不敏感(英文短语 lower() 后子串匹配 + re.I); 空输入恒 'clean'; 非字符串 str() 化。
+    调用方以 title+'\\n'+content 拼接扫描: \\n 隔断跨字段子串误拼(high 需同字段连续出现,
+    跨字段复合形态落 soft — 复合本就该软档)。已知取舍: 全角/同形字符混淆(ＳＹＳＴＥＭ)
+    不命中 — 本门是词面闸门不是语义闸门, 漏网形态由评审复核兜底。"""
+    s = str(text or "")
+    low = s.lower()
+    for phrase in EXPERIENCE_INJECTION_HIGH:
+        if phrase in low:
+            return "high"
+    for pat in _EXPERIENCE_INJECTION_HIGH_RES:
+        if pat.search(s):
+            return "high"
+    for pat in EXPERIENCE_INJECTION_SOFT_RES:
+        if pat.search(s):
+            return "soft"
+    return "clean"
+
+
+# ── 3.5-4-3(写端增强): Experience per-eng_id 写入配额(端点侧粗兜底) ────────────────
+# 防直写 /write/experience 灌水: 该 eng_id 条目数(含 quarantined 隔离行 — 评审出池前同样
+# 占池)≥ 阈值即 429(水位门同款)。蒸馏轮次条数(5/轮)由管道侧 DISTILL_WRITE_CAP 管, 本门是
+# 宿主面 50/eng_id 保守兜底。engagement_cap_gate/candidate_watermark_reject(:269-275)同款
+# 形态: 计数与 CREATE 同一 _locked() 锁窗口原子完成(TOCTOU 教训)。
+EXPERIENCE_WRITE_CAP_DEFAULT = 50
+
+
+def _experience_write_cap() -> int:
+    """per-eng_id 写入配额阈值(P2P_EXPERIENCE_WRITE_CAP 可调, 非数字回退默认 50)。"""
+    try:
+        return int(os.environ.get("P2P_EXPERIENCE_WRITE_CAP", str(EXPERIENCE_WRITE_CAP_DEFAULT)))
+    except ValueError:
+        return EXPERIENCE_WRITE_CAP_DEFAULT
+
+
+def experience_quota_reject(count, cap=None) -> tuple[bool, str]:
+    """3.5-4-3: Experience per-eng_id 写入配额判定(纯函数供 pytest) — 条目计数 ≥ cap
+    返回拦截话术(调用方 429, candidate 水位门同款), 否则返回 ''。cap=None 时取
+    P2P_EXPERIENCE_WRITE_CAP(缺省 50)。权威计数必须在调用方与 CREATE 同一 _locked()
+    窗口内执行(engagement_cap_gate 的 H12 TOCTOU 教训同款)。"""
+    cap = _experience_write_cap() if cap is None else int(cap)
+    if int(count) >= cap:
+        return True, (f"experience 写入配额满: 该 eng_id 条目数 {count}≥{cap} — "
+                      f"直写灌水防护(评审出池前隔离行同样计数), 稍后再写或由宿主调 P2P_EXPERIENCE_WRITE_CAP")
+    return False, ""
+
+
 # ── 3C: 双哈希指纹(content_hash/source_hash) — 写入接线用纯函数, 无任何 IO ─────────────
 # 拍板口径: content_hash=对脱敏后完整落库终值取 SHA-256; source_hash=对规范化后来源 URL
 # (host+path 去 query)取 SHA-256。落库列 = schema.py 的 Finding/Signal_ 三列(3B 已迁移)。

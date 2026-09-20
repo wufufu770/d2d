@@ -92,6 +92,16 @@ try:
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import experience_evidence_ref_rejected
 
+# 3.5-4-1/3.5-4-3(写端增强): 指令性文本检测词表/三档扫描 + per-eng_id 写入配额纯函数。
+# 同 3C 哲学: gd/__init__ 聚合不在本批次授权改动清单(gates.py/app.py/tests + plugin 三文件),
+# 直接从子模块导入, 两种运行形态都接住。
+try:
+    from graphd.gd.gates import (EXPERIENCE_INJECTION_HIGH, EXPERIENCE_INJECTION_SOFT_RES,
+                                 experience_injection_scan, experience_quota_reject)
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import (EXPERIENCE_INJECTION_HIGH, EXPERIENCE_INJECTION_SOFT_RES,
+                          experience_injection_scan, experience_quota_reject)
+
 _lock = threading.Lock()
 _db = None
 
@@ -785,12 +795,44 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"ok": False, "error": f"invalid category: {_cat or '(empty)'} (must be one of success|failure|pitfall)"})
             if experience_evidence_ref_rejected(_eref):
                 return self._send(400, {"ok": False, "error": "invalid evidence_ref: 非空时须为 'ev/<eng>/<id>.txt' 指针且无路径穿越(允许空)"})
+            # 3.5-4(写端增强)①redact_pii 脱敏: title/content/evidence_ref 三字段(3D 八模式;
+            # P2P_EVIDENCE_REDACT 开关在 gates.redact_pii 内部生效 — 与 :516-518/:627-628/
+            # :685/:754-755 四处先例同形态无条件调用), 消除「四类写端点唯一未脱敏」缺口。
+            # 顺序(拍板留痕): 先脱敏后注入检测 — 判定与 [SUSPECT] 标注对象均为「落库终值」,
+            # 脱敏产物 [REDACTED:*] 不含注入词面, 双向无干扰; 配额在下方锁内最后判。
+            _pii_hits = 0
+            _title, _k = redact_pii(_title); _pii_hits += _k
+            _content, _k = redact_pii(_content); _pii_hits += _k
+            _eref, _k = redact_pii(_eref); _pii_hits += _k
+            # ②指令性文本检测(title+content 拼接扫描, \n 隔断跨字段误拼): 'high' → 400 拒绝
+            # (注入话术不入池); 'soft' → 照写但 content 加 '[SUSPECT] ' 前缀(总长钳 512 保持
+            # 既有硬门不变式) — 写入即 quarantined 在池, 评审进程拉隔离行复核时天然先见。
+            _inj = experience_injection_scan(f"{_title}\n{_content}")
+            if _inj == "high":
+                _audit_event("experience-injection-block",
+                             {"eng_id": _eng_id, "title_head": _title[:60], "pii_hits": _pii_hits})
+                return self._send(400, {"ok": False,
+                                        "error": "experience rejected: 检出指令性文本(高置信 prompt injection 独立短语) — 注入话术禁止入池, 请改写为做法级经验"})
+            if _inj == "soft":
+                _content = ("[SUSPECT] " + _content)[:512]
+                _audit_event("experience-injection-soft",
+                             {"eng_id": _eng_id, "title_head": _title[:60]})
             # id 服务端生成(仓内 e-/f-/s- 短码风格: exp-<uuid 短码>, 随机防碰撞, 不拼接外部输入)
             _exp_id = "exp-" + uuid.uuid4().hex[:12]
             _now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             with _locked():  # V-11: 锁带 5s deadline
                 try:
                     conn = kuzu.Connection(db())
+                    # ③3.5-4-3 端点侧 per-eng_id 写入配额(粗兜底): 计数与 CREATE 同一 _locked()
+                    # 窗口原子完成(engagement_cap_gate 的 H12 TOCTOU 教训同款); 含 quarantined
+                    # 隔离行 — 评审出池前同样占池。超限 429(水位门同款)+ 审计。
+                    _cnt_r = conn.execute("MATCH (x:Experience) WHERE x.eng_id = $e RETURN count(x)",
+                                          parameters={"e": _eng_id})
+                    _cnt = int(list(_cnt_r.get_next())[0]) if _cnt_r.has_next() else 0
+                    _q_rej, _q_reason = experience_quota_reject(_cnt)
+                    if _q_rej:
+                        _audit_event("experience-quota", {"eng_id": _eng_id, "count": _cnt})
+                        return self._send(429, {"ok": False, "error": _q_reason})
                     # 全参数绑定($x, 绝不拼接外部输入); status 内联字面量 'quarantined' —
                     # 调用方即使传 status 字段也结构上无法入图(恒隔离, 见上方路由注释)。
                     conn.execute(
@@ -808,6 +850,12 @@ class Handler(BaseHTTPRequestHandler):
                     print(f"[experience] write failed (degraded): {type(e).__name__} {str(e)[:160]}",
                           file=sys.stderr, flush=True)
                     return self._send(500, {"ok": False, "error": str(e)[:200]})
+            # 3.5-4(写端增强): 成功写入审计(soft 命中在 detail 带 suspect 标记, 复核对账用;
+            # 401 由 _auth 包装器既有 auth-fail-worker 审计覆盖、403 由共享 R6 门的 denylist-hit
+            # 审计覆盖 — 两者均既有机制, 本段零改动)。
+            _audit_event("experience-write",
+                         {"id": _exp_id, "eng_id": _eng_id, "category": _cat,
+                          "suspect": _inj == "soft", "pii_hits": _pii_hits})
             return self._send(200, {"ok": True, "id": _exp_id, "status": "quarantined"})
 
         # R3: Finding 七态状态机转换（host 专属；worker 的 verified 结论仍须经验证器环独立重放背书）
