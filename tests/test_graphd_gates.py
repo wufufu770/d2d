@@ -242,6 +242,64 @@ def test_v10_authorization_header_redacted():
     assert "abcdef123456" not in out
 
 
+# ---- 3D: access_token 裸参数脱敏(第 8 模式) + P2P_EVIDENCE_REDACT 开关 ----
+# 与 plugin/pentest-dsh/test/redact-text.test.mjs 同款样例集(两侧对称, 一致性对照见 3D-1.3)。
+# 夹具伪凭据动态拼接(与 V-10 AKIA 用例同款): 非真实凭据, 防扫描器静态误报。
+_3D_TOK = "abc" + "123"
+_3D_KEY = "access_" + "token"
+
+def test_3d_access_token_query_form_redacted(monkeypatch):
+    monkeypatch.delenv("P2P_EVIDENCE_REDACT", raising=False)
+    out, n = redact_pii(f"http://x/api?{_3D_KEY}={_3D_TOK}&x=1")
+    assert _3D_TOK not in out and "[REDACTED]" in out
+    assert f"{_3D_KEY}=" in out, "键名保留, 值替换"
+    assert n >= 1
+
+def test_3d_access_token_colon_form_redacted(monkeypatch):
+    monkeypatch.delenv("P2P_EVIDENCE_REDACT", raising=False)
+    out, _ = redact_pii(f"{_3D_KEY}: {_3D_TOK}")
+    assert _3D_TOK not in out and f"{_3D_KEY}: [REDACTED]" in out
+
+def test_3d_access_token_json_form_redacted(monkeypatch):
+    monkeypatch.delenv("P2P_EVIDENCE_REDACT", raising=False)
+    out, _ = redact_pii(f'"{_3D_KEY}":"{_3D_TOK}"')
+    assert _3D_TOK not in out
+    assert f'"{_3D_KEY}":"[REDACTED]"' in out, "键名与闭合引号保留"
+
+def test_3d_access_token_no_false_positive_on_lookalike_keys(monkeypatch):
+    """误伤负例: token_name=xyz / accessor=x 不替换"""
+    monkeypatch.delenv("P2P_EVIDENCE_REDACT", raising=False)
+    out, n = redact_pii("token_name=xyz accessor=x")
+    assert out == "token_name=xyz accessor=x" and n == 0
+
+def test_3d_access_token_empty_value_untouched(monkeypatch):
+    """access_token=(空值): 无值可脱敏, 原样保留(不插入 [REDACTED])"""
+    monkeypatch.delenv("P2P_EVIDENCE_REDACT", raising=False)
+    out, n = redact_pii("access_token=")
+    assert out == "access_token=" and n == 0
+
+def test_3d_redact_switch_off_disables_only_access_token(monkeypatch):
+    """开关两态(关): P2P_EVIDENCE_REDACT=0 → access_token 不替换, 既有 authorization 模式仍替换"""
+    monkeypatch.setenv("P2P_EVIDENCE_REDACT", "0")
+    out, _ = redact_pii(f"access_token={_3D_TOK} with authorization: Bearer abcdef123456")
+    assert f"access_token={_3D_TOK}" in out, "开关关闭时 access_token 不替换"
+    assert "abcdef123456" not in out and "[REDACTED]" in out, "既有模式不受开关影响"
+
+def test_3d_redact_switch_delenv_restores_new_pattern(monkeypatch):
+    """开关两态(开): delenv → 未设置=默认生效, access_token 新模式恢复"""
+    monkeypatch.setenv("P2P_EVIDENCE_REDACT", "0")
+    monkeypatch.delenv("P2P_EVIDENCE_REDACT")
+    out, _ = redact_pii(f"access_token={_3D_TOK}")
+    assert _3D_TOK not in out and "[REDACTED]" in out
+
+def test_3d_redact_switch_nonzero_value_still_on(monkeypatch):
+    """开关语义: 任意非'0'值(未设置之外的 '1'/'' 之外任意)均视为开启"""
+    for v in ("1", "true", "off"):
+        monkeypatch.setenv("P2P_EVIDENCE_REDACT", v)
+        out, _ = redact_pii(f"access_token={_3D_TOK}")
+        assert _3D_TOK not in out, f"P2P_EVIDENCE_REDACT={v!r} 应视为开启"
+
+
 # ---- 类别名归一(issue #89 前置, 2026-09 批) ----
 from graphd.app import canonical_cat
 
