@@ -202,7 +202,9 @@ def transition_gate(cur, to, actor, reason):
 
 
 def redact_pii(s):
-    """I-014 + V-10: PII/凭据脱敏 —— 身份证/手机号(含分隔符)/邮箱(大小写)/AWS key/JWT/私钥/Authorization 头"""
+    """I-014 + V-10: PII/凭据脱敏 —— 身份证/手机号(含分隔符)/邮箱(大小写)/AWS key/JWT/私钥/Authorization 头
+    3D 新增第 8 模式 access_token(裸参数 access_token=xxx / access_token: xxx / "access_token":"xxx",
+    值替换为 [REDACTED], 键名保留) — 受 P2P_EVIDENCE_REDACT 开关控制(见下方分支注释)。"""
     import re as _p
     n = 0
     s, k = _p.subn(r"\b\d{17}[\dXx]\b", "[REDACTED:idcard]", s); n += k
@@ -214,6 +216,12 @@ def redact_pii(s):
                    "[REDACTED:private-key]", s); n += k
     s, k = _p.subn(r"(?i)\b(authorization\s*:\s*(?:bearer\s+)?|api[_-]?key\s*[:=]\s*)[^\s\"',;)]{8,}",
                    r"\1[REDACTED]", s); n += k
+    # 3D: 第 8 模式 access_token — 开关语义(已拍板): 默认(未设置/任意非'0'值)生效; 仅显式
+    # P2P_EVIDENCE_REDACT=0 时关闭; 关闭范围严格仅本模式, 既有七类不受影响。
+    # env 在调用时实时读取(不得 import 时缓存) — pytest monkeypatch 需生效。
+    if os.environ.get("P2P_EVIDENCE_REDACT") != "0":
+        s, k = _p.subn(r"(?i)(\baccess_token\s*[=:]\s*|\"access_token\"\s*:\s*\")[^\s\"',;&)]+",
+                       r"\1[REDACTED]", s); n += k
     return s, n
 
 
