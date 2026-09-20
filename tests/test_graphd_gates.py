@@ -1489,16 +1489,21 @@ def test_3b_missing_column_degrades_to_schema_degraded(tmp_path, capsys):
 
 
 def test_3b_evidence_ref_pure_functions():
-    """evidence_ref/evidence_ref_disk 纯函数格式锁: 指针格式 / 落盘形态 / 一一对应 / 清洗负例。"""
+    """evidence_ref/evidence_ref_disk 纯函数格式锁: 指针格式 / 落盘形态 / 一一对应 / 清洗负例。
+    (3C 按拍板授权在本函数区加入段级穿越防护: 原始含 '/'/'\\' 与清洗后 '.'/'..' 段改判拒收
+    → 旧断言 evidence_ref("a b/c",...)=='ev/a_b_c/n_1.txt' 与 evidence_ref_disk(...,"../evil",...)
+    =='/data/runs/.._evil/...' 同步演进为 '' — 详见 test_3c_evidence_ref_traversal_guard。)"""
     assert EVIDENCE_REF_PREFIX == "ev"
     assert evidence_ref("e1", "f-9") == "ev/e1/f-9.txt"
-    assert evidence_ref("a b/c", "n:1") == "ev/a_b_c/n_1.txt"          # 清洗: 空格/'/'/':' → '_'
+    assert evidence_ref("a b/c", "n:1") == ""                                          # 3C: 原始含 '/' → 拒收
+    assert evidence_ref("a b", "n:1") == "ev/a_b/n_1.txt"             # 清洗: 空格/':' → '_'
     assert evidence_ref("E-1.ok", "s_2.3") == "ev/E-1.ok/s_2.3.txt"    # 白名单字符原样保留
     assert evidence_ref("", "n") == "" and evidence_ref("e", None) == ""  # 空值 → 无指针
     assert evidence_ref(None, None) == ""
     assert evidence_ref("   ", "n") == "ev/___/n.txt"  # 空白非空值: 按“其余替换 '_'”落 _
     assert evidence_ref_disk("/data", "e1", "s-2") == "/data/runs/e1/ev/s-2.txt"
-    assert evidence_ref_disk("/data", "../evil", "n:1") == "/data/runs/.._evil/ev/n_1.txt"  # '/'→'_' 后单段无分隔, 不可穿越
+    assert evidence_ref_disk("/data", "..evil", "n:1") == "/data/runs/..evil/ev/n_1.txt"  # 非纯 '..' 段清洗照旧(不可穿越)
+    assert evidence_ref_disk("/data", "../evil", "n:1") == ""                          # 3C: 原始含 '/' → 拒收
     assert evidence_ref_disk("/data", "", "n") == ""
     # 同参一一对应: 指针段 [ev, <eng>, <nid>.txt] ↔ 盘上 <data_dir>/runs/<eng>/ev/<nid>.txt
     for eng, nid in (("e1", "f-9"), ("a b", "n:1")):
@@ -1576,3 +1581,204 @@ def test_3a_missing_exit_class_degrades_to_schema_degraded(tmp_path, capsys):
     finally:
         _gd_schema.SCHEMA_DEGRADED.clear()
         _gd_schema.SCHEMA_DEGRADED.extend(before)  # 还原全局状态, 不污染其他用例
+
+
+# ---- 3C: 双哈希接线(content_hash/source_hash) + evidence_ref 父目录穿越防护 ----
+# 纯函数真源在 graphd/gd/gates.py(同 3B 哲学: 直击实现模块, 不复刻); 接线形态由真 HTTP
+# 写端点集成测试(GraphdHTTPServer 随机端口 + 全新 tmp 库 + 真 POST)锁三列落库值。
+import hashlib as _hashlib
+import threading as _threading
+import urllib.request as _urllib_request
+from graphd.gd.gates import CONTENT_HASH_SEP, content_hash, source_hash
+from graphd.app import (content_hash as _app_content_hash,          # 接线导入路径锁:
+                        evidence_ref as _app_evidence_ref,          # app.py 必须 re-export 同一实现
+                        source_hash as _app_source_hash)
+
+
+def test_3c_app_reexports_same_implementations():
+    """app.py 接线用的 content_hash/source_hash/evidence_ref 必须是 gates.py 同一对象。"""
+    assert _app_content_hash is content_hash
+    assert _app_source_hash is source_hash
+    assert _app_evidence_ref is evidence_ref
+
+
+def test_3c_content_hash_deterministic_and_empty():
+    """确定性(同输入同输出); 64 位 hexdigest; 空输入(全部件空/无部件)返回 ''。"""
+    assert content_hash("a", "b") == content_hash("a", "b")
+    h = content_hash("3C wiring probe", "curl https://x.example/a", "")
+    assert len(h) == 64 and all(c in "0123456789abcdef" for c in h)
+    assert content_hash() == "" and content_hash("") == "" and content_hash(None, "") == ""
+    assert content_hash("x") != ""  # 任一部件非空即产生指纹
+
+
+def test_3c_content_hash_order_and_boundary_sensitive():
+    """部件顺序敏感((a,b)≠(b,a)); CONTENT_HASH_SEP 消除边界歧义((ab,c)≠(a,bc)); 实现即拼接 SHA-256。"""
+    assert content_hash("a", "b") != content_hash("b", "a")
+    assert content_hash("ab", "c") != content_hash("a", "bc")
+    assert content_hash("a", "b") == _hashlib.sha256(f"a{CONTENT_HASH_SEP}b".encode("utf-8")).hexdigest()
+
+
+def test_3c_content_hash_redacted_differs_from_raw(monkeypatch):
+    """拍板口径: 哈希必须取脱敏后终值 — 同样例先 redact_pii 再哈希 ≠ 未脱敏直哈希。"""
+    monkeypatch.setenv("P2P_EVIDENCE_REDACT", "1")
+    raw = 'callback https://x.example/cb?access_token=supersecret123 leak'
+    red, _ = redact_pii(raw)
+    assert red != raw and "[REDACTED]" in red
+    assert content_hash(red) != content_hash(raw)
+
+
+def test_3c_source_hash_normalizes_url_variants():
+    """同 URL 变体归一后同哈希: 大小写 host / 带 query / 带 fragment / 默认端口 / 末尾斜杠。"""
+    base = "https://target.example.com/api/user"
+    variants = (base,
+                "https://Target.Example.com/api/user",              # 大小写 host
+                base + "?x=1&access_token=supersecret",             # 带 query(敏感参数一并剥除)
+                base + "#frag",                                     # 带 fragment
+                "https://target.example.com:443/api/user",          # 默认端口(https/443)
+                base + "/",                                         # 末尾斜杠
+                "http://target.example.com:80/api/user?y=2#z")      # http 默认端口 80
+    digests = {source_hash(v) for v in variants}
+    assert digests == {source_hash(base)}, digests
+    assert source_hash(base) == _hashlib.sha256(b"target.example.com/api/user").hexdigest()
+
+
+def test_3c_source_hash_discriminates():
+    """不同 host 不同哈希; 非默认端口保留故不同; scheme 不参与指纹(拍板口径=host+path, 仅准入)。"""
+    assert source_hash("https://target.example.com/api/user") != source_hash("https://other.example.com/api/user")
+    assert source_hash("https://target.example.com/api/user") != source_hash("https://target.example.com:8443/api/user")
+    assert source_hash("http://target.example.com/api/user") == source_hash("https://target.example.com/api/user")
+    assert source_hash("https://target.example.com/api/other") != source_hash("https://target.example.com/api/user")
+
+
+def test_3c_source_hash_non_http_and_garbage_empty():
+    """非 http(s)/空/垃圾/无法解析 → ''。"""
+    for bad in ("ftp://x.example/y", "file:///etc/passwd", "javascript:alert(1)",
+                "not a url", "", "   ", None, "http://", "//no-scheme.example/x"):
+        assert source_hash(bad) == "", repr(bad)
+
+
+def test_3c_evidence_ref_traversal_guard():
+    """拍板点名的 5 输入: '..'/'.'/'a/b'/'a\\b' 拒收(''), 'normal' 通过; node_id 同款;
+    落盘路径同款; 拒收=返回空串(调用方不得落盘); 非纯点段('...','a.b')不误伤 3B 清洗语义。"""
+    # 拍板 5 输入(eng 侧)
+    assert evidence_ref("..", "f-1") == ""                       # eng='..' 拒收
+    assert evidence_ref(".", "f-1") == ""                        # eng='.' 拒收
+    assert evidence_ref("normal", "f-1") == "ev/normal/f-1.txt"  # eng='normal' 通过
+    assert evidence_ref("a/b", "f-1") == ""                      # eng 含 '/' 拒收(清洗前检查)
+    assert evidence_ref("a\\b", "f-1") == ""                     # eng 含 '\\' 拒收(清洗前检查)
+    # node_id 侧同款(任一参数拒收 → 整体 '')
+    assert evidence_ref("e1", "..") == "" and evidence_ref("e1", ".") == ""
+    assert evidence_ref("e1", "a/b") == "" and evidence_ref("e1", "a\\b") == ""
+    # 落盘路径同款防护(否则可拼出 /data/runs/../ 逃逸)
+    assert evidence_ref_disk("/data", "..", "n-1") == ""
+    assert evidence_ref_disk("/data", "a/b", "n-1") == ""
+    assert evidence_ref_disk("/data", "normal", "n-1") == "/data/runs/normal/ev/n-1.txt"
+    # 边界: 非纯 '.'/'..' 段不误伤(仍按 3B 字符清洗, 不自行加严)
+    assert evidence_ref("...", "n") == "ev/.../n.txt"
+    assert evidence_ref("a.b", "n") == "ev/a.b/n.txt"
+    assert evidence_ref("   ", "n") == "ev/___/n.txt"
+
+
+def _3c_spawn_server(tmp_path, monkeypatch):
+    """起真实 Handler(GraphdHTTPServer 随机端口 + 全新 tmp 库 + 1 个 active engagement),
+    返回 (base_url, conn, srv)。显式配置 worker token 并由 _3c_post 携带 —— 认证走真实
+    路径(auth_check worker 级, fail-closed 默认不靠 P2P_OPEN_RANGE 放行)。"""
+    for var in ("P2P_TOKEN", "P2P_HOST_TOKEN", "P2P_TOKEN_REQUIRED", "P2P_OPEN_RANGE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("P2P_WORKER_TOKEN", "t-3c-worker")
+    monkeypatch.setattr(graphd_app, "_D2D_PAUSE_FILE", str(tmp_path / "paused.json"))
+    graphd_app._pause_mtime_cache[0], graphd_app._pause_mtime_cache[1] = None, False
+    dbp = tmp_path / "kuzu_db"
+    db = kuzu.Database(str(dbp))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    init_schema(conn)  # 与真实启动路径 db() 同款: SCHEMA + ALTER 迁移(如 Finding.related_to)
+    conn.execute("CREATE (e:Engagement {name:'e3c', target:'t', scope:'probe.example.com', "
+                 "auth:'a', status:'active', created_at:'c'})")
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
+    monkeypatch.setattr(graphd_app, "_db", db)  # 预建库直接挂给 app(db() 直取, 不二次开文件)
+    srv = graphd_app.GraphdHTTPServer(("127.0.0.1", 0), graphd_app.Handler)
+    _threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_address[1]}", conn, srv
+
+
+def _3c_post(base_url, path, payload):
+    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(),
+                                  headers={"Content-Type": "application/json",
+                                           "X-Auth": "t-3c-worker"})
+    with _urllib_request.urlopen(req, timeout=10) as resp:
+        return resp.status, json.load(resp)
+
+
+def test_3c_write_finding_wires_hash_columns(tmp_path, monkeypatch):
+    """/write/finding 端到端: 落库后 content_hash/source_hash/evidence_ref 按期望填充
+    (content_hash 部件顺序=(title, repro, evidence_dir) 与 CREATE 绑定值同源)。"""
+    base_url, conn, srv = _3c_spawn_server(tmp_path, monkeypatch)
+    try:
+        payload = {"id": "f-3c", "title": "3C wiring probe", "severity": "medium",
+                   "category": "vuln", "repro": "curl -s https://probe.example.com/api/x",
+                   "evidence_dir": "/ev/3c"}  # 无 eng 字段: 唯一 active 归属 e3c(W5 ②)
+        status, out = _3c_post(base_url, "/write/finding", payload)
+        assert status == 200 and out["ok"] is True, out
+        row = conn.execute("MATCH (f:Finding {id:'f-3c'}) RETURN f.title, f.repro, f.evidence_dir, "
+                           "f.content_hash, f.source_hash, f.evidence_ref, f.eng").get_next()
+        title, repro, edir = str(row[0]), str(row[1]), str(row[2])
+        # 列值 == 对落库终值按拍板部件顺序的指纹(直接调真源函数, 非复刻)
+        assert str(row[3]) == content_hash(title, repro, edir)
+        assert str(row[3]) == content_hash("3C wiring probe", "curl -s https://probe.example.com/api/x", "/ev/3c")
+        assert str(row[4]) == source_hash("https://probe.example.com/api/x")  # 来源=repro 首个非本地 URL
+        assert str(row[5]) == "ev/e3c/f-3c.txt"
+        assert str(row[6]) == "e3c"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_3c_write_signal_wires_hash_columns(tmp_path, monkeypatch):
+    """/write/signal 端到端: content_hash 取截 2000+redact_pii 后终值(≠ 原文直哈希);
+    source_hash 取 endpoint_url; evidence_ref=ev/<eng>/<id>.txt; #5 内联 AT upsert 零变化。"""
+    monkeypatch.setenv("P2P_EVIDENCE_REDACT", "1")
+    base_url, conn, srv = _3c_spawn_server(tmp_path, monkeypatch)
+    try:
+        ev = "verify access_token=supersecret123 leaked on https://probe.example.com/at"
+        status, out = _3c_post(base_url, "/write/signal", {
+            "id": "s-3c", "type": "verify-result", "evidence": ev,
+            "endpoint_url": "https://probe.example.com/at", "eng": "e3c"})
+        assert status == 200 and out["ok"] is True, out
+        row = conn.execute("MATCH (s:Signal_ {id:'s-3c'}) RETURN s.evidence, s.content_hash, "
+                           "s.source_hash, s.evidence_ref").get_next()
+        stored_ev = str(row[0])
+        red, _ = redact_pii(ev)
+        assert stored_ev == red and "[REDACTED]" in stored_ev   # 落库即脱敏终值(I-014 先例)
+        assert str(row[1]) == content_hash(stored_ev)           # 哈希取 redact 之后、CREATE 之前
+        assert str(row[1]) != content_hash(ev)                  # ≠ 未脱敏直哈希
+        assert str(row[2]) == source_hash("https://probe.example.com/at")
+        assert str(row[3]) == "ev/e3c/s-3c.txt"
+        # #5 内联 endpoint 代写行为零变化: Endpoint 节点在, AT 边在
+        assert int(conn.execute("MATCH (:Signal_ {id:'s-3c'})-[:AT]->(:Endpoint) RETURN count(*)")
+                   .get_next()[0]) == 1
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_3c_write_finding_without_url_and_eng_writes_empty_columns(tmp_path, monkeypatch):
+    """拍板兜底: 确无 URL → source_hash 落 ''; eng 兜底 ''(无 active)→ evidence_ref 落 '';
+    均不阻塞写入(content_hash 照常产生)。"""
+    base_url, conn, srv = _3c_spawn_server(tmp_path, monkeypatch)
+    conn.execute("MATCH (e:Engagement {name:'e3c'}) DETACH DELETE e")  # 无 active → _eng 兜底 ''
+    try:
+        payload = {"id": "f-3c-nourl", "title": "No URL probe finding", "severity": "info",
+                   "category": "vuln", "repro": "manual inspection only, no endpoint involved"}
+        status, out = _3c_post(base_url, "/write/finding", payload)
+        assert status == 200 and out["ok"] is True, out
+        row = conn.execute("MATCH (f:Finding {id:'f-3c-nourl'}) RETURN f.content_hash, f.source_hash, "
+                           "f.evidence_ref, f.eng").get_next()
+        assert str(row[0]) == content_hash("No URL probe finding", "manual inspection only, no endpoint involved", "")
+        assert str(row[1]) == ""  # 确无 URL 字段 → source_hash ''
+        assert str(row[2]) == ""  # eng='' → evidence_ref ''
+        assert str(row[3]) == ""
+    finally:
+        srv.shutdown()
+        srv.server_close()
