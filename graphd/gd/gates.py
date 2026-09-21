@@ -659,6 +659,39 @@ def experience_transition_gate(cur, to, reviewer_note):
     return True, ""
 
 
+# ── 3.6-1(前沿子系统 C): Frontier 转态合法迁移表 + 纯函数门 ─────────────────────────
+# 四态拍板: proposed(worker 提案入图即此态, 主控评审输入) / accepted(评审采纳, 待探索) /
+# rejected(评审否决, 终态) / explored(已探索消化, 终态)。合法迁移仅三条:
+#   proposed→accepted(采纳) / proposed→rejected(否决) / accepted→explored(探索完成回写);
+# rejected/explored 均为终态无出边, 状态机单向 — 与 Experience/experience_transition_gate
+# 同款评审幂等性: 已裁决条目天然离开 proposed 候选池(/query/frontier 缺省全态返回, 但
+# 主控只消费 proposed — 迁移表拒绝重复裁决, 双轮并发最坏一次 400 + 留痕)。
+FRONTIER_STATES = ("proposed", "accepted", "rejected", "explored")
+FRONTIER_TRANSITIONS = {
+    "proposed": ("accepted", "rejected"),
+    "accepted": ("explored",),
+    "rejected": (),
+    "explored": (),
+}
+
+
+def frontier_transition_gate(cur, to, review_note):
+    """3.6-1: Frontier 转态审计门 — 纯函数单测真源(experience_transition_gate 同形态:
+    合法迁移表 + 备注非空校验)。返回 (ok, reason): ok=False 时 reason 为拒绝话术(调用方
+    400 + frontier-transition-illegal 审计)。谁在何时以何理由推动转态由调用方 _audit_event
+    旁路追溯, 故本门不产出轨迹对象。
+    review_note(1-80 字符)必填 — 空白/越界拒绝; cur 不在迁移表(含 unknown)与 to 越枚举
+    一律拒绝(fail-closed)。"""
+    if to not in FRONTIER_STATES:
+        return False, f"to must be one of {list(FRONTIER_STATES)}"
+    if to not in FRONTIER_TRANSITIONS.get(cur, ()):
+        return False, f"illegal transition {cur} -> {to}"
+    note = str(review_note or "").strip()
+    if not note or len(note) > 80:
+        return False, "review_note required (1-80 chars): 为什么转态(可追溯)"
+    return True, ""
+
+
 # ── 3C: 双哈希指纹(content_hash/source_hash) — 写入接线用纯函数, 无任何 IO ─────────────
 # 拍板口径: content_hash=对脱敏后完整落库终值取 SHA-256; source_hash=对规范化后来源 URL
 # (host+path 去 query)取 SHA-256。落库列 = schema.py 的 Finding/Signal_ 三列(3B 已迁移)。
