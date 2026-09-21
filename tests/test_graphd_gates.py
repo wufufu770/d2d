@@ -2823,3 +2823,549 @@ def test_3542_transition_active_to_deprecated_roundtrip(tmp_path, monkeypatch):
     tr = [e for e in events if e["kind"] == "experience-transition"]
     assert len(tr) == 1 and tr[0]["detail"]["reviewer"] == "host", "未带 reviewer 时审计落 'host'"
     assert tr[0]["detail"]["from"] == "active" and tr[0]["detail"]["to"] == "deprecated"
+
+
+# =====================================================================
+# 3.6-1(前沿子系统 C 数据层): Frontier 表 + /write/frontier + /query/frontier +
+# /write/frontier-transition。三处同步真源锁(仿 3.5-1 Experience 模板): SCHEMA CREATE
+# (Frontier 行) + init_schema 字面量 ALTER(幂等 try/except) + _CRITICAL_COLUMNS(Frontier
+# 元组, 缺列 SCHEMA_DEGRADED)。写/读/转态端点经真 HTTP harness(3C/3E/3.5 同款:
+# GraphdHTTPServer 随机端口 + 全新 tmp 库 + 真 POST)。本批次不做: worker 工具(3.6-2)/
+# 主控评审(3.6-3)/反馈闭环与 Explore 只读约束(3.6-4)。
+# =====================================================================
+from graphd.gd.gates import (FRONTIER_STATES as _361_STATES,              # noqa: E402
+                             FRONTIER_TRANSITIONS as _361_TRANSITIONS,
+                             frontier_transition_gate as _361_gate)
+from graphd.app import frontier_transition_gate as _361_app_gate          # noqa: E402
+from datetime import datetime as _361_dt                                  # noqa: E402
+
+# 规格逐列清单(权威口径, 9 列) — CREATE/ALTER/_CRITICAL_COLUMNS/本清单同源对照
+_361_COLUMNS = ["id", "eng_id", "direction", "evidence", "proposed_by",
+                "status", "review_note", "created_at", "reviewed_at"]
+
+
+def test_361_new_db_frontier_full_columns(tmp_path):
+    """新库 init_schema 后 Frontier 含全 9 列(真库 table_info 逐列确认)且缺省值正确:
+    status 'proposed'(写入即提案态)/时间列 epoch(kuzu 0.11 DDL 无当前时刻函数默认 —
+    沿 Experience 3.5-1 现场实证先例)/其余 STRING 列 DEFAULT ''。类型映射(沿 Experience
+    FLOAT/INT64/TIMESTAMP epoch 先例, 现场实证): id/eng_id/direction/evidence/proposed_by/
+    status/review_note=STRING, created_at/reviewed_at=TIMESTAMP。"""
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    init_schema(conn)
+    r = conn.execute("CALL table_info('Frontier') RETURN *")
+    rows = []
+    while r.has_next():
+        rows.append(r.get_next())
+    assert [str(x[1]) for x in rows] == _361_COLUMNS, "列名/列序必须与规格逐列清单一致"
+    types = {str(x[1]): str(x[2]) for x in rows}
+    for c in ("id", "eng_id", "direction", "evidence", "proposed_by", "status", "review_note"):
+        assert types[c] == "STRING", (c, types[c])
+    assert types["created_at"] == "TIMESTAMP" and types["reviewed_at"] == "TIMESTAMP"
+    assert str(rows[0][4]) == "True", "id 必须是 PRIMARY KEY"
+    conn.execute("CREATE (x:Frontier {id:'fr-1'})")
+    row = conn.execute("MATCH (x:Frontier {id:'fr-1'}) RETURN x.eng_id, x.direction, x.evidence, "
+                       "x.proposed_by, x.status, x.review_note, x.created_at, x.reviewed_at").get_next()
+    assert all(str(v) == "" for v in row[:4]), "STRING 列缺省 ''"
+    assert str(row[4]) == "proposed", "status 缺省必须 'proposed'(写入即提案态)"
+    assert row[6] == _361_dt(1970, 1, 1) and row[7] == _361_dt(1970, 1, 1), "时间列缺省 epoch"
+    # 列可写(转态写形态: status/review_note 参数绑定 + timestamp cast — 字符串直传 TIMESTAMP
+    # 列不受支持, 现场实证, 沿 Experience 同款)
+    conn.execute("MATCH (x:Frontier {id:'fr-1'}) SET x.status=$st, x.review_note=$n, "
+                 "x.reviewed_at=timestamp($ts)",
+                 parameters={"st": "accepted", "n": "ok", "ts": "2026-09-21 10:00:00"})
+    row = conn.execute("MATCH (x:Frontier {id:'fr-1'}) RETURN x.status, x.review_note, "
+                       "x.reviewed_at").get_next()
+    assert (str(row[0]), str(row[1])) == ("accepted", "ok")
+    assert row[2] == _361_dt(2026, 9, 21, 10, 0, 0)
+
+
+def test_361_alter_migration_on_old_db_and_idempotent(tmp_path):
+    """旧库(早期 id+direction 两列形态)经 init_schema 幂等 ALTER 补缺 7 列后可读写; 二次
+    init_schema 不抛且存量数据/新列默认值不损(仿 3.5-1 同款模板)。"""
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    conn.execute("CREATE NODE TABLE Frontier(id STRING, direction STRING DEFAULT '', PRIMARY KEY(id))")
+    conn.execute("CREATE (x:Frontier {id:'fr-old', direction:'early direction keep me'})")
+    init_schema(conn)  # 启动迁移: 字面量 ALTER ADD 7 列(id 主键不可 ALTER, 建表必有)
+    row = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.direction, x.eng_id, "
+                       "x.proposed_by, x.status, x.review_note, x.created_at, x.reviewed_at").get_next()
+    assert str(row[0]) == "early direction keep me", "迁移不得损存量数据"
+    assert (str(row[1]), str(row[2]), str(row[3]), str(row[4])) == ("", "", "proposed", "")
+    assert row[5] == _361_dt(1970, 1, 1) and row[6] == _361_dt(1970, 1, 1), "补列默认值 epoch(存量行不炸消费查询)"
+    # 补列后读写可用(转态写形态: 全参数绑定 + timestamp cast)
+    conn.execute("MATCH (x:Frontier {id:'fr-old'}) SET x.status=$st, x.eng_id=$e, "
+                 "x.reviewed_at=timestamp($ts)",
+                 parameters={"st": "rejected", "e": "eng-old", "ts": "2026-09-21 11:30:00"})
+    row = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.status, x.eng_id, "
+                       "x.reviewed_at").get_next()
+    assert (str(row[0]), str(row[1])) == ("rejected", "eng-old")
+    assert row[2] == _361_dt(2026, 9, 21, 11, 30)
+    init_schema(conn)  # 幂等: 列已存在 ALTER 抛错被吞, 不抛且数据不损
+    row = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.status, x.direction").get_next()
+    assert (str(row[0]), str(row[1])) == ("rejected", "early direction keep me"), "二次 init_schema 后数据不损"
+
+
+def test_361_critical_columns_cover_frontier():
+    """_CRITICAL_COLUMNS 覆盖: Frontier 元组纳入全部 9 列(缺一即 SCHEMA_DEGRADED 告警)。
+    全列拍板(同 Experience 3.5-1): 全新表整表即前沿提案数据层载体, 任一列缺失都属 schema
+    损坏(无历史主功能列/迁移列之分)。"""
+    assert set(_gd_schema._CRITICAL_COLUMNS["Frontier"]) == set(_361_COLUMNS)
+    assert len(_gd_schema._CRITICAL_COLUMNS["Frontier"]) == 9
+
+
+def test_361_missing_column_degrades_to_schema_degraded(tmp_path, capsys):
+    """缺列降级: 缺 status 单列旧库走 _verify_critical_columns 路径 → SCHEMA_DEGRADED 点名
+    Frontier.status + stderr 响亮告警(不抛异常); 随后 init_schema ALTER 修复 → 告警清空。"""
+    before = list(_gd_schema.SCHEMA_DEGRADED)
+    try:
+        conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+        conn.execute("CREATE NODE TABLE Frontier(id STRING, eng_id STRING DEFAULT '', "
+                     "direction STRING DEFAULT '', evidence STRING DEFAULT '', "
+                     "proposed_by STRING DEFAULT '', review_note STRING DEFAULT '', "
+                     "created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), "
+                     "reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), PRIMARY KEY(id))")
+        missing = _verify_critical_columns(conn)  # 直击校验路径(模拟 ALTER 未生效的存量库)
+        assert "Frontier.status" in missing
+        assert "Frontier.status" in _gd_schema.SCHEMA_DEGRADED
+        assert all(not m.startswith("Finding") for m in _gd_schema.SCHEMA_DEGRADED), "只缺一列不误报他表"
+        err = capsys.readouterr().err
+        assert "Frontier.status" in err and "迁移不完整" in err, "stderr 必须响亮点名缺失列"
+        init_schema(conn)  # ALTER 修复后收尾校验 → 降级清单清空(/health 回显归零)
+        assert _gd_schema.SCHEMA_DEGRADED == [], "迁移修复后 SCHEMA_DEGRADED 必须清空"
+        capsys.readouterr()  # 丢弃 init_schema 期间输出, 不影响后续断言
+    finally:
+        _gd_schema.SCHEMA_DEGRADED.clear()
+        _gd_schema.SCHEMA_DEGRADED.extend(before)  # 还原全局状态, 不污染其他用例
+
+
+# ---- 3.6-1 写/读/转态端点(真 HTTP harness, 3.5-1/3.5-4-2 同款形态) ----
+
+def _361_spawn_server(tmp_path, monkeypatch):
+    """3.6-1 端点专用: 同 3.5 harness 形态(GraphdHTTPServer 随机端口 + 全新 tmp 库), 同时配置
+    worker token(/write/frontier、/query/frontier 为 worker 级)与 host token
+    (/write/frontier-transition 为 host-only, 且 worker token 供「worker 不得转态」反向用例)。
+    无需预置 active engagement — eng_id 为显式入参(不走 pick_write_eng 归属), denylist 共享门
+    在空名单下不拦。"""
+    for var in ("P2P_TOKEN", "P2P_TOKEN_REQUIRED", "P2P_OPEN_RANGE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("P2P_HOST_TOKEN", "t-361-host")
+    monkeypatch.setenv("P2P_WORKER_TOKEN", "t-361-worker")
+    monkeypatch.setattr(graphd_app, "_D2D_PAUSE_FILE", str(tmp_path / "paused.json"))
+    graphd_app._pause_mtime_cache[0], graphd_app._pause_mtime_cache[1] = None, False
+    dbp = tmp_path / "kuzu_db"
+    db = kuzu.Database(str(dbp))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    init_schema(conn)  # 与真实启动路径 db() 同款: SCHEMA + ALTER 迁移
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
+    monkeypatch.setattr(graphd_app, "_db", db)  # 预建库直接挂给 app(db() 直取, 不二次开文件)
+    srv = graphd_app.GraphdHTTPServer(("127.0.0.1", 0), graphd_app.Handler)
+    _threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_address[1]}", conn, srv
+
+
+def _361_post(base_url, path, payload, token="t-361-worker"):
+    """POST JSON; token 缺省 worker 级(转态用例显式传 host); 4xx/5xx 经 HTTPError 取回 (code, body)。"""
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Auth"] = token
+    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(), headers=headers)
+    try:
+        with _urllib_request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.load(resp)
+    except _urllib_request.HTTPError as e:
+        return e.code, json.load(e)
+
+
+def _361_valid_payload(**over):
+    """合法写入载荷基线 + 越权字段探针(应被忽略): id/状态/评审列/时间均服务端所有。"""
+    p = {"eng_id": "eng-361", "direction": "对 /api/v2/* 深挖 query 注入面(js×inner 象限空白)",
+         "evidence": "coverage 象限 js×inner 零样本且 response×cross 已挖透",
+         "proposed_by": "worker-361",
+         # 越权字段探针: 数据层拍板 — id/状态/评审列/时间均服务端所有, 调用方传入一律忽略
+         "id": "caller-forged", "status": "accepted", "review_note": "caller-forged-note",
+         "reviewed_at": "1999-01-01 00:00:00", "created_at": "1999-01-01 00:00:00"}
+    p.update(over)
+    return p
+
+
+def test_361_write_frontier_roundtrip_all_columns(tmp_path, monkeypatch):
+    """成功写入端到端: 回读全 9 列值正确; id 服务端生成 fr-<eng>-<短码>; 越权字段
+    (status/review_note/reviewed_at/created_at/id)全部被忽略, 恒服务端默认。"""
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _361_post(base_url, "/write/frontier", _361_valid_payload())
+        assert status == 200 and out["ok"] is True, out
+        fid = str(out["id"])
+        assert fid.startswith("fr-eng-361-"), "id 必须服务端生成(fr-<eng>- 前缀)"
+        assert fid != "caller-forged", "调用方伪造 id 被忽略"
+        assert str(out["status"]) == "proposed"
+        row = conn.execute(
+            "MATCH (x:Frontier {id:$id}) RETURN x.id, x.eng_id, x.direction, x.evidence, "
+            "x.proposed_by, x.status, x.review_note, x.created_at, x.reviewed_at",
+            parameters={"id": fid}).get_next()
+        assert str(row[0]) == fid
+        assert str(row[1]) == "eng-361"
+        assert "query 注入面" in str(row[2]) and "象限空白" in str(row[2])
+        assert "js×inner" in str(row[3])
+        assert str(row[4]) == "worker-361"
+        assert str(row[5]) == "proposed", "status 恒 proposed(调用方 accepted 被忽略)"
+        assert str(row[6]) == "", "review_note 恒 ''(评审前无值, 调用方伪造被忽略)"
+        assert isinstance(row[7], _361_dt) and row[7].year >= 2026, "created_at 取服务端当前时刻(调用方 1999 被忽略)"
+        assert row[8] == _361_dt(1970, 1, 1), "reviewed_at 恒 epoch(评审前无值, 调用方 1999 被忽略)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_361_write_frontier_validation_400s(tmp_path, monkeypatch):
+    """校验清单(400 带原因): direction 缺省 / direction 257 / evidence 1025 / proposed_by 缺 /
+    eng_id 缺; 全部 400 且不落库。evidence 可选(空放行 — 方案未标必填, 留痕)。"""
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        cases = [
+            ({k: v for k, v in _361_valid_payload().items() if k != "eng_id"}, "eng_id required"),
+            ({k: v for k, v in _361_valid_payload().items() if k != "direction"}, "direction required"),
+            (_361_valid_payload(direction="d" * 257), "direction must be 1-256 chars"),
+            (_361_valid_payload(evidence="e" * 1025), "evidence must be 0-1024 chars"),
+            ({k: v for k, v in _361_valid_payload().items() if k != "proposed_by"}, "proposed_by required"),
+        ]
+        for payload, reason in cases:
+            code, out = _361_post(base_url, "/write/frontier", payload)
+            assert code == 400, (reason, code, out)
+            assert out.get("ok") is False and reason in str(out.get("error", "")), out
+        # 边界内放行: direction 256 / evidence 1024 / evidence 缺省(可选)
+        ok_payloads = [_361_valid_payload(direction="d" * 256),
+                       _361_valid_payload(evidence="e" * 1024),
+                       {k: v for k, v in _361_valid_payload().items() if k != "evidence"}]
+        for payload in ok_payloads:
+            code, out = _361_post(base_url, "/write/frontier", payload)
+            assert code == 200 and out["ok"] is True, (code, out)
+        n = conn.execute("MATCH (x:Frontier) RETURN count(x)").get_next()[0]
+        assert int(n) == 3, "被拒载荷不落库, 边界内 3 条落库"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_361_write_frontier_redact_pii_applied(tmp_path, monkeypatch):
+    """redact_pii 接入: direction+evidence 两字段过 3D 八模式(沿 /write/experience 先例形态);
+    access_token 样例被 [REDACTED]; P2P_EVIDENCE_REDACT=0 时仅第 8 模式关闭(其余七类不受影响)。"""
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(tmp_path / "audit.log"))
+    monkeypatch.delenv("P2P_EVIDENCE_REDACT", raising=False)  # 开关默认开
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        payload = _361_valid_payload(
+            direction="回环 https://a.example/cb?access_token=abc123secret 后探测注入",
+            evidence="联系人 a@b.com 手机 13812345678 已留痕")
+        status, out = _361_post(base_url, "/write/frontier", payload)
+        assert status == 200 and out["ok"] is True, out
+        row = conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.direction, x.evidence",
+                           parameters={"id": out["id"]}).get_next()
+        assert "access_token=[REDACTED]" in str(row[0]) and "abc123secret" not in str(row[0]), row[0]
+        assert "[REDACTED:email]" in str(row[1]) and "a@b.com" not in str(row[1]), row[1]
+        assert "[REDACTED:phone]" in str(row[1]) and "13812345678" not in str(row[1]), row[1]
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    # 开关=0: 仅 access_token 模式关闭, 身份类(邮箱/手机号)仍脱敏
+    monkeypatch.setenv("P2P_EVIDENCE_REDACT", "0")
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        payload = _361_valid_payload(direction="样例 access_token=abc123secret 与 a@b.com")
+        status, out = _361_post(base_url, "/write/frontier", payload)
+        assert status == 200 and out["ok"] is True, out
+        direction = str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.direction",
+                                     parameters={"id": out["id"]}).get_next()[0])
+        assert "access_token=abc123secret" in direction, "开关=0 → 第 8 模式关闭(样例原样保留)"
+        assert "[REDACTED:email]" in direction, "其余七类不受开关影响"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_361_write_frontier_default_status_proposed_param_ignored(tmp_path, monkeypatch):
+    """默认提案语义专锁: 不带 status → 'proposed'; 显式 status='accepted'/'rejected' → 仍
+    'proposed'(转态是主控评审(3.6-3)经 /write/frontier-transition 的事, 本批次无该管道)。"""
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _361_post(base_url, "/write/frontier", _361_valid_payload())
+        assert status == 200 and out["ok"] is True, out
+        assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
+                                parameters={"id": out["id"]}).get_next()[0]) == "proposed"
+        for forced in ("accepted", "rejected"):
+            status, out = _361_post(base_url, "/write/frontier", _361_valid_payload(status=forced))
+            assert status == 200 and out["ok"] is True, out
+            assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
+                                    parameters={"id": out["id"]}).get_next()[0]) == "proposed", \
+                f"调用方传 status={forced} 必须被忽略(恒 proposed)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_361_query_frontier_filters_limit_order(tmp_path, monkeypatch):
+    """读侧: status 缺省**全态返回**(含 proposed — 与 /query/experience 缺省单态相反, 拍板:
+    proposed 是主控评审输入不能被过滤掉); eng_id 精确过滤; status 显式精确过滤; created_at DESC;
+    limit 缺省 20/显式生效/非法回退; 返回行带全 9 键。"""
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        def _direct(fid, eng, created_at, st="proposed"):
+            conn.execute("CREATE (x:Frontier {id:$id, eng_id:$e, direction:$d, proposed_by:'w', "
+                         "status:$st, created_at:timestamp($ca)})",
+                         parameters={"id": fid, "e": eng, "d": f"dir-{fid}", "st": st, "ca": created_at})
+        # 故意乱序建: 断言 created_at DESC
+        _direct("fr-mid", "eng-361", "2026-09-21 10:00:00")
+        _direct("fr-new", "eng-361", "2026-09-21 12:00:00", st="accepted")
+        _direct("fr-old", "eng-361", "2026-09-21 09:00:00", st="rejected")
+        _direct("fr-other", "eng-b", "2026-09-21 11:00:00")
+        # 缺省: 全态(3 态齐回) — Experience 相反语义的专锁
+        code, out = _361_post(base_url, "/query/frontier", {})
+        assert code == 200 and out["ok"] is True and out["count"] == 4 and out["truncated"] is False, out
+        assert [r["id"] for r in out["frontiers"]] == ["fr-new", "fr-other", "fr-mid", "fr-old"], \
+            "created_at DESC 全态"
+        row = out["frontiers"][2]
+        assert set(row.keys()) == set(_361_COLUMNS), "返回行必须含全 9 列键"
+        assert row["status"] == "proposed" and row["direction"] == "dir-fr-mid", "proposed 缺省不被过滤掉"
+        # eng_id 精确过滤
+        code, out = _361_post(base_url, "/query/frontier", {"eng_id": "eng-361"})
+        assert code == 200 and [r["id"] for r in out["frontiers"]] == ["fr-new", "fr-mid", "fr-old"], out
+        code, out = _361_post(base_url, "/query/frontier", {"eng_id": "eng-nope"})
+        assert code == 200 and out["count"] == 0, out
+        # status 显式精确过滤(fr-mid 与 fr-other 均为 proposed, 按 created_at DESC 回两条)
+        code, out = _361_post(base_url, "/query/frontier", {"status": "proposed"})
+        assert code == 200 and [r["id"] for r in out["frontiers"]] == ["fr-other", "fr-mid"], out
+        code, out = _361_post(base_url, "/query/frontier", {"status": "accepted", "eng_id": "eng-361"})
+        assert code == 200 and [r["id"] for r in out["frontiers"]] == ["fr-new"], out
+        # limit: 显式生效 / 非法回退缺省 20 / 超上限钳位仍可用(结果不足不炸)
+        code, out = _361_post(base_url, "/query/frontier", {"limit": 2})
+        assert code == 200 and [r["id"] for r in out["frontiers"]] == ["fr-new", "fr-other"], out
+        code, out = _361_post(base_url, "/query/frontier", {"limit": "garbage"})
+        assert code == 200 and out["count"] == 4, "非法 limit 回退缺省 20"
+        from graphd.app import MAX_QUERY_ROWS as _mqr
+        code, out = _361_post(base_url, "/query/frontier", {"limit": _mqr + 500})
+        assert code == 200 and out["count"] == 4, "超上限钳位"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+# ---- 3.6-1-4 gates.frontier_transition_gate 纯函数门(单测真源) ----
+
+def test_361_gate_legal_transitions():
+    """合法迁移表拍板: 仅 proposed→accepted / proposed→rejected / accepted→explored 三条;
+    review_note 80 字符边界内。"""
+    ok, err = _361_gate("proposed", "accepted", "review: coverage gap js×inner confirmed")
+    assert ok is True and err == ""
+    ok, err = _361_gate("proposed", "rejected", "人工否决: 与既有 explored 方向重复")
+    assert ok is True and err == ""
+    ok, err = _361_gate("accepted", "explored", "探索完成: 结果已回写")
+    assert ok is True and err == ""
+    assert _361_gate("proposed", "accepted", "n" * 80)[0] is True, "80 字符边界内"
+    # 迁移表常量形态锁(与 experience_transition_gate 同构)
+    assert _361_STATES == ("proposed", "accepted", "rejected", "explored")
+    assert _361_TRANSITIONS == {"proposed": ("accepted", "rejected"), "accepted": ("explored",),
+                                "rejected": (), "explored": ()}
+
+
+def test_361_gate_illegal_transitions_rejected():
+    """其余迁移一律拒绝: 终态出边(rejected→active 等)/回退/自环/跳级/未知 cur/越枚举 to;
+    拒绝话术可判别。"""
+    illegal = [("rejected", "accepted"), ("rejected", "proposed"), ("rejected", "explored"),
+               ("accepted", "proposed"), ("accepted", "rejected"), ("accepted", "accepted"),
+               ("explored", "accepted"), ("explored", "proposed"), ("explored", "explored"),
+               ("proposed", "proposed"), ("proposed", "explored"),
+               ("garbage-cur", "accepted"), ("", "accepted"), (None, "accepted")]
+    for cur, to in illegal:
+        ok, err = _361_gate(cur, to, "note")
+        assert ok is False and f"illegal transition {cur} -> {to}" == err, (cur, to, err)
+    for to in ("", "Active", "bogus", None):
+        ok, err = _361_gate("proposed", to, "note")
+        assert ok is False and "to must be one of" in err, to
+
+
+def test_361_gate_review_note_required():
+    """review_note 必填(拍板): 缺失/None/纯空白/81 字符拒绝; 话术含字段名(调用方 400 可读)。"""
+    for note in ("", "   ", None):
+        ok, err = _361_gate("proposed", "accepted", note)
+        assert ok is False and "review_note required" in err, note
+    ok, err = _361_gate("proposed", "accepted", "n" * 81)
+    assert ok is False and "review_note required" in err
+
+
+def test_361_app_reexports_same_gate_implementation():
+    """app.py 接线用的 frontier_transition_gate 必须是 gates.py 同一对象(3C re-export 先例)。"""
+    assert _361_app_gate is _361_gate
+
+
+def test_361_transition_success_writes_columns_and_audit(tmp_path, monkeypatch):
+    """成功转态端到端: proposed→accepted 200; Frontier.status/reviewed_at/review_note 落图
+    (参数绑定路径); _audit_event('frontier-transition') 记 ts/旧状态/新状态/reviewer/reason;
+    提案本体列零触碰。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _361_post(base_url, "/write/frontier", _361_valid_payload())
+        assert status == 200 and out["ok"] is True, out
+        fid = out["id"]
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "accepted",
+                                 "review_note": "review: coverage gap confirmed",
+                                 "reviewer": "master-bot"}, token="t-361-host")
+        assert status == 200 and out["ok"] is True, out
+        assert (str(out["id"]), str(out["from"]), str(out["to"])) == (fid, "proposed", "accepted")
+        row = conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status, x.reviewed_at, "
+                           "x.review_note, x.eng_id, x.direction, x.proposed_by",
+                           parameters={"id": fid}).get_next()
+        assert str(row[0]) == "accepted", "status 已转 accepted"
+        assert isinstance(row[1], _361_dt) and row[1].year >= 2026, "reviewed_at 写入当前时刻(离开 epoch)"
+        assert str(row[2]) == "review: coverage gap confirmed"
+        assert (str(row[3]), str(row[5])) == ("eng-361", "worker-361"), "提案本体列零触碰"
+        assert "query 注入面" in str(row[4]), "direction 不被转态触碰"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    tr = [e for e in events if e["kind"] == "frontier-transition"]
+    assert len(tr) == 1, [e["kind"] for e in events]
+    d = tr[0]["detail"]
+    assert d["id"] and d["from"] == "proposed" and d["to"] == "accepted", d
+    assert d["reviewer"] == "master-bot" and d["reason"] == "review: coverage gap confirmed", d
+    assert d["ts"] and "T" in d["ts"], "审计必须带 ts"
+
+
+def test_361_transition_three_legal_paths(tmp_path, monkeypatch):
+    """三条合法路径各走一通(三条独立 Frontier 行): proposed→accepted / proposed→rejected /
+    accepted→explored 均 200, 终态与审计一一对应(对账: 4 成功 0 拒绝)。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        fids = []
+        for i in range(3):
+            status, out = _361_post(base_url, "/write/frontier", _361_valid_payload(proposed_by=f"w-{i}"))
+            assert status == 200, out
+            fids.append(out["id"])
+        paths = [("accepted", "采纳: 空白象限"), ("rejected", "否决: 重复方向"), ("accepted", "采纳: 第二方向")]
+        for fid, (to, note) in zip(fids, paths):
+            status, out = _361_post(base_url, "/write/frontier-transition",
+                                    {"frontier_id": fid, "target_status": to, "review_note": note},
+                                    token="t-361-host")
+            assert status == 200 and out["ok"] is True and str(out["to"]) == to, (fid, out)
+        # 第三条合法路径: accepted→explored(探索完成回写)
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fids[0], "target_status": "explored",
+                                 "review_note": "探索完成: 结果已回写", "reviewer": "master"},
+                                token="t-361-host")
+        assert status == 200 and (str(out["from"]), str(out["to"])) == ("accepted", "explored"), out
+        sts = {fid: str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
+                                     parameters={"id": fid}).get_next()[0]) for fid in fids}
+        assert sts == {fids[0]: "explored", fids[1]: "rejected", fids[2]: "accepted"}, sts
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    kinds = _354_audit_kinds(audit_log)
+    assert kinds.count("frontier-transition") == 4, kinds
+    assert kinds.count("frontier-transition-illegal") == 0, kinds
+
+
+def test_361_transition_illegal_rejected_and_audited(tmp_path, monkeypatch):
+    """非法迁移: rejected→accepted(终态出边) 400 + 状态不变 + frontier-transition-illegal 审计;
+    自环 accepted→accepted 400; proposed→explored(跳级) 400; to 越枚举 400('to must be one of');
+    未知 id 404。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _361_post(base_url, "/write/frontier", _361_valid_payload())
+        assert status == 200, out
+        fid = out["id"]
+        # 先转 rejected(终态), 再试终态出边
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "rejected",
+                                 "review_note": "先落终态"}, token="t-361-host")
+        assert status == 200, out
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "accepted",
+                                 "review_note": "终态出边探针"}, token="t-361-host")
+        assert status == 400 and out["ok"] is False and "illegal transition rejected -> accepted" in out["error"], out
+        assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
+                                parameters={"id": fid}).get_next()[0]) == "rejected", "非法迁移状态不变"
+        # 自环: 直库置回 accepted 后探 accepted→accepted
+        conn.execute("MATCH (x:Frontier {id:$id}) SET x.status='accepted'", parameters={"id": fid})
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "accepted",
+                                 "review_note": "自环探针"}, token="t-361-host")
+        assert status == 400 and "illegal transition accepted -> accepted" in out["error"], out
+        # 跳级: 直库置回 proposed 后探 proposed→explored
+        conn.execute("MATCH (x:Frontier {id:$id}) SET x.status='proposed'", parameters={"id": fid})
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "explored",
+                                 "review_note": "跳级探针"}, token="t-361-host")
+        assert status == 400 and "illegal transition proposed -> explored" in out["error"], out
+        # to 越枚举
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "bogus",
+                                 "review_note": "越枚举探针"}, token="t-361-host")
+        assert status == 400 and "to must be one of" in out["error"], out
+        # 未知 id
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": "fr-nope", "target_status": "accepted",
+                                 "review_note": "不存在探针"}, token="t-361-host")
+        assert status == 404 and "not found" in out["error"], out
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    kinds = _354_audit_kinds(audit_log)
+    assert kinds.count("frontier-transition-illegal") == 4, kinds
+    assert kinds.count("frontier-transition") == 1, "合法转态恰 1 次(先落 rejected 那次)"
+
+
+def test_361_transition_requires_host_token(tmp_path, monkeypatch):
+    """host 权限: worker token 403(harness 已配 worker token, 证明非缺 token 假阴性); 无 token 403;
+    状态均不变; 403 由 _auth 包装器既有 auth-fail 审计覆盖(既有机制零改动)。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _361_post(base_url, "/write/frontier", _361_valid_payload())
+        assert status == 200, out
+        fid = out["id"]
+        for tok in ("t-361-worker", None):
+            status, out = _361_post(base_url, "/write/frontier-transition",
+                                    {"frontier_id": fid, "target_status": "accepted",
+                                     "review_note": "越权探针"}, token=tok)
+            assert status == 403 and "host token" in out["error"], (tok, out)
+        assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
+                                parameters={"id": fid}).get_next()[0]) == "proposed", "越权请求状态不变"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    kinds = _354_audit_kinds(audit_log)
+    assert kinds.count("auth-fail") == 2, kinds
+    assert kinds.count("frontier-transition") == 0, "越权不得产生成功转态审计"
+
+
+def test_361_transition_missing_params_400(tmp_path, monkeypatch):
+    """入参校验: 缺 frontier_id / 缺 target_status / 缺 review_note 均 400(后者经纯函数门,
+    话术含字段名), 一律不改状态。"""
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _361_post(base_url, "/write/frontier", _361_valid_payload())
+        assert status == 200, out
+        fid = out["id"]
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"target_status": "accepted", "review_note": "n"}, token="t-361-host")
+        assert status == 400 and "frontier_id required" in out["error"], out
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "review_note": "n"}, token="t-361-host")
+        assert status == 400 and "target_status required" in out["error"], out
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "accepted"}, token="t-361-host")
+        assert status == 400 and "review_note required" in out["error"], out
+        assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
+                                parameters={"id": fid}).get_next()[0]) == "proposed", "缺参请求状态不变"
+    finally:
+        srv.shutdown()
+        srv.server_close()
