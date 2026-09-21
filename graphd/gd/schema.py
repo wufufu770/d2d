@@ -24,6 +24,12 @@ SCHEMA = [
     # 写入通道 /write/experience, 读取通道 /query/experience(蒸馏 3.5-2/注入 3.5-3 后续批次接线)。
     # 与 ExperienceWeight 同名族不同表: 那是模式权重卡(cls/win_day 计胜), 本表是条目级经验回流。
     "CREATE NODE TABLE IF NOT EXISTS Experience(id STRING, eng_id STRING DEFAULT '', category STRING DEFAULT '', scope STRING DEFAULT '', title STRING DEFAULT '', content STRING DEFAULT '', evidence_ref STRING DEFAULT '', utility_score FLOAT DEFAULT 0.5, retrieval_count INT64 DEFAULT 0, success_count INT64 DEFAULT 0, created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), status STRING DEFAULT 'quarantined', provenance_hash STRING DEFAULT '', PRIMARY KEY(id))",
+    # 3.6-1(前沿子系统 C 数据层): Frontier 探索方向提案表(9 列 — worker 提案 direction,
+    # 主控评审转态 proposed→accepted|rejected、accepted→explored)。时间列 DEFAULT epoch
+    # ('1970-01-01 00:00:00' — kuzu 0.11 DDL 无当前时刻函数默认, 沿 Experience 3.5-1 现场实证
+    # 先例); 写入通道 /write/frontier(status 恒 'proposed', reviewed_at 恒 epoch — 评审前无值),
+    # 读取通道 /query/frontier(缺省全态), 转态通道 /write/frontier-transition(host-only)。
+    "CREATE NODE TABLE IF NOT EXISTS Frontier(id STRING, eng_id STRING DEFAULT '', direction STRING DEFAULT '', evidence STRING DEFAULT '', proposed_by STRING DEFAULT '', status STRING DEFAULT 'proposed', review_note STRING DEFAULT '', created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', lease_id STRING DEFAULT '', exit_class STRING DEFAULT '', PRIMARY KEY(worker_id))",
     "CREATE NODE TABLE IF NOT EXISTS Task(id STRING, eng STRING DEFAULT '', kind STRING, payload STRING, priority DOUBLE DEFAULT 1.0, status STRING DEFAULT 'pending', claimed_by STRING DEFAULT '', claimed_at STRING DEFAULT '', target_type STRING DEFAULT 'web', link_id STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Handoff(id STRING, eng STRING, digest STRING, model STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
@@ -196,6 +202,23 @@ def init_schema(conn):
             conn.execute(_ddl)
         except Exception:
             pass
+    # 3.6-1(前沿子系统 C): Frontier 表旧库逐列补缺迁移 —— 同 Experience 3.5-1 先例形态:
+    # 早期形态/半建表由本段幂等 ALTER 补齐(列已存在时 ALTER 抛错被吞, 同 3B/3A/3E/3.5-1 先例)。
+    # 列名为字面量枚举(无外部输入可拼入, 防扫描器 SIDI 判定); 类型/默认值与 SCHEMA CREATE 逐字
+    # 同源(三处同步之二); id 为 PRIMARY KEY 不可 ALTER ADD(带 id 的表必含主键, 无此缺列形态)。
+    # 缺列即走 _CRITICAL_COLUMNS/SCHEMA_DEGRADED 降级告警(同 Experience 缺列兜底)。
+    for _ddl in ("ALTER TABLE Frontier ADD eng_id STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD direction STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD evidence STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD proposed_by STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD status STRING DEFAULT 'proposed'",
+                 "ALTER TABLE Frontier ADD review_note STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+                 "ALTER TABLE Frontier ADD reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
     # 存量混合池归属回填: 只处理 eng='' 的行, 幂等(每次启动 O(池子行数), 空转即跳过)。
     try:
         _backfill_eng(conn)
@@ -227,6 +250,13 @@ _CRITICAL_COLUMNS = {
     "Experience": ("id", "eng_id", "category", "scope", "title", "content", "evidence_ref",
                    "utility_score", "retrieval_count", "success_count", "created_at",
                    "last_used_at", "status", "provenance_hash"),
+    # 3.6-1(前沿子系统 C): Frontier 纳入全部 9 列(含 id 主键) —— 同 Experience 全列拍板:
+    # 全新表整表即前沿提案数据层的全部载体, 任一列缺失都属 schema 损坏(status 缺→评审状态机
+    # 失效, created_at/reviewed_at 缺→排序/时效失效, direction/evidence 缺→提案内容断链,
+    # 其余列缺→读写 Binder 异常被上层静默吞), 且无历史存量需要区分"主功能列/迁移列"。
+    # 全列校验成本同量级(table_info 单次调用), 不放子集。
+    "Frontier": ("id", "eng_id", "direction", "evidence", "proposed_by",
+                 "status", "review_note", "created_at", "reviewed_at"),
 }
 
 # 迁移校验结果: 缺失关键列的 "表.列" 列表(空=健康)。app.py /health 回显此值,
