@@ -2600,3 +2600,226 @@ def test_354_write_experience_default_cap_50_not_hit_in_normal_use(tmp_path, mon
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ---- 3.5-4-2 转态机制(纯函数门 + /write/experience-transition 真端点, 3E/3.5-1 同款形态) ----
+from graphd.gd.gates import experience_transition_gate  # noqa: E402  (本批次新增名, 文件尾统一挂)
+
+
+def test_3542_gate_legal_transitions():
+    """合法迁移表拍板: 仅 quarantined→active 与 active→deprecated 两条; reviewer_note 80 字符边界内。"""
+    ok, err = experience_transition_gate("quarantined", "active", "auto-review: supported by 2 engagements")
+    assert ok is True and err == ""
+    ok, err = experience_transition_gate("active", "deprecated", "人工退役: 过期经验")
+    assert ok is True and err == ""
+    assert experience_transition_gate("quarantined", "active", "n" * 80)[0] is True, "80 字符边界内"
+
+
+def test_3542_gate_illegal_transitions_rejected():
+    """其余迁移一律拒绝: 反向/回退/自环/终态出边/越枚举 to/未知 cur; 拒绝话术可判别。"""
+    illegal = [("quarantined", "deprecated"), ("active", "quarantined"), ("active", "active"),
+               ("deprecated", "active"), ("deprecated", "deprecated"), ("quarantined", "quarantined"),
+               ("garbage-cur", "active"), ("", "active"), (None, "active")]
+    for cur, to in illegal:
+        ok, err = experience_transition_gate(cur, to, "note")
+        assert ok is False and f"illegal transition {cur} -> {to}" == err, (cur, to, err)
+    for to in ("", "Active", "publised", None):
+        ok, err = experience_transition_gate("quarantined", to, "note")
+        assert ok is False and "to must be one of" in err, to
+
+
+def test_3542_gate_reviewer_note_required():
+    """reviewer_note 必填(拍板): 缺失/None/纯空白/81 字符拒绝; 话术含字段名(调用方 400 可读)。"""
+    for note in ("", "   ", None):
+        ok, err = experience_transition_gate("quarantined", "active", note)
+        assert ok is False and "reviewer_note required" in err, note
+    ok, err = experience_transition_gate("quarantined", "active", "n" * 81)
+    assert ok is False and "reviewer_note required" in err
+
+
+def test_3542_app_reexports_same_gate_implementation():
+    """app.py 接线用的 experience_transition_gate 必须是 gates.py 同一对象(3C re-export 先例)。"""
+    import graphd.app as _app
+    assert _app.experience_transition_gate is experience_transition_gate
+
+
+def _3542_spawn_server(tmp_path, monkeypatch):
+    """3.5-4-2 端点专用: 同 3E harness 形态(host-only 路由须 HOST token; 另配 worker token
+    供「worker token 不得转态」反向用例), 并预置一条 quarantined Experience。"""
+    for var in ("P2P_TOKEN", "P2P_TOKEN_REQUIRED", "P2P_OPEN_RANGE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("P2P_HOST_TOKEN", "t-3542-host")
+    monkeypatch.setenv("P2P_WORKER_TOKEN", "t-3542-worker")
+    monkeypatch.setattr(graphd_app, "_D2D_PAUSE_FILE", str(tmp_path / "paused.json"))
+    graphd_app._pause_mtime_cache[0], graphd_app._pause_mtime_cache[1] = None, False
+    dbp = tmp_path / "kuzu_db"
+    db = kuzu.Database(str(dbp))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    init_schema(conn)
+    conn.execute("CREATE (x:Experience {id:'exp-3542', eng_id:'eng-a', title:'t', content:'c', "
+                 "status:'quarantined', provenance_hash:'ph'})")
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
+    monkeypatch.setattr(graphd_app, "_db", db)
+    srv = graphd_app.GraphdHTTPServer(("127.0.0.1", 0), graphd_app.Handler)
+    _threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_address[1]}", conn, srv
+
+
+def _3542_post(base_url, payload, token="t-3542-host"):
+    """/write/experience-transition POST; token 缺省 host; 4xx/5xx 经 HTTPError 取回 (code, body)。"""
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Auth"] = token
+    req = _urllib_request.Request(base_url + "/write/experience-transition",
+                                  data=json.dumps(payload).encode(), headers=headers)
+    try:
+        with _urllib_request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.load(resp)
+    except _urllib_request.HTTPError as e:
+        return e.code, json.load(e)
+
+
+def test_3542_transition_success_writes_status_and_audit(tmp_path, monkeypatch):
+    """成功转态端到端: quarantined→active 200; Experience.status 落图(参数绑定路径);
+    _audit_event('experience-transition') 记 ts/旧状态/新状态/reviewer/reason(拍板⑧: 不加列,
+    审计为轨迹唯一载体); 其他列零触碰。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _3542_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _3542_post(base_url, {"experience_id": "exp-3542", "target_status": "active",
+                                            "reviewer_note": "auto-review: supported by 2 engagements",
+                                            "reviewer": "review-bot"})
+        assert status == 200 and out["ok"] is True, out
+        assert (str(out["id"]), str(out["from"]), str(out["to"])) == ("exp-3542", "quarantined", "active")
+        row = conn.execute("MATCH (x:Experience {id:'exp-3542'}) RETURN x.status, x.eng_id, "
+                           "x.utility_score, x.provenance_hash").get_next()
+        assert str(row[0]) == "active", "status 已转 active"
+        assert (str(row[1]), float(row[2]), str(row[3])) == ("eng-a", 0.5, "ph"), "其他列零触碰"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    tr = [e for e in events if e["kind"] == "experience-transition"]
+    assert len(tr) == 1, [e["kind"] for e in events]
+    d = tr[0]["detail"]
+    assert d["id"] == "exp-3542" and d["from"] == "quarantined" and d["to"] == "active", d
+    assert d["reviewer"] == "review-bot" and d["reason"] == "auto-review: supported by 2 engagements", d
+    assert d["ts"] and "T" in d["ts"], "审计必须带 ts"
+
+
+def test_3542_transition_illegal_rejected_and_audited(tmp_path, monkeypatch):
+    """非法迁移: active→quarantined 400 + 状态不变 + experience-transition-illegal 审计;
+    to 越枚举 400('to must be one of'); 未知 id 404; quarantined→deprecated(跳级) 400。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _3542_spawn_server(tmp_path, monkeypatch)
+    try:
+        conn.execute("MATCH (x:Experience {id:'exp-3542'}) SET x.status='active'")
+        status, out = _3542_post(base_url, {"experience_id": "exp-3542", "target_status": "quarantined",
+                                            "reviewer_note": "回退探针"})
+        assert status == 400 and out["ok"] is False and "illegal transition active -> quarantined" in out["error"], out
+        assert str(conn.execute("MATCH (x:Experience {id:'exp-3542'}) RETURN x.status").get_next()[0]) == "active", \
+            "非法迁移状态不变"
+        status, out = _3542_post(base_url, {"experience_id": "exp-3542", "target_status": "bogus",
+                                            "reviewer_note": "越枚举探针"})
+        assert status == 400 and "to must be one of" in out["error"], out
+        status, out = _3542_post(base_url, {"experience_id": "exp-nope", "target_status": "active",
+                                            "reviewer_note": "不存在探针"})
+        assert status == 404 and "not found" in out["error"], out
+        conn.execute("MATCH (x:Experience {id:'exp-3542'}) SET x.status='quarantined'")
+        status, out = _3542_post(base_url, {"experience_id": "exp-3542", "target_status": "deprecated",
+                                            "reviewer_note": "跳级探针"})
+        assert status == 400 and "illegal transition quarantined -> deprecated" in out["error"], out
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    kinds = _354_audit_kinds(audit_log)
+    assert kinds.count("experience-transition-illegal") == 3, kinds
+    assert kinds.count("experience-transition") == 0, "本轮无合法转态, 不得出现成功审计"
+
+
+def test_3542_transition_requires_host_token(tmp_path, monkeypatch):
+    """host 权限: worker token 403(harness 已配 worker token, 证明非缺 token 假阴性); 无 token 403;
+    状态均不变; 403 由 _auth 包装器既有 auth-fail 审计覆盖(既有机制零改动)。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _3542_spawn_server(tmp_path, monkeypatch)
+    try:
+        for tok in ("t-3542-worker", None):
+            status, out = _3542_post(base_url, {"experience_id": "exp-3542", "target_status": "active",
+                                                "reviewer_note": "越权探针"}, token=tok)
+            assert status == 403 and "host token" in out["error"], (tok, out)
+        assert str(conn.execute("MATCH (x:Experience {id:'exp-3542'}) RETURN x.status").get_next()[0]) \
+            == "quarantined", "越权请求状态不变"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    kinds = _354_audit_kinds(audit_log)
+    assert kinds.count("auth-fail") == 2, kinds
+
+
+def test_3542_transition_idempotent_no_double_apply(tmp_path, monkeypatch):
+    """幂等: quarantined→active 成功后重复转态(active→active)被状态机拒绝 400, 状态不被二次
+    改写(审计两轮可对账: 1 成功 + 2 拒绝); 成功审计恰一条。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _3542_spawn_server(tmp_path, monkeypatch)
+    try:
+        payload = {"experience_id": "exp-3542", "target_status": "active",
+                   "reviewer_note": "auto-review: supported by 2 engagements"}
+        status, out = _3542_post(base_url, payload)
+        assert status == 200 and out["ok"] is True, out
+        status, out = _3542_post(base_url, payload)
+        assert status == 400 and "illegal transition active -> active" in out["error"], out
+        status, out = _3542_post(base_url, {**payload, "target_status": "quarantined"})
+        assert status == 400, out
+        row = conn.execute("MATCH (x:Experience {id:'exp-3542'}) RETURN x.status").get_next()
+        assert str(row[0]) == "active", "重复/回退请求后状态仍为 active(无二次副作用)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    kinds = _354_audit_kinds(audit_log)
+    assert kinds.count("experience-transition") == 1, kinds
+    assert kinds.count("experience-transition-illegal") == 2, kinds
+
+
+def test_3542_transition_missing_params_400(tmp_path, monkeypatch):
+    """入参校验: 缺 experience_id / 缺 target_status / 缺 reviewer_note 均 400(后者经纯函数门,
+    话术含字段名), 一律不落库不改状态。"""
+    base_url, conn, srv = _3542_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _3542_post(base_url, {"target_status": "active", "reviewer_note": "n"})
+        assert status == 400 and "experience_id required" in out["error"], out
+        status, out = _3542_post(base_url, {"experience_id": "exp-3542", "reviewer_note": "n"})
+        assert status == 400 and "target_status required" in out["error"], out
+        status, out = _3542_post(base_url, {"experience_id": "exp-3542", "target_status": "active"})
+        assert status == 400 and "reviewer_note required" in out["error"], out
+        assert str(conn.execute("MATCH (x:Experience {id:'exp-3542'}) RETURN x.status").get_next()[0]) \
+            == "quarantined", "缺参请求状态不变"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_3542_transition_active_to_deprecated_roundtrip(tmp_path, monkeypatch):
+    """第二条合法迁移: active→deprecated(人工退役通道)200; reviewer_note 缺省 reviewer 落 'host'。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _3542_spawn_server(tmp_path, monkeypatch)
+    try:
+        conn.execute("MATCH (x:Experience {id:'exp-3542'}) SET x.status='active'")
+        status, out = _3542_post(base_url, {"experience_id": "exp-3542", "target_status": "deprecated",
+                                            "reviewer_note": "过期退役"})
+        assert status == 200 and out["ok"] is True, out
+        assert str(conn.execute("MATCH (x:Experience {id:'exp-3542'}) RETURN x.status").get_next()[0]) \
+            == "deprecated"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    tr = [e for e in events if e["kind"] == "experience-transition"]
+    assert len(tr) == 1 and tr[0]["detail"]["reviewer"] == "host", "未带 reviewer 时审计落 'host'"
+    assert tr[0]["detail"]["from"] == "active" and tr[0]["detail"]["to"] == "deprecated"

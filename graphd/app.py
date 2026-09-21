@@ -102,6 +102,13 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import (EXPERIENCE_INJECTION_HIGH, EXPERIENCE_INJECTION_SOFT_RES,
                           experience_injection_scan, experience_quota_reject)
 
+# 3.5-4-2(转态机制): Experience 转态纯函数门。同 3C 哲学: gd/__init__ 聚合不在本批次授权
+# 改动清单(gates.py/app.py/tests + plugin 三文件), 直接从子模块导入, 两种运行形态都接住。
+try:
+    from graphd.gd.gates import experience_transition_gate
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import experience_transition_gate
+
 _lock = threading.Lock()
 _db = None
 
@@ -857,6 +864,55 @@ class Handler(BaseHTTPRequestHandler):
                          {"id": _exp_id, "eng_id": _eng_id, "category": _cat,
                           "suspect": _inj == "soft", "pii_hits": _pii_hits})
             return self._send(200, {"ok": True, "id": _exp_id, "status": "quarantined"})
+
+        # ---- 3.5-4-2(转态机制): /write/experience-transition —— Experience 状态转态通道。
+        # 独立早退路由(照 /write/transition 模板, 既有路由零改写; 本路由 return 后不触达下方
+        # 任何链)。host-only(/write/transition 同款: _auth("host") 只认 HOST_TOKEN 恒等比较,
+        # worker token 403; 失败由 _auth 包装器既有 auth-fail 审计覆盖)。合法迁移表与
+        # reviewer_note 必填校验收敛在 gates.experience_transition_gate 纯函数(单测真源):
+        # 仅 quarantined→active(评审出池)/active→deprecated(退役) 两条, 其余拒绝。
+        # 拍板⑧: 不加列 —— 转态轨迹不落图, 只经 _audit_event('experience-transition') 记
+        # ts/旧状态/新状态/reviewer/reason; 非法迁移记 'experience-transition-illegal'
+        # (#73 transition-illegal 同款可追溯)。status 写入参数绑定($to), 拒绝拼接。
+        # 共享门自动生效: Content-Length 门/legacy token/R6 denylist 红线扫描(本 path 以
+        # /write/ 开头且非 /write/transition — 红线散文零容忍含 reviewer_note, fail-closed)。
+        if self.path == "/write/experience-transition":
+            if not self._auth("host"):
+                return self._send(403, {"ok": False, "error": "experience transitions require host token"})
+            xid = str(req.get("experience_id") or "").strip()
+            to = str(req.get("target_status") or "").strip().lower()
+            if not xid:
+                return self._send(400, {"ok": False, "error": "experience_id required"})
+            if not to:
+                return self._send(400, {"ok": False, "error": "target_status required (quarantined|active|deprecated)"})
+            with _locked():  # V-11: 锁带 5s deadline(读旧态→门判定→写新态与 /write/transition 同一锁窗口)
+                try:
+                    conn = kuzu.Connection(db())
+                    r = conn.execute("MATCH (x:Experience {id:$id}) RETURN x.status", parameters={"id": xid})
+                    if not r.has_next():
+                        return self._send(404, {"ok": False, "error": "experience not found"})
+                    cur = str(r.get_next()[0] or "quarantined")
+                    ok, err = experience_transition_gate(cur, to, req.get("reviewer_note"))
+                    if not ok:
+                        # #73: 非法迁移审计(转态拒绝动作可追溯: id/cur/to/reviewer)
+                        _audit_event("experience-transition-illegal",
+                                     {"id": xid, "cur": cur, "to": to,
+                                      "reviewer": str(req.get("reviewer") or "")[:80], "err": err})
+                        return self._send(400, {"ok": False, "error": err})
+                    # 全参数绑定($id/$to); 不触碰其他列(utility_score/计数/时间列零改动 — 拍板⑧不加列)
+                    conn.execute("MATCH (x:Experience {id:$id}) SET x.status=$to",
+                                 parameters={"id": xid, "to": to})
+                except TimeoutError as _te:
+                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
+                except Exception as e:
+                    return self._send(500, {"ok": False, "error": str(e)[:200]})
+            # 成功转态审计(拍板⑧: 轨迹唯一载体): ts/旧状态/新状态/reviewer/reason 全记录
+            _audit_event("experience-transition",
+                         {"id": xid, "from": cur, "to": to,
+                          "reviewer": str(req.get("reviewer") or "host")[:80],
+                          "reason": str(req.get("reviewer_note") or ""),
+                          "ts": datetime.now(timezone.utc).isoformat()})
+            return self._send(200, {"ok": True, "id": xid, "from": cur, "to": to})
 
         # R3: Finding 七态状态机转换（host 专属；worker 的 verified 结论仍须经验证器环独立重放背书）
         # #73 token 归属复核: 本端点已 host-only —— _auth("host") 只接受与 HOST_TOKEN 的恒等

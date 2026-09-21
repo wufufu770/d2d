@@ -629,6 +629,36 @@ def experience_quota_reject(count, cap=None) -> tuple[bool, str]:
     return False, ""
 
 
+# ── 3.5-4-2(转态机制): Experience 转态合法迁移表 + 纯函数门 ────────────────────────
+# 三态拍板(方案 v2): quarantined(写入即隔离) / active(评审出池) / deprecated(过期退役)。
+# 合法迁移仅两条: quarantined→active(跨 engagement 佐证达标出池) 与 active→deprecated
+# (退役, 只降不升); 无回退路径(active 不得回 quarantined, deprecated 终态) — 状态机单向,
+# 评审幂等性由此保证: 已出池条目天然离开 quarantined 候选池。
+EXPERIENCE_STATES = ("quarantined", "active", "deprecated")
+EXPERIENCE_TRANSITIONS = {
+    "quarantined": ("active",),
+    "active": ("deprecated",),
+    "deprecated": (),
+}
+
+
+def experience_transition_gate(cur, to, reviewer_note):
+    """3.5-4-2: Experience 转态审计门 — 纯函数单测真源(transition_gate :186-202 同形态:
+    合法迁移表 + 备注非空校验)。返回 (ok, reason): ok=False 时 reason 为拒绝话术(调用方
+    400 + experience-transition-illegal 审计)。谁在何时以何理由推动转态由调用方 _audit_event
+    旁路追溯(拍板⑧: 不加列, 仅审计事件), 故本门不产出轨迹对象。
+    reviewer_note(1-80 字符)必填 — 空白/越界拒绝; cur 不在迁移表(含 unknown)与 to 越枚举
+    一律拒绝(fail-closed)。"""
+    if to not in EXPERIENCE_STATES:
+        return False, f"to must be one of {list(EXPERIENCE_STATES)}"
+    if to not in EXPERIENCE_TRANSITIONS.get(cur, ()):
+        return False, f"illegal transition {cur} -> {to}"
+    note = str(reviewer_note or "").strip()
+    if not note or len(note) > 80:
+        return False, "reviewer_note required (1-80 chars): 为什么转态(可追溯)"
+    return True, ""
+
+
 # ── 3C: 双哈希指纹(content_hash/source_hash) — 写入接线用纯函数, 无任何 IO ─────────────
 # 拍板口径: content_hash=对脱敏后完整落库终值取 SHA-256; source_hash=对规范化后来源 URL
 # (host+path 去 query)取 SHA-256。落库列 = schema.py 的 Finding/Signal_ 三列(3B 已迁移)。
