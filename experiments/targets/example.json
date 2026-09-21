@@ -1,0 +1,8 @@
+{
+  "_comment": "单目标示例(3.5-5b): 复制本条目进 experiments/config.json 的 targets[] 并按你的授权范围改写。authorized 必须为 true 才允许启动; url 仅 http/https; scope 为逗号分隔白名单标签(与 Engagement.scope 同形态)。",
+  "name": "single-authorized-target",
+  "url": "https://target.example.com",
+  "scope": "target.example.com",
+  "authorized": true,
+  "objective": "单目标示例占位 — 仅在获得目标所有者明确授权后替换为真实授权目标"
+}
