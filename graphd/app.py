@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # #73: 审计日志 —— 可选依赖, try/except 降级导入(audit.py 缺失/损坏时审计退化为无操作, 业务不崩)。
@@ -36,7 +36,7 @@ def _audit_event(kind, detail):
 DB_PATH = os.environ.get("P2P_GRAPH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kuzu_db"))
 # M8 守护自愈锚: /health 回显三要素。发版必须改 VERSION — preflight 据版本差异识别 stale 旧实例;
 # STARTED_AT 是本进程启动时间, 预检与 /proc/<pid> starttime 比对防 pid 复用误判。
-VERSION = "1.4.0"  # 0921: Frontier 表迁移(3.6-1 前沿子系统 C 数据层: 新表 CREATE+ALTER+关键列) — bump 让 preflight 不复用旧实例
+VERSION = "1.5.0"  # 0922: Frontier 五列增列迁移(3.6-2 v4.1: value_score/value_components/两个 *_ref/version — CREATE+ALTER+关键列三处同步) — bump 让 preflight 不复用旧实例
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 PORT = int(os.environ.get("P2P_GRAPH_PORT", "8766"))
 
@@ -115,6 +115,15 @@ try:
     from graphd.gd.gates import frontier_transition_gate
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import frontier_transition_gate
+
+# 3.6-2 v4.1(前沿写端增强): refs 准入门 / engagement 级滑动窗口配额 / 签名去重指纹纯函数。
+# 同 3C 哲学: gd/__init__ 聚合不在本批次授权改动清单, 直接从子模块导入, 两种运行形态都接住。
+try:
+    from graphd.gd.gates import (FRONTIER_DEDUP_WINDOW_HOURS, FRONTIER_RATE_WINDOW_HOURS,
+                                 frontier_rate_reject, frontier_refs_rejected, frontier_signature)
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import (FRONTIER_DEDUP_WINDOW_HOURS, FRONTIER_RATE_WINDOW_HOURS,
+                          frontier_rate_reject, frontier_refs_rejected, frontier_signature)
 
 _lock = threading.Lock()
 _db = None
@@ -929,6 +938,13 @@ class Handler(BaseHTTPRequestHandler):
         # 测试锁定; 转 accepted/rejected/explored 是主控评审(3.6-3)经 /write/frontier-transition
         # 的事, 本批次无该管道); reviewed_at 恒 epoch、review_note 恒 ''(评审前无值),
         # created_at=服务端当前时刻, id 服务端生成 — 调用方一律无权指定。
+        # ---- 3.6-2 v4.1 六条增强(下方新增行, 既有校验/写入语句仅 CREATE 增列不改写) ----
+        # ①refs 图节点引用必填(格式门外判形 + 锁内终检存在性/同 eng — A3 串池同类病收口);
+        # ②engagement 级 20/h 滑动窗口 429(锁内 COUNT created_at > now-1h, P2P_FRONTIER_WRITE_WINDOW
+        #   可调); ③签名去重 sha256(direction+eng_id) 6h 内同 (eng,direction) → 200+suppressed
+        #   静默合并(理由留痕于增强③注释); ④value_score 恒 0.0 / ⑤value_components 恒 ''、
+        #   两个 *_ref 占位不写值(3.6-3/3.6-4 回填) / ⑥version 恒 'v1' — 内联字面量,
+        #   调用方传值一律无效。refs/指纹均不落列(准入校验语义, v4.1 五列为闭集)。
         if self.path == "/write/frontier":
             if not self._auth("worker"):
                 return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
@@ -954,6 +970,13 @@ class Handler(BaseHTTPRequestHandler):
             if not _by:
                 _audit_event("frontier-reject", {"eng_id": _eng_id, "reason": "proposed_by required"})
                 return self._send(400, {"ok": False, "error": "proposed_by required: 提案 worker id 必填"})
+            # ---- 3.6-2 v4.1 增强①(细则1+接口1): refs 图节点引用必填(格式门, 锁外先判形) ----
+            # ≥1 个 Signal/Endpoint id; 归一(strip/去空/保序去重)后交锁内终检存在性+同 eng。
+            # A3(跨项目串池)同类病的服务端收口: 工具侧预检只是提前失败, 服务端不信自报(拍板②)。
+            _refs_rej, _refs_err, _refs = frontier_refs_rejected(req.get("refs"))
+            if _refs_rej:
+                _audit_event("frontier-reject", {"eng_id": _eng_id, "reason": "refs invalid", "detail": _refs_err[:120]})
+                return self._send(400, {"ok": False, "error": _refs_err})
             # redact_pii 脱敏: direction+evidence 两字段(3D 八模式; P2P_EVIDENCE_REDACT 开关在
             # gates.redact_pii 内部生效 — /write/experience 同形态无条件调用)。
             _pii_hits = 0
@@ -964,17 +987,86 @@ class Handler(BaseHTTPRequestHandler):
             _eng_slug = re.sub(r"[^A-Za-z0-9._-]", "", _eng_id)[:16]
             _fid = f"fr-{_eng_slug or 'x'}-{uuid.uuid4().hex[:12]}"
             _now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            # 3.6-2 v4.1 增强②③窗口起点(服务端当前时刻回推 — 本 kuzu 0.11.3 无 now() 标量
+            # (现场实证: Catalog exception NOW does not exist), 沿本文件 timestamp($ca) 绑定
+            # 先例: UTC naive 串写入与比较同源, 无时区错位)。
+            _now_dt = datetime.now(timezone.utc)
+            _since_1h = (_now_dt - timedelta(hours=FRONTIER_RATE_WINDOW_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
+            _since_6h = (_now_dt - timedelta(hours=FRONTIER_DEDUP_WINDOW_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
             with _locked():  # V-11: 锁带 5s deadline
                 try:
                     conn = kuzu.Connection(db())
+                    # ---- 3.6-2 v4.1 增强①(续): refs 终检(锁内 — 服务端不信自报, 数据终值裁决)。
+                    # 逐 id 存在性 + eng 同源校验(两表各自字面量语句 + IN 列表绑定 — kuzu 0.11.3
+                    # 列表参数绑定形态现场实证可用; 空列表已在格式门拒绝不会到达此处)。
+                    # 校验语义: 存在 且 节点 eng == 请求 eng_id; 任一不满足 400 点名 —— 跨 eng
+                    # 即 A3 跨项目串池同类病(评审资源被串池污染), 拒绝必须带 offending id 可对账。
+                    _found = {}
+                    for _q in ("MATCH (n:Signal_) WHERE n.id IN $ids RETURN n.id, n.eng",
+                               "MATCH (n:Endpoint) WHERE n.id IN $ids RETURN n.id, n.eng"):
+                        _r = conn.execute(_q, parameters={"ids": _refs})
+                        while _r.has_next():
+                            _rid, _reng = _r.get_next()
+                            _found[str(_rid)] = str(_reng or "")
+                    _missing = [i for i in _refs if i not in _found]
+                    if _missing:
+                        _audit_event("frontier-reject", {"eng_id": _eng_id, "reason": "refs not found",
+                                                         "missing": _missing[:8]})
+                        return self._send(400, {"ok": False, "error":
+                                                f"refs 节点不存在: {', '.join(_missing[:8])} (须为图内已有 Signal/Endpoint id — p2p_graph 查得)"})
+                    _cross = [i for i in _refs if _found[i] != _eng_id]
+                    if _cross:
+                        _audit_event("frontier-reject", {"eng_id": _eng_id, "reason": "refs cross-engagement",
+                                                         "offending": _cross[:8],
+                                                         "their_eng": [_found[i][:40] for i in _cross[:8]]})
+                        return self._send(400, {"ok": False, "error":
+                                                (f"refs 跨 engagement 引用: {', '.join(_cross[:8])} "
+                                                 f"(节点 eng={_found[_cross[0]][:40]}) ≠ 请求 eng_id={_eng_id} — "
+                                                 "跨项目串池拒绝, 提案只能引用本 engagement 的信号/端点")})
+                    # ---- 3.6-2 v4.1 增强②(细则2+接口2): engagement 级 20/h 滑动窗口(端点侧强制)。
+                    # 落点=本锁窗口(计数与 CREATE 原子完成 — H12 TOCTOU 教训/experience 配额同款);
+                    # 计数沿 created_at 列(图内天然持久准确, 直写历史行按其值参与窗口), 含全部
+                    # 状态行(提案占的是评审带宽, 与后续转态无关)。超限 429 + frontier-quota 审计。
+                    _cnt_r = conn.execute(
+                        "MATCH (x:Frontier) WHERE x.eng_id = $e AND x.created_at > timestamp($since) "
+                        "RETURN count(x)", parameters={"e": _eng_id, "since": _since_1h})
+                    _cnt = int(list(_cnt_r.get_next())[0]) if _cnt_r.has_next() else 0
+                    _q_rej, _q_reason = frontier_rate_reject(_cnt)
+                    if _q_rej:
+                        _audit_event("frontier-quota", {"eng_id": _eng_id, "count": _cnt})
+                        return self._send(429, {"ok": False, "error": _q_reason})
+                    # ---- 3.6-2 v4.1 增强③(细则3): 签名去重 — 同 (eng_id, direction) 6h 内已存在
+                    # 即「静默丢弃」: 200 + suppressed 标记 + 既有行 id(选 200 而非 409 的理由:
+                    # 「静默」语义 = 对 worker 流零扰动, 重复提案视为已达成而非错误; 409 会打断
+                    # 工具侧错误分支且无补救动作可做 — 方向已入池, 调用方无事可做)。指纹
+                    # sha256(direction+eng_id) 仅审计留痕, 图内判重直接 (eng_id, direction) 精确
+                    # 匹配(等价语义, 不新增指纹列 — v4.1 五列为闭集)。
+                    _dup_r = conn.execute(
+                        "MATCH (x:Frontier) WHERE x.eng_id = $e AND x.direction = $d "
+                        "AND x.created_at > timestamp($since) RETURN x.id, x.status LIMIT 1",
+                        parameters={"e": _eng_id, "d": _direction, "since": _since_6h})
+                    if _dup_r.has_next():
+                        _dup_id, _dup_st = _dup_r.get_next()
+                        _audit_event("frontier-suppress",
+                                     {"existing_id": str(_dup_id), "eng_id": _eng_id,
+                                      "signature": frontier_signature(_direction, _eng_id),
+                                      "proposed_by": _by[:80]})
+                        return self._send(200, {"ok": True, "id": str(_dup_id),
+                                                "status": str(_dup_st or "proposed"),
+                                                "suppressed": True})
                     # 全参数绑定($x, 绝不拼接外部输入); status 内联字面量 'proposed' — 调用方即使
                     # 传 status 字段也结构上无法入图(恒 proposed, 同 /write/experience 恒
                     # 'quarantined' 先例); reviewed_at 恒 epoch(评审前无值, 与 schema DEFAULT 同源);
                     # timestamp('...') cast 与字面量形态已现场实证(kuzu 0.11)。
+                    # 3.6-2 v4.1 增强④⑤⑥(细则4/5/6): value_score 恒 0.0 / value_components 恒 ''
+                    # / version 恒 'v1' — 三者均内联字面量(status:'proposed' 同款), 调用方传值
+                    # 结构上无法入图(公式 3.6-3 才实现评分; 两个 *_ref 占位列本端点不写值, 走
+                    # schema DEFAULT '', 由 3.6-3/3.6-4 转态链回填)。
                     conn.execute(
                         "CREATE (x:Frontier {id:$id, eng_id:$eng, direction:$dir, evidence:$ev, "
                         "proposed_by:$by, status:'proposed', review_note:'', "
-                        "created_at:timestamp($ca), reviewed_at:timestamp('1970-01-01 00:00:00')})",
+                        "created_at:timestamp($ca), reviewed_at:timestamp('1970-01-01 00:00:00'), "
+                        "value_score:0.0, value_components:'', version:'v1'})",
                         parameters={"id": _fid, "eng": _eng_id, "dir": _direction, "ev": _evidence,
                                     "by": _by, "ca": _now})
                 except TimeoutError as _te:

@@ -2839,27 +2839,38 @@ from graphd.gd.gates import (FRONTIER_STATES as _361_STATES,              # noqa
 from graphd.app import frontier_transition_gate as _361_app_gate          # noqa: E402
 from datetime import datetime as _361_dt                                  # noqa: E402
 
-# 规格逐列清单(权威口径, 9 列) — CREATE/ALTER/_CRITICAL_COLUMNS/本清单同源对照
+# 规格逐列清单(权威口径) — CREATE/ALTER/_CRITICAL_COLUMNS/本清单同源对照。
+# _361_COLUMNS = /query/frontier 返回行 9 键(读端点 v4.1 零改动, 返回面不含增列);
+# _361_SCHEMA_COLUMNS = Frontier 表全 14 列(3.6-2 v4.1 增 5 列: value_score/value_components/
+# 两个 *_ref/version — 写端点恒 0/''/''/''/'v1', 见 test_362_write_wires_five_placeholder_columns)。
 _361_COLUMNS = ["id", "eng_id", "direction", "evidence", "proposed_by",
                 "status", "review_note", "created_at", "reviewed_at"]
+_361_SCHEMA_COLUMNS = _361_COLUMNS + ["value_score", "value_components",
+                                      "accepted_to_hypothesis_ref", "hypothesis_to_confirmed_ref",
+                                      "version"]
 
 
 def test_361_new_db_frontier_full_columns(tmp_path):
-    """新库 init_schema 后 Frontier 含全 9 列(真库 table_info 逐列确认)且缺省值正确:
+    """新库 init_schema 后 Frontier 含全 14 列(真库 table_info 逐列确认)且缺省值正确:
     status 'proposed'(写入即提案态)/时间列 epoch(kuzu 0.11 DDL 无当前时刻函数默认 —
     沿 Experience 3.5-1 现场实证先例)/其余 STRING 列 DEFAULT ''。类型映射(沿 Experience
     FLOAT/INT64/TIMESTAMP epoch 先例, 现场实证): id/eng_id/direction/evidence/proposed_by/
-    status/review_note=STRING, created_at/reviewed_at=TIMESTAMP。"""
+    status/review_note/value_components/accepted_to_hypothesis_ref/hypothesis_to_confirmed_ref/
+    version=STRING, value_score=FLOAT, created_at/reviewed_at=TIMESTAMP。v4.1 五列缺省:
+    value_score 0.0 / 三个 STRING 占位 '' / version 'v1'。"""
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
     init_schema(conn)
     r = conn.execute("CALL table_info('Frontier') RETURN *")
     rows = []
     while r.has_next():
         rows.append(r.get_next())
-    assert [str(x[1]) for x in rows] == _361_COLUMNS, "列名/列序必须与规格逐列清单一致"
+    assert [str(x[1]) for x in rows] == _361_SCHEMA_COLUMNS, "列名/列序必须与规格逐列清单一致"
     types = {str(x[1]): str(x[2]) for x in rows}
-    for c in ("id", "eng_id", "direction", "evidence", "proposed_by", "status", "review_note"):
+    for c in ("id", "eng_id", "direction", "evidence", "proposed_by", "status", "review_note",
+              "value_components", "accepted_to_hypothesis_ref", "hypothesis_to_confirmed_ref",
+              "version"):
         assert types[c] == "STRING", (c, types[c])
+    assert types["value_score"] == "FLOAT", types["value_score"]
     assert types["created_at"] == "TIMESTAMP" and types["reviewed_at"] == "TIMESTAMP"
     assert str(rows[0][4]) == "True", "id 必须是 PRIMARY KEY"
     conn.execute("CREATE (x:Frontier {id:'fr-1'})")
@@ -2868,6 +2879,13 @@ def test_361_new_db_frontier_full_columns(tmp_path):
     assert all(str(v) == "" for v in row[:4]), "STRING 列缺省 ''"
     assert str(row[4]) == "proposed", "status 缺省必须 'proposed'(写入即提案态)"
     assert row[6] == _361_dt(1970, 1, 1) and row[7] == _361_dt(1970, 1, 1), "时间列缺省 epoch"
+    # v4.1 五列缺省值(写端点不传值的列由 schema DEFAULT 兜底 — 与写入恒值同源)
+    five = conn.execute("MATCH (x:Frontier {id:'fr-1'}) RETURN x.value_score, x.value_components, "
+                        "x.accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref, "
+                        "x.version").get_next()
+    assert float(five[0]) == 0.0, "value_score 缺省恒 0(占位, 公式 3.6-3 实现)"
+    assert all(str(v) == "" for v in five[1:4]), "占位 STRING 列缺省 ''"
+    assert str(five[4]) == "v1", "version 缺省恒 'v1'"
     # 列可写(转态写形态: status/review_note 参数绑定 + timestamp cast — 字符串直传 TIMESTAMP
     # 列不受支持, 现场实证, 沿 Experience 同款)
     conn.execute("MATCH (x:Frontier {id:'fr-1'}) SET x.status=$st, x.review_note=$n, "
@@ -2880,17 +2898,24 @@ def test_361_new_db_frontier_full_columns(tmp_path):
 
 
 def test_361_alter_migration_on_old_db_and_idempotent(tmp_path):
-    """旧库(早期 id+direction 两列形态)经 init_schema 幂等 ALTER 补缺 7 列后可读写; 二次
-    init_schema 不抛且存量数据/新列默认值不损(仿 3.5-1 同款模板)。"""
+    """旧库(早期 id+direction 两列形态)经 init_schema 幂等 ALTER 补缺 12 列后可读写; 二次
+    init_schema 不抛且存量数据/新列默认值不损(仿 3.5-1 同款模板)。v4.1 五列补齐后缺省
+    0.0/''/''/''/'v1'(旧库存量行不炸消费查询)。"""
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
     conn.execute("CREATE NODE TABLE Frontier(id STRING, direction STRING DEFAULT '', PRIMARY KEY(id))")
     conn.execute("CREATE (x:Frontier {id:'fr-old', direction:'early direction keep me'})")
-    init_schema(conn)  # 启动迁移: 字面量 ALTER ADD 7 列(id 主键不可 ALTER, 建表必有)
+    init_schema(conn)  # 启动迁移: 字面量 ALTER ADD 12 列(id 主键不可 ALTER, 建表必有)
     row = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.direction, x.eng_id, "
                        "x.proposed_by, x.status, x.review_note, x.created_at, x.reviewed_at").get_next()
     assert str(row[0]) == "early direction keep me", "迁移不得损存量数据"
     assert (str(row[1]), str(row[2]), str(row[3]), str(row[4])) == ("", "", "proposed", "")
     assert row[5] == _361_dt(1970, 1, 1) and row[6] == _361_dt(1970, 1, 1), "补列默认值 epoch(存量行不炸消费查询)"
+    # v4.1 五列: 旧库补列后缺省值正确
+    five = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.value_score, x.value_components, "
+                        "x.accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref, "
+                        "x.version").get_next()
+    assert float(five[0]) == 0.0 and all(str(v) == "" for v in five[1:4]) and str(five[4]) == "v1", \
+        "旧库补 5 列缺省 0.0/''/''/''/'v1'"
     # 补列后读写可用(转态写形态: 全参数绑定 + timestamp cast)
     conn.execute("MATCH (x:Frontier {id:'fr-old'}) SET x.status=$st, x.eng_id=$e, "
                  "x.reviewed_at=timestamp($ts)",
@@ -2902,19 +2927,23 @@ def test_361_alter_migration_on_old_db_and_idempotent(tmp_path):
     init_schema(conn)  # 幂等: 列已存在 ALTER 抛错被吞, 不抛且数据不损
     row = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.status, x.direction").get_next()
     assert (str(row[0]), str(row[1])) == ("rejected", "early direction keep me"), "二次 init_schema 后数据不损"
+    five = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.value_score, x.version").get_next()
+    assert float(five[0]) == 0.0 and str(five[1]) == "v1", "二次 init_schema 后 v4.1 五列不损"
 
 
 def test_361_critical_columns_cover_frontier():
-    """_CRITICAL_COLUMNS 覆盖: Frontier 元组纳入全部 9 列(缺一即 SCHEMA_DEGRADED 告警)。
+    """_CRITICAL_COLUMNS 覆盖: Frontier 元组纳入全部 14 列(缺一即 SCHEMA_DEGRADED 告警)。
     全列拍板(同 Experience 3.5-1): 全新表整表即前沿提案数据层载体, 任一列缺失都属 schema
-    损坏(无历史主功能列/迁移列之分)。"""
-    assert set(_gd_schema._CRITICAL_COLUMNS["Frontier"]) == set(_361_COLUMNS)
-    assert len(_gd_schema._CRITICAL_COLUMNS["Frontier"]) == 9
+    损坏(无历史主功能列/迁移列之分)。v4.1: 9→14 列(增 value_score/value_components/
+    accepted_to_hypothesis_ref/hypothesis_to_confirmed_ref/version)。"""
+    assert set(_gd_schema._CRITICAL_COLUMNS["Frontier"]) == set(_361_SCHEMA_COLUMNS)
+    assert len(_gd_schema._CRITICAL_COLUMNS["Frontier"]) == 14
 
 
 def test_361_missing_column_degrades_to_schema_degraded(tmp_path, capsys):
-    """缺列降级: 缺 status 单列旧库走 _verify_critical_columns 路径 → SCHEMA_DEGRADED 点名
-    Frontier.status + stderr 响亮告警(不抛异常); 随后 init_schema ALTER 修复 → 告警清空。"""
+    """缺列降级: 缺 status 等列的旧库走 _verify_critical_columns 路径 → SCHEMA_DEGRADED 点名
+    Frontier.status/Frontier.version 等 + stderr 响亮告警(不抛异常); 随后 init_schema ALTER
+    修复 → 告警清空。v4.1: 缺列点名必须覆盖新增列(version 等)。"""
     before = list(_gd_schema.SCHEMA_DEGRADED)
     try:
         conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
@@ -2925,6 +2954,8 @@ def test_361_missing_column_degrades_to_schema_degraded(tmp_path, capsys):
                      "reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), PRIMARY KEY(id))")
         missing = _verify_critical_columns(conn)  # 直击校验路径(模拟 ALTER 未生效的存量库)
         assert "Frontier.status" in missing
+        assert "Frontier.version" in missing, "v4.1 新列缺失必须点名"
+        assert "Frontier.value_score" in missing and "Frontier.accepted_to_hypothesis_ref" in missing
         assert "Frontier.status" in _gd_schema.SCHEMA_DEGRADED
         assert all(not m.startswith("Finding") for m in _gd_schema.SCHEMA_DEGRADED), "只缺一列不误报他表"
         err = capsys.readouterr().err
@@ -2957,6 +2988,16 @@ def _361_spawn_server(tmp_path, monkeypatch):
     for ddl in SCHEMA:
         conn.execute(ddl)
     init_schema(conn)  # 与真实启动路径 db() 同款: SCHEMA + ALTER 迁移
+    # 3.6-2 v4.1: refs 准入必填 ≥1 个 Signal/Endpoint id — 预置引用锚点(同 eng 两枚 + 跨 eng
+    # 一枚供跨项目串池拒绝用例)。id 形态沿仓内先例(s-<ms>/e-<短码>); eng 与 _361_valid_payload
+    # 的 eng_id 对齐。同 tmp 目录二次 spawn(redact 用例双段)时锚点已存在 — PK 冲突吞掉即幂等。
+    for _seed in ("CREATE (s:Signal_ {id:'s-361-a', eng:'eng-361'})",
+                  "CREATE (e:Endpoint {id:'e-361-a', eng:'eng-361'})",
+                  "CREATE (s:Signal_ {id:'s-361-x', eng:'eng-other'})"):
+        try:
+            conn.execute(_seed)
+        except Exception:
+            pass
     monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
     monkeypatch.setattr(graphd_app, "_db", db)  # 预建库直接挂给 app(db() 直取, 不二次开文件)
     srv = graphd_app.GraphdHTTPServer(("127.0.0.1", 0), graphd_app.Handler)
@@ -2978,13 +3019,17 @@ def _361_post(base_url, path, payload, token="t-361-worker"):
 
 
 def _361_valid_payload(**over):
-    """合法写入载荷基线 + 越权字段探针(应被忽略): id/状态/评审列/时间均服务端所有。"""
+    """合法写入载荷基线 + 越权字段探针(应被忽略): id/状态/评审列/时间/价值占位列均服务端所有。
+    3.6-2 v4.1: refs 必填 ≥1 — 基线引用预置锚点(s-361-a 同 eng Signal_; 见 _361_spawn_server)。"""
     p = {"eng_id": "eng-361", "direction": "对 /api/v2/* 深挖 query 注入面(js×inner 象限空白)",
          "evidence": "coverage 象限 js×inner 零样本且 response×cross 已挖透",
          "proposed_by": "worker-361",
-         # 越权字段探针: 数据层拍板 — id/状态/评审列/时间均服务端所有, 调用方传入一律忽略
+         "refs": ["s-361-a", "e-361-a"],
+         # 越权字段探针: 数据层拍板 — id/状态/评审列/时间/价值占位列均服务端所有, 调用方传入一律忽略
          "id": "caller-forged", "status": "accepted", "review_note": "caller-forged-note",
-         "reviewed_at": "1999-01-01 00:00:00", "created_at": "1999-01-01 00:00:00"}
+         "reviewed_at": "1999-01-01 00:00:00", "created_at": "1999-01-01 00:00:00",
+         "value_score": 0.99, "version": "v9",
+         "accepted_to_hypothesis_ref": "h-caller", "hypothesis_to_confirmed_ref": "h-caller2"}
     p.update(over)
     return p
 
@@ -3035,9 +3080,12 @@ def test_361_write_frontier_validation_400s(tmp_path, monkeypatch):
             assert code == 400, (reason, code, out)
             assert out.get("ok") is False and reason in str(out.get("error", "")), out
         # 边界内放行: direction 256 / evidence 1024 / evidence 缺省(可选)
+        # v4.1: 三条 direction 各异 — 同 (eng_id, direction) 6h 内第二条会被签名去重静默合并
+        # (不落库), 会破坏下方「3 条落库」计数断言(去重语义由 test_362 专锁)。
         ok_payloads = [_361_valid_payload(direction="d" * 256),
-                       _361_valid_payload(evidence="e" * 1024),
-                       {k: v for k, v in _361_valid_payload().items() if k != "evidence"}]
+                       _361_valid_payload(direction="e" * 256, evidence="e" * 1024),
+                       dict({k: v for k, v in _361_valid_payload().items() if k != "evidence"},
+                            direction="f" * 256)]
         for payload in ok_payloads:
             code, out = _361_post(base_url, "/write/frontier", payload)
             assert code == 200 and out["ok"] is True, (code, out)
@@ -3094,7 +3142,10 @@ def test_361_write_frontier_default_status_proposed_param_ignored(tmp_path, monk
         assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
                                 parameters={"id": out["id"]}).get_next()[0]) == "proposed"
         for forced in ("accepted", "rejected"):
-            status, out = _361_post(base_url, "/write/frontier", _361_valid_payload(status=forced))
+            # v4.1: 每轮 direction 各异 — 同 (eng,direction) 6h 内重发会被签名去重静默合并
+            # (回既有行 id), 无法验证「新行恒 proposed」语义; 去重语义由 test_362 专锁。
+            status, out = _361_post(base_url, "/write/frontier",
+                                    _361_valid_payload(status=forced, direction=f"方向-{forced}-唯一"))
             assert status == 200 and out["ok"] is True, out
             assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
                                     parameters={"id": out["id"]}).get_next()[0]) == "proposed", \
@@ -3244,7 +3295,11 @@ def test_361_transition_three_legal_paths(tmp_path, monkeypatch):
     try:
         fids = []
         for i in range(3):
-            status, out = _361_post(base_url, "/write/frontier", _361_valid_payload(proposed_by=f"w-{i}"))
+            # v4.1: 三条 direction 各异 — 同 (eng,direction) 6h 内重复会被签名去重静默合并
+            # (回既有 id), 三行三路的测试前提需要三个不同方向。
+            status, out = _361_post(base_url, "/write/frontier",
+                                    _361_valid_payload(proposed_by=f"w-{i}",
+                                                       direction=f"方向 {i}: coverage 象限 {i}"))
             assert status == 200, out
             fids.append(out["id"])
         paths = [("accepted", "采纳: 空白象限"), ("rejected", "否决: 重复方向"), ("accepted", "采纳: 第二方向")]
@@ -3369,3 +3424,217 @@ def test_361_transition_missing_params_400(tmp_path, monkeypatch):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# =====================================================================
+# 3.6-2 v4.1(前沿写端增强): refs 准入两处校验 / engagement 级 20/h 滑动窗口 / 签名去重
+# (sha256(direction+eng_id), 6h 内静默合并) / 五占位列写入恒值。工具侧预检形态在
+# plugin/pentest-dsh/test/frontier-tool.test.mjs(mocha), 本区锁端点侧(服务端不信自报)。
+# =====================================================================
+from datetime import timedelta as _362_td, timezone as _362_tz                      # noqa: E402
+from graphd.gd.gates import (FRONTIER_REFS_MAX as _362_REFS_MAX,                   # noqa: E402
+                             FRONTIER_RATE_WINDOW_HOURS as _362_WIN_H,
+                             FRONTIER_DEDUP_WINDOW_HOURS as _362_DEDUP_H,
+                             frontier_rate_reject as _362_rate, frontier_refs_rejected as _362_refs,
+                             frontier_signature as _362_sig, content_hash as _362_ch)
+from graphd.app import (frontier_rate_reject as _362_app_rate,                     # noqa: E402
+                        frontier_signature as _362_app_sig)
+
+
+def _362_seed_frontier(conn, fid, direction, created_at, eng="eng-361", st="proposed"):
+    """直写历史 created_at 构造窗口(限流/去重窗口测试专用): created_at 为显式时刻。"""
+    conn.execute("CREATE (x:Frontier {id:$id, eng_id:$e, direction:$d, proposed_by:'seeder', "
+                 "status:$st, created_at:timestamp($ca)})",
+                 parameters={"id": fid, "e": eng, "d": direction, "st": st, "ca": created_at})
+
+
+def test_362_refs_required_and_format_400(tmp_path, monkeypatch):
+    """增强①格式门: refs 缺失/空列表/纯空白/非列表 → 400 'refs required'; 均不落库
+    (锁外先判形, 拒绝审计 frontier-reject)。"""
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(tmp_path / "audit.log"))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        for bad in (None, [], ["   ", ""], 42):
+            payload = _361_valid_payload()
+            if bad is None:
+                payload.pop("refs")
+            else:
+                payload["refs"] = bad
+            code, out = _361_post(base_url, "/write/frontier", payload)
+            assert code == 400 and "refs required" in out["error"], (bad, code, out)
+        n = conn.execute("MATCH (x:Frontier) RETURN count(x)").get_next()[0]
+        assert int(n) == 0, "被拒载荷不落库"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in (tmp_path / "audit.log").read_text().splitlines() if l.strip()]
+    rej = [e for e in events if e["kind"] == "frontier-reject"]
+    assert len(rej) == 4 and all(e["detail"]["reason"] == "refs invalid" for e in rej)
+
+
+def test_362_write_frontier_refs_three_states(tmp_path, monkeypatch):
+    """增强①终检三态(锁内, 服务端不信自报): 有效同 eng 引用通过; 不存在 id 400 点名;
+    跨 eng id 400 点名(A3 跨项目串池同类病 — 错误必须带 offending id 可对账)。"""
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(tmp_path / "audit.log"))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        # ① 有效同 eng(Signal_ + Endpoint 混引) → 200
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction="有效引用方向一"))
+        assert code == 200 and out["ok"] is True, out
+        # ② 不存在 id → 400 点名
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction="有效引用方向二", refs=["s-ghost"]))
+        assert code == 400 and "refs 节点不存在" in out["error"] and "s-ghost" in out["error"], out
+        # ③ 跨 eng id(s-361-x 属 eng-other) → 400 点名 + 节点归属 engagement
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction="有效引用方向三", refs=["s-361-x"]))
+        assert code == 400 and "refs 跨 engagement 引用" in out["error"], out
+        assert "s-361-x" in out["error"] and "eng-other" in out["error"] and "eng-361" in out["error"], out
+        # 混合(一个有效一个跨 eng) → 仍拒(fail-closed)
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction="有效引用方向四", refs=["s-361-a", "s-361-x"]))
+        assert code == 400 and "跨 engagement" in out["error"], out
+        n = conn.execute("MATCH (x:Frontier) RETURN count(x)").get_next()[0]
+        assert int(n) == 1, "仅首条有效写入落库"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in (tmp_path / "audit.log").read_text().splitlines() if l.strip()]
+    rej = [e for e in events if e["kind"] == "frontier-reject"]
+    reasons = [e["detail"]["reason"] for e in rej]
+    assert reasons.count("refs not found") == 1 and reasons.count("refs cross-engagement") == 2, reasons
+    assert any(e["detail"].get("offending") == ["s-361-x"] for e in rej), "跨 eng 审计必须点名 offending id"
+
+
+def test_362_write_frontier_rate_window_20_per_hour(tmp_path, monkeypatch):
+    """增强②: engagement 级 20/h 滑动窗口(端点侧强制) — 直写历史 created_at 构造窗口:
+    窗内 19 条 + 窗外(2h 前)1 条 + 他 eng 窗内 1 条 → 第 20 条(本次)通过, 第 21 条 429。
+    窗外与他 eng 行不计(滑动窗按 created_at 列精确比较); 429 不落库。"""
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(tmp_path / "audit.log"))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        now = _361_dt.now(_362_tz.utc)
+        recent = (now - _362_td(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+        stale = (now - _362_td(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
+        for i in range(19):
+            _362_seed_frontier(conn, f"fr-seed-{i}", f"种子方向 {i} 窗内", recent)
+        _362_seed_frontier(conn, "fr-seed-stale", "种子方向 窗外", stale)               # 不计数
+        _362_seed_frontier(conn, "fr-seed-other", "他项目窗内方向", recent, eng="eng-b")  # 不计数
+        # 第 20 条(窗内第 20 行含本次) → 放行; 窗口判定与 CREATE 同一锁窗口
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction="窗口内第 20 条: js×inner 象限探测"))
+        assert code == 200 and out["ok"] is True, out
+        # 第 21 条(方向不同 — 避开签名去重) → 429
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction="窗口内第 21 条: 另一方向探测"))
+        assert code == 429 and "写入配额满" in out["error"], out
+        assert f"{_362_WIN_H} 小时提案数 20≥20" in out["error"], out
+        n = conn.execute("MATCH (x:Frontier) RETURN count(x)").get_next()[0]
+        assert int(n) == 22, "429 不落库(19 窗内种子 + 窗外 1 + 他 eng 1 + 本次成功 1)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in (tmp_path / "audit.log").read_text().splitlines() if l.strip()]
+    quota = [e for e in events if e["kind"] == "frontier-quota"]
+    assert len(quota) == 1 and quota[0]["detail"]["eng_id"] == "eng-361", quota
+
+
+def test_362_write_frontier_signature_dedup_suppressed(tmp_path, monkeypatch):
+    """增强③: 签名去重 sha256(direction+eng_id) — 同 (eng_id, direction) 6h 内第二次写
+    「静默丢弃」: 200 + suppressed 标记 + 回既有行 id, 不落新行, 审计 frontier-suppress 带
+    指纹; 6h 外放行(新行); 跨 eng 同 direction 不受去重影响(签名含 eng_id)。"""
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(tmp_path / "audit.log"))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        dup_dir = "重复方向: 对 /admin 做枚举探测"
+        code, out = _361_post(base_url, "/write/frontier", _361_valid_payload(direction=dup_dir))
+        assert code == 200 and out["ok"] is True and "suppressed" not in out, out
+        fid1 = str(out["id"])
+        # 6h 内同 eng 同 direction → 静默合并
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction=dup_dir, proposed_by="worker-361-b"))
+        assert code == 200 and out["ok"] is True, out
+        assert out.get("suppressed") is True, "必须带 suppressed 标记(静默语义)"
+        assert str(out["id"]) == fid1, "回既有提案 id(合并语义)"
+        n = conn.execute("MATCH (x:Frontier) RETURN count(x)").get_next()[0]
+        assert int(n) == 1, "静默合并不落新行"
+        # 6h 外(直写 7h 前的旧行) → 放行新行
+        old = (_361_dt.now(_362_tz.utc) - _362_td(hours=7)).strftime("%Y-%m-%d %H:%M:%S")
+        _362_seed_frontier(conn, "fr-old-dup", "过期方向: 7 小时前的提案", old)
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction="过期方向: 7 小时前的提案"))
+        assert code == 200 and out["ok"] is True and not out.get("suppressed"), out
+        assert str(out["id"]) != "fr-old-dup", "6h 外放行: 新行新 id"
+        # 跨 eng 同 direction → 签名含 eng_id, 不串池合并(eng_id=eng-b 时引用 eng-b 的锚点
+        # s-361-b — refs 与 eng_id 同源判定, 引用他 eng 节点在 refs 终检即被拒, 不在本用例)
+        conn.execute("CREATE (s:Signal_ {id:'s-361-b', eng:'eng-b'})")
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction=dup_dir, eng_id="eng-b", refs=["s-361-b"]))
+        assert code == 200 and out["ok"] is True and not out.get("suppressed"), out
+        n = conn.execute("MATCH (x:Frontier) RETURN count(x)").get_next()[0]
+        assert int(n) == 4, "共 4 行(原始 + 6h 外旧行种子 + 6h 外新行 + 他 eng 同向新行)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in (tmp_path / "audit.log").read_text().splitlines() if l.strip()]
+    sup = [e for e in events if e["kind"] == "frontier-suppress"]
+    assert len(sup) == 1, [e["kind"] for e in events]
+    assert sup[0]["detail"]["existing_id"] == fid1
+    assert sup[0]["detail"]["signature"] == _362_sig(dup_dir, "eng-361"), "审计指纹 = sha256(direction+eng_id)"
+
+
+def test_362_write_wires_five_placeholder_columns(tmp_path, monkeypatch):
+    """增强④⑤⑥: 写入后五占位列恒 0/''/''/''/'v1'; 调用方传 value_score/version/
+    accepted_to_hypothesis_ref/hypothesis_to_confirmed_ref 一律被忽略(内联字面量, 结构上
+    无法入图 — 同 status 恒 proposed 先例); 两个 *_ref 占位列写端点不写值(schema DEFAULT '')。"""
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction="占位列恒值方向: coverage 空白象限"))
+        assert code == 200 and out["ok"] is True, out
+        row = conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.value_score, x.value_components, "
+                           "x.accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref, x.version",
+                           parameters={"id": out["id"]}).get_next()
+        assert float(row[0]) == 0.0, "value_score 恒 0(调用方 0.99 被忽略 — 公式 3.6-3 实现)"
+        assert str(row[1]) == "", "value_components 恒 ''(调用方伪造被忽略)"
+        assert str(row[2]) == "", "accepted_to_hypothesis_ref 占位不写值(3.6-3 转态链回填)"
+        assert str(row[3]) == "", "hypothesis_to_confirmed_ref 占位不写值(3.6-4 回填)"
+        assert str(row[4]) == "v1", "version 恒 'v1'(调用方 v9 被忽略)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_362_refs_rate_signature_pure_functions(monkeypatch):
+    """纯函数单测真源: frontier_refs_rejected 格式门(形/归一/上限) / frontier_rate_reject
+    阈值与 env 热调 / frontier_signature 指纹(确定性/部件序敏感/与 content_hash 同实现);
+    app.py re-export 必须是 gates.py 同一对象(3C 先例)。"""
+    # refs 格式门
+    rej, err, norm = _362_refs(None)
+    assert rej and "refs required" in err and norm == []
+    rej, _, norm = _362_refs("s-1")                       # 单串容错
+    assert not rej and norm == ["s-1"]
+    rej, _, norm = _362_refs([" s-1 ", "s-1", "", "e-2"])  # strip/去空/保序去重
+    assert not rej and norm == ["s-1", "e-2"]
+    rej, err, _ = _362_refs([f"s-{i}" for i in range(_362_REFS_MAX + 1)])
+    assert rej and "refs too many" in err
+    rej, _, norm = _362_refs(("s-0", "s-1", "s-2"))         # tuple 同 list
+    assert not rej and len(norm) == 3
+    # 限流阈值 + env 热调(非数字回退默认)
+    assert _362_rate(19)[0] is False and _362_rate(20)[0] is True
+    assert "20≥20" in _362_rate(20)[1]
+    monkeypatch.setenv("P2P_FRONTIER_WRITE_WINDOW", "2")
+    assert _362_rate(2, cap=None)[0] is True and _362_rate(1, cap=None)[0] is False
+    monkeypatch.setenv("P2P_FRONTIER_WRITE_WINDOW", "abc")
+    assert _362_rate(20, cap=None)[0] is True and _362_rate(19, cap=None)[0] is False, "非数字回退默认 20"
+    monkeypatch.delenv("P2P_FRONTIER_WRITE_WINDOW")
+    # 签名指纹
+    assert _362_sig("d", "e") == _362_sig("d", "e"), "确定性"
+    assert _362_sig("d", "e") != _362_sig("e", "d"), "部件序敏感(方向/eng 不可换位)"
+    assert _362_sig("d", "e") == _362_ch("d", "e"), "与 content_hash 同实现(0x1F 分隔)"
+    assert _362_sig("d1", "e") != _362_sig("d2", "e") and _362_sig("d", "e1") != _362_sig("d", "e2")
+    # 窗口常量形态锁(拍板值)
+    assert (_362_WIN_H, _362_DEDUP_H, _362_REFS_MAX) == (1, 6, 16)
+    # app.py 接线用的是 gates.py 同一对象
+    assert _362_app_rate is _362_rate and _362_app_sig is _362_sig
