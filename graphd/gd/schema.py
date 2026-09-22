@@ -29,7 +29,12 @@ SCHEMA = [
     # ('1970-01-01 00:00:00' — kuzu 0.11 DDL 无当前时刻函数默认, 沿 Experience 3.5-1 现场实证
     # 先例); 写入通道 /write/frontier(status 恒 'proposed', reviewed_at 恒 epoch — 评审前无值),
     # 读取通道 /query/frontier(缺省全态), 转态通道 /write/frontier-transition(host-only)。
-    "CREATE NODE TABLE IF NOT EXISTS Frontier(id STRING, eng_id STRING DEFAULT '', direction STRING DEFAULT '', evidence STRING DEFAULT '', proposed_by STRING DEFAULT '', status STRING DEFAULT 'proposed', review_note STRING DEFAULT '', created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), PRIMARY KEY(id))",
+    # 3.6-2 v4.1 增列(9→14 列, 与下方 ALTER/_CRITICAL_COLUMNS 三处同步): value_score/value_components
+    # 为价值评分占位(本批次恒 0/'' — 公式 3.6-3 实现, 写端点不接受调用方传值); 两个 *_ref 为
+    # 采纳/确证链占位(写端点不写值, 由 3.6-3/3.6-4 转态链回填); version=行 schema 版本
+    # (写端点恒写 'v1', 不接受调用方指定)。refs 图节点引用不落列 — 仅作 /write/frontier
+    # 准入校验(工具侧预检 + 端点侧终检), 拍板留痕见 app.py 写端注释。
+    "CREATE NODE TABLE IF NOT EXISTS Frontier(id STRING, eng_id STRING DEFAULT '', direction STRING DEFAULT '', evidence STRING DEFAULT '', proposed_by STRING DEFAULT '', status STRING DEFAULT 'proposed', review_note STRING DEFAULT '', created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), value_score FLOAT DEFAULT 0.0, value_components STRING DEFAULT '', accepted_to_hypothesis_ref STRING DEFAULT '', hypothesis_to_confirmed_ref STRING DEFAULT '', version STRING DEFAULT 'v1', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', lease_id STRING DEFAULT '', exit_class STRING DEFAULT '', PRIMARY KEY(worker_id))",
     "CREATE NODE TABLE IF NOT EXISTS Task(id STRING, eng STRING DEFAULT '', kind STRING, payload STRING, priority DOUBLE DEFAULT 1.0, status STRING DEFAULT 'pending', claimed_by STRING DEFAULT '', claimed_at STRING DEFAULT '', target_type STRING DEFAULT 'web', link_id STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Handoff(id STRING, eng STRING, digest STRING, model STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
@@ -214,7 +219,13 @@ def init_schema(conn):
                  "ALTER TABLE Frontier ADD status STRING DEFAULT 'proposed'",
                  "ALTER TABLE Frontier ADD review_note STRING DEFAULT ''",
                  "ALTER TABLE Frontier ADD created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
-                 "ALTER TABLE Frontier ADD reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')"):
+                 "ALTER TABLE Frontier ADD reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+                 # 3.6-2 v4.1 五列(类型/默认值与上方 SCHEMA CREATE 逐字同源 — 三处同步之二)
+                 "ALTER TABLE Frontier ADD value_score FLOAT DEFAULT 0.0",
+                 "ALTER TABLE Frontier ADD value_components STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD accepted_to_hypothesis_ref STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD hypothesis_to_confirmed_ref STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD version STRING DEFAULT 'v1'"):
         try:
             conn.execute(_ddl)
         except Exception:
@@ -250,13 +261,16 @@ _CRITICAL_COLUMNS = {
     "Experience": ("id", "eng_id", "category", "scope", "title", "content", "evidence_ref",
                    "utility_score", "retrieval_count", "success_count", "created_at",
                    "last_used_at", "status", "provenance_hash"),
-    # 3.6-1(前沿子系统 C): Frontier 纳入全部 9 列(含 id 主键) —— 同 Experience 全列拍板:
+    # 3.6-1(前沿子系统 C): Frontier 纳入全部列(含 id 主键) —— 同 Experience 全列拍板:
     # 全新表整表即前沿提案数据层的全部载体, 任一列缺失都属 schema 损坏(status 缺→评审状态机
     # 失效, created_at/reviewed_at 缺→排序/时效失效, direction/evidence 缺→提案内容断链,
     # 其余列缺→读写 Binder 异常被上层静默吞), 且无历史存量需要区分"主功能列/迁移列"。
     # 全列校验成本同量级(table_info 单次调用), 不放子集。
+    # 3.6-2 v4.1: 9→14 列(value_score/value_components/两个 *_ref/version — 三处同步之三)。
     "Frontier": ("id", "eng_id", "direction", "evidence", "proposed_by",
-                 "status", "review_note", "created_at", "reviewed_at"),
+                 "status", "review_note", "created_at", "reviewed_at",
+                 "value_score", "value_components", "accepted_to_hypothesis_ref",
+                 "hypothesis_to_confirmed_ref", "version"),
 }
 
 # 迁移校验结果: 缺失关键列的 "表.列" 列表(空=健康)。app.py /health 回显此值,
