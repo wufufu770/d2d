@@ -748,3 +748,72 @@ def source_hash(url: str) -> str:
     host_part = host if (port is None or port == default_port) else f"{host}:{port}"
     path = (sp.path or "").rstrip("/")
     return hashlib.sha256(f"{host_part}{path}".encode("utf-8")).hexdigest()
+
+
+# ── 3.6-2 v4.1(前沿写端增强): refs 准入门 / engagement 级滑动窗口配额 / 签名去重指纹 ──
+# 三个纯函数(无 IO, pytest 与 handler 同源), 消费方 app.py /write/frontier:
+#   · refs 终检的图查询与 20/h 计数在 handler 侧 _locked() 锁窗口内执行(TOCTOU 教训,
+#     experience_quota_reject 同款), 本区只做格式判定与阈值话术。
+
+# refs 上限: 防超长列表撑大 IN 绑定与预检开销; 现实提案引用 2-5 个信号/端点, 16 已极宽。
+FRONTIER_REFS_MAX = 16
+# engagement 级滑动窗口写入配额(条/小时): 提案是评审资源(方案 v2 §4.2 精神 — 量少质高),
+# 工具侧 cap=3/会话管单会话, 本门管全部直写通道的 engagement 总面(20/h)。
+FRONTIER_WRITE_WINDOW_DEFAULT = 20
+# 窗口宽度(小时): 限流窗 1h(滑动, 沿 created_at 列比较); 签名去重窗 6h(同向提案静默合并)。
+FRONTIER_RATE_WINDOW_HOURS = 1
+FRONTIER_DEDUP_WINDOW_HOURS = 6
+_REFS_HINT = "refs required: ≥1 个图节点 id(Signal/Endpoint — p2p_graph 只读查询/brief 中引用的 id)"
+
+
+def frontier_refs_rejected(refs) -> tuple:
+    """refs 准入格式门(纯函数): 必填 ≥1 且 ≤FRONTIER_REFS_MAX 个非空字符串 id。
+    返回 (rejected, reason, normalized): rejected=True 时 reason 为 400 话术;
+    normalized = 逐项 str().strip() + 去空 + 保序去重(handler 拿它做存在性/同 eng 终检)。
+    注意本门只判「形」, 不判「存在/同 eng」— 那是锁内图查询的事(数据会变, 格式不会)。"""
+    if isinstance(refs, str):
+        # 容错: 单个 id 直接传串 → 视作单元素(拒绝 null/空串由下方归一逻辑统一处理)
+        refs = [refs]
+    if not isinstance(refs, (list, tuple)):
+        return True, _REFS_HINT, []
+    norm = []
+    for r in refs:
+        s = str(r or "").strip()
+        if s and s not in norm:
+            norm.append(s)
+    if not norm:
+        return True, _REFS_HINT, []
+    if len(norm) > FRONTIER_REFS_MAX:
+        return True, f"refs too many: {len(norm)} > {FRONTIER_REFS_MAX}(引用贵精不贵多)", []
+    return False, "", norm
+
+
+def _frontier_write_window() -> int:
+    """engagement 级每小时写入配额阈值(P2P_FRONTIER_WRITE_WINDOW 可调, 非数字回退默认 20)。
+    与 _experience_write_cap 同形态(面板热调/env 兜底)。"""
+    try:
+        return int(os.environ.get("P2P_FRONTIER_WRITE_WINDOW", str(FRONTIER_WRITE_WINDOW_DEFAULT)))
+    except ValueError:
+        return FRONTIER_WRITE_WINDOW_DEFAULT
+
+
+def frontier_rate_reject(count, cap=None) -> tuple:
+    """engagement 级滑动窗口配额判定(纯函数供 pytest) — 窗口内已有条数 ≥ cap 返回拦截话术
+    (调用方 429 + frontier-quota 审计), 否则 ''。cap=None 时取 P2P_FRONTIER_WRITE_WINDOW
+    (缺省 20)。权威计数必须在调用方与 CREATE 同一 _locked() 窗口内执行(H12 TOCTOU 教训)。
+    窗口语义: created_at > now-FRONTIER_RATE_WINDOW_HOURS(滑动窗, 非自然小时 — 直写历史
+    created_at 的行按其值参与窗口, 图内数据天然持久准确)。"""
+    cap = _frontier_write_window() if cap is None else int(cap)
+    if int(count) >= cap:
+        return True, (f"frontier 写入配额满: engagement 最近 {FRONTIER_RATE_WINDOW_HOURS} 小时提案数 "
+                      f"{count}≥{cap} — 评审资源限流(工具侧另有 3 条/会话), 稍后再提或由宿主调 "
+                      f"P2P_FRONTIER_WRITE_WINDOW")
+    return False, ""
+
+
+def frontier_signature(direction, eng_id) -> str:
+    """签名去重指纹(纯函数): sha256(direction + eng_id) — 复用 content_hash 同实现
+    (0x1F 分隔符消部件边界歧义, 部件顺序 (direction, eng_id) 由本函数钉死)。
+    消费方仅审计留痕(frontier-suppress 事件)与测试锁定; 图内判重直接按 (eng_id, direction)
+    精确匹配查询(等价语义, 不新增指纹列 — v4.1 五列清单为闭集, refs/指纹均不落列)。"""
+    return content_hash(str(direction or ""), str(eng_id or ""))
