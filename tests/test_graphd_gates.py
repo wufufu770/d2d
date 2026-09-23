@@ -2841,23 +2841,24 @@ from datetime import datetime as _361_dt                                  # noqa
 
 # 规格逐列清单(权威口径) — CREATE/ALTER/_CRITICAL_COLUMNS/本清单同源对照。
 # _361_COLUMNS = /query/frontier 返回行 9 键(读端点 v4.1 零改动, 返回面不含增列);
-# _361_SCHEMA_COLUMNS = Frontier 表全 14 列(3.6-2 v4.1 增 5 列: value_score/value_components/
-# 两个 *_ref/version — 写端点恒 0/''/''/''/'v1', 见 test_362_write_wires_five_placeholder_columns)。
+# _361_SCHEMA_COLUMNS = Frontier 表全 15 列(3.6-2 v4.1 增 5 列: value_score/value_components/
+# 两个 *_ref/version — 写端点恒 0/''/''/''/'v1', 见 test_362_write_wires_five_placeholder_columns;
+# 3.6-3 增 1 列: refs — 写端点将准入门归一数组 JSON 串化写入, 唯一写入方)。
 _361_COLUMNS = ["id", "eng_id", "direction", "evidence", "proposed_by",
                 "status", "review_note", "created_at", "reviewed_at"]
 _361_SCHEMA_COLUMNS = _361_COLUMNS + ["value_score", "value_components",
                                       "accepted_to_hypothesis_ref", "hypothesis_to_confirmed_ref",
-                                      "version"]
+                                      "version", "refs"]
 
 
 def test_361_new_db_frontier_full_columns(tmp_path):
-    """新库 init_schema 后 Frontier 含全 14 列(真库 table_info 逐列确认)且缺省值正确:
+    """新库 init_schema 后 Frontier 含全 15 列(真库 table_info 逐列确认)且缺省值正确:
     status 'proposed'(写入即提案态)/时间列 epoch(kuzu 0.11 DDL 无当前时刻函数默认 —
     沿 Experience 3.5-1 现场实证先例)/其余 STRING 列 DEFAULT ''。类型映射(沿 Experience
     FLOAT/INT64/TIMESTAMP epoch 先例, 现场实证): id/eng_id/direction/evidence/proposed_by/
     status/review_note/value_components/accepted_to_hypothesis_ref/hypothesis_to_confirmed_ref/
-    version=STRING, value_score=FLOAT, created_at/reviewed_at=TIMESTAMP。v4.1 五列缺省:
-    value_score 0.0 / 三个 STRING 占位 '' / version 'v1'。"""
+    version/refs=STRING, value_score=FLOAT, created_at/reviewed_at=TIMESTAMP。v4.1 五列缺省:
+    value_score 0.0 / 三个 STRING 占位 '' / version 'v1'。3.6-3: refs 缺省 ''(STRING)。"""
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
     init_schema(conn)
     r = conn.execute("CALL table_info('Frontier') RETURN *")
@@ -2868,7 +2869,7 @@ def test_361_new_db_frontier_full_columns(tmp_path):
     types = {str(x[1]): str(x[2]) for x in rows}
     for c in ("id", "eng_id", "direction", "evidence", "proposed_by", "status", "review_note",
               "value_components", "accepted_to_hypothesis_ref", "hypothesis_to_confirmed_ref",
-              "version"):
+              "version", "refs"):
         assert types[c] == "STRING", (c, types[c])
     assert types["value_score"] == "FLOAT", types["value_score"]
     assert types["created_at"] == "TIMESTAMP" and types["reviewed_at"] == "TIMESTAMP"
@@ -2880,12 +2881,14 @@ def test_361_new_db_frontier_full_columns(tmp_path):
     assert str(row[4]) == "proposed", "status 缺省必须 'proposed'(写入即提案态)"
     assert row[6] == _361_dt(1970, 1, 1) and row[7] == _361_dt(1970, 1, 1), "时间列缺省 epoch"
     # v4.1 五列缺省值(写端点不传值的列由 schema DEFAULT 兜底 — 与写入恒值同源)
-    five = conn.execute("MATCH (x:Frontier {id:'fr-1'}) RETURN x.value_score, x.value_components, "
-                        "x.accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref, "
-                        "x.version").get_next()
-    assert float(five[0]) == 0.0, "value_score 缺省恒 0(占位, 公式 3.6-3 实现)"
-    assert all(str(v) == "" for v in five[1:4]), "占位 STRING 列缺省 ''"
-    assert str(five[4]) == "v1", "version 缺省恒 'v1'"
+    # 3.6-3: refs 缺省 ''(直建行不经写端点, 无 JSON 串 — DEFAULT 兜底)
+    v41tail = conn.execute("MATCH (x:Frontier {id:'fr-1'}) RETURN x.value_score, x.value_components, "
+                           "x.accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref, "
+                           "x.version, x.refs").get_next()
+    assert float(v41tail[0]) == 0.0, "value_score 缺省恒 0(占位, 公式 3.6-3 实现)"
+    assert all(str(v) == "" for v in v41tail[1:4]), "占位 STRING 列缺省 ''"
+    assert str(v41tail[4]) == "v1", "version 缺省恒 'v1'"
+    assert str(v41tail[5]) == "", "refs 缺省恒 ''(3.6-3 新列, DEFAULT 兜底)"
     # 列可写(转态写形态: status/review_note 参数绑定 + timestamp cast — 字符串直传 TIMESTAMP
     # 列不受支持, 现场实证, 沿 Experience 同款)
     conn.execute("MATCH (x:Frontier {id:'fr-1'}) SET x.status=$st, x.review_note=$n, "
@@ -2898,24 +2901,25 @@ def test_361_new_db_frontier_full_columns(tmp_path):
 
 
 def test_361_alter_migration_on_old_db_and_idempotent(tmp_path):
-    """旧库(早期 id+direction 两列形态)经 init_schema 幂等 ALTER 补缺 12 列后可读写; 二次
+    """旧库(早期 id+direction 两列形态)经 init_schema 幂等 ALTER 补缺 13 列后可读写; 二次
     init_schema 不抛且存量数据/新列默认值不损(仿 3.5-1 同款模板)。v4.1 五列补齐后缺省
-    0.0/''/''/''/'v1'(旧库存量行不炸消费查询)。"""
+    0.0/''/''/''/'v1'(旧库存量行不炸消费查询)。3.6-3: refs 补列后缺省 '' 且幂等不损。"""
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
     conn.execute("CREATE NODE TABLE Frontier(id STRING, direction STRING DEFAULT '', PRIMARY KEY(id))")
     conn.execute("CREATE (x:Frontier {id:'fr-old', direction:'early direction keep me'})")
-    init_schema(conn)  # 启动迁移: 字面量 ALTER ADD 12 列(id 主键不可 ALTER, 建表必有)
+    init_schema(conn)  # 启动迁移: 字面量 ALTER ADD 13 列(id 主键不可 ALTER, 建表必有)
     row = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.direction, x.eng_id, "
                        "x.proposed_by, x.status, x.review_note, x.created_at, x.reviewed_at").get_next()
     assert str(row[0]) == "early direction keep me", "迁移不得损存量数据"
     assert (str(row[1]), str(row[2]), str(row[3]), str(row[4])) == ("", "", "proposed", "")
     assert row[5] == _361_dt(1970, 1, 1) and row[6] == _361_dt(1970, 1, 1), "补列默认值 epoch(存量行不炸消费查询)"
-    # v4.1 五列: 旧库补列后缺省值正确
-    five = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.value_score, x.value_components, "
-                        "x.accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref, "
-                        "x.version").get_next()
-    assert float(five[0]) == 0.0 and all(str(v) == "" for v in five[1:4]) and str(five[4]) == "v1", \
+    # v4.1 五列: 旧库补列后缺省值正确; 3.6-3: refs 补列后缺省 ''
+    v41tail = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.value_score, x.value_components, "
+                           "x.accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref, "
+                           "x.version, x.refs").get_next()
+    assert float(v41tail[0]) == 0.0 and all(str(v) == "" for v in v41tail[1:4]) and str(v41tail[4]) == "v1", \
         "旧库补 5 列缺省 0.0/''/''/''/'v1'"
+    assert str(v41tail[5]) == "", "旧库补 refs 列缺省 ''(3.6-3, 存量行不炸消费查询)"
     # 补列后读写可用(转态写形态: 全参数绑定 + timestamp cast)
     conn.execute("MATCH (x:Frontier {id:'fr-old'}) SET x.status=$st, x.eng_id=$e, "
                  "x.reviewed_at=timestamp($ts)",
@@ -2927,23 +2931,25 @@ def test_361_alter_migration_on_old_db_and_idempotent(tmp_path):
     init_schema(conn)  # 幂等: 列已存在 ALTER 抛错被吞, 不抛且数据不损
     row = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.status, x.direction").get_next()
     assert (str(row[0]), str(row[1])) == ("rejected", "early direction keep me"), "二次 init_schema 后数据不损"
-    five = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.value_score, x.version").get_next()
-    assert float(five[0]) == 0.0 and str(five[1]) == "v1", "二次 init_schema 后 v4.1 五列不损"
+    v41tail = conn.execute("MATCH (x:Frontier {id:'fr-old'}) RETURN x.value_score, x.version, x.refs").get_next()
+    assert float(v41tail[0]) == 0.0 and str(v41tail[1]) == "v1", "二次 init_schema 后 v4.1 五列不损"
+    assert str(v41tail[2]) == "", "二次 init_schema 后 refs 列不损(3.6-3 幂等)"
 
 
 def test_361_critical_columns_cover_frontier():
-    """_CRITICAL_COLUMNS 覆盖: Frontier 元组纳入全部 14 列(缺一即 SCHEMA_DEGRADED 告警)。
+    """_CRITICAL_COLUMNS 覆盖: Frontier 元组纳入全部 15 列(缺一即 SCHEMA_DEGRADED 告警)。
     全列拍板(同 Experience 3.5-1): 全新表整表即前沿提案数据层载体, 任一列缺失都属 schema
     损坏(无历史主功能列/迁移列之分)。v4.1: 9→14 列(增 value_score/value_components/
-    accepted_to_hypothesis_ref/hypothesis_to_confirmed_ref/version)。"""
+    accepted_to_hypothesis_ref/hypothesis_to_confirmed_ref/version)。3.6-3: +refs(JSON 串)。"""
     assert set(_gd_schema._CRITICAL_COLUMNS["Frontier"]) == set(_361_SCHEMA_COLUMNS)
-    assert len(_gd_schema._CRITICAL_COLUMNS["Frontier"]) == 14
+    assert "refs" in _gd_schema._CRITICAL_COLUMNS["Frontier"], "3.6-3 refs 必须入关键列元组"
+    assert len(_gd_schema._CRITICAL_COLUMNS["Frontier"]) == 15
 
 
 def test_361_missing_column_degrades_to_schema_degraded(tmp_path, capsys):
     """缺列降级: 缺 status 等列的旧库走 _verify_critical_columns 路径 → SCHEMA_DEGRADED 点名
     Frontier.status/Frontier.version 等 + stderr 响亮告警(不抛异常); 随后 init_schema ALTER
-    修复 → 告警清空。v4.1: 缺列点名必须覆盖新增列(version 等)。"""
+    修复 → 告警清空。v4.1: 缺列点名必须覆盖新增列(version 等)。3.6-3: refs 缺列同样点名。"""
     before = list(_gd_schema.SCHEMA_DEGRADED)
     try:
         conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
@@ -2956,6 +2962,7 @@ def test_361_missing_column_degrades_to_schema_degraded(tmp_path, capsys):
         assert "Frontier.status" in missing
         assert "Frontier.version" in missing, "v4.1 新列缺失必须点名"
         assert "Frontier.value_score" in missing and "Frontier.accepted_to_hypothesis_ref" in missing
+        assert "Frontier.refs" in missing, "3.6-3 refs 缺列必须点名"
         assert "Frontier.status" in _gd_schema.SCHEMA_DEGRADED
         assert all(not m.startswith("Finding") for m in _gd_schema.SCHEMA_DEGRADED), "只缺一列不误报他表"
         err = capsys.readouterr().err
@@ -3036,7 +3043,8 @@ def _361_valid_payload(**over):
 
 def test_361_write_frontier_roundtrip_all_columns(tmp_path, monkeypatch):
     """成功写入端到端: 回读全 9 列值正确; id 服务端生成 fr-<eng>-<短码>; 越权字段
-    (status/review_note/reviewed_at/created_at/id)全部被忽略, 恒服务端默认。"""
+    (status/review_note/reviewed_at/created_at/id)全部被忽略, 恒服务端默认。
+    3.6-3: refs 落列 — 准入门归一数组 JSON 串化写入 refs 列(json.loads 还原逐元素相等)。"""
     base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
     try:
         status, out = _361_post(base_url, "/write/frontier", _361_valid_payload())
@@ -3047,7 +3055,7 @@ def test_361_write_frontier_roundtrip_all_columns(tmp_path, monkeypatch):
         assert str(out["status"]) == "proposed"
         row = conn.execute(
             "MATCH (x:Frontier {id:$id}) RETURN x.id, x.eng_id, x.direction, x.evidence, "
-            "x.proposed_by, x.status, x.review_note, x.created_at, x.reviewed_at",
+            "x.proposed_by, x.status, x.review_note, x.created_at, x.reviewed_at, x.refs",
             parameters={"id": fid}).get_next()
         assert str(row[0]) == fid
         assert str(row[1]) == "eng-361"
@@ -3058,6 +3066,28 @@ def test_361_write_frontier_roundtrip_all_columns(tmp_path, monkeypatch):
         assert str(row[6]) == "", "review_note 恒 ''(评审前无值, 调用方伪造被忽略)"
         assert isinstance(row[7], _361_dt) and row[7].year >= 2026, "created_at 取服务端当前时刻(调用方 1999 被忽略)"
         assert row[8] == _361_dt(1970, 1, 1), "reviewed_at 恒 epoch(评审前无值, 调用方 1999 被忽略)"
+        # 3.6-3 refs 落列: JSON 串可解析且与准入门归一后的数组逐元素相等(保序/去重后)
+        assert json.loads(str(row[9])) == ["s-361-a", "e-361-a"], "refs 必须 JSON 串化落列且保序"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_363_write_frontier_refs_json_serialized(tmp_path, monkeypatch):
+    """3.6-3 refs 落列专锁: 脏 refs(空白/重复/空串混入)经准入门归一(strip/去空/保序去重)后
+    JSON 串化写入 refs 列 — 落列值 json.loads 还原 = 归一数组(元素零增删改, 仅序列化);
+    类型为 STRING(非列表直存)。"""
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        code, out = _361_post(base_url, "/write/frontier", _361_valid_payload(
+            direction="refs 归一落列方向: 脏输入归一后序列化",
+            refs=[" s-361-a ", "s-361-a", "", "e-361-a"]))
+        assert code == 200 and out["ok"] is True, out
+        refs_raw = conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.refs",
+                                parameters={"id": out["id"]}).get_next()[0]
+        assert isinstance(refs_raw, str), "refs 列必须 STRING(JSON 串), 非列表直存"
+        assert json.loads(str(refs_raw)) == ["s-361-a", "e-361-a"], \
+            "落列值必须等于准入门归一后的数组(保序/去重/去空白)"
     finally:
         srv.shutdown()
         srv.server_close()
