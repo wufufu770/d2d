@@ -229,53 +229,38 @@ def upsert_endpoint(conn, url, tech="", business_chain="", param="", method="GET
 
 
 _D2D_PAUSE_FILE = os.environ.get("D2D_DATA_DIR", os.path.expanduser("~/.d2d-data")) + "/config/paused.json"
-_pause_mtime_cache: list = [None, False]  # [mtime, paused] — 每请求检查 mtime, 变了才重读
 
 
 def _d2d_paused() -> bool:
     """P0-3 全局暂停开关(取消令牌的 worker 侧通道) — stopAll 写 paused.json, 写通道 409。
-    mtime 缓存: 文件未变时不重读, 请求路径零额外 IO; startEngagement 删除文件即解除。"""
+    3.6-4-A2(段 A 前置修复): 每请求直读, mtime 缓存移除 — overlayfs 等粗 mtime 粒度文件
+    系统上同一时间刻两次 write_text 得同 mtime, 缓存不失效 → 暂停状态陈旧
+    (test_d2d_paused_file_lifecycle flake 根因); 单文件小 JSON 读 IO 可忽略, 直读永不错读。
+    文件不存在(startEngagement 删除即解除)/半截写坏 JSON → 不暂停(与旧缓存未命中路径同语义)。"""
     try:
-        m = os.path.getmtime(_D2D_PAUSE_FILE)
-    except OSError:
-        _pause_mtime_cache[0], _pause_mtime_cache[1] = None, False
+        with open(_D2D_PAUSE_FILE) as f:
+            return bool(json.load(f).get("paused"))
+    except (OSError, ValueError):
         return False
-    if m != _pause_mtime_cache[0]:
-        try:
-            with open(_D2D_PAUSE_FILE) as f:
-                _pause_mtime_cache[1] = bool(json.load(f).get("paused"))
-        except Exception:
-            _pause_mtime_cache[1] = False
-        _pause_mtime_cache[0] = m
-    return _pause_mtime_cache[1]
 
 
 _D2D_PAUSE_DIR = os.path.dirname(_D2D_PAUSE_FILE)
-_eng_pause_cache: dict = {}  # eng → [mtime, paused] — 多开隔离: 停 A 不 409 B 的写入
 
 
 def _eng_paused(eng: str) -> bool:
     """W5: per-engagement 暂停开关 — stopAll(该 engagement 的 runner/调度器)写
     config/paused-<eng>.json, 只有归属该 engagement 的写入被 409; 多开互不误伤。
-    旧版全局 paused.json 仍生效(向后兼容), 但新停机路径只写 per-eng 文件。"""
+    旧版全局 paused.json 仍生效(向后兼容), 但新停机路径只写 per-eng 文件。
+    3.6-4-A2: 同 _d2d_paused — 每eng 单文件直读, mtime 缓存移除(粗 mtime 粒度
+    文件系统上缓存陈旧 flake 同款根因, 见 :235 注释)。"""
     if not eng or "/" in eng or ".." in eng:
         return False
     p = f"{_D2D_PAUSE_DIR}/paused-{eng}.json"
     try:
-        m = os.path.getmtime(p)
-    except OSError:
-        _eng_pause_cache.pop(eng, None)
+        with open(p) as f:
+            return bool(json.load(f).get("paused"))
+    except (OSError, ValueError):
         return False
-    c = _eng_pause_cache.get(eng)
-    if c is None or m != c[0]:
-        try:
-            with open(p) as f:
-                v = bool(json.load(f).get("paused"))
-        except Exception:
-            v = False
-        _eng_pause_cache[eng] = [m, v]
-        return v
-    return c[1]
 
 
 # D-4: 并发连接上限 — ThreadingHTTPServer 每连接一线程, 慢连接可耗尽线程/内存(纵深防御)
@@ -986,6 +971,29 @@ class Handler(BaseHTTPRequestHandler):
             _pii_hits = 0
             _direction, _k = redact_pii(_direction); _pii_hits += _k
             _evidence, _k = redact_pii(_evidence); _pii_hits += _k
+            # ---- 3.6-4-A1(段 A 前置修复): 指令性文本三档扫描(存储型提示注入向量收口) ----
+            # /write/experience 同款 experience_injection_scan(只调用, gates.py 本体零改动):
+            # 本端点原只有 redact_pii, 持 worker token 直写可存未消毒指令文本, 3.6-3 评审进程
+            # 把 direction/evidence 读进评审 prompt(存储型注入直打主控评审模型)。顺序与
+            # /write/experience 拍板一致(:824 先脱敏后注入检测 — 判定与 [SUSPECT] 标注对象均
+            # 为「落库终值」, 脱敏产物 [REDACTED:*] 不含注入词面, 双向无干扰)。
+            # direction+'\n'+evidence 拼接扫描(\n 隔断跨字段子串误拼 — high 需同字段连续出现,
+            # 跨字段复合形态落 soft, 复合本就该软档; gates.experience_injection_scan 同语义)。
+            # 三档: high → 400 拒绝(注入话术不入图)+ frontier-injection-block 审计;
+            # soft → 照写但 direction 加 '[SUSPECT] ' 前缀(总长钳 256 保持既有硬门不变式,
+            #   :831 experience content 钳 512 同款)+ frontier-injection-soft 审计 — 评审进程
+            #   读 proposed 行时天然先见; clean → 现行为零改写。
+            _inj = experience_injection_scan(f"{_direction}\n{_evidence}")
+            if _inj == "high":
+                _audit_event("frontier-injection-block",
+                             {"eng_id": _eng_id, "direction_head": _direction[:60],
+                              "pii_hits": _pii_hits})
+                return self._send(400, {"ok": False,
+                                        "error": "frontier rejected: 检出指令性文本(高置信 prompt injection 独立短语) — 注入话术禁止入池, 请改写为探索方向描述"})
+            if _inj == "soft":
+                _direction = ("[SUSPECT] " + _direction)[:256]
+                _audit_event("frontier-injection-soft",
+                             {"eng_id": _eng_id, "direction_head": _direction[:60]})
             # id 服务端生成(fr-<eng>-<短码>, 沿 exp- 短码先例): eng 段白名单化 + 截断防脏字符入
             # 标识, 短码 uuid 随机防碰撞; 全值经参数绑定, 不拼接外部输入。
             _eng_slug = re.sub(r"[^A-Za-z0-9._-]", "", _eng_id)[:16]
