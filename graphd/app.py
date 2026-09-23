@@ -944,7 +944,8 @@ class Handler(BaseHTTPRequestHandler):
         #   可调); ③签名去重 sha256(direction+eng_id) 6h 内同 (eng,direction) → 200+suppressed
         #   静默合并(理由留痕于增强③注释); ④value_score 恒 0.0 / ⑤value_components 恒 ''、
         #   两个 *_ref 占位不写值(3.6-3/3.6-4 回填) / ⑥version 恒 'v1' — 内联字面量,
-        #   调用方传值一律无效。refs/指纹均不落列(准入校验语义, v4.1 五列为闭集)。
+        #   调用方传值一律无效。指纹不落列(准入校验语义); refs 自 3.6-3 拍板起落列 —
+        #   归一数组 JSON 串化存入 refs 列(见下方序列化行, schema 15 列同源)。
         if self.path == "/write/frontier":
             if not self._auth("worker"):
                 return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
@@ -977,6 +978,9 @@ class Handler(BaseHTTPRequestHandler):
             if _refs_rej:
                 _audit_event("frontier-reject", {"eng_id": _eng_id, "reason": "refs invalid", "detail": _refs_err[:120]})
                 return self._send(400, {"ok": False, "error": _refs_err})
+            # 3.6-3: refs 落列 — 准入门归一后的数组 JSON 串化(JSON.stringify 同构)存入 refs 列,
+            # 元素零增删改(仅序列化); 语句侧全参数绑定($refs), 不拼接外部输入。
+            _refs_json = json.dumps(_refs, ensure_ascii=False)
             # redact_pii 脱敏: direction+evidence 两字段(3D 八模式; P2P_EVIDENCE_REDACT 开关在
             # gates.redact_pii 内部生效 — /write/experience 同形态无条件调用)。
             _pii_hits = 0
@@ -1066,9 +1070,9 @@ class Handler(BaseHTTPRequestHandler):
                         "CREATE (x:Frontier {id:$id, eng_id:$eng, direction:$dir, evidence:$ev, "
                         "proposed_by:$by, status:'proposed', review_note:'', "
                         "created_at:timestamp($ca), reviewed_at:timestamp('1970-01-01 00:00:00'), "
-                        "value_score:0.0, value_components:'', version:'v1'})",
+                        "value_score:0.0, value_components:'', version:'v1', refs:$refs})",
                         parameters={"id": _fid, "eng": _eng_id, "dir": _direction, "ev": _evidence,
-                                    "by": _by, "ca": _now})
+                                    "by": _by, "ca": _now, "refs": _refs_json})
                 except TimeoutError as _te:
                     return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
                 except Exception as e:
