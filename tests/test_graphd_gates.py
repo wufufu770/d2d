@@ -3668,3 +3668,73 @@ def test_362_refs_rate_signature_pure_functions(monkeypatch):
     assert (_362_WIN_H, _362_DEDUP_H, _362_REFS_MAX) == (1, 6, 16)
     # app.py 接线用的是 gates.py 同一对象
     assert _362_app_rate is _362_rate and _362_app_sig is _362_sig
+
+
+# =====================================================================
+# 3.6-3(前沿主控评审): value_score 加权公式 + rejection 拉普拉斯平滑(纯函数区追加于
+# gates.py frontier_signature 之后)。公式与三因子语义见 gates.py 区块注释; 评审编排
+# (三态决策/探索预算/转态调用)在 plugin/pentest-dsh/test/frontier-review.test.mjs(mocha,
+# JS 同式镜像 — 双侧同源: 系数/钳位/平滑常数改一侧必改另一侧)。本批次 app.py 零接线
+# (禁改段): 消费由 JS 评审进程承担, 本区是公式权威锚。
+# =====================================================================
+from graphd.gd.gates import (FRONTIER_VALUE_WEIGHTS as _363_WEIGHTS,                # noqa: E402
+                             compute_rejection_rate as _363_rr,
+                             frontier_value_score as _363_vs)
+
+
+def test_363_value_score_formula_and_extremes():
+    """公式逐项: value = 0.4*qb + 0.3*sa + 0.3*(1-rr); 全因子 1 → 恰 1.0, 全 0 → 0.3
+    (rejection 补项恒在 — 零因子 value>0), rr=1 全无价值 → 0.0。"""
+    assert _363_WEIGHTS == (0.4, 0.3, 0.3), "权重拍板值 (0.4, 0.3, 0.3)"
+    assert abs(_363_vs(1.0, 1.0, 0.0) - 1.0) < 1e-9, "全因子最优 → 1.0"
+    assert abs(_363_vs(0.0, 0.0, 1.0) - 0.0) < 1e-9, "全无价值(rr=1) → 0.0"
+    zero = _363_vs(0.0, 0.0, 0.0)
+    assert abs(zero - 0.3) < 1e-9 and zero > 0, "零因子 value=0.3(冷启动中性) > 0"
+    # 混合值逐项手算
+    assert abs(_363_vs(0.5, 0.5, 0.5) - (0.4 * 0.5 + 0.3 * 0.5 + 0.3 * 0.5)) < 1e-9
+    assert abs(_363_vs(0.8, 0.25, 0.1) - (0.32 + 0.075 + 0.27)) < 1e-9
+
+
+def test_363_value_score_monotonicity():
+    """单调性: qb↑ → value↑(同权 sa/rr 补项亦然); rr↑ → value↓(历史高否决拉低价值)。"""
+    vals = [_363_vs(qb / 10, 0.2, 0.4) for qb in range(11)]
+    assert all(b > a for a, b in zip(vals, vals[1:])), "quadrant_blankness 单调递增"
+    vals = [_363_vs(0.2, sa / 10, 0.4) for sa in range(11)]
+    assert all(b > a for a, b in zip(vals, vals[1:])), "signal_affinity 单调递增"
+    vals = [_363_vs(0.2, 0.2, rr / 10) for rr in range(11)]
+    assert all(b < a for a, b in zip(vals, vals[1:])), "rejection_rate 单调递减价值"
+
+
+def test_363_value_score_factor_clamps():
+    """各因子先钳位 [0,1]: 越上界(qb 数学上可 >1 — 21 格枚举 vs 少样本, 如 18/3=6)、
+    越下界(负)、非数值(None/'x')与 NaN 一律收口后代入。"""
+    assert abs(_363_vs(6.0, 2.0, -3.0) - 1.0) < 1e-9, "qb=6→1, sa=2→1, rr=-3→0 → 全贡献"
+    assert abs(_363_vs(-1.0, -1.0, -1.0) - 0.3) < 1e-9, "全负 → 0 因子 + (1-0) 补项"
+    assert abs(_363_vs(None, 'x', float('nan')) - 0.3) < 1e-9, "非数值/NaN 按 0"
+    assert abs(_363_vs(0.5, 0.5, '0.5') - _363_vs(0.5, 0.5, 0.5)) < 1e-9, "数字串可解析即用"
+
+
+def test_363_rejection_rate_laplace_smoothing():
+    """拉普拉斯冷启动平滑: rr=(r+0.5)/(t+1); t=0 → 0.5 中性先验(不罚新方向);
+    全否决恒 <1(r=t → (t+0.5)/(t+1)); 单调: r↑ → rr↑, t↑(r 不变) → rr↓。"""
+    assert abs(_363_rr(0, 0) - 0.5) < 1e-9, "冷启动 0.5"
+    assert abs(_363_rr(0, 9) - 0.05) < 1e-9, "(0+0.5)/(9+1)"
+    assert abs(_363_rr(3, 3) - 0.875) < 1e-9, "(3+0.5)/(3+1), 恒 <1"
+    assert _363_rr(9, 10) > _363_rr(5, 10) > _363_rr(1, 10), "r↑ → rr↑"
+    assert _363_rr(1, 2) > _363_rr(1, 10), "同 r 下 t↑ → rr↓(样本多更可信)"
+    # 防御钳位: 负计数按 0; r > t 按 t 收口(不产出 ≥1 的比率)
+    assert abs(_363_rr(-2, 5) - _363_rr(0, 5)) < 1e-9
+    assert _363_rr(7, 3) < 1.0 and abs(_363_rr(7, 3) - _363_rr(3, 3)) < 1e-9
+    assert _363_rr(0, -5) == _363_rr(0, 0), "负 total 按 0(冷启动)"
+
+
+def test_363_value_score_with_real_rejection_pair():
+    """因子协同语义锚(与 JS 评审决策线 FRONTIER_VALUE_THRESHOLD=0.3 对照): 冷启动 rr=0.5
+    贡献 0.3*(1-0.5)=0.15 中性 — 有空白面(qb=0.5)的新方向价值 0.2+0.15=0.35 ≥ 0.3 不被
+    自动否决(不罚无历史); 全否决历史(rr=0.875)+无空白+无亲和 → 0.3*0.125=0.0375 < 0.3
+    → rejected 侧。"""
+    cold = _363_vs(0.5, 0.0, _363_rr(0, 0))
+    assert abs(cold - 0.35) < 1e-9 and cold >= 0.3
+    assert abs(_363_vs(0.0, 0.0, _363_rr(0, 0)) - 0.15) < 1e-9, "零空白冷启动 0.15(rr 补项)"
+    burnt = _363_vs(0.0, 0.0, _363_rr(3, 3))
+    assert abs(burnt - 0.0375) < 1e-9 and burnt < 0.3

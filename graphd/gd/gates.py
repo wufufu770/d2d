@@ -817,3 +817,61 @@ def frontier_signature(direction, eng_id) -> str:
     消费方仅审计留痕(frontier-suppress 事件)与测试锁定; 图内判重直接按 (eng_id, direction)
     精确匹配查询(等价语义, 不新增指纹列 — v4.1 五列清单为闭集, refs/指纹均不落列)。"""
     return content_hash(str(direction or ""), str(eng_id or ""))
+
+
+# ── 3.6-3(前沿主控评审): value_score 加权公式 + rejection 拉普拉斯平滑(纯函数) ──────
+# 拍板公式: value_score = 0.4*quadrant_blankness + 0.3*signal_affinity + 0.3*(1-rejection_rate)。
+# 双侧同源声明: 本区是公式权威锚(Python 纯函数, pytest 单测真源); 评审决策的实时计算在
+# plugin/pentest-dsh/scheduler/frontier-review.mjs 的 frontierValueScore/computeRejectionRate
+# 同式镜像(系数/钳位/平滑常数逐条对齐, 改一侧必改另一侧)。三因子语义(逐条):
+#   · quadrant_blankness — 覆盖空白度: allocator.coverageQuadrants(同 eng Signal_
+#     surface×boundary 象限, <3 样本 null→0)的 blanks.length/total(total>0 否则 0);
+#     数学上可 >1(枚举 21 格 vs 少样本), 由 _clamp01 收口。
+#   · signal_affinity — refs 亲和: 提案 refs 列(JSON 数组串)所指 Signal 的 surface|boundary
+#     落 coverageQuadrants 的 dense 簇=1.0 / 落其他已填充格=0.5 / 无命中或无 refs 数据=0;
+#     多 ref 取最值(max, 拍板形态: 单条死引用不稀释命中, 稳定抗 refs 噪声) —
+#     JS 侧 signalAffinity 同式。
+#   · rejection_rate — 历史(eng_id, direction) 否决率的拉普拉斯冷启动平滑
+#     (compute_rejection_rate), 取补 (1-rr) 使历史高否决拉低价值; 冷启动 rr=0.5 →
+#     该项恒贡献 0.15(中性, 不罚无历史的新方向)。
+# 评审决策线(value<0.3 rejected / ≥0.3 accepted; blank>0.5 倾向 accepted / <0.3 倾向
+# rejected, 冲突以 value 阈值优先)属评审编排语义, 常量落 JS 模块(本区只锚公式)。
+FRONTIER_VALUE_WEIGHTS = (0.4, 0.3, 0.3)
+
+
+def _frontier_clamp01(x) -> float:
+    """因子钳位(纯函数): 非数值(None/字符串/NaN)按 0.0, 其余收口 [0.0, 1.0]。"""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return 0.0
+    if v != v:  # NaN
+        return 0.0
+    return min(1.0, max(0.0, v))
+
+
+def compute_rejection_rate(rejected_count, total_count) -> float:
+    """3.6-3: 同 (direction, eng_id) 历史否决率 — 拉普拉斯冷启动平滑(纯函数供 pytest 与
+    JS 评审侧 computeRejectionRate 同式镜像):
+        rejection_rate = (rejected + 0.5) / (total + 1)
+    total=0(该方向无历史提案)返回 0.5 中性先验 — 不罚冷启动方向, 也不给它白送低否决红利。
+    防御钳位(图数据异常不产出越界比率): 负计数按 0; rejected > total 按 total 收口
+    (此时恒 <1, 与 (t+0.5)/(t+1)<1 单调一致)。"""
+    t = max(0, int(total_count))
+    r = min(max(0, int(rejected_count)), t)
+    return (r + 0.5) / (t + 1)
+
+
+def frontier_value_score(quadrant_blankness, signal_affinity, rejection_rate) -> float:
+    """3.6-3: Frontier 提案价值分(纯函数, transition_gate :678 同区形态 — 公式逐条见
+    上方区块注释):
+        value_score = 0.4*quadrant_blankness + 0.3*signal_affinity + 0.3*(1-rejection_rate)
+    各因子先经 _frontier_clamp01(非数值/NaN 按 0, 越界收口 [0,1])再代入; 全因子取 1 时
+    输出恰 1.0, 全 0 时输出 0.3(rejection 补项) — 恒落 [0,1] 闭区间。
+    与 JS frontierValueScore 同式双实现(双侧同源声明, 见区块注释); 本批次 app.py 零接线 —
+    本函数供 pytest 锚与后续服务端消费(3.6-4 探索消化链), 评审实时计算在 JS 侧。"""
+    w_blank, w_affin, w_reject = FRONTIER_VALUE_WEIGHTS
+    qb = _frontier_clamp01(quadrant_blankness)
+    sa = _frontier_clamp01(signal_affinity)
+    rr = _frontier_clamp01(rejection_rate)
+    return w_blank * qb + w_affin * sa + w_reject * (1.0 - rr)
