@@ -36,7 +36,7 @@ def _audit_event(kind, detail):
 DB_PATH = os.environ.get("P2P_GRAPH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kuzu_db"))
 # M8 守护自愈锚: /health 回显三要素。发版必须改 VERSION — preflight 据版本差异识别 stale 旧实例;
 # STARTED_AT 是本进程启动时间, 预检与 /proc/<pid> starttime 比对防 pid 复用误判。
-VERSION = "1.5.0"  # 0922: Frontier 五列增列迁移(3.6-2 v4.1: value_score/value_components/两个 *_ref/version — CREATE+ALTER+关键列三处同步) — bump 让 preflight 不复用旧实例
+VERSION = "1.6.0"  # 0924: Hypothesis value_score 列(3.6-4 段 C: CREATE+ALTER+关键列三处同步) + frontier-transition 闭环回填参数(转态端点带参) — bump 让 preflight 不复用旧实例
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 PORT = int(os.environ.get("P2P_GRAPH_PORT", "8766"))
 
@@ -115,6 +115,13 @@ try:
     from graphd.gd.gates import frontier_transition_gate
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import frontier_transition_gate
+
+# 3.6-4 段 C(C-1 反馈闭环): 转态端点带参回填的格式门与 utility 键合并(纯函数, gates.py
+# 3.6-4 段 C 区块)。同 3C 哲学: 直接从子模块导入, 两种运行形态都接住。
+try:
+    from graphd.gd.gates import frontier_ref_backfill, frontier_utility_components
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import frontier_ref_backfill, frontier_utility_components
 
 # 3.6-2 v4.1(前沿写端增强): refs 准入门 / engagement 级滑动窗口配额 / 签名去重指纹纯函数。
 # 同 3C 哲学: gd/__init__ 聚合不在本批次授权改动清单, 直接从子模块导入, 两种运行形态都接住。
@@ -1118,13 +1125,46 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"ok": False, "error": "frontier_id required"})
             if not to:
                 return self._send(400, {"ok": False, "error": "target_status required (proposed|accepted|rejected|explored)"})
+            # ---- 3.6-4 段 C(C-1 反馈闭环回填): 可选参数 — 转态端点带参(审计①拍板的最小侵入
+            # 方案)。转态本体(迁移表/host-only/status+reviewed_at+review_note 写)零改动, 三参
+            # 均缺省时行为与既有调用逐字节等价; 显式传参才回填闭环锚点列(3.6-2 定死的两个
+            # *_ref 占位列由此获得唯一写入方)。回填语义(现场链路):
+            #   accepted_to_hypothesis_ref = 采纳后该方向产出的 Hypothesis id(锚① — worker 经
+            #     /write/hypothesis 生成, 现场无方向标签, 由 engagement 终态回填进程按时间窗
+            #     关联, plugin/scheduler/frontier-closure.mjs);
+            #   hypothesis_to_confirmed_ref = 该假设 verdict=confirmed 的 evidence_ref 所指
+            #     Finding id(锚② — Hypothesis↔Finding 现场关系即 evidence_ref 文本, 无边;
+            #     Finding.related_to 是跨 host 同缺陷归并, 与本链路无关);
+            #   utility_effective(bool) = 探索期效用(有效 True=+0.2 / 无发现 False=-0.1) —
+            #     仅 accepted→explored 生效, 合并进 value_components JSON 的 utility 键
+            #     (已定死字段内加键不违约; ±0.2 常量单源 gates.py)。转化率 = 两 ref 非空比率
+            #     (gates.frontier_conversion_rate; 看板 8.5-2 只读消费)。
+            _ref_hyp = str(req.get("accepted_to_hypothesis_ref") or "").strip()
+            _rej_h, _rej_h_reason, _ref_hyp = frontier_ref_backfill(_ref_hyp)
+            if _rej_h:
+                return self._send(400, {"ok": False, "error": f"accepted_to_hypothesis_ref: {_rej_h_reason}"})
+            _ref_fnd = str(req.get("hypothesis_to_confirmed_ref") or "").strip()
+            _rej_f, _rej_f_reason, _ref_fnd = frontier_ref_backfill(_ref_fnd)
+            if _rej_f:
+                return self._send(400, {"ok": False, "error": f"hypothesis_to_confirmed_ref: {_rej_f_reason}"})
+            _util_eff = None
+            if "utility_effective" in req:
+                _ue = req.get("utility_effective")
+                if not isinstance(_ue, bool):
+                    return self._send(400, {"ok": False, "error": "utility_effective must be a boolean"})
+                _util_eff = _ue
             with _locked():  # V-11: 锁带 5s deadline(读旧态→门判定→写新态同一锁窗口, /write/transition 同款)
                 try:
                     conn = kuzu.Connection(db())
-                    r = conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status", parameters={"id": xid})
+                    # 3.6-4 段 C: 读旧态同时取既有 value_components(utility 合并基线 — 既有键
+                    # 原样保留, 仅置 utility 键); 无回填参数的既有调用多取一列零行为差。
+                    r = conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status, x.value_components",
+                                     parameters={"id": xid})
                     if not r.has_next():
                         return self._send(404, {"ok": False, "error": "frontier not found"})
-                    cur = str(r.get_next()[0] or "proposed")
+                    _frow = r.get_next()
+                    cur = str(_frow[0] or "proposed")
+                    _cur_vc = str(_frow[1] or "") if len(_frow) > 1 else ""
                     ok, err = frontier_transition_gate(cur, to, req.get("review_note"))
                     if not ok:
                         # #73: 非法迁移审计(转态拒绝动作可追溯: id/cur/to/reviewer)
@@ -1132,6 +1172,26 @@ class Handler(BaseHTTPRequestHandler):
                                      {"id": xid, "cur": cur, "to": to,
                                       "reviewer": str(req.get("reviewer") or "")[:80], "err": err})
                         return self._send(400, {"ok": False, "error": err})
+                    # utility 适用性预检(写状态前拒绝 — 零半程状态): 效用结论只在探索结束时产生
+                    if _util_eff is not None and to != "explored":
+                        return self._send(400, {"ok": False, "error": "utility_effective 仅在 accepted→explored 转态生效(探索结束才有效用结论)"})
+                    # 锚点存在性终检(服务端不信自报 — 假 ref 会污染转化率度量; refs 终检同款哲学)
+                    if _ref_hyp:
+                        _ex = conn.execute("MATCH (h:Hypothesis {id:$id}) RETURN h.id LIMIT 1",
+                                           parameters={"id": _ref_hyp})
+                        if not _ex.has_next():
+                            _audit_event("frontier-ref-reject",
+                                         {"id": xid, "field": "accepted_to_hypothesis_ref",
+                                          "ref": _ref_hyp[:80]})
+                            return self._send(400, {"ok": False, "error": f"accepted_to_hypothesis_ref {_ref_hyp[:60]} 不存在(Hypothesis 表无此 id)"})
+                    if _ref_fnd:
+                        _ex = conn.execute("MATCH (f:Finding {id:$id}) RETURN f.id LIMIT 1",
+                                           parameters={"id": _ref_fnd})
+                        if not _ex.has_next():
+                            _audit_event("frontier-ref-reject",
+                                         {"id": xid, "field": "hypothesis_to_confirmed_ref",
+                                          "ref": _ref_fnd[:80]})
+                            return self._send(400, {"ok": False, "error": f"hypothesis_to_confirmed_ref {_ref_fnd[:60]} 不存在(Finding 表无此 id)"})
                     # 全参数绑定($id/$to/$ts/$note); 其他列零触碰(eng_id/direction/evidence/
                     # proposed_by/created_at 不动 — 评审只产出裁决, 不改提案本体)。
                     _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -1139,6 +1199,31 @@ class Handler(BaseHTTPRequestHandler):
                                  "x.reviewed_at=timestamp($ts), x.review_note=$note",
                                  parameters={"id": xid, "to": to, "ts": _ts,
                                              "note": str(req.get("review_note") or "").strip()})
+                    # 3.6-4 段 C: 闭环回填(与转态写同一 _locked() 窗口; 列级失败降级 stderr 不
+                    # 阻塞转态本体 — report_status 降级先例; 列由 schema 三处同步+ALTER 迁移保证)。
+                    _bf_err = []
+                    if _ref_hyp:
+                        try:
+                            conn.execute("MATCH (x:Frontier {id:$id}) SET x.accepted_to_hypothesis_ref=$r",
+                                         parameters={"id": xid, "r": _ref_hyp})
+                        except Exception as _be:
+                            _bf_err.append(f"a2h: {type(_be).__name__}")
+                    if _ref_fnd:
+                        try:
+                            conn.execute("MATCH (x:Frontier {id:$id}) SET x.hypothesis_to_confirmed_ref=$r",
+                                         parameters={"id": xid, "r": _ref_fnd})
+                        except Exception as _be:
+                            _bf_err.append(f"h2c: {type(_be).__name__}")
+                    if _util_eff is not None:
+                        try:
+                            conn.execute("MATCH (x:Frontier {id:$id}) SET x.value_components=$vc",
+                                         parameters={"id": xid,
+                                                     "vc": frontier_utility_components(_cur_vc, _util_eff)})
+                        except Exception as _be:
+                            _bf_err.append(f"utility: {type(_be).__name__}")
+                    if _bf_err:
+                        print(f"[frontier] closure backfill degraded ({xid}): {'; '.join(_bf_err)}",
+                              file=sys.stderr, flush=True)
                 except TimeoutError as _te:
                     return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
                 except Exception as e:
@@ -1147,13 +1232,20 @@ class Handler(BaseHTTPRequestHandler):
                     print(f"[frontier] transition write failed (degraded): {type(e).__name__} {str(e)[:160]}",
                           file=sys.stderr, flush=True)
                     return self._send(500, {"ok": False, "error": str(e)[:200]})
-            # 成功转态审计: ts/旧状态/新状态/reviewer/reason 全记录
+            # 成功转态审计: ts/旧状态/新状态/reviewer/reason 全记录(+3.6-4 段 C 追加键:
+            # 闭环锚点与效用 — 仅显式传参时出现, 既有审计键零改动)
             _audit_event("frontier-transition",
                          {"id": xid, "from": cur, "to": to,
                           "reviewer": str(req.get("reviewer") or "host")[:80],
                           "reason": str(req.get("review_note") or ""),
-                          "ts": datetime.now(timezone.utc).isoformat()})
-            return self._send(200, {"ok": True, "id": xid, "from": cur, "to": to})
+                          "ts": datetime.now(timezone.utc).isoformat(),
+                          **({"accepted_to_hypothesis_ref": _ref_hyp} if _ref_hyp else {}),
+                          **({"hypothesis_to_confirmed_ref": _ref_fnd} if _ref_fnd else {}),
+                          **({"utility_effective": _util_eff} if _util_eff is not None else {})})
+            return self._send(200, {"ok": True, "id": xid, "from": cur, "to": to,
+                                    **({"accepted_to_hypothesis_ref": _ref_hyp} if _ref_hyp else {}),
+                                    **({"hypothesis_to_confirmed_ref": _ref_fnd} if _ref_fnd else {}),
+                                    **({"utility_effective": _util_eff} if _util_eff is not None else {})})
 
         # R3: Finding 七态状态机转换（host 专属；worker 的 verified 结论仍须经验证器环独立重放背书）
         # #73 token 归属复核: 本端点已 host-only —— _auth("host") 只接受与 HOST_TOKEN 的恒等

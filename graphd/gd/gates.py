@@ -875,3 +875,156 @@ def frontier_value_score(quadrant_blankness, signal_affinity, rejection_rate) ->
     sa = _frontier_clamp01(signal_affinity)
     rr = _frontier_clamp01(rejection_rate)
     return w_blank * qb + w_affin * sa + w_reject * (1.0 - rr)
+
+
+# ── 3.6-4 段 C(C-1 反馈闭环 + C-3 假设价值分): 纯函数区 ────────────────────────────
+# 本区块不触碰 FRONTIER_VALUE_WEIGHTS 公式(上方 :839 禁改)与 Frontier 表既有字段定义 —
+# 只服务两类新语义:
+#   (a) C-1 反馈闭环: /write/frontier-transition 可选回填参数(转态端点带参 — 审计①拍板的
+#       最小侵入方案)的门与合并; 两个 *_ref 占位列(3.6-2 定死, 现恒 '')由此获得唯一写入方。
+#   (b) C-3 假设价值分+aging: Hypothesis 消费排序的权威公式锚。消费点在 plugin 侧
+#       (scheduler/loop.mjs consumeHypotheses, 现场为 FIFO ts ASC), JS 镜像实现在
+#       domain/hypothesis-aging.mjs — 双侧同源声明(系数/ε/窗口常数逐条对齐, 改一侧必改另一侧),
+#       Python 纯函数是权威锚(pytest 单测真源), 与 3.6-3 frontierValueScore 双实现先例同形态。
+
+# ── (a) C-1: 回填 ref 门 / utility 键合并 / 转化率度量 ─────────────────────────────
+
+# 回填 ref 单值长度上限: 锚点 id 现场形态 h-<ms>/f-<ms>(≤20 字符), 120 已极宽;
+# 防把散文/摘要误当 id 灌进锚点列(转化率=非空比率, 脏值直接毁度量)。
+FRONTIER_REF_BACKFILL_MAX = 120
+
+
+def frontier_ref_backfill(value) -> tuple:
+    """闭环锚点回填格式门(纯函数): 单个 ref 值归一 — strip 后空串放行(=不回填, 既有
+    转态调用零改动), 非空超 FRONTIER_REF_BACKFILL_MAX 拒绝(400 话术)。
+    返回 (rejected, reason, normalized)。只判「形」; 存在性(Hypothesis/Finding 表内
+    真有此 id)是 handler 锁内图查询的事(服务端不信自报, refs 终检同款哲学)。"""
+    s = str(value or "").strip()
+    if not s:
+        return False, "", ""
+    if len(s) > FRONTIER_REF_BACKFILL_MAX:
+        return True, (f"ref too long: {len(s)} > {FRONTIER_REF_BACKFILL_MAX}"
+                      "(锚点须为图内节点 id, 非散文)"), ""
+    return False, "", s
+
+
+# 方向效用动态调整常数(拍板: engagement 结束后被探索方向 有效 +0.2 / 无发现 -0.1)。
+# 公式常量单源本区(调用方只传 effective 布尔, 不传数值 — 与 FRONTIER_VALUE_WEIGHTS
+# 权威锚同哲学); 落点 = Frontier.value_components JSON 串内扩展 utility 键
+# (已定死字段内加键不违约 — 字段定义零改动); 看板 8.5-2 后续只读消费。
+FRONTIER_UTILITY_EFFECTIVE = 0.2
+FRONTIER_UTILITY_NONE = -0.1
+
+
+def frontier_utility_components(components_str, effective) -> str:
+    """value_components JSON 串合并 utility 键(纯函数): 解析既有串(坏 JSON/非 dict 按
+    {} — 现场该列写入端恒 '', 首次合并即从 {} 起), 置 components['utility'] =
+    FRONTIER_UTILITY_EFFECTIVE(effective truthy) / FRONTIER_UTILITY_NONE(否则), 其余键
+    原样保留(保序), 序列化回 JSON 串(ensure_ascii=False)。恒返回合法 JSON 串 —
+    调用方直接 SET 落列, 不抛异常。"""
+    try:
+        comps = json.loads(components_str) if str(components_str or "").strip() else {}
+    except Exception:
+        comps = {}
+    if not isinstance(comps, dict):
+        comps = {}
+    comps["utility"] = FRONTIER_UTILITY_EFFECTIVE if effective else FRONTIER_UTILITY_NONE
+    return json.dumps(comps, ensure_ascii=False)
+
+
+def frontier_conversion_rate(rows) -> dict:
+    """转化率度量(纯函数): 两个闭环锚点列的非空比率 —
+        accepted_to_hypothesis = accepted_to_hypothesis_ref 非空行数 / 总行数
+        hypothesis_to_confirmed = hypothesis_to_confirmed_ref 非空行数 / 总行数
+    rows: 可迭代的 dict(按列名取)或二元组 (a2h, h2c); 空池两比率恒 0.0(无分母不产 NaN)。
+    看板 8.5-2 与 pytest 同源消费; 本批次只写数据(refs 回填), 读侧为后续批次。"""
+    total = 0
+    a2h = 0
+    h2c = 0
+    for r in rows or []:
+        if isinstance(r, dict):
+            va = r.get("accepted_to_hypothesis_ref")
+            vc = r.get("hypothesis_to_confirmed_ref")
+        else:
+            va = r[0] if len(r) > 0 else ""
+            vc = r[1] if len(r) > 1 else ""
+        total += 1
+        if str(va or "").strip():
+            a2h += 1
+        if str(vc or "").strip():
+            h2c += 1
+    if total <= 0:
+        return {"total": 0, "accepted_to_hypothesis": 0.0, "hypothesis_to_confirmed": 0.0}
+    return {"total": total,
+            "accepted_to_hypothesis": a2h / total,
+            "hypothesis_to_confirmed": h2c / total}
+
+
+# ── (b) C-3: Hypothesis 价值分启发式 + aging sort_key ──────────────────────────────
+# 启发式家族(拍板: 覆盖空白象限 +1 / 跨链 +1 / 历史同类 confirmed 率加权), 数据源现场定:
+#   · 覆盖空白象限 — 假设文本同时提及某 surface×boundary 枚举格(allocator.COVERAGE_SURFACES
+#     ×COVERAGE_BOUNDARIES 21 格, 词边界匹配)且该格在本 eng coverage 行中零观测(未填充格)。
+#     数据源 = Signal_.surface/boundary(loop.mjs:355 同款查询), 空白=该组合尚无信号。
+#   · 跨链 — 假设经 SUGGESTS 边(schema.py Hypothesis→Endpoint, 创造环简报指令产出)所指
+#     Endpoint 的 business_chain 去重 ≥2(一条假设横跨多条业务链)。
+#   · 历史同类 confirmed 率 — 同 (eng, strategy) 已裁决假设(verdict∈confirmed|refuted|
+#     suspected)中 confirmed 占比; 无历史按 0(不给无凭据假设白送分 — 与 3.6-3 rejection
+#     冷启动平滑的「中性 0.5」刻意不同: 那是罚否决率的补数, 这里是加分项, 无据不加分)。
+#   value_score = 1.0*blank + 1.0*cross + 1.0*rate ∈ [0,3]。
+# aging: sort_key = value_score + HYP_AGE_EPS×age_hours(ε=0.05/h — 现场定小值: 分值差 1.0
+#   需 20h 龄差才翻越, 价值分主导、老龄保底上浮); 另加候选窗口硬保证: 每轮候选必含 1 条
+#   oldest(hypothesis_aging_candidates), 防「低分老假设永久饥饿」。
+HYP_SCORE_BLANK_QUADRANT = 1.0
+HYP_SCORE_CROSS_CHAIN = 1.0
+HYP_SCORE_CONFIRM_RATE = 1.0
+HYP_AGE_EPS = 0.05            # 每小时龄期上浮(小值 — 现场拍板, 见上)
+HYP_CANDIDATE_WINDOW = 6      # 每轮消费候选窗口(消费点旧 LIMIT 6 同值, 行为零放大)
+
+
+def hypothesis_value_score(blank_quadrant, cross_chain, confirmed_rate) -> float:
+    """假设价值分(纯函数): 1.0*blank + 1.0*cross + 1.0*confirmed_rate。
+    blank/cross 按真值参与(布尔/0/1), confirmed_rate 经 _frontier_clamp01 收口 [0,1]
+    (非数值/NaN 按 0)。输出 ∈ [0, 3]。与 JS hypothesisValueScore 同式双实现。"""
+    b = HYP_SCORE_BLANK_QUADRANT if blank_quadrant else 0.0
+    c = HYP_SCORE_CROSS_CHAIN if cross_chain else 0.0
+    return b + c + HYP_SCORE_CONFIRM_RATE * _frontier_clamp01(confirmed_rate)
+
+
+def hypothesis_sort_key(value_score, age_hours, eps=None) -> float:
+    """aging 排序键(纯函数): value_score + ε×age_hours; ε 缺省 HYP_AGE_EPS。
+    age_hours 负值(时钟偏移/脏 ts)按 0 收口 — 龄期不倒扣分。"""
+    e = HYP_AGE_EPS if eps is None else float(eps)
+    try:
+        h = float(age_hours)
+    except (TypeError, ValueError):
+        h = 0.0
+    if h != h:  # NaN
+        h = 0.0
+    return float(value_score) + e * max(0.0, h)
+
+
+def hypothesis_aging_candidates(items, k=None) -> list:
+    """消费候选窗口(纯函数): items=[{id, sort_key, ts(epoch ms)}] →
+    sort_key 降序(平局 ts 升序 — 同分老者先)取前 k-1 条; 全池 oldest(min ts, 平局先现者)
+    不在列则追加在尾 — 「每轮至少放行 1 条 oldest」的窗口硬保证(高分位被 CAS 占用后,
+    下一个 CAS 目标即它)。返回 id 列表(长度 ≤ k); 空 items → []。"""
+    k = HYP_CANDIDATE_WINDOW if k is None else max(1, int(k))
+    rows = []
+    for it in items or []:
+        try:
+            sk = float(it.get("sort_key"))
+        except (TypeError, ValueError):
+            sk = 0.0
+        try:
+            ts = int(it.get("ts"))
+        except (TypeError, ValueError):
+            ts = 0
+        rows.append({"id": str(it.get("id")), "sort_key": sk, "ts": ts})
+    if not rows:
+        return []
+    rows.sort(key=lambda r: (-r["sort_key"], r["ts"]))
+    pick = rows[: max(1, k - 1)]
+    oldest = min(rows, key=lambda r: (r["ts"],))
+    if all(p["id"] != oldest["id"] for p in pick):
+        pick.append(oldest)
+    return [p["id"] for p in pick]

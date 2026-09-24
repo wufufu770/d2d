@@ -12,7 +12,9 @@ SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
     # 命名区分(3B): Hypothesis.evidence_ref = 验证引用文本(存 signal/finding id);
     # Finding/Signal_ 的 evidence_ref 列(见下两行) = 证据文件指针 ev/<eng>/<node-id>.txt — 同名不同义。
-    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', claimed_by STRING DEFAULT '', claimed_at INT64 DEFAULT 0, verdict STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
+    # 3.6-4 段 C: value_score 列(启发式价值分, 消费点认领时回写 — 下方 ALTER/_CRITICAL_COLUMNS
+    # 三处同步; 计算公式权威锚 gates.py hypothesis_value_score, aging 排序消费在 loop.mjs)。
+    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', claimed_by STRING DEFAULT '', claimed_at INT64 DEFAULT 0, verdict STRING DEFAULT '', evidence_ref STRING DEFAULT '', value_score FLOAT DEFAULT 0.0, PRIMARY KEY(id))",
     # Finding/Signal_ 3B 三列(列名与 ALTER/_CRITICAL_COLUMNS 三处同步, 缺一即静默降级):
     # content_hash=内容指纹(去重), source_hash=来源指纹, evidence_ref=证据文件指针(格式见 gd/gates.py evidence_ref)。
     "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', report_status STRING DEFAULT '', PRIMARY KEY(id))",
@@ -118,12 +120,15 @@ def init_schema(conn):
         pass
     # 0913 星图认知层: Signal_ 坐标枚举(surface/boundary) + Hypothesis 生命周期
     # (claim 租约/verdict/证据引用) + Finding replay 矩阵。新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。
+    # 3.6-4 段 C: Hypothesis.value_score 同款幂等迁移(消费点认领时回写, 旧库缺列时该 SET
+    # 会被 scheduler 侧 .catch 静默吞 — 缺列走 _CRITICAL_COLUMNS/SCHEMA_DEGRADED 响亮告警)。
     for _ddl in ("ALTER TABLE Signal_ ADD surface STRING DEFAULT ''",
                  "ALTER TABLE Signal_ ADD boundary STRING DEFAULT ''",
                  "ALTER TABLE Hypothesis ADD claimed_by STRING DEFAULT ''",
                  "ALTER TABLE Hypothesis ADD claimed_at INT64 DEFAULT 0",
                  "ALTER TABLE Hypothesis ADD verdict STRING DEFAULT ''",
                  "ALTER TABLE Hypothesis ADD evidence_ref STRING DEFAULT ''",
+                 "ALTER TABLE Hypothesis ADD value_score FLOAT DEFAULT 0.0",
                  "ALTER TABLE Finding ADD replay_matrix STRING DEFAULT ''"):
         try:
             conn.execute(_ddl)
@@ -254,7 +259,9 @@ _CRITICAL_COLUMNS = {
     "Signal_": ("verify_tries", "eng", "surface", "boundary",
                 "content_hash", "source_hash", "evidence_ref"),
     "Endpoint": ("eng", "authorized"),
-    "Hypothesis": ("eng", "claimed_by", "verdict"),
+    # 3.6-4 段 C: +value_score(启发式价值分落列 — SCHEMA CREATE + 上方 ALTER + 此处三处同步;
+    # 缺列时消费点回写 SET 被 scheduler .catch 静默吞, 价值分/aging 审计断链)
+    "Hypothesis": ("eng", "claimed_by", "verdict", "value_score"),
     "Engagement": ("leased_by", "lease_at", "cancel"),
     "AgentIdentity": ("lease_id", "exit_class"),
     # 3.5-1(经验回流 A): Experience 纳入全部列(含 id 主键) —— 与 Finding/Signal_ 只锁后期增量
