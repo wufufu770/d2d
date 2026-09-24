@@ -1053,18 +1053,22 @@ class Handler(BaseHTTPRequestHandler):
                     # 工具侧错误分支且无补救动作可做 — 方向已入池, 调用方无事可做)。指纹
                     # sha256(direction+eng_id) 仅审计留痕, 图内判重直接 (eng_id, direction) 精确
                     # 匹配(等价语义, 不新增指纹列 — v4.1 五列为闭集)。
+                    # 3.6-4 段 B(遗留修复): 命中回包带既有条目 status + review_note —— 只回 id 的
+                    # 旧形态里, 既有提案已 rejected 时 worker 仍得到「评审以既有提案为准」的安抚
+                    # (误导: 该方向已被评审否决)。透传评审终态与拒绝原因, 文案分化在工具侧。
                     _dup_r = conn.execute(
                         "MATCH (x:Frontier) WHERE x.eng_id = $e AND x.direction = $d "
-                        "AND x.created_at > timestamp($since) RETURN x.id, x.status LIMIT 1",
+                        "AND x.created_at > timestamp($since) RETURN x.id, x.status, x.review_note LIMIT 1",
                         parameters={"e": _eng_id, "d": _direction, "since": _since_6h})
                     if _dup_r.has_next():
-                        _dup_id, _dup_st = _dup_r.get_next()
+                        _dup_id, _dup_st, _dup_note = _dup_r.get_next()
                         _audit_event("frontier-suppress",
                                      {"existing_id": str(_dup_id), "eng_id": _eng_id,
                                       "signature": frontier_signature(_direction, _eng_id),
                                       "proposed_by": _by[:80]})
                         return self._send(200, {"ok": True, "id": str(_dup_id),
                                                 "status": str(_dup_st or "proposed"),
+                                                "review_note": str(_dup_note or ""),
                                                 "suppressed": True})
                     # 全参数绑定($x, 绝不拼接外部输入); status 内联字面量 'proposed' — 调用方即使
                     # 传 status 字段也结构上无法入图(恒 proposed, 同 /write/experience 恒
