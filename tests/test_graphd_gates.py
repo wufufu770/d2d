@@ -3644,6 +3644,47 @@ def test_362_write_frontier_signature_dedup_suppressed(tmp_path, monkeypatch):
     assert sup[0]["detail"]["signature"] == _362_sig(dup_dir, "eng-361"), "审计指纹 = sha256(direction+eng_id)"
 
 
+def test_362_write_frontier_dedup_hit_carries_status_and_review_note(tmp_path, monkeypatch):
+    """3.6-4 段 B(遗留修复): 去重命中回包带既有条目 status + review_note —— 既有提案已
+    rejected 时, worker 拿到的是拒绝原因而非「评审以既有提案为准」的误导性安抚;
+    proposed 命中(评审前)回 status='proposed' + review_note=''(旧缺省语义不回归)。"""
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        # ① 既有提案转 rejected(host-only 转态通道, review_note 必填)
+        rej_dir = "重复方向: 对 /admin 做枚举探测(已否决)"
+        code, out = _361_post(base_url, "/write/frontier", _361_valid_payload(direction=rej_dir))
+        assert code == 200 and out["ok"] is True, out
+        fid = str(out["id"])
+        note = "已有 finding 覆盖该面, 不再追"
+        code, out = _361_post(base_url, "/write/frontier-transition",
+                              {"frontier_id": fid, "target_status": "rejected",
+                               "review_note": note, "reviewer": "master-bot"}, token="t-361-host")
+        assert code == 200 and out["ok"] is True, out
+        # ② 同向重发 → suppressed 命中: 回既有 id + rejected + 拒绝原因透传
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction=rej_dir, proposed_by="worker-361-b"))
+        assert code == 200 and out["ok"] is True and out.get("suppressed") is True, out
+        assert str(out["id"]) == fid, "回既有提案 id(合并语义不变)"
+        assert str(out["status"]) == "rejected", "透传既有条目评审终态(非恒 proposed)"
+        assert str(out.get("review_note")) == note, "拒绝原因透传(worker 可读, 不再误导性安抚)"
+        # ③ proposed 命中(评审前): status='proposed' + review_note=''(等待评审语义)
+        prop_dir = "重复方向: 对 /api/v2/export 做批量遍历"
+        code, out = _361_post(base_url, "/write/frontier", _361_valid_payload(direction=prop_dir))
+        assert code == 200 and out["ok"] is True, out
+        fid2 = str(out["id"])
+        code, out = _361_post(base_url, "/write/frontier",
+                              _361_valid_payload(direction=prop_dir, proposed_by="worker-361-c"))
+        assert code == 200 and out["ok"] is True and out.get("suppressed") is True, out
+        assert str(out["id"]) == fid2
+        assert str(out["status"]) == "proposed", "评审前命中回 proposed(等待评审语义)"
+        assert str(out.get("review_note")) == "", "评审前 review_note 恒空(不回调用方伪造值)"
+        n = conn.execute("MATCH (x:Frontier) RETURN count(x)").get_next()[0]
+        assert int(n) == 2, "两次命中均静默合并, 共 2 行不落新行"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
 def test_362_write_wires_five_placeholder_columns(tmp_path, monkeypatch):
     """增强④⑤⑥: 写入后五占位列恒 0/''/''/''/'v1'; 调用方传 value_score/version/
     accepted_to_hypothesis_ref/hypothesis_to_confirmed_ref 一律被忽略(内联字面量, 结构上
