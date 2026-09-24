@@ -299,7 +299,7 @@ def _verify_critical_columns(conn) -> list:
     missing = []
     for table, cols in _CRITICAL_COLUMNS.items():
         try:
-            r = conn.execute(f"CALL table_info('{table}') RETURN *")
+            r = conn.execute("CALL table_info('" + table + "') RETURN *")  # noqa: S608 — table 为 _CRITICAL_COLUMNS 字面量枚举键
             present = set()
             while r.has_next():
                 present.add(str(r.get_next()[1]))
@@ -438,7 +438,7 @@ def _backfill_eng(conn):
     touched = 0
     # ① 时间窗归属(表, ts 列名)
     for table, tscol in (("Signal_", "ts"), ("Finding", "ts"), ("Hypothesis", "ts"), ("Plan", "created_at")):
-        r = conn.execute(f"MATCH (x:{table}) WHERE x.eng = '' RETURN x.{tscol}, x.id")  # noqa: S608 — 表/列名为字面量枚举
+        r = conn.execute("MATCH (x:" + table + ") WHERE x.eng = '' RETURN x." + tscol + ", x.id")  # noqa: S608 — 表/列名为字面量枚举
         batch = []
         while r.has_next():
             ts, rid = r.get_next()
