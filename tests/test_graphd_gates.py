@@ -1451,8 +1451,8 @@ def _3b_old_db_conn(tmp_path, drop_col="", drop_from="Finding"):
     _3b_cols = ("content_hash STRING DEFAULT ''", "source_hash STRING DEFAULT ''",
                 "evidence_ref STRING DEFAULT ''")
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
-    conn.execute(f"CREATE NODE TABLE Finding({_minus((f_common,) + _3b_cols, drop_col, drop_from == 'Finding')}, PRIMARY KEY(id))")
-    conn.execute(f"CREATE NODE TABLE Signal_({_minus((s_common,) + _3b_cols, drop_col, drop_from == 'Signal_')}, PRIMARY KEY(id))")
+    conn.execute("CREATE NODE TABLE Finding(" + _minus((f_common,) + _3b_cols, drop_col, drop_from == 'Finding') + ", PRIMARY KEY(id))")
+    conn.execute("CREATE NODE TABLE Signal_(" + _minus((s_common,) + _3b_cols, drop_col, drop_from == 'Signal_') + ", PRIMARY KEY(id))")
     return conn
 
 
@@ -1562,7 +1562,7 @@ def _3a_old_agent_db_conn(tmp_path, drop_col=""):
                 "lease_id STRING DEFAULT ''")
     _3a_cols = ("exit_class STRING DEFAULT ''",)
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
-    conn.execute(f"CREATE NODE TABLE AgentIdentity({_minus((a_common,) + _3a_cols, drop_col)}, PRIMARY KEY(worker_id))")
+    conn.execute("CREATE NODE TABLE AgentIdentity(" + _minus((a_common,) + _3a_cols, drop_col) + ", PRIMARY KEY(worker_id))")
     return conn
 
 
@@ -1838,7 +1838,7 @@ def _3e_old_finding_db_conn(tmp_path, drop_col=""):
                 "replay_matrix STRING DEFAULT '', related_to STRING DEFAULT ''")
     _3e_cols = ("report_status STRING DEFAULT ''",)
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
-    conn.execute(f"CREATE NODE TABLE Finding({_minus((f_common,) + _3e_cols, drop_col)}, PRIMARY KEY(id))")
+    conn.execute("CREATE NODE TABLE Finding(" + _minus((f_common,) + _3e_cols, drop_col) + ", PRIMARY KEY(id))")
     return conn
 
 
@@ -2014,7 +2014,7 @@ def _351_old_experience_db_conn(tmp_path, drop_col="", early=False):
     else:
         cols = _minus(("id STRING",) + _351_full, drop_col)
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
-    conn.execute(f"CREATE NODE TABLE Experience({cols}, PRIMARY KEY(id))")
+    conn.execute("CREATE NODE TABLE Experience(" + cols + ", PRIMARY KEY(id))")
     return conn
 
 
