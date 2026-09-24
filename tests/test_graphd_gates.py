@@ -3922,3 +3922,327 @@ def test_363_value_score_with_real_rejection_pair():
     assert abs(_363_vs(0.0, 0.0, _363_rr(0, 0)) - 0.15) < 1e-9, "零空白冷启动 0.15(rr 补项)"
     burnt = _363_vs(0.0, 0.0, _363_rr(3, 3))
     assert abs(burnt - 0.0375) < 1e-9 and burnt < 0.3
+
+
+# =====================================================================
+# 3.6-4 段 C(C-1 反馈闭环 + C-3 假设价值分+aging):
+#   · C-1: /write/frontier-transition 可选回填参数(转态端点带参 — 审计①拍板最小侵入方案)
+#     的格式门/存在性终检/utility 键合并端到端 + 转化率度量纯函数;
+#   · C-3: Hypothesis.value_score 列三处同步真源锁(SCHEMA CREATE + init_schema 字面量
+#     ALTER + _CRITICAL_COLUMNS)与 gates.hypothesis_* 启发式/aging 纯函数(权威锚,
+#     JS 消费镜像在 plugin/pentest-dsh/domain/hypothesis-aging.mjs — 双侧同源)。
+# 禁区声明: FRONTIER_VALUE_WEIGHTS 公式/Frontier 表既有字段/转态迁移表 本批次零改动
+# (既有 3.6-1/3.6-3 用例继续锁定)。
+# =====================================================================
+from graphd.gd.gates import (FRONTIER_REF_BACKFILL_MAX as _364_REF_MAX,       # noqa: E402
+                             FRONTIER_UTILITY_EFFECTIVE as _364_UP,           # noqa: E402
+                             FRONTIER_UTILITY_NONE as _364_DOWN,              # noqa: E402
+                             HYP_AGE_EPS as _364_EPS,                         # noqa: E402
+                             HYP_CANDIDATE_WINDOW as _364_WIN,                # noqa: E402
+                             frontier_ref_backfill as _364_ref,               # noqa: E402
+                             frontier_utility_components as _364_util,        # noqa: E402
+                             frontier_conversion_rate as _364_conv,           # noqa: E402
+                             hypothesis_value_score as _364_hvs,              # noqa: E402
+                             hypothesis_sort_key as _364_hsk,                 # noqa: E402
+                             hypothesis_aging_candidates as _364_hac)         # noqa: E402
+
+
+# ---- C-1: 回填格式门 / utility 合并 / 转化率(纯函数单测真源) ----
+
+def test_364_frontier_ref_backfill_gate():
+    """回填 ref 格式门: 空/空白放行为 ''(=不回填, 既有转态调用零改动); 正常 id strip 放行;
+    超长(散文/摘要误当 id)拒绝带话术 — 非空比率度量不吃脏值。"""
+    assert _364_ref("") == (False, "", "")
+    assert _364_ref("   ") == (False, "", "")
+    assert _364_ref("  h-1727123456789 ") == (False, "", "h-1727123456789")
+    rej, reason, norm = _364_ref("x" * (_364_REF_MAX + 1))
+    assert rej is True and norm == "" and str(_364_REF_MAX) in reason
+    ok, _, norm = _364_ref("f" * _364_REF_MAX)
+    assert ok is False and norm == "f" * _364_REF_MAX, "恰在上限不拒"
+
+
+def test_364_frontier_utility_components_merge():
+    """utility 键合并: 空串起 {} → {"utility":+0.2}; 既有键原样保留仅置 utility;
+    坏 JSON/非 dict 按 {} 重起(恒返回合法 JSON 串); 无发现 False → -0.1。常量单源本区。"""
+    assert abs(_364_UP - 0.2) < 1e-9 and abs(_364_DOWN - (-0.1)) < 1e-9
+    import json as _j
+    assert _j.loads(_364_util("", True)) == {"utility": 0.2}
+    assert _j.loads(_364_util('{"qb":0.5,"sa":1}', False)) == {"qb": 0.5, "sa": 1, "utility": -0.1}
+    assert _j.loads(_364_util("not json", True)) == {"utility": 0.2}
+    assert _j.loads(_364_util(None, True)) == {"utility": 0.2}
+    # 非 dict JSON(数组)同样按 {} 重起 — 不抛异常, 调用方直接 SET 落列
+    assert _j.loads(_364_util("[1,2]", True)) == {"utility": 0.2}
+    assert _j.loads(_364_util('{"utility":9.9}', False)) == {"utility": -0.1}, "重复收口覆盖旧 utility(幂等终值)"
+
+
+def test_364_frontier_conversion_rate():
+    """转化率 = 两 ref 非空比率: dict 行与二元组行同源; 空池恒 0.0(无分母不产 NaN);
+    空白/None ref 不计数。"""
+    rows = [{"accepted_to_hypothesis_ref": "h-1", "hypothesis_to_confirmed_ref": ""},
+            {"accepted_to_hypothesis_ref": "", "hypothesis_to_confirmed_ref": "f-1"},
+            {"accepted_to_hypothesis_ref": "h-3", "hypothesis_to_confirmed_ref": None}]
+    out = _364_conv(rows)
+    assert out["total"] == 3
+    assert abs(out["accepted_to_hypothesis"] - 2 / 3) < 1e-9
+    assert abs(out["hypothesis_to_confirmed"] - 1 / 3) < 1e-9
+    out = _364_conv([("h-1", "f-1"), ("", "")])
+    assert out["total"] == 2 and out["accepted_to_hypothesis"] == 0.5 and out["hypothesis_to_confirmed"] == 0.5
+    assert _364_conv([]) == {"total": 0, "accepted_to_hypothesis": 0.0, "hypothesis_to_confirmed": 0.0}
+    assert _364_conv(None)["total"] == 0
+
+
+# ---- C-3: Hypothesis 价值分 + aging 纯函数(权威锚) ----
+
+def test_364_hypothesis_value_score_math():
+    """启发式: 空白象限 +1 / 跨链 +1 / 历史 confirmed 率(钳位 [0,1])加权 — 全 0 → 0,
+    全 1 → 3.0; rate 越界收口; 非数值 rate 按 0。"""
+    assert _364_hvs(False, False, 0.0) == 0.0
+    assert abs(_364_hvs(True, True, 1.0) - 3.0) < 1e-9
+    assert abs(_364_hvs(True, False, 0.5) - 1.5) < 1e-9
+    assert abs(_364_hvs(False, True, 0.25) - 1.25) < 1e-9
+    assert abs(_364_hvs(True, False, 7.0) - 2.0) < 1e-9, "rate >1 收口 1"
+    assert _364_hvs(True, False, -1) == _364_hvs(True, False, 0), "rate <0 收口 0"
+    assert _364_hvs(True, False, "nan") == _364_hvs(True, False, 0), "非数值 rate 按 0"
+
+
+def test_364_hypothesis_sort_key_aging():
+    """aging sort_key = value_score + ε×age_hours: ε 缺省 HYP_AGE_EPS(0.05 — 现场定小值);
+    负龄(时钟偏移)/NaN 龄按 0 收口不倒扣; 显式 eps 覆盖。"""
+    assert abs(_364_EPS - 0.05) < 1e-9
+    assert abs(_364_hsk(1.0, 20) - 2.0) < 1e-9, "1.0 + 0.05×20(分值差 1.0 需 20h 龄差翻越)"
+    assert abs(_364_hsk(2.5, 0) - 2.5) < 1e-9
+    assert abs(_364_hsk(1.0, -5) - 1.0) < 1e-9, "负龄收 0"
+    assert _364_hsk(1.0, "nan") == 1.0
+    assert abs(_364_hsk(1.0, 10, eps=0.1) - 2.0) < 1e-9, "显式 eps"
+
+
+def test_364_hypothesis_aging_candidates_window():
+    """消费候选窗口: sort_key 降序(平局 ts 升序)取前 k-1; 全池 oldest 不在列则追加在尾
+    (每轮至少放行 1 条 oldest — 消费轮硬保证); 空/脏条目不炸。"""
+    items = [{"id": f"h{i}", "sort_key": float(i), "ts": 1000 + i} for i in range(8)]
+    out = _364_hac(items)
+    assert len(out) == _364_WIN
+    assert out[: _364_WIN - 1] == ["h7", "h6", "h5", "h4", "h3"], "sort_key 降序取前 5"
+    assert out[-1] == "h0", "oldest(min ts)必在候选列(放行硬保证)"
+    # oldest 已在高分位时不重复追加
+    out2 = _364_hac([{"id": "a", "sort_key": 3.0, "ts": 20}, {"id": "b", "sort_key": 1.0, "ts": 50}])
+    assert out2 == ["a", "b"]
+    # 平局: 同 sort_key 老者先(ts 升序)
+    out3 = _364_hac([{"id": "n", "sort_key": 2.0, "ts": 900}, {"id": "o", "sort_key": 2.0, "ts": 100}])
+    assert out3[0] == "o", "平局老者先"
+    # 空/脏条目
+    assert _364_hac([]) == []
+    assert _364_hac(None) == []
+    assert _364_hac([{"id": "x", "sort_key": "bad", "ts": None}]) == ["x"], "脏值按 0 不炸"
+
+
+# ---- C-3: value_score 列三处同步真源锁(SCHEMA CREATE + ALTER 迁移 + 关键列) ----
+
+def test_364_critical_columns_cover_hypothesis_value_score():
+    """_CRITICAL_COLUMNS["Hypothesis"] 纳入 value_score(缺列 → SCHEMA_DEGRADED 响亮告警;
+    消费点回写 SET 缺列时被 scheduler .catch 静默吞, 关键列校验是唯一可见面)。"""
+    assert "value_score" in _gd_schema._CRITICAL_COLUMNS["Hypothesis"]
+
+
+def test_364_new_db_hypothesis_has_value_score(tmp_path):
+    """新库 init_schema 后 Hypothesis 含 value_score(FLOAT, DEFAULT 0.0 — SCHEMA CREATE
+    三处同步之一), 且可写可读(消费点认领回写形态)。"""
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    init_schema(conn)
+    r = conn.execute("CALL table_info('Hypothesis') RETURN *")
+    types = {}
+    while r.has_next():
+        row = r.get_next()
+        types[str(row[1])] = str(row[2])
+    assert types.get("value_score") == "FLOAT", types
+    conn.execute("CREATE (h:Hypothesis {id:'h-1', text:'t', strategy:'inversion', ts:'2026-09-24T10:00:00'})")
+    v = conn.execute("MATCH (h:Hypothesis {id:'h-1'}) RETURN h.value_score").get_next()[0]
+    assert float(v) == 0.0, "缺省 0.0(未消费假设零分)"
+    # 消费点回写形态(loop.mjs: SET h.value_score=$v, 全参数绑定)
+    conn.execute("MATCH (h:Hypothesis {id:$id}) SET h.value_score=$v", parameters={"id": "h-1", "v": 2.5})
+    assert float(conn.execute("MATCH (h:Hypothesis {id:'h-1'}) RETURN h.value_score").get_next()[0]) == 2.5
+
+
+def test_364_hypothesis_value_score_migration_on_old_db(tmp_path):
+    """旧库(无 value_score 的存量 Hypothesis 表)经 init_schema 幂等 ALTER 补列且默认 0.0;
+    二次 init_schema 不抛不损(同 W5 authorized 迁移模板)。"""
+    conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
+    conn.execute("CREATE NODE TABLE Hypothesis(id STRING, text STRING, strategy STRING, "
+                 "status STRING DEFAULT 'open', ts STRING, PRIMARY KEY(id))")
+    conn.execute("CREATE (h:Hypothesis {id:'h-old', text:'legacy', strategy:'inversion', ts:'2026-09-01T00:00:00'})")
+    init_schema(conn)  # SCHEMA CREATE IF NOT EXISTS 跳过存量表, 字面量 ALTER 补列
+    row = conn.execute("MATCH (h:Hypothesis {id:'h-old'}) RETURN h.text, h.value_score").get_next()
+    assert str(row[0]) == "legacy" and float(row[1]) == 0.0, "迁移不损存量 + 补列缺省 0.0"
+    init_schema(conn)  # 幂等: 列已存在 ALTER 抛错被吞
+    assert float(conn.execute("MATCH (h:Hypothesis {id:'h-old'}) RETURN h.value_score").get_next()[0]) == 0.0
+
+
+def test_364_app_reexports_backfill_helpers():
+    """app.py 接线用的 frontier_ref_backfill/frontier_utility_components 必须是 gates.py
+    同一对象(3C re-export 先例)。"""
+    import graphd.gd.gates as _g
+    assert graphd_app.frontier_ref_backfill is _g.frontier_ref_backfill
+    assert graphd_app.frontier_utility_components is _g.frontier_utility_components
+
+
+# ---- C-1: 转态端点带参端到端(真 HTTP harness, 3.6-1 同款形态) ----
+
+def _364_seed_hyp_finding(conn):
+    """预置锚点节点: 确认假设(h-364-a, verdict=confirmed, evidence_ref 指 Finding)与
+    Finding(f-364-a)。PK 冲突吞掉即幂等(harness tmp 库每用例全新, 防御性)。"""
+    for ddl in ("CREATE (h:Hypothesis {id:'h-364-a', text:'假设文本', strategy:'inversion', "
+                "status:'confirmed', ts:'2026-09-24T10:00:00', eng:'eng-361', "
+                "verdict:'confirmed', evidence_ref:'f-364-a'})",
+                "CREATE (f:Finding {id:'f-364-a', title:'标题', severity:'high', repro:'curl http://a.example.com/', "
+                "category:'vuln', ts:'2026-09-24T10:05:00', eng:'eng-361'})"):
+        try:
+            conn.execute(ddl)
+        except Exception:
+            pass
+
+
+def test_364_transition_closure_backfill_end_to_end(tmp_path, monkeypatch):
+    """C-1 闭环回填端到端: accepted→explored 带双 ref + utility_effective=True → 200;
+    两个 *_ref 列落图 + value_components JSON 含 utility:+0.2; 回包/审计带追加键;
+    转态本体列(status/reviewed_at/review_note)照常写入。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    _364_seed_hyp_finding(conn)
+    try:
+        status, out = _361_post(base_url, "/write/frontier", _361_valid_payload())
+        assert status == 200, out
+        fid = out["id"]
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "accepted", "review_note": "采纳"},
+                                token="t-361-host")
+        assert status == 200, out
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "explored",
+                                 "review_note": "auto-closure: hyp=h-364-a conf=f-364-a",
+                                 "accepted_to_hypothesis_ref": "h-364-a",
+                                 "hypothesis_to_confirmed_ref": "f-364-a",
+                                 "utility_effective": True},
+                                token="t-361-host")
+        assert status == 200 and out["ok"] is True, out
+        assert str(out["to"]) == "explored"
+        assert out.get("accepted_to_hypothesis_ref") == "h-364-a", "回包回显锚点(追加键)"
+        assert out.get("hypothesis_to_confirmed_ref") == "f-364-a"
+        assert out.get("utility_effective") is True
+        row = conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status, x.accepted_to_hypothesis_ref, "
+                           "x.hypothesis_to_confirmed_ref, x.value_components, x.review_note",
+                           parameters={"id": fid}).get_next()
+        assert str(row[0]) == "explored"
+        assert (str(row[1]), str(row[2])) == ("h-364-a", "f-364-a"), "双锚点列落图"
+        import json as _j
+        vc = _j.loads(str(row[3]))
+        assert vc.get("utility") == 0.2, "效用 +0.2 落 value_components.utility 键(字段内加键)"
+        assert "auto-closure" in str(row[4]), "review_note 照常写入"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    tr = [e for e in events if e["kind"] == "frontier-transition" and e["detail"].get("to") == "explored"]
+    assert len(tr) == 1
+    d = tr[0]["detail"]
+    assert d.get("accepted_to_hypothesis_ref") == "h-364-a" and d.get("hypothesis_to_confirmed_ref") == "f-364-a"
+    assert d.get("utility_effective") is True, "审计追加键(既有键 id/from/to/reviewer/reason/ts 不变)"
+
+
+def test_364_transition_utility_none_and_component_preserved(tmp_path, monkeypatch):
+    """无发现 False → utility:-0.1; 既有 value_components 键原样保留(仅置 utility 键 —
+    已定死字段内加键不违约); 未传锚点参数 → 占位列不动。"""
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        conn.execute("CREATE (x:Frontier {id:'fr-364-b', eng_id:'eng-361', direction:'方向 B', "
+                     "status:'accepted', value_components:'{\"qb\":0.5}'})")
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": "fr-364-b", "target_status": "explored",
+                                 "review_note": "收口: 无确认假设", "utility_effective": False},
+                                token="t-361-host")
+        assert status == 200, out
+        row = conn.execute("MATCH (x:Frontier {id:'fr-364-b'}) RETURN x.value_components, "
+                           "x.accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref").get_next()
+        import json as _j
+        vc = _j.loads(str(row[0]))
+        assert vc == {"qb": 0.5, "utility": -0.1}, "既有键保留 + utility -0.1"
+        assert str(row[1]) == "" and str(row[2]) == "", "未传锚点参数 → 占位列不动(恒 '')"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_364_transition_backfill_rejections(tmp_path, monkeypatch):
+    """回填拒绝路径(400 零半程状态): 非 explored 转态带 utility / utility 非 bool /
+    不存在的 Hypothesis 锚(审计 frontier-ref-reject)/ 不存在的 Finding 锚 / 超长 ref。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _361_post(base_url, "/write/frontier", _361_valid_payload(direction="方向 C: 拒绝面"))
+        fid = out["id"]
+        # proposed→accepted 带 utility(非 explored 转态) → 400 且零状态写入
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "accepted", "review_note": "采纳 C",
+                                 "utility_effective": True}, token="t-361-host")
+        assert status == 400 and "explored" in out["error"], out
+        assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
+                                parameters={"id": fid}).get_next()[0]) == "proposed", "拒绝即零半程"
+        # 非 bool
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "accepted", "review_note": "采纳 C2",
+                                 "utility_effective": "yes"}, token="t-361-host")
+        assert status == 400 and "boolean" in out["error"], out
+        # 正常采纳后再测锚点拒绝路径
+        status, _ = _361_post(base_url, "/write/frontier-transition",
+                              {"frontier_id": fid, "target_status": "accepted", "review_note": "采纳 C3"},
+                              token="t-361-host")
+        assert status == 200
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "explored", "review_note": "收口",
+                                 "accepted_to_hypothesis_ref": "h-not-exist"}, token="t-361-host")
+        assert status == 400 and "不存在" in out["error"], out
+        assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
+                                parameters={"id": fid}).get_next()[0]) == "accepted", "锚点拒绝零状态写入"
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "explored", "review_note": "收口2",
+                                 "hypothesis_to_confirmed_ref": "f-not-exist"}, token="t-361-host")
+        assert status == 400 and "不存在" in out["error"], out
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "explored", "review_note": "收口3",
+                                 "accepted_to_hypothesis_ref": "x" * (_364_REF_MAX + 1)}, token="t-361-host")
+        assert status == 400 and "too long" in out["error"], out
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    assert [e["kind"] for e in events].count("frontier-ref-reject") == 2, \
+        "两类锚点不存在各记一次 frontier-ref-reject 审计"
+
+
+def test_364_transition_no_params_backward_compat(tmp_path, monkeypatch):
+    """向后兼容: 不带任何新参的转态(既有调用方)行为等价 — 占位列恒 ''、value_components
+    恒 ''、回包无追加键、审计 detail 键集与 3.6-1 既有形态一致。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _361_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _361_post(base_url, "/write/frontier", _361_valid_payload(direction="方向 D: 兼容面"))
+        fid = out["id"]
+        status, out = _361_post(base_url, "/write/frontier-transition",
+                                {"frontier_id": fid, "target_status": "accepted", "review_note": "采纳 D",
+                                 "reviewer": "master"}, token="t-361-host")
+        assert status == 200, out
+        assert "accepted_to_hypothesis_ref" not in out and "utility_effective" not in out, "回包无追加键"
+        row = conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status, x.accepted_to_hypothesis_ref, "
+                           "x.hypothesis_to_confirmed_ref, x.value_components",
+                           parameters={"id": fid}).get_next()
+        assert str(row[0]) == "accepted"
+        assert all(str(v) == "" for v in row[1:4]), "占位/组件列恒缺省(唯一写入方未传即不写)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    tr = [e for e in events if e["kind"] == "frontier-transition"]
+    assert len(tr) == 1 and set(tr[0]["detail"]) == {"id", "from", "to", "reviewer", "reason", "ts"}, \
+        "审计 detail 键集与 3.6-1 既有形态逐键一致"
