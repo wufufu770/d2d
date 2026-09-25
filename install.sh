@@ -29,10 +29,17 @@ command -v python3 >/dev/null || { echo "✗ 缺 python3"; exit 1; }
 ok "python3 $(python3 --version 2>&1 | cut -d' ' -f2)"
 
 step "安装 dsh CLI(全局)"
+# 4-3d-2 供应链钉版本: @deepseek-ai/dsh(全局 CLI 包)与插件库包 @deepseek-ai/dsh-*
+# (plugin/pentest-dsh 六依赖, 精确 pin 0.1.1-rc.2)是两条独立的版本序列, 此处 PIN 与插件
+# pin 对齐(npm view @deepseek-ai/dsh@0.1.1-rc.2 version 已验证存在; dist-tags latest=
+# 0.1.5-rc.3, 不锁版新装会拉到最新 rc)。为什么锁版本: 4-1 审计(dsh 版本调查)——本行
+# 曾未锁版, 任意上游新版本可直接进宿主; 4-2 审计(MCP 工具清单)——宿主 CLI 版本差异
+# 导致工具面行为漂移。已装偏斜(下方 command -v 短路, 只对新装生效)由
+# scripts/ops/verify-dsh-version.mjs 三处一致性校验如实告警(exit 1)。
 if command -v dsh >/dev/null; then
   ok "dsh 已装: $(dsh --version 2>/dev/null || echo '?')"
 else
-  npm install -g @deepseek-ai/dsh
+  npm install -g @deepseek-ai/dsh@0.1.1-rc.2
   ok "dsh $(dsh --version) 已安装"
 fi
 
