@@ -85,6 +85,13 @@ try:
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import content_hash, evidence_ref, source_hash
 
+# 4-3c-1: host /query CALL 禁令纯函数(gd/gates.py 4-3c-1 区块)。同 3C 哲学: gd/__init__
+# 聚合不在本批次授权改动清单, 直接从子模块导入, 两种运行形态都接住。
+try:
+    from graphd.gd.gates import host_query_gate
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import host_query_gate
+
 # 3.5-1(经验回流 A): evidence_ref 入参宽松格式确认(复用/对齐 gates.py 3B/3C 拒收语义)。
 # 同 3C 哲学: 直接从子模块导入, 不经 gd/__init__ 聚合, 两种运行形态都接住。
 try:
@@ -1530,6 +1537,16 @@ class Handler(BaseHTTPRequestHandler):
                 ok_q, err_q = worker_query_allowed(cypher)
                 if not ok_q:
                     return self._send(403, {"ok": False, "error": err_q})
+            else:
+                # 4-3c-1: host token /query 的 CALL 禁令(一行级止血) —— host 写通道
+                # (MERGE/CREATE/SET/...)零触碰, 仅拦 Kuzu 过程调用(元数据枚举面, 与 worker
+                # 门 0913 C10 同口径)。纯正则判定不占锁(位于 with _locked() 之前);
+                # #73: 拒绝统一审计(auth-fail 同款 detail 含 path/peer 来源地址)。
+                ok_h, err_h = host_query_gate(cypher)
+                if not ok_h:
+                    _audit_event("host-call-denied", {"path": self.path, "peer": self._peer(),
+                                                      "cypher_head": cypher[:80]})
+                    return self._send(403, {"ok": False, "error": err_h})
             with _locked():  # V-11: 锁带 5s deadline
                 try:
                     conn = kuzu.Connection(db())

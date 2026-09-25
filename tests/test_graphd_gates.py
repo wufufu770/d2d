@@ -4499,3 +4499,176 @@ def test_43b_scan_semantics_invariant_builtin_fallback(monkeypatch, tmp_path, _l
         "默认链终态=种子(在库)或内置(缺位), 两态判定语义一致"
     for text, want in fallback:
         assert experience_injection_scan(text) == want, f"默认链 vs 回退 同判: {text!r}"
+
+
+# =====================================================================
+# 4-3c-1: host /query CALL 禁令(一行级止血) — gates.py host_query_gate 纯函数
+# + app.py host 分支 else 臂接线(host CALL → host-call-denied 审计 + 403)。
+# 背景: host token 是调度器合法写通道(MERGE/CREATE/SET/...), 但 CALL show_tables()/
+# table_info() 可枚举全表清单与列结构(动态实证 200 回全 13 表/全列) —— 元数据枚举面,
+# 与 worker 只读门 0913 C10 同口径收口。真源 graphd/gd/gates.py, 不复刻正则。
+# =====================================================================
+from graphd.gd.gates import HOST_CALL_DENY_REASON, HOST_CALL_RE, host_query_gate as _hq_gates
+from graphd.app import host_query_gate as _hq_app          # 接线导入路径锁
+from graphd.app import host_query_gate                     # 直测用平名(仿 :165 worker_query_allowed 先例)
+import urllib.error as _urllib_error
+
+
+def test_43c1_host_call_gate_reexports_same_impl():
+    """app.py 接线用的 host_query_gate 必须是 gates.py 同一对象(双导入列表形态锁)。"""
+    assert _hq_app is _hq_gates
+    assert graphd_app.host_query_gate is _hq_gates
+    assert HOST_CALL_RE.pattern == r"\bCALL\b" and HOST_CALL_RE.flags & re.IGNORECASE
+
+
+def test_43c1_host_call_gate_passes_legal_writes():
+    """host 合法通道零触碰: 只读 MATCH(带 eng 谓词/点查) + MERGE/CREATE/SET/DELETE/
+    DETACH/REMOVE 全放行 —— 不得引入 WORKER_MUTATION_RE 整体(那会把写通道一锅端)。"""
+    legal = (
+        "MATCH (e:Engagement) WHERE e.status='active' RETURN count(e)",                # eng 谓词读
+        "MATCH (f:Finding {id:'f-1'}) RETURN f.title",                                 # 点查读
+        "MERGE (a:AgentIdentity {worker_id:'w1', ring:'worker', chain:'c', status:'idle', "
+        "checkpoint:'', todo:'', updated_at:'t'}) RETURN a.worker_id",                 # T7a 注册形态
+        "MERGE (g:Engagement {name:'n', target:'t', scope:'s', auth:'a', status:'requested', "
+        "created_at:'c'}) RETURN g.name",                                              # 调度器建 eng 形态
+        "MATCH (g:Engagement {name:'n'}) SET g.status='frozen' RETURN g.status",       # SET
+        "CREATE (s:Signal_ {id:'s1', eng:'e'}) RETURN s.id",                           # CREATE
+        "MATCH (f:Finding {eng:'e'}) DELETE f RETURN count(f)",                        # DELETE
+        "MATCH (n) DETACH DELETE n",                                                   # DETACH
+        "MATCH (a:AgentIdentity {worker_id:'w1'}) REMOVE a.todo RETURN 1",             # REMOVE
+        "MERGE (w:ExperienceWeight {id:'k'}) RETURN w.id",
+    )
+    for cy in legal:
+        ok, err = host_query_gate(cy)
+        assert ok, (cy, err)
+
+
+def test_43c1_host_call_gate_denies_call_forms():
+    """CALL 六形态全拒(大小写×过程名 + //注释 + /* */注释 + 字符串字面量) —— 注释/字符串
+    内 CALL 一律算命中(fail-closed 拍板: 注释内 CALL 是 kuzu 真执行的合法 Cypher, 正则级
+    剥离会引入新绕过洞), 与 worker 门字符串字面量误报取舍同口径。"""
+    denied = (
+        "CALL show_tables() RETURN *",                              # 表清单枚举(动态实证 200)
+        "CALL table_info('Finding') RETURN *",                      # 列结构枚举(动态实证 200)
+        "call show_tables() RETURN *",                              # 小写(V-06: kuzu 大小写不敏感)
+        "Call DB_VERSION() RETURN *",                               # 混合大小写
+        "MATCH (f:Finding) RETURN f.id // CALL table_info('x')",    # // 注释内 CALL
+        "/* CALL db_version() */ MATCH (f) RETURN 1",               # /* */ 注释内 CALL
+        "RETURN 'please CALL show_tables' AS t",                    # 字符串字面量内 CALL
+        "MATCH (n) WITH n CALL show_tables() RETURN *",             # 中缀 CALL
+    )
+    for cy in denied:
+        ok, err = host_query_gate(cy)
+        assert not ok, cy
+        assert err == HOST_CALL_DENY_REASON and "CALL procedure invocation" in err
+
+
+def test_43c1_host_call_gate_word_boundary_and_robustness():
+    """\\b 词边界: 含 'call' 子串的标识符(recalled_at/call_id/callback)不误伤;
+    空串/None 鲁棒放行(空 cypher 由端点 400 前置拦截, 非本门职责)。"""
+    for safe in ("MATCH (r:Recall {recalled_at:1}) RETURN r",
+                 "MATCH (n {call_id:'9'}) RETURN n",
+                 "MATCH (e {callback_url:'https://x'}) RETURN e"):
+        assert host_query_gate(safe) == (True, ""), safe
+    assert host_query_gate("") == (True, "")
+    assert host_query_gate(None) == (True, "")
+
+
+def _43c1_spawn_server(tmp_path, monkeypatch):
+    """端点级: 真 Handler(GraphdHTTPServer 随机端口 + 全新 tmp 库 + host/worker 双 token
+    + P2P_AUDIT_LOG 重定向 tmp), 返回 (base_url, conn, srv, audit_path)。"""
+    for var in ("P2P_TOKEN", "P2P_HOST_TOKEN", "P2P_WORKER_TOKEN",
+                "P2P_TOKEN_REQUIRED", "P2P_OPEN_RANGE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("P2P_HOST_TOKEN", "t-43c1-host")
+    monkeypatch.setenv("P2P_WORKER_TOKEN", "t-43c1-worker")
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    monkeypatch.setattr(graphd_app, "_D2D_PAUSE_FILE", str(tmp_path / "paused.json"))
+    dbp = tmp_path / "kuzu_db"
+    db = kuzu.Database(str(dbp))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    init_schema(conn)
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
+    monkeypatch.setattr(graphd_app, "_db", db)  # 预建库直接挂给 app(db() 直取)
+    srv = graphd_app.GraphdHTTPServer(("127.0.0.1", 0), graphd_app.Handler)
+    _threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_address[1]}", conn, srv, audit_log
+
+
+def _43c1_post(base_url, payload, token):
+    """POST /query; 4xx 走 HTTPError 体(app 的 403 带结构化 JSON 错误体)。"""
+    req = _urllib_request.Request(base_url + "/query", data=json.dumps(payload).encode(),
+                                  headers={"Content-Type": "application/json", "X-Auth": token})
+    try:
+        with _urllib_request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.load(resp)
+    except _urllib_error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
+
+
+def _43c1_audit_events(audit_path):
+    return [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_43c1_host_query_call_denied_403_with_audit(tmp_path, monkeypatch):
+    """端点级 T 型对照: host CALL→403+host-call-denied 审计(cypher 头 80 字符/来源 peer 落
+    JSONL); host MERGE/SET/MATCH 全 200(写通道零影响); worker CALL→403(worker 只读门
+    既有行为回归); worker MATCH→200(worker 读不受本批次影响)。"""
+    base_url, conn, srv, audit_log = _43c1_spawn_server(tmp_path, monkeypatch)
+    try:
+        # ① host CALL → 403(修复前动态实证为 200 回全表枚举)
+        long_call = "CALL show_tables() RETURN * // " + "x" * 100   # >80 字符, 锁截断语义
+        status, out = _43c1_post(base_url, {"cypher": long_call}, "t-43c1-host")
+        assert status == 403 and out["ok"] is False, (status, out)
+        assert "CALL procedure invocation" in out["error"], out
+        # ② 审计 JSONL: kind=host-call-denied, detail 含 cypher 头 80 字符 + path/peer 来源
+        events = [e for e in _43c1_audit_events(audit_log) if e["kind"] == "host-call-denied"]
+        assert len(events) == 1, events
+        detail = events[0]["detail"]
+        assert detail["cypher_head"] == long_call[:80]      # 头 80 字符截断
+        assert detail["path"] == "/query" and detail["peer"].startswith("127.0.0.1:")
+        assert events[0]["ts"]
+        # ③ host 合法写通道零影响
+        status, out = _43c1_post(base_url, {"cypher": "MERGE (a:AgentIdentity {worker_id:'w-43c1', "
+                                                      "ring:'worker', chain:'c', status:'idle', "
+                                                      "checkpoint:'', todo:'', updated_at:'t'}) "
+                                                      "RETURN a.worker_id"}, "t-43c1-host")
+        assert status == 200 and out["ok"] is True and out["rows"], (status, out)
+        status, out = _43c1_post(base_url, {"cypher": "MATCH (a:AgentIdentity {worker_id:'w-43c1'}) "
+                                                      "SET a.status='working' RETURN a.status"},
+                                 "t-43c1-host")
+        assert status == 200 and str(out["rows"][0]["a.status"]) == "working", (status, out)
+        status, out = _43c1_post(base_url, {"cypher": "MATCH (f:Finding) WHERE f.eng='eng-43c1' "
+                                                      "RETURN count(f)"}, "t-43c1-host")
+        assert status == 200 and out["ok"] is True, (status, out)
+        # ④ worker CALL → 403(既有 worker 只读门回归, 0913 C10 语义不变)
+        status, out = _43c1_post(base_url, {"cypher": "CALL show_tables() RETURN *"}, "t-43c1-worker")
+        assert status == 403 and "read-only" in out["error"], (status, out)
+        # ⑤ worker MATCH → 200(读不受影响)
+        status, out = _43c1_post(base_url, {"cypher": "MATCH (f:Finding {id:'x'}) RETURN f.id"},
+                                 "t-43c1-worker")
+        assert status == 200 and out["ok"] is True, (status, out)
+        # ⑥ 审计无新增 host-call-denied(合法 host 写与 worker 读均不触发本门)
+        assert len([e for e in _43c1_audit_events(audit_log)
+                    if e["kind"] == "host-call-denied"]) == 1
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_43c1_host_query_comment_call_denied_endpoint(tmp_path, monkeypatch):
+    """端点级锁定注释取舍: // 注释内 CALL 经 host token 也 403(fail-closed 拍板在真实
+    Handler 路径生效), 且审计落第二条 host-call-denied。"""
+    base_url, conn, srv, audit_log = _43c1_spawn_server(tmp_path, monkeypatch)
+    try:
+        cy = "MATCH (f:Finding) RETURN f.id // CALL table_info('Finding')"
+        status, out = _43c1_post(base_url, {"cypher": cy}, "t-43c1-host")
+        assert status == 403 and "CALL procedure invocation" in out["error"], (status, out)
+        events = [e for e in _43c1_audit_events(audit_log) if e["kind"] == "host-call-denied"]
+        assert len(events) == 1 and events[0]["detail"]["cypher_head"] == cy[:80], events
+    finally:
+        srv.shutdown()
+        srv.server_close()
