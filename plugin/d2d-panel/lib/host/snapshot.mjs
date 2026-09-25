@@ -565,6 +565,16 @@ export async function transitionFinding({ graphdUrl, token, id, to, actor, reaso
   return data
 }
 
+// ---------- 4-4 子批次 A: 通道①审批队列 pending 计数(快照暴露, 缺席降级 null) ----------
+// 复用 pentest-dsh/scheduler/approvals.mjs(同仓库兄弟包链接部署, 单一格式源); 动态导入 +
+// 失败返 null —— 面板核心快照不因审批队列缺席而降级(fail-soft 只作用这个附加字段)。
+export async function readApprovalSummary() {
+  try {
+    const ap = await import('../../../pentest-dsh/scheduler/approvals.mjs')
+    return { mode: ap.approvalMode(), pending: ap.pendingCount() }
+  } catch { return null }
+}
+
 // ---------- 聚合 ----------
 function projectEngagement(row) {
   if (!row) return null
@@ -585,8 +595,9 @@ function projectEngagement(row) {
  * modelUsage: readModelUsage 产物(可选; 缺省时性价比卡降级为空态)。
  * eng: 当前选中 engagement 名(W5 池子隔离过滤键; 空 = 无选中, 全部池子区为空)。
  */
-export async function buildSnapshot(query, { fleet = null, runEvents = null, modelUsage = null, eng = '' } = {}) {
+export async function buildSnapshot(query, { fleet = null, runEvents = null, modelUsage = null, eng = '', approvalSummary } = {}) {
   const strategies = await loadStrategies(process.env, query).catch(() => [])
+  const approvals = approvalSummary !== undefined ? approvalSummary : await readApprovalSummary()
   const [engListRows, byEngRows, workersByEngRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows] = await Promise.all([
     query(Q.engList),
     query(Q.findingsByEng),
@@ -735,5 +746,6 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, mod
       usage: runEvents?.usage ?? {},
       quotaHits: runEvents?.quotaHits ?? [],
     },
+    approvals, // 4-4 子批次 A: {mode, pending} | null(队列模块缺席降级) — 审批待办计数
   }
 }
