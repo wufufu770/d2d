@@ -132,6 +132,26 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import (FRONTIER_DEDUP_WINDOW_HOURS, FRONTIER_RATE_WINDOW_HOURS,
                           frontier_rate_reject, frontier_refs_rejected, frontier_signature)
 
+# 4-3b 段3(消毒日志 0.1% 采样留存): 采样留存工具直导入。同 3C 哲学: gd/__init__ 聚合不在
+# 本批次授权改动清单, 直接从子模块导入, 两种运行形态都接住; 缺席降级 None(打包裁剪语境)
+# → _inj_sample 全静默跳过, 端点语义不受损。
+try:
+    from graphd.gd.injection_sampling import record_injection_sample as _inj_sample_record
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    try:
+        from gd.injection_sampling import record_injection_sample as _inj_sample_record
+    except Exception:
+        _inj_sample_record = None
+
+
+def _inj_sample(tool, original, sanitized, matched):
+    """4-3b 段3: 注入采样统一出口。injection_sampling 缺席/故障全静默(_audit_event 同款
+    哲学 — record_injection_sample 内部亦全吞异常), 绝不影响端点语义。PII 红线: 调用点
+    一律位于 redact_pii 之后(「先脱敏后检测」既有顺序, 本函数只挂采样不改顺序)。"""
+    if _inj_sample_record is not None:
+        _inj_sample_record(tool, original, sanitized, matched)
+
+
 _lock = threading.Lock()
 _db = None
 
@@ -823,7 +843,9 @@ class Handler(BaseHTTPRequestHandler):
             # (注入话术不入池); 'soft' → 照写但 content 加 '[SUSPECT] ' 前缀(总长钳 512 保持
             # 既有硬门不变式) — 写入即 quarantined 在池, 评审进程拉隔离行复核时天然先见。
             _inj = experience_injection_scan(f"{_title}\n{_content}")
+            _inj_sample_src = f"{_title}\n{_content}"  # 4-3b 段3: 采样原文快照(redact_pii 后、[SUSPECT] 前缀前)
             if _inj == "high":
+                _inj_sample("experience", _inj_sample_src, _inj_sample_src, _inj)  # 400 拒绝态: 原文即终态
                 _audit_event("experience-injection-block",
                              {"eng_id": _eng_id, "title_head": _title[:60], "pii_hits": _pii_hits})
                 return self._send(400, {"ok": False,
@@ -832,6 +854,7 @@ class Handler(BaseHTTPRequestHandler):
                 _content = ("[SUSPECT] " + _content)[:512]
                 _audit_event("experience-injection-soft",
                              {"eng_id": _eng_id, "title_head": _title[:60]})
+            _inj_sample("experience", _inj_sample_src, f"{_title}\n{_content}", _inj)  # 段3: soft 强制入样 / clean 0.1% 采样
             # id 服务端生成(仓内 e-/f-/s- 短码风格: exp-<uuid 短码>, 随机防碰撞, 不拼接外部输入)
             _exp_id = "exp-" + uuid.uuid4().hex[:12]
             _now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -991,7 +1014,9 @@ class Handler(BaseHTTPRequestHandler):
             #   :831 experience content 钳 512 同款)+ frontier-injection-soft 审计 — 评审进程
             #   读 proposed 行时天然先见; clean → 现行为零改写。
             _inj = experience_injection_scan(f"{_direction}\n{_evidence}")
+            _inj_sample_src = f"{_direction}\n{_evidence}"  # 4-3b 段3: 采样原文快照(redact_pii 后、[SUSPECT] 前缀前)
             if _inj == "high":
+                _inj_sample("frontier", _inj_sample_src, _inj_sample_src, _inj)  # 400 拒绝态: 原文即终态
                 _audit_event("frontier-injection-block",
                              {"eng_id": _eng_id, "direction_head": _direction[:60],
                               "pii_hits": _pii_hits})
@@ -1001,6 +1026,7 @@ class Handler(BaseHTTPRequestHandler):
                 _direction = ("[SUSPECT] " + _direction)[:256]
                 _audit_event("frontier-injection-soft",
                              {"eng_id": _eng_id, "direction_head": _direction[:60]})
+            _inj_sample("frontier", _inj_sample_src, f"{_direction}\n{_evidence}", _inj)  # 段3: soft 强制入样 / clean 0.1% 采样
             # id 服务端生成(fr-<eng>-<短码>, 沿 exp- 短码先例): eng 段白名单化 + 截断防脏字符入
             # 标识, 短码 uuid 随机防碰撞; 全值经参数绑定, 不拼接外部输入。
             _eng_slug = re.sub(r"[^A-Za-z0-9._-]", "", _eng_id)[:16]
