@@ -403,6 +403,38 @@ def worker_query_allowed(cypher: str) -> tuple[bool, str]:
     return True, ""
 
 
+# ── 4-3c-1: host /query CALL 禁令(一行级止血) ────────────────────────────────────
+# host token 是调度器合法写通道(MERGE/CREATE/SET/DELETE/DETACH/REMOVE 均经 /query, 见
+# app.py host 分支), 但 Kuzu 过程调用(CALL show_tables()/table_info('T')/db_version())
+# 可枚举全表清单与列结构 —— 元数据枚举面, 与 worker 只读门 0913 C10 同口径收口。
+# HOST_CALL_RE = WORKER_MUTATION_RE(:380-381) 的 CALL 单克隆: 大小写不敏感(V-06 教训:
+# Kuzu 关键字大小写不敏感, 区分大小写正则曾被小写 'detach delete' 绕过), \b 词边界
+# 保证不误伤含 'call' 子串的标识符/属性名(recalled_at 等不命中)。
+# 注释(// 与 /* */)与字符串字面量内的 CALL 词一律算命中(fail-closed, 与 worker 门
+# 字符串字面量误报取舍同口径): 实证注释内 CALL 是 kuzu 真执行的合法 Cypher, 按注释
+# 语义放行需完整 Cypher 词法器, 正则级注释剥离自身会引入嵌套/未闭合注释绕过新洞;
+# 误伤面实证为零(仓内全部调度器/host 通道查询均为无注释纯语句字符串), 人工 host 查询
+# 里含 CALL 的注释恰是应拦下人工复核的形态, 代价仅为改写注释措辞。
+HOST_CALL_RE = re.compile(r"\bCALL\b", re.I)
+HOST_CALL_DENY_REASON = ("/query forbids CALL procedure invocation (metadata enumeration surface); "
+                         "host writes stay on MERGE/CREATE/SET, procedure calls are graphd-internal only")
+
+
+def host_query_gate(cypher: str) -> tuple[bool, str]:
+    """4-3c-1: host token /query 的 CALL 禁令门(纯函数供 pytest, worker_query_allowed
+    :388-403 同区先例) — 仅拦 Kuzu 过程调用 CALL, host 合法写通道(MERGE/CREATE/SET/
+    DELETE/DETACH/REMOVE/只读 MATCH 等)零触碰。
+    返回 (ok, reason): ok=True 放行; False 时 reason 为 403 拒绝话术(HOST_CALL_DENY_REASON)。
+    合法 CALL 例外清单为空: 全仓生产代码唯一 Cypher CALL 在 gd/schema.py:302
+    (CALL table_info('<table>') RETURN *), 走 graphd 内部直连 conn.execute, 不经 /query
+    端点, 静态上不可能触达本门(app.py host 分支接线) —— 无需任何例外分支。
+    形态取舍(fail-closed): 注释与字符串字面量内的 CALL 词一律算命中(见 HOST_CALL_RE
+    上方区块注释); 空串/None 无命中放行(空 cypher 由调用方 400 前置拦截)。"""
+    if HOST_CALL_RE.search(str(cypher or "")):
+        return False, HOST_CALL_DENY_REASON
+    return True, ""
+
+
 def prose_denylist_hit(text_lower: str, domains) -> str:
     """#73: denylist 兜底散文匹配(模块级纯函数供 pytest) — 与 R6 结构化字段扫描互为双保险。
 
