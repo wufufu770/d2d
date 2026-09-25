@@ -576,6 +576,33 @@ EXPERIENCE_INJECTION_SOFT_RES = (
     re.compile(r"系统提示"),
 )
 
+# ── 4-3b 段2(词表外置): 活动词表经 gd/injection_patterns loader 四级解析
+# (①P2P_INJECTION_PATTERNS_FILE env ②${D2D_DATA_DIR:-~/.d2d-data}/config/injection-patterns.json
+#  ③仓库种子 plugin/pentest-dsh/config/injection-patterns.seed.json ④本区内置常量回退),
+# mtime 缓存热更新(改文件即生效)。上列词表常量(:560-577)原样保留 = 最终回退 + import 真源
+# (tests/test_graphd_gates.py:2377 锚 / plugin sanitize 同步锁源码提取仍以本区为真源);
+# experience_injection_scan 判定语义零改动 —— 只换词表来源。
+try:  # 包形态(graphd.gd.gates / gd.gates 两种导入形态皆成立)
+    from .injection_patterns import experience_wordlists
+except Exception:  # 非 包语境/打包裁剪: loader 缺席 → 内置常量直通, scan 语义不受损
+    experience_wordlists = None
+
+_ACTIVE_WORDLISTS = (EXPERIENCE_INJECTION_HIGH, _EXPERIENCE_INJECTION_HIGH_RES,
+                     EXPERIENCE_INJECTION_SOFT_RES)
+
+
+def _active_wordlists():
+    """4-3b 段2: 活动词表 = loader 解析结果(mtime 缓存在 loader 侧); loader 缺席/异常/
+    全链失败回退内置常量 —— 词表外置层任何故障不得破坏 scan 语义。"""
+    if experience_wordlists is not None:
+        try:
+            wl = experience_wordlists(builtin=_ACTIVE_WORDLISTS)
+            if wl is not None:
+                return wl
+        except Exception:
+            pass
+    return _ACTIVE_WORDLISTS
+
 
 def experience_injection_scan(text) -> str:
     """3.5-4-1: Experience 指令性文本三档判定(纯函数供 pytest 与 handler 同源)。
@@ -587,15 +614,16 @@ def experience_injection_scan(text) -> str:
     调用方以 title+'\\n'+content 拼接扫描: \\n 隔断跨字段子串误拼(high 需同字段连续出现,
     跨字段复合形态落 soft — 复合本就该软档)。已知取舍: 全角/同形字符混淆(ＳＹＳＴＥＭ)
     不命中 — 本门是词面闸门不是语义闸门, 漏网形态由评审复核兜底。"""
+    high_phrases, high_res, soft_res = _active_wordlists()  # 4-3b 段2: 词表来源换 loader
     s = str(text or "")
     low = s.lower()
-    for phrase in EXPERIENCE_INJECTION_HIGH:
+    for phrase in high_phrases:
         if phrase in low:
             return "high"
-    for pat in _EXPERIENCE_INJECTION_HIGH_RES:
+    for pat in high_res:
         if pat.search(s):
             return "high"
-    for pat in EXPERIENCE_INJECTION_SOFT_RES:
+    for pat in soft_res:
         if pat.search(s):
             return "soft"
     return "clean"
