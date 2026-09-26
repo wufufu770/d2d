@@ -6,7 +6,7 @@ queries: 只读查询封装。app.py 侧 re-export 保持 `from graphd.app impor
 from .auth import _safe_token_path, auth_check, legacy_token_ok  # noqa: F401
 from .gates import (CONFIG_ADVICE_RE, DENYLIST, FINDING_STATES, FINDING_TRANSITIONS,  # noqa: F401
                     JUNK_PATTERNS, L1_DENY_REASON, MAX_BODY_BYTES, _URL_RE,
-                    _read_denylist_file, candidate_watermark_reject, canonical_cat,
+                    _read_denylist_file, auth_tier_gate, candidate_watermark_reject, canonical_cat,
                     config_reject, content_length_gate, cvss_or_default, dedup_cat,
                     endpoint_sig_duplicate, engagement_cap_gate, finding_gates, hostport_of,
                     is_engagement_create, l1_gate, normalize_title, prose_denylist_hit,
