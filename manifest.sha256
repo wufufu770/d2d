@@ -249,3 +249,29 @@ b95aa116e9a8aed6f5d8f6d510dab2c059452bb90ab4c868b42f947df74272a0  scripts/wmpf/w
 f6a5ff32cb533451a0ce97f7af332ff34e2d0e963001125df21591b04bcdeb32  tests/injection/samples.md
 197230f8d4d801a29e668d10d908962c0109a46cfbd36b8c01fb3ba7ffabea16  tests/test_graphd_gates.py
 d17c5ef3fd6a3c99958e3f7a69ce7473d06717d5cf578a8733b92aa55fd4a290  阶段3-实战验收runbook.md
+# --- node_modules (@deepseek-ai/* pinned packages, verify locally) ---
+# (4-3d-2) 供应链钉版本: 六个 @deepseek-ai/dsh-* 库包关键文件哈希。条目以 # 锚定 —
+# GNU sha256sum -c 忽略 # 行(实证), CI gates.yml:26 与 install.sh:400 只认上方仓库
+# 文件段(零改动, 不受 CI 无 node_modules / npm ci 字节变异影响); 本段仅由
+# scripts/ops/verify-dsh-version.mjs --with-manifest 本地校验(缺失/不匹配→告警)。
+# pin 变更后重新生成: 删旧段(本 marker 至 end marker)→ 下述命令输出追加:
+#   node scripts/ops/verify-dsh-version.mjs --emit-manifest-section >> manifest.sha256
+#531136139001ecc8995ed6c60fb0c1ea30daf2d371584e8703d8c632c052cf81  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-mcp-client/package.json
+#b126dcec8a0425a33199c5ddcd8638269a560c0b7328cd6306858c1969887d56  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
+#66ed5e701c5c2dd35969e2133212aa13409b05553d69eebd171a67a13bebf253  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts
+#decf1887a2ca4edbbaa9bf1eac48a8c866625569785fa1c0a63e6641726cc794  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-tools/package.json
+#47de95d14493dbd22d1a3ade14890fc99d7232db4e363f2190c9063b030dd029  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-tools/lib/index.js
+#bad13885fcaa9d781e2a28988e9e9fd4cdeb750e65b8bc148356ffd1f0457907  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-tools/lib/types/index.d.ts
+#e888c2c0f22b5a04bd225a6fa05e264ac27b71cc2d549cf1e93f6d33c4f858dd  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-agent/package.json
+#e7e40c5ca66d9827a5084c5c0c68983f9685842bb9b6d604803d4cb4642bb263  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-agent/lib/index.js
+#577f7ee31d8954c8a09c4af9ce9c1fbdb25220caff40b2120bec257305bd2a35  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-agent/lib/types/index.d.ts
+#252de11f9af2a92e2e2eb26dc4e80f7b6313586a96ffce16069435b536952cf6  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-llm/package.json
+#90de54c106866d9333ddc312176e14df75e7c5ee1d6e54443174a827302276fd  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-llm/lib/index.js
+#8c9b115664de28b4cf78b44612df3ad169bc99f2b35292fce66bacc93036d99e  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-llm/lib/types/index.d.ts
+#cf4cf7582aadfe9ff872fad99c93575b351883a4957fa059a7cb6f6f1b7d3ae5  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-session/package.json
+#dc14c845b915a9faaeb867499966e7b1991af3b6285f314bf353417e939d9c36  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-session/lib/index.js
+#f16e93893a31b25e1ed07ada6310cd72c5265fb8cdb374a6a1ff12a8949a6e69  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-session/lib/types/index.d.ts
+#9255e4d92e605fb8ea2109ca7e23b1061eb9924beef5755632f7b09829e35d84  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/package.json
+#555ab9189cc4baa7cd2b527099b932497310a6a609798a4d5cff30fa89349c5a  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/index.js
+#a9960e05e21716f82bd289a3a8954b000a6fee3c423dcfdc2c3552025704b696  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/types/index.d.ts
+# --- end node_modules ---
