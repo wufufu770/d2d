@@ -172,3 +172,71 @@ signal abort → `cancelled`；policy `never` → `rejected`（**answerer 之前
   canSpawnDualSign（gateR 的 openIntents 拒绝项在 gates.mjs:43）。
 - 语义侧别：Gate-V =「缺确定性锚不盖章」（验证准入），与转向 =「被阻断就转向」（消费降权，
   domain/pivot.mjs）语义相反侧，不混用。
+
+---
+
+## 8. 第二层（4-5+4-6 合并批）：分级审批 + 渐进信任
+
+> 实施批：4-5 渐进式信任（`scheduler/trust.mjs`，bd293e7）+ 4-6 低中档异步化（`scheduler/tier-approval.mjs`
+> + `index.js` 接线，ba051e7）+ 集成/回归收口（`plugin/pentest-dsh/test/approval-flow.test.mjs`，本节）。
+> 口径衔接：docs/merge-plan-approval-trust.md（四层架构）、docs/tier-depth-mapping.md（三档词表与
+> 中档幂等键口径唯一规范源）、docs/false-positive-schema.md（误报账本 schema + ledger 优先级）。
+
+### 8.1 交付清单
+
+| 交付物 | 内容 |
+|---|---|
+| `scheduler/trust.mjs`（bd293e7） | 信任计数器（键 = model + role，跨 engagement 落 `<D2D_DATA_DIR>/trust/counters.json`）；N 次零拒绝 → relaxed；任一 rejected/timeout/deny-after-execution → 清零收紧回基线（单向可逆，fail-closed）；`setAdjudicator` 裁决器接缝（第 4 层预留） |
+| `scheduler/tier-approval.mjs`（ba051e7） | 三档分类（low=免批落审计 / mid=异步幂等键落单不阻塞 / high 与 off=`TIER_PASS` 透传回原路 maybeAsk）；mid 幂等键 method/host/path 口径；误报账本归纳与咨询（ledger > static）；队列治理；fire-and-forget 跟随器（deny-after-execution 联动） |
+| `index.js` 接线（ba051e7） | handler 内 checkBash deny 链之后、原路 maybeAsk 之前单点插入 `tierGate`（index.js:313-326）；`gateWriteEdit` allow 分支接 `tierWriteEditLow`（index.js:60）。approvals.mjs / write-gate.mjs / 两 adapter / scheduler.js 零改动 |
+| 测试 | 单元：`test/trust.test.mjs`、`test/tier-approval.test.mjs`；集成/回归：`test/approval-flow.test.mjs`（①渐进信任全流程 ②P2P_TRUST_MODE×queue 灰度矩阵 ③mid 异步不阻塞 vs high 阻塞 ④与 4-4 同存储/同面板 API/同桥词汇 ⑤4-4 行为矩阵回归）。既有 approvals / approval-api / write-gate 测试零改动且全量绿 |
+
+### 8.2 灰度旋钮（第 2 层新增）
+
+| 旋钮 | 缺省 | 语义 |
+|---|---|---|
+| `P2P_TRUST_MODE` | `off` | `off`=计数照记但 relaxed 永不成立（现状零变化）；`warn`=达成只落审计（trust-relaxed 事件 `effective:false`）不生效；`on`=生效（仅 tier=mid 自动裁决，high 恒不自动放宽）。非法值回落 `off` |
+| `P2P_TRUST_N` | `10` | 连续零拒绝达成 relaxed 的阈值（非正数/非法回落 10；off 期计数照记，翻开后从既有计数继续累积，达成动作恒留审计） |
+| `P2P_APPROVAL_QUEUE_MAX` | `20` | 队列治理阈值：enqueue 前 pending 超限 → 从最旧起对 mid 单 `rejected`（`decided_by=queue-governance`）削到阈值内；高档单绝不切；每次切断落 `queue-cutoff` 审计 |
+| `P2P_FP_LEDGER_K` | `3` | 误报账本归纳阈值：同 idem_key 连续 K 次人批零 rejected → 归纳 `source:"ledger"` 模式（routingSafe:true，判别式=idem_key 精确查表+guard）；rejected 破约即删模式（收紧方向） |
+
+### 8.3 `decided_by` 取值扩充与 queue-governance
+
+§2 审批单 schema 的 `"decided_by": "null → panel-human|api|timeout（4-5 预留 ledger-auto）"` 本批兑现，新增两个取值：
+
+- **`ledger-auto`（自动裁决）**：`P2P_TRUST_MODE=on` 且该 model+role 键 relaxed 时，tier=mid 单 enqueue
+  后立即 `decideTicket({decision:'approved', decidedBy:'ledger-auto'})`——gate 仍返回 null 不阻塞
+  （异步语义不变）。guard 链：tier=high 恒不自动放宽（自动化天花板压在中低档）；ledger-auto 批
+  不计入误报账本归纳（自审批不作归纳证据，防自证循环）；warn/off 下该取值不产生。
+- **`queue-governance`（队列治理切断）**：pending 超 `P2P_APPROVAL_QUEUE_MAX` 时从最旧起对 mid 单
+  写 `rejected`；被切单的跟随器随后照常走 deny-after-execution 追责 + 信任收紧（治理闭环）。
+
+读侧口径：`GET /d2d/api/approval` 列 pending 单（含 tier=mid）；`ledger-auto` / `queue-governance`
+为终态决定行，落同一 `pending-approvals.jsonl`（append-only 一行一状态迁移），经 4-4 读侧原语
+（`readTickets`/fold）与 run-log `approval-decided` 事件可读。
+
+### 8.4 deny-after-execution 事件口径
+
+- **触发**：mid 单 fire-and-forget 跟随器 `awaitDecision` 得 `rejected`（执行在前、拒绝在后）→
+  run-log 事件 `deny-after-execution`，字段 `{id, idem_key, tier:'mid', model, role, actor}`
+  （model/role/actor 如实入审计，供事后对账）。
+- **联动**：①信任账本 `recordOutcome('deny-after-execution')` → 计数清零 + relaxed 收紧回基线
+  （`trust-reset` 审计，收紧行为与灰度模式无关恒生效）；②误报账本该键连续性清零并删除已归纳
+  模式（破约收紧方向）。
+- **语义边界**：事件只作事后追责与信任收紧输入，不回滚已执行副作用（mid 放行时即 fire-and-forget
+  契约：执行不等决定）。
+- **看板**：拒绝率进 8.5-2 看板——未来批（本批只落事件口径，不上图）。
+
+### 8.5 开放项
+
+1. **dsh 工具面扩门**：`GATED_TOOLS`（domain/write-gate.mjs:37，现 `{bash, write, edit}`）按
+   docs/tier-depth-mapping.md 档位表增补中档工具；集合形态已留缝，三挂载点零改动。
+2. **ATLAS 共用存储待确认**：信任/误报账本现落本仓自有存储 `<D2D_DATA_DIR>/trust/`（counters.json
+   + fp-ledger.json）；是否与 ATLAS 共用一套信任存储为开放决策项，未确认前不做跨系统假设
+   （docs/merge-plan-approval-trust.md:31 同口径）。
+3. **第 3 层渐进信任收口**：放宽半径落点调参（免批面/TTL/降档幅度）、role 细分（in-process worker
+   与宿主同归 host-session 的已知缺口）与跨 model 泛化。
+4. **第 4 层审批 Agent 后端**：`trust.setAdjudicator` 裁决器接缝已预留（fn(ctx)→boolean，抛异常按
+   false fail-closed），注入审批 Agent 后端；面板审批台 tab 复用 `GET /d2d/api/approval` 数据面。
+5. **8.5-2 看板**：deny-after-execution 率 / queue-cutoff 率 / trust-relaxed 达成率上图（事件口径
+   已备，见 §8.4）。
