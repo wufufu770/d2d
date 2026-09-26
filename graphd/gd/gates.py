@@ -1,4 +1,4 @@
-"""gd.gates — 写入门控/垃圾拒收/签名去重/denylist 加载与兜底/L0-L1 硬门/七态转换门
+"""gd.gates — 写入门控/垃圾拒收/签名去重/denylist 加载与兜底/L0-L1 硬门/八态转换门
 等模块级纯函数(供 pytest 单测真源)。
 纯代码搬移自 graphd/app.py(巨型文件拆分), 判定逻辑与话术逐字保留零改动;
 app.py 侧 re-export 保持 `from graphd.app import X` 既有导入路径不变。
@@ -178,13 +178,13 @@ FINDING_TRANSITIONS = {
     "accepted": (),
     "rejected": (),
     "needs-scope": ("candidate", "triaged", "verified", "rejected"),
-    # issue #88: 早期冻结逻辑写入的历史状态(frozen 不在七态内, 实测存量 301 条永久卡死)。
+    # issue #88: 早期冻结逻辑写入的历史状态(frozen 不在现八态枚举内 — 历史遗留, 实测存量 301 条永久卡死)。
     # 兼容出口只开三条: 退回 candidate(重新入验证)/triaged(有证据直通)/rejected; 禁止 frozen→verified 越权直通。
     "frozen": ("candidate", "triaged", "rejected"),
 }
 
 def transition_gate(cur, to, actor, reason):
-    """W1: 七态转换审计门 — 纯函数单测真源(与 finding_gates 同模式)。
+    """W1: 八态转换审计门 — 纯函数单测真源(与 finding_gates 同模式)。
     谁在何时推动了状态必须可追溯: actor(1-40字符) 与 reason(1-80字符) 必填,
     合法迁移才产出轨迹 {ts, actor, reason, from, to}(宿主写入 Finding.last_transition)。"""
     if to not in FINDING_STATES:
