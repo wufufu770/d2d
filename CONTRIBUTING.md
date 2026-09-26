@@ -43,3 +43,27 @@ node scripts/ops/scan-clean.mjs                         # 敏感信息零命中(
 4. **安全 CI 全分支覆盖先行（D7）**：安全类 workflow（`gates.yml` / `dsh-compat.yml`）触发器必须为 `branches: ['**']`，先于阶段合流就位——否则合流后红灯分不清是合流引入还是存量问题（0be7969 教训："两项必须先于 T0-A 合流"）。
 5. **manifest 同批推送（红线级纪律）**：commit 改动任何 git 跟踪文件后，必须同步重生成 `manifest.sha256` 并与该 commit **同批推送**，绝不分开推。实证教训（a3628c6 提交正文）：修复 commit 与 manifest regen 分开推 → gates 的 Manifest integrity 步（gates.yml:29 `sha256sum -c manifest.sha256`）先红，修复步骤永远轮不到验证，CI 白烧一轮。
 6. **绝不 force push / amend 已推送 commit**：远端历史一经推送即为事实，改写会让协作者与 CI 状态错乱；写错就追加修正 commit。
+
+## 分支管理
+
+### 主干
+
+- `main`：唯一主干，所有工作最终合入此处。
+
+### 工作流
+
+每完成一个大阶段：
+1. 从 `main` 拉新 feature 分支（命名：`feat/<阶段号>-<简述>` 或 `fix/<简述>`）。
+2. 在该分支上完成开发（阶段内的多批次 commit 允许，但分支生命周期以阶段为单位）。
+3. 完成后合回 `main`（merge 保留阶段语义）。
+4. 合流后**立即删除该 feature 分支**（本地+远端）。
+5. 阶段性打 annotated tag（如 `v1.x.0`），tag message 写明覆盖阶段。
+
+### 禁止
+
+- **长期驻留单一 feature 分支**：improve 模式 45+ commit 长链、main 与其分叉 9 天，合流时 gates.yml 从未真跑过完整流程、四红接连暴露（qs/diff 漏洞、pip-audit 缺失、manifest stale、pytest 步骤）——已是前车之鉴。短周期分支让安全 CI 在小步上持续验证。
+
+### 历史分支
+
+- 老基线实验分支（`feature/issue-*`、`base/monorepo`、`trae/agent-*`、`security/*`）保留作为历史快照，不再维护。
+- 已合入的旧分支通过 `archive/<分支名>` tag 保留回滚点。
