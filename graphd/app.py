@@ -17,13 +17,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # #73: 审计日志 —— 可选依赖, try/except 降级导入(audit.py 缺失/损坏时审计退化为无操作, 业务不崩)。
 # 两种形态都接住: 包内导入(from graphd.app import, pytest/调度器侧)与直接脚本运行(cd graphd && python3 app.py)。
+# 8-2: 导入级降级不再静默 —— 双 fallback 全败(模块缺失/损坏)时 stderr 告警一次(含异常摘要)
+# 并记录降级原因(_audit_import_error, /health 经 _audit_degraded_status 回显 audit_degraded)。
+# 告警只在导入时执行一次, 绝不阻断启动 —— 审计降级绝不影响业务路径(止损线)。
+_audit_import_error = ""  # 8-2: 导入级降级原因(空串=导入正常; /health 回显用)
 try:
     from graphd import audit as _audit_mod
-except Exception:
+except Exception as _e1:
     try:
         import audit as _audit_mod
-    except Exception:
+    except Exception as _e2:
         _audit_mod = None
+        _audit_import_error = f"graphd/audit: {type(_e1).__name__}: {str(_e1)[:80]}; " \
+                              f"flat audit: {type(_e2).__name__}: {str(_e2)[:80]}"
+        print(f"[audit] audit module import failed — audit degraded to no-op "
+              f"(business unaffected; /health will report audit_degraded): {_audit_import_error}",
+              file=sys.stderr, flush=True)
 
 
 def _audit_event(kind, detail):
@@ -31,6 +40,25 @@ def _audit_event(kind, detail):
     审计故障永不改变门控判定结果。调用点: 认证失败 / denylist 命中 / 非法状态迁移。"""
     if _audit_mod is not None:
         _audit_mod.audit_event(kind, detail)
+
+
+def _audit_degraded_status():
+    """8-2: /health 回显用审计可用性快照(纯读零副作用)。返回 None=健康(/health 不新增字段,
+    健康面零噪音); 非 None dict=降级, 恒含三键:
+      {"import": <导入级降级原因, 空串=导入正常>, "write_failures": <int 累计写失败>,
+       "first_error": <首错摘要>}
+    ①导入级: _audit_mod 为 None(双 fallback 全败) → import 键携带 _audit_import_error;
+    ②写级: audit.status() 轻量访问器(避免触 _fail_count 私有名)写失败计数 >0 → 计数+首错。
+    _audit_event 既有调用语义零改动 —— 本函数只读状态, 审计降级绝不影响业务路径。"""
+    if _audit_mod is None:
+        return {"import": _audit_import_error or "audit module unavailable",
+                "write_failures": 0, "first_error": ""}
+    _st = getattr(_audit_mod, "status", None)  # 防御: 异常环境混入无 status() 的同名模块时不炸
+    _st = _st() if callable(_st) else {}
+    if int(_st.get("write_failures") or 0) > 0:
+        return {"import": "", "write_failures": int(_st.get("write_failures") or 0),
+                "first_error": str(_st.get("first_error") or "")}
+    return None
 
 # 8-1: 转态旁路日志 —— 可选依赖, try/except 降级导入(transition_log 缺失/损坏时转态日志
 # 退化为无操作, 转态业务不崩)。audit 同款双形态: 包内导入(from graphd.app import, pytest/
@@ -397,7 +425,12 @@ class Handler(BaseHTTPRequestHandler):
             # V-12: 不回显 DB_PATH(本机信息暴露面收敛)
             # M8 守护自愈: version/pid/started_at — start-all 预检做"只杀自己人"三重校验
             # (pidfile + /proc starttime + 版本握手, 任一不符视为外来者不接管)
-            self._send(200, {"ok": True, "version": VERSION, "pid": os.getpid(), "started_at": STARTED_AT, **({"schema_degraded": list(SCHEMA_DEGRADED)} if SCHEMA_DEGRADED else {})})
+            # 8-2: 审计可用性显式化 —— 仅降级时追加 audit_degraded 字段(schema_degraded 同款
+            # 条件键形态): {"import": 导入级原因, "write_failures": 累计写失败, "first_error":
+            # 首错摘要}。健康时不新增字段(健康面零噪音); _audit_degraded_status 纯读零副作用,
+            # 回显绝不影响本响应与任何业务路径。
+            _audit_deg = _audit_degraded_status()
+            self._send(200, {"ok": True, "version": VERSION, "pid": os.getpid(), "started_at": STARTED_AT, **({"schema_degraded": list(SCHEMA_DEGRADED)} if SCHEMA_DEGRADED else {}), **({"audit_degraded": _audit_deg} if _audit_deg else {})})
         elif self.path == "/authorized":
             # L0/L1 分级验证: 授权资产集合查询 — L1 主动验证硬门的数据出口。
             # 与 /query 同级认证(worker/host token); validator.js 亦可经 q() 直查同表

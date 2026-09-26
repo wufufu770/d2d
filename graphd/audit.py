@@ -9,6 +9,8 @@
 加固: 目录创建 0700 / 文件 0600(且每次写前 fchmod 收窄, 防外部 chmod 放宽) /
       O_NOFOLLOW(防符号链接替换导向任意路径写, 与 app.py token 落盘同口径)。
 失败语义: 写失败静默计数(stderr 仅提示一次, 防写失败被用来刷屏), 后续失败只累计。
+8-2: 可用性显式化 —— status() 纯读访问器暴露 写失败计数/首错摘要(导入级状态由 app.py
+持有, 见 app.py _audit_mod/_audit_import_error); 写路径语义零改动, 只是失败不再不可见。
 """
 import json
 import os
@@ -19,6 +21,18 @@ from datetime import datetime, timezone
 _lock = threading.Lock()
 _fail_count = 0
 _warned = False
+_first_error = ""  # 8-2: 首错摘要(status() 暴露; 仅记录第一条, 后续失败只累计不覆盖)
+
+
+def status():
+    """8-2: 审计可用性状态快照(纯读零副作用, /health 回显消费 —— app.py _audit_degraded_status
+    经此访问, 避免触 _fail_count/_warned 私有名)。返回:
+      {"available": True —— 本函数能被调用即证明模块已成功导入(导入级降级由调用方判 None),
+       "write_failures": <int 累计写失败次数>,
+       "first_error": <str 首错摘要, 无失败为空串>}
+    本函数只读锁内全局, 恒不抛、恒返回 dict —— /health 健康面读取不得成为新故障面。"""
+    with _lock:
+        return {"available": True, "write_failures": int(_fail_count), "first_error": _first_error}
 
 
 def _audit_path():
@@ -31,7 +45,7 @@ def _audit_path():
 def audit_event(kind, detail) -> bool:
     """追加一条审计事件(JSONL 单行)。返回 True=落盘成功 / False=静默失败(已计数)。
     本函数永不抛异常 —— 调用点(_auth / denylist 门 / transition 门)不允许被审计故障阻断。"""
-    global _fail_count, _warned
+    global _fail_count, _warned, _first_error
     try:
         path = _audit_path()
         parent = os.path.dirname(path)
@@ -54,6 +68,8 @@ def audit_event(kind, detail) -> bool:
             _fail_count += 1
             _first = not _warned
             _warned = True
+            if not _first_error:  # 8-2: 首错摘要仅供 status() 暴露, 不改变既有静默计数语义
+                _first_error = f"{type(_e).__name__}: {_e}"[:200]
         if _first:
             print(f"[audit] audit log write failed (subsequent failures silent, count continues): {_e}",
                   file=sys.stderr, flush=True)
