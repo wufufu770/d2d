@@ -17,7 +17,9 @@ SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', claimed_by STRING DEFAULT '', claimed_at INT64 DEFAULT 0, verdict STRING DEFAULT '', evidence_ref STRING DEFAULT '', value_score FLOAT DEFAULT 0.0, PRIMARY KEY(id))",
     # Finding/Signal_ 3B 三列(列名与 ALTER/_CRITICAL_COLUMNS 三处同步, 缺一即静默降级):
     # content_hash=内容指纹(去重), source_hash=来源指纹, evidence_ref=证据文件指针(格式见 gd/gates.py evidence_ref)。
-    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', report_status STRING DEFAULT '', PRIMARY KEY(id))",
+    # 4-4 子批次 B(3B 两段式段 1): repairability=可修复性分类列(gd/gates.py repairability_classify
+    # 落列占位, 写入接线留后续批次) — 同款三处同步。
+    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', report_status STRING DEFAULT '', repairability STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, PRIMARY KEY(id))",
     # 3.5-1(经验回流子系统 A 数据层): Experience 结构化经验表(方案 v2 逐列 14 列 — id 服务端生成,
@@ -192,6 +194,15 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Finding ADD report_status STRING DEFAULT ''")
     except Exception:
         pass
+    # 4-4 子批次 B(3B 两段式段 1): repairability 可修复性分类列 — gd/gates.py
+    # repairability_classify 的落列占位(写入接线: 审批回填/reported 前缺项检查, 留后续批次,
+    # 本批不接 /write/finding)。三处同步(SCHEMA CREATE + 本 ALTER + _CRITICAL_COLUMNS),
+    # 缺一即静默降级(SCHEMA_DEGRADED); 幂等: 列已存在时 ALTER 抛错被吞(同 3B/3A/3E 先例);
+    # 列名为字面量枚举(同上, 防扫描器 SIDI 判定)。
+    try:
+        conn.execute("ALTER TABLE Finding ADD repairability STRING DEFAULT ''")
+    except Exception:
+        pass
     # 3.5-1(经验回流 A): Experience 表旧库逐列补缺迁移 —— 新表场景: 已存在但列缺失的 Experience
     # (早期形态/半建表)由本段幂等 ALTER 补齐(列已存在时 ALTER 抛错被吞, 同 3B/3A/3E 先例)。
     # 列名为字面量枚举(无外部输入可拼入, 防扫描器 SIDI 判定); 类型/默认值与 SCHEMA CREATE 逐字
@@ -254,8 +265,10 @@ def init_schema(conn):
 # 关键列清单: 缺失即核心功能静默失效(查询 Binder 异常被上层 catch 吞)。
 # 列名与读写语句必须一致 — 改动任何一处读写都要同步本表。
 _CRITICAL_COLUMNS = {
+    # 4-4 子批次 B(3B 两段式段 1): +repairability(可修复性分类列 — 三处同步之三; 缺列时写入/
+    # 消费点 SET 被 scheduler .catch 静默吞, 修复性标注断链)
     "Finding": ("dual_sign", "eng", "replay_matrix", "related_to", "last_transition",
-                "content_hash", "source_hash", "evidence_ref", "report_status"),
+                "content_hash", "source_hash", "evidence_ref", "report_status", "repairability"),
     "Signal_": ("verify_tries", "eng", "surface", "boundary",
                 "content_hash", "source_hash", "evidence_ref"),
     "Endpoint": ("eng", "authorized"),
