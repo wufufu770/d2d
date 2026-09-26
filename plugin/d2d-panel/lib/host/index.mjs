@@ -188,6 +188,37 @@ export function apply(ctx, config = {}) {
           return send(400, { ok: false, error: { code: 'caps-write-error', message: String(e?.message ?? e).slice(0, 160) } })
         }
       }
+      // ---- 4-4 子批次 A: 通道①审批面 — GET 列 pending(+计数/模式), POST {id,decision,decided_by} 裁决。
+      // 鉴权/写端点模式复用上方既有门(trustedHosts + POST + readBody + BODY_MAX)。队列模块
+      // 复用 pentest-dsh/scheduler/approvals.mjs(同仓库兄弟包链接部署, 单一格式源); 缺席时
+      // fail-soft 降级 503(审批执行面在 worker 侧 fail-closed, 不受面板可用性影响)。
+      if (method === 'approval') {
+        let ap
+        try { ap = await import('../../../pentest-dsh/scheduler/approvals.mjs') } catch (e) {
+          return send(503, { ok: false, error: { code: 'approval-queue-unavailable', message: `审批队列模块不可用: ${String(e?.message ?? e).slice(0, 140)}` } })
+        }
+        if (req.method === 'GET') {
+          return send(200, { ok: true, mode: ap.approvalMode(), count: ap.pendingCount(), approvals: ap.listPending() })
+        }
+        if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST required' } })
+        let body
+        try { body = await readBody(req) } catch (e) {
+          return send(400, { ok: false, error: { code: 'bad-request', message: String(e?.message ?? e) } })
+        }
+        const id = String(body?.id ?? '').trim()
+        const decision = String(body?.decision ?? '').trim()
+        const decidedBy = String(body?.decided_by ?? 'panel-human').trim() || 'panel-human'
+        if (!id) return send(400, { ok: false, error: { code: 'bad-request', message: 'id 必填' } })
+        if (!['approved', 'rejected'].includes(decision)) return send(400, { ok: false, error: { code: 'bad-request', message: 'decision 必须是 approved|rejected' } })
+        try {
+          const r = ap.decideTicket({ id, decision, decidedBy })
+          cache = null // 队列已变, 快照立即失效
+          return send(200, { ok: true, approval: r })
+        } catch (e) {
+          const code = e?.code === 'terminal' ? 'already-terminal' : 'decide-error'
+          return send(e?.code === 'terminal' ? 409 : 400, { ok: false, error: { code, message: String(e?.message ?? e).slice(0, 160) } })
+        }
+      }
       // ---- W5: engagement 管理面 — 多 src 项目并行/切换/回看 ----
       // start: 新建 requested 节点(web 宿主调度器空闲时 ≤15s in-process 采纳, 忙时派独立 runner);
       //        多开放行(同 target 唯一 + active 总数上限), 新建即选中。
