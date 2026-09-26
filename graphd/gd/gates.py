@@ -1088,3 +1088,74 @@ def hypothesis_aging_candidates(items, k=None) -> list:
     if all(p["id"] != oldest["id"] for p in pick):
         pick.append(oldest)
     return [p["id"] for p in pick]
+
+
+# ── 4-4 子批次 B(3B 两段式段 1): 可修复性分类 repairability_classify(纯函数) ────────────
+# 3.5/4 缺口确认: config_reject 只做类别路由(low/info 拒出、medium+ 降级 config-advice), 无修复性
+# 判定 — 审批卡片/报告端不知道一条 finding 修复起来是"改一处配置/改一段代码/动一次架构"。
+# 本函数给封闭三枚举(词表封闭给出, false-positive-schema 工程纪律③口径):
+#   cfg_one_click — 配置一键修复: config-advice 命中(cat 族路由=config_reject 同款家族, 或
+#                   CONFIG_ADVICE_RE 词面命中)+cookie attrs/httponly/samesite/secure flag/
+#                   security header/cors 配置/版本号泄露词表(该清单词面即 CONFIG_ADVICE_RE 词表,
+#                   此处只读复用, 零改其与 config_reject 语义);
+#   code_change   — 代码修复: 注入/XSS/SSRF/穿越/RCE/越权/竞态逻辑缺陷(V_ANCHORS 覆盖类别,
+#                   词面与 plugin/pentest-dsh/domain/verify-verdicts.mjs:133-141 cat 同源);
+#   arch_change   — 架构改造: 认证体系/租户边界/权限模型(认证体系/SSO/多租户/权限模型词表 +
+#                   「登录态」与「横向/越权」两词面同现组合 — 拍板: 单独"横向越权"无系统级词面
+#                   按端点级 code 修复)。
+# 正交声明: repairability 与 category 正交 — config-advice 恒 one-click 候选, vuln 类也有
+# architecture 级; 本区块只追加, 不改 CONFIG_ADVICE_RE/config_reject 任何既有语义。
+# 优先级(边界拍板, 测试锁定): arch 词面 > code 词面 > config-advice 路由 > 默认 code_change
+# (保守: 词表全未命中的未知类别归"要改代码", 绝不降为 one-click 放低修复门槛)。
+# JS 镜像: plugin/pentest-dsh/domain/repairability.mjs repairabilityClassify — 双侧同源
+# (词表/优先级/默认值/理由文案逐条对齐, 改一侧必改另一侧), frontierValueScore 双实现先例同形态。
+# 写入接线(后续批次): /write/finding 回填 Finding.repairability 列(schema.py 三处同步本批已落)
+# + 审批卡片/reported 前缺项检查消费; 本批次不接写通道。
+
+# arch 词表(封闭): 系统级认证/租户/权限模型术语 — 命中即架构改造
+_REPAIRABILITY_ARCH_RES = (
+    ("认证体系/统一认证", re.compile(r"认证体系|认证架构|统一认证|身份体系")),
+    ("SSO/单点登录", re.compile(r"\bsso\b|单点登录|single[- ]sign[- ]on", re.I)),
+    ("多租户/租户边界", re.compile(r"多租户|租户边界|租户隔离|跨租户|cross[- ]tenant|tenant (?:boundary|isolation)", re.I)),
+    ("权限模型/授权体系", re.compile(r"权限模型|权限体系|授权体系|permission model", re.I)),
+)
+# 「登录态+横向越权」组合词面(两词面同现才算 arch — 单独横向越权/IDOR = 端点级 code 修复)
+_REPAIRABILITY_ARCH_PAIR = (
+    re.compile(r"登录态|login (?:state|session)|会话体系", re.I),
+    re.compile(r"横向|越权|lateral|privilege", re.I),
+)
+# code 词表(封闭): V_ANCHORS 覆盖类别(verify-verdicts.mjs:133-140 cat 词面逐条同源)
+_REPAIRABILITY_CODE_RES = (
+    ("SSRF", re.compile(r"ssrf|带外|oob|盲", re.I)),
+    ("穿越/路径遍历", re.compile(r"穿越|路径遍历|lfi|traversal|任意文件", re.I)),
+    ("注入", re.compile(r"sql|注入|inject|sqli|模板|ssti", re.I)),
+    ("XSS", re.compile(r"xss", re.I)),
+    ("RCE/命令执行", re.compile(r"rce|命令执行|command", re.I)),
+    ("越权", re.compile(r"越权|access|authz|idor|bola|权限|水平|垂直", re.I)),
+    ("竞态/逻辑缺陷", re.compile(r"竞态|race|并发|业务逻辑|logic|支付|转账|兑换", re.I)),
+)
+# cfg 类别族路由(config_reject 同款家族字面量; 词面路由复用 CONFIG_ADVICE_RE 本体)
+_REPAIRABILITY_CFG_CATS = ("config", "config-advice", "hardening")
+
+
+def repairability_classify(cat, title, repro) -> tuple[str, str]:
+    """可修复性三分类(纯函数供 pytest, JS 镜像 domain/repairability.mjs 同源)。
+    返回 (cls, reason): cls ∈ cfg_one_click|code_change|arch_change(封闭枚举);
+    reason 引用命中词面供审批卡片/报告端人读。优先级: arch > code > config-advice 路由
+    > 默认 code_change; 空入参/词表全未命中也归 code_change(保守, 不降修复门槛)。"""
+    c = str(cat or "").strip().lower()
+    text = f"{title or ''} {repro or ''}"
+    for name, r in _REPAIRABILITY_ARCH_RES:
+        if r.search(text):
+            return "arch_change", f"架构改造: 认证体系/租户边界/权限模型词面命中[{name}]"
+    if _REPAIRABILITY_ARCH_PAIR[0].search(text) and _REPAIRABILITY_ARCH_PAIR[1].search(text):
+        return "arch_change", "架构改造: 登录态+横向越权组合词面命中(权限模型级)"
+    for name, r in _REPAIRABILITY_CODE_RES:
+        if r.search(text):
+            return "code_change", f"代码修复: 注入/XSS/越权/逻辑缺陷词面命中[{name}](V_ANCHORS 覆盖类别)"
+    if c in _REPAIRABILITY_CFG_CATS:
+        return "cfg_one_click", f"配置一键修复: config-advice 类别路由命中(cat={c})"
+    m = CONFIG_ADVICE_RE.search(str(title or "").lower())
+    if m:
+        return "cfg_one_click", f"配置一键修复: CONFIG_ADVICE_RE 词面命中[{m.group(0)}]"
+    return "code_change", f"代码修复: 词表未命中(cat={c or '-'})默认保守归代码修复"
