@@ -1,0 +1,16 @@
+{
+  "_comment": "A/B 对比实验配置模板 — 复制为 experiments/config.json 后按授权实际情况修改。启动前置: 每个 targets[].authorized 必须为 true( false 拒绝启动); targets[].url 仅 http/https 且 host 不得为 localhost/环回/私有/保留地址。",
+  "targets": [
+    {
+      "name": "example-authorized-target",
+      "url": "https://target.example.com",
+      "scope": "target.example.com",
+      "authorized": true,
+      "objective": "A/B 对比: 经验蒸馏+注入(A 组)对发现数与 token 效率的影响(示例占位, 按授权目标改写)"
+    }
+  ],
+  "runs_per_group": 3,
+  "group_a": { "enable_distill": true, "enable_injection": true },
+  "group_b": { "enable_distill": false, "enable_injection": false },
+  "output_dir": "experiments/results"
+}

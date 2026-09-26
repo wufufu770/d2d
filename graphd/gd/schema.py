@@ -9,12 +9,39 @@ from datetime import datetime, timezone
 SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, PRIMARY KEY(name))",
     "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', authorized BOOL DEFAULT false, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', claimed_by STRING DEFAULT '', claimed_at INT64 DEFAULT 0, verdict STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
+    # 命名区分(3B): Hypothesis.evidence_ref = 验证引用文本(存 signal/finding id);
+    # Finding/Signal_ 的 evidence_ref 列(见下两行) = 证据文件指针 ev/<eng>/<node-id>.txt — 同名不同义。
+    # 3.6-4 段 C: value_score 列(启发式价值分, 消费点认领时回写 — 下方 ALTER/_CRITICAL_COLUMNS
+    # 三处同步; 计算公式权威锚 gates.py hypothesis_value_score, aging 排序消费在 loop.mjs)。
+    "CREATE NODE TABLE IF NOT EXISTS Hypothesis(id STRING, text STRING, strategy STRING, status STRING DEFAULT 'open', ts STRING, eng STRING DEFAULT '', claimed_by STRING DEFAULT '', claimed_at INT64 DEFAULT 0, verdict STRING DEFAULT '', evidence_ref STRING DEFAULT '', value_score FLOAT DEFAULT 0.0, PRIMARY KEY(id))",
+    # Finding/Signal_ 3B 三列(列名与 ALTER/_CRITICAL_COLUMNS 三处同步, 缺一即静默降级):
+    # content_hash=内容指纹(去重), source_hash=来源指纹, evidence_ref=证据文件指针(格式见 gd/gates.py evidence_ref)。
+    # 4-4 子批次 B(3B 两段式段 1): repairability=可修复性分类列(gd/gates.py repairability_classify
+    # 落列占位, 写入接线留后续批次) — 同款三处同步。
+    "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', report_status STRING DEFAULT '', repairability STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', PRIMARY KEY(worker_id))",
+    # 3.5-1(经验回流子系统 A 数据层): Experience 结构化经验表(方案 v2 逐列 14 列 — id 服务端生成,
+    # 写入即隔离 status='quarantined', utility_score FLOAT 默认 0.5 为 EvolveR 冷启动, 时间列
+    # DEFAULT epoch('1970-01-01 00:00:00' — kuzu 0.11 DDL 无当前时刻函数默认, 现场实证));
+    # 写入通道 /write/experience, 读取通道 /query/experience(蒸馏 3.5-2/注入 3.5-3 后续批次接线)。
+    # 与 ExperienceWeight 同名族不同表: 那是模式权重卡(cls/win_day 计胜), 本表是条目级经验回流。
+    "CREATE NODE TABLE IF NOT EXISTS Experience(id STRING, eng_id STRING DEFAULT '', category STRING DEFAULT '', scope STRING DEFAULT '', title STRING DEFAULT '', content STRING DEFAULT '', evidence_ref STRING DEFAULT '', utility_score FLOAT DEFAULT 0.5, retrieval_count INT64 DEFAULT 0, success_count INT64 DEFAULT 0, created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), status STRING DEFAULT 'quarantined', provenance_hash STRING DEFAULT '', PRIMARY KEY(id))",
+    # 3.6-1(前沿子系统 C 数据层): Frontier 探索方向提案表(9 列 — worker 提案 direction,
+    # 主控评审转态 proposed→accepted|rejected、accepted→explored)。时间列 DEFAULT epoch
+    # ('1970-01-01 00:00:00' — kuzu 0.11 DDL 无当前时刻函数默认, 沿 Experience 3.5-1 现场实证
+    # 先例); 写入通道 /write/frontier(status 恒 'proposed', reviewed_at 恒 epoch — 评审前无值),
+    # 读取通道 /query/frontier(缺省全态), 转态通道 /write/frontier-transition(host-only)。
+    # 3.6-2 v4.1 增列(9→14 列, 与下方 ALTER/_CRITICAL_COLUMNS 三处同步): value_score/value_components
+    # 为价值评分占位(本批次恒 0/'' — 公式 3.6-3 实现, 写端点不接受调用方传值); 两个 *_ref 为
+    # 采纳/确证链占位(写端点不写值, 由 3.6-3/3.6-4 转态链回填); version=行 schema 版本
+    # (写端点恒写 'v1', 不接受调用方指定)。refs 图节点引用: 准入校验(工具侧预检 + 端点侧终检,
+    # 拍板留痕见 app.py 写端注释)之外, 3.6-3 拍板改判落列 — 归一数组 JSON 串化存入(见下)。
+    # 3.6-3 refs 列(14→15 列, 与下方 ALTER/_CRITICAL_COLUMNS 三处同步): 归一化后的引用 id
+    # 数组 JSON 串(JSON.stringify 同构, DEFAULT '' = 无引用占位), 写端点唯一写入方。
+    "CREATE NODE TABLE IF NOT EXISTS Frontier(id STRING, eng_id STRING DEFAULT '', direction STRING DEFAULT '', evidence STRING DEFAULT '', proposed_by STRING DEFAULT '', status STRING DEFAULT 'proposed', review_note STRING DEFAULT '', created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), value_score FLOAT DEFAULT 0.0, value_components STRING DEFAULT '', accepted_to_hypothesis_ref STRING DEFAULT '', hypothesis_to_confirmed_ref STRING DEFAULT '', version STRING DEFAULT 'v1', refs STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS AgentIdentity(worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', lease_id STRING DEFAULT '', exit_class STRING DEFAULT '', PRIMARY KEY(worker_id))",
     "CREATE NODE TABLE IF NOT EXISTS Task(id STRING, eng STRING DEFAULT '', kind STRING, payload STRING, priority DOUBLE DEFAULT 1.0, status STRING DEFAULT 'pending', claimed_by STRING DEFAULT '', claimed_at STRING DEFAULT '', target_type STRING DEFAULT 'web', link_id STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Handoff(id STRING, eng STRING, digest STRING, model STRING DEFAULT '', created_at STRING, PRIMARY KEY(id))",
     "CREATE REL TABLE IF NOT EXISTS AT(FROM Signal_ TO Endpoint)",
@@ -95,12 +122,15 @@ def init_schema(conn):
         pass
     # 0913 星图认知层: Signal_ 坐标枚举(surface/boundary) + Hypothesis 生命周期
     # (claim 租约/verdict/证据引用) + Finding replay 矩阵。新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。
+    # 3.6-4 段 C: Hypothesis.value_score 同款幂等迁移(消费点认领时回写, 旧库缺列时该 SET
+    # 会被 scheduler 侧 .catch 静默吞 — 缺列走 _CRITICAL_COLUMNS/SCHEMA_DEGRADED 响亮告警)。
     for _ddl in ("ALTER TABLE Signal_ ADD surface STRING DEFAULT ''",
                  "ALTER TABLE Signal_ ADD boundary STRING DEFAULT ''",
                  "ALTER TABLE Hypothesis ADD claimed_by STRING DEFAULT ''",
                  "ALTER TABLE Hypothesis ADD claimed_at INT64 DEFAULT 0",
                  "ALTER TABLE Hypothesis ADD verdict STRING DEFAULT ''",
                  "ALTER TABLE Hypothesis ADD evidence_ref STRING DEFAULT ''",
+                 "ALTER TABLE Hypothesis ADD value_score FLOAT DEFAULT 0.0",
                  "ALTER TABLE Finding ADD replay_matrix STRING DEFAULT ''"):
         try:
             conn.execute(_ddl)
@@ -129,6 +159,97 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Endpoint ADD authorized BOOL DEFAULT false")
     except Exception:
         pass
+    # P0 Turn lease: worker 身份租约列 — 终态写入 CAS 的钥匙(scheduler.js 派发点生成,
+    # stopAll/recoverOrphans 写终态时同语句置 '' 关闭; 迟到的旧 lease 回调 WHERE lease_id 零命中,
+    # 双写竞态收敛为唯一胜出方)。列名为字面量枚举(同上, 防扫描器 SIDI 判定)。
+    # 3A: exit_class=七类失败分类落图列(ok/quota/network/scope_denied/canceled/crash/other) —
+    # scheduler.js 终态 CAS 的 SET 列表原地并入(WHERE lease_id 保证只在胜出路径写, 零竞态);
+    # 三处同步(SCHEMA CREATE + 本 ALTER + _CRITICAL_COLUMNS), 缺一即静默降级。
+    for _ddl in ("ALTER TABLE AgentIdentity ADD lease_id STRING DEFAULT ''",
+                 "ALTER TABLE AgentIdentity ADD exit_class STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
+    # 3B 证据指纹三列迁移(Finding/Signal_): content_hash(内容指纹去重)/source_hash(来源指纹)/
+    # evidence_ref(证据文件指针 ev/<eng>/<node-id>.txt, 纯指针不落内容 — 写入由批次 2 的 3C 接线)。
+    # 注意同名不同义: Hypothesis.evidence_ref=验证引用文本(存 signal/finding id), 此处是文件指针。
+    # 新库由 SCHEMA 直接建全, 旧库 ALTER 迁移。列名为字面量枚举(同上, 防扫描器 SIDI 判定);
+    # 缺列即走 _CRITICAL_COLUMNS/SCHEMA_DEGRADED 降级告警(dual_sign 缺列静默死代码的同款兜底)。
+    for _ddl in ("ALTER TABLE Finding ADD content_hash STRING DEFAULT ''",
+                 "ALTER TABLE Finding ADD source_hash STRING DEFAULT ''",
+                 "ALTER TABLE Finding ADD evidence_ref STRING DEFAULT ''",
+                 "ALTER TABLE Signal_ ADD content_hash STRING DEFAULT ''",
+                 "ALTER TABLE Signal_ ADD source_hash STRING DEFAULT ''",
+                 "ALTER TABLE Signal_ ADD evidence_ref STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
+    # 3E 报告门状态列: report.mjs 统一过门后的报告状态标记(complete/incomplete/missing_evidence…)
+    # 回写通道 = app.py /write/transition 在 reported 态接受可选 report_status 并写该列
+    # (写失败降级 stderr 不阻塞)。三处同步(SCHEMA CREATE + 本 ALTER + _CRITICAL_COLUMNS),
+    # 缺一即静默降级(SCHEMA_DEGRADED)。列名为字面量枚举(同上, 防扫描器 SIDI 判定)。
+    try:
+        conn.execute("ALTER TABLE Finding ADD report_status STRING DEFAULT ''")
+    except Exception:
+        pass
+    # 4-4 子批次 B(3B 两段式段 1): repairability 可修复性分类列 — gd/gates.py
+    # repairability_classify 的落列占位(写入接线: 审批回填/reported 前缺项检查, 留后续批次,
+    # 本批不接 /write/finding)。三处同步(SCHEMA CREATE + 本 ALTER + _CRITICAL_COLUMNS),
+    # 缺一即静默降级(SCHEMA_DEGRADED); 幂等: 列已存在时 ALTER 抛错被吞(同 3B/3A/3E 先例);
+    # 列名为字面量枚举(同上, 防扫描器 SIDI 判定)。
+    try:
+        conn.execute("ALTER TABLE Finding ADD repairability STRING DEFAULT ''")
+    except Exception:
+        pass
+    # 3.5-1(经验回流 A): Experience 表旧库逐列补缺迁移 —— 新表场景: 已存在但列缺失的 Experience
+    # (早期形态/半建表)由本段幂等 ALTER 补齐(列已存在时 ALTER 抛错被吞, 同 3B/3A/3E 先例)。
+    # 列名为字面量枚举(无外部输入可拼入, 防扫描器 SIDI 判定); 类型/默认值与 SCHEMA CREATE 逐字
+    # 同源(三处同步之二); id 为 PRIMARY KEY 不可 ALTER ADD(带 id 的表必含主键, 无此缺列形态)。
+    # 缺列即走 _CRITICAL_COLUMNS/SCHEMA_DEGRADED 降级告警(同 dual_sign 缺列静默死代码的兜底)。
+    for _ddl in ("ALTER TABLE Experience ADD eng_id STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD category STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD scope STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD title STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD content STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD evidence_ref STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD utility_score FLOAT DEFAULT 0.5",
+                 "ALTER TABLE Experience ADD retrieval_count INT64 DEFAULT 0",
+                 "ALTER TABLE Experience ADD success_count INT64 DEFAULT 0",
+                 "ALTER TABLE Experience ADD created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+                 "ALTER TABLE Experience ADD last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+                 "ALTER TABLE Experience ADD status STRING DEFAULT 'quarantined'",
+                 "ALTER TABLE Experience ADD provenance_hash STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
+    # 3.6-1(前沿子系统 C): Frontier 表旧库逐列补缺迁移 —— 同 Experience 3.5-1 先例形态:
+    # 早期形态/半建表由本段幂等 ALTER 补齐(列已存在时 ALTER 抛错被吞, 同 3B/3A/3E/3.5-1 先例)。
+    # 列名为字面量枚举(无外部输入可拼入, 防扫描器 SIDI 判定); 类型/默认值与 SCHEMA CREATE 逐字
+    # 同源(三处同步之二); id 为 PRIMARY KEY 不可 ALTER ADD(带 id 的表必含主键, 无此缺列形态)。
+    # 缺列即走 _CRITICAL_COLUMNS/SCHEMA_DEGRADED 降级告警(同 Experience 缺列兜底)。
+    for _ddl in ("ALTER TABLE Frontier ADD eng_id STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD direction STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD evidence STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD proposed_by STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD status STRING DEFAULT 'proposed'",
+                 "ALTER TABLE Frontier ADD review_note STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+                 "ALTER TABLE Frontier ADD reviewed_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
+                 # 3.6-2 v4.1 五列(类型/默认值与上方 SCHEMA CREATE 逐字同源 — 三处同步之二)
+                 "ALTER TABLE Frontier ADD value_score FLOAT DEFAULT 0.0",
+                 "ALTER TABLE Frontier ADD value_components STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD accepted_to_hypothesis_ref STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD hypothesis_to_confirmed_ref STRING DEFAULT ''",
+                 "ALTER TABLE Frontier ADD version STRING DEFAULT 'v1'",
+                 # 3.6-3 refs 列(类型/默认值与上方 SCHEMA CREATE 逐字同源 — 三处同步之二)
+                 "ALTER TABLE Frontier ADD refs STRING DEFAULT ''"):
+        try:
+            conn.execute(_ddl)
+        except Exception:
+            pass
     # 存量混合池归属回填: 只处理 eng='' 的行, 幂等(每次启动 O(池子行数), 空转即跳过)。
     try:
         _backfill_eng(conn)
@@ -144,11 +265,37 @@ def init_schema(conn):
 # 关键列清单: 缺失即核心功能静默失效(查询 Binder 异常被上层 catch 吞)。
 # 列名与读写语句必须一致 — 改动任何一处读写都要同步本表。
 _CRITICAL_COLUMNS = {
-    "Finding": ("dual_sign", "eng", "replay_matrix", "related_to", "last_transition"),
-    "Signal_": ("verify_tries", "eng", "surface", "boundary"),
+    # 4-4 子批次 B(3B 两段式段 1): +repairability(可修复性分类列 — 三处同步之三; 缺列时写入/
+    # 消费点 SET 被 scheduler .catch 静默吞, 修复性标注断链)
+    "Finding": ("dual_sign", "eng", "replay_matrix", "related_to", "last_transition",
+                "content_hash", "source_hash", "evidence_ref", "report_status", "repairability"),
+    "Signal_": ("verify_tries", "eng", "surface", "boundary",
+                "content_hash", "source_hash", "evidence_ref"),
     "Endpoint": ("eng", "authorized"),
-    "Hypothesis": ("eng", "claimed_by", "verdict"),
+    # 3.6-4 段 C: +value_score(启发式价值分落列 — SCHEMA CREATE + 上方 ALTER + 此处三处同步;
+    # 缺列时消费点回写 SET 被 scheduler .catch 静默吞, 价值分/aging 审计断链)
+    "Hypothesis": ("eng", "claimed_by", "verdict", "value_score"),
     "Engagement": ("leased_by", "lease_at", "cancel"),
+    "AgentIdentity": ("lease_id", "exit_class"),
+    # 3.5-1(经验回流 A): Experience 纳入全部列(含 id 主键) —— 与 Finding/Signal_ 只锁后期增量
+    # 关键子集不同: Experience 是本批次全新表, 整表即经验回流数据层的全部载体, 任何一列缺失都属
+    # schema 损坏(utility_score 缺→剪枝失效, created_at/last_used_at 缺→排序/时效失效, status 缺
+    # →隔离语义失效, provenance_hash 缺→溯源断链, 其余列缺→读写 Binder 异常被上层静默吞), 且无
+    # 历史存量需要区分"主功能列/迁移列"。全列校验成本同量级(table_info 单次调用), 不放子集。
+    "Experience": ("id", "eng_id", "category", "scope", "title", "content", "evidence_ref",
+                   "utility_score", "retrieval_count", "success_count", "created_at",
+                   "last_used_at", "status", "provenance_hash"),
+    # 3.6-1(前沿子系统 C): Frontier 纳入全部列(含 id 主键) —— 同 Experience 全列拍板:
+    # 全新表整表即前沿提案数据层的全部载体, 任一列缺失都属 schema 损坏(status 缺→评审状态机
+    # 失效, created_at/reviewed_at 缺→排序/时效失效, direction/evidence 缺→提案内容断链,
+    # 其余列缺→读写 Binder 异常被上层静默吞), 且无历史存量需要区分"主功能列/迁移列"。
+    # 全列校验成本同量级(table_info 单次调用), 不放子集。
+    # 3.6-2 v4.1: 9→14 列(value_score/value_components/两个 *_ref/version — 三处同步之三)。
+    # 3.6-3: +refs(图节点引用 JSON 数组串, 写端点唯一写入方) = 15 列。
+    "Frontier": ("id", "eng_id", "direction", "evidence", "proposed_by",
+                 "status", "review_note", "created_at", "reviewed_at",
+                 "value_score", "value_components", "accepted_to_hypothesis_ref",
+                 "hypothesis_to_confirmed_ref", "version", "refs"),
 }
 
 # 迁移校验结果: 缺失关键列的 "表.列" 列表(空=健康)。app.py /health 回显此值,
@@ -165,7 +312,7 @@ def _verify_critical_columns(conn) -> list:
     missing = []
     for table, cols in _CRITICAL_COLUMNS.items():
         try:
-            r = conn.execute(f"CALL table_info('{table}') RETURN *")
+            r = conn.execute("CALL table_info('" + table + "') RETURN *")  # noqa: S608 — table 为 _CRITICAL_COLUMNS 字面量枚举键
             present = set()
             while r.has_next():
                 present.add(str(r.get_next()[1]))
@@ -304,7 +451,7 @@ def _backfill_eng(conn):
     touched = 0
     # ① 时间窗归属(表, ts 列名)
     for table, tscol in (("Signal_", "ts"), ("Finding", "ts"), ("Hypothesis", "ts"), ("Plan", "created_at")):
-        r = conn.execute(f"MATCH (x:{table}) WHERE x.eng = '' RETURN x.{tscol}, x.id")  # noqa: S608 — 表/列名为字面量枚举
+        r = conn.execute("MATCH (x:" + table + ") WHERE x.eng = '' RETURN x." + tscol + ", x.id")  # noqa: S608 — 表/列名为字面量枚举
         batch = []
         while r.has_next():
             ts, rid = r.get_next()
