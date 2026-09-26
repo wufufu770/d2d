@@ -2,8 +2,9 @@ name: gates
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
+    branches: ['**']
 
 jobs:
   graphd-gates:
