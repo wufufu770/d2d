@@ -32,6 +32,26 @@ def _audit_event(kind, detail):
     if _audit_mod is not None:
         _audit_mod.audit_event(kind, detail)
 
+# 8-1: 转态旁路日志 —— 可选依赖, try/except 降级导入(transition_log 缺失/损坏时转态日志
+# 退化为无操作, 转态业务不崩)。audit 同款双形态: 包内导入(from graphd.app import, pytest/
+# 调度器侧)与直接脚本运行(cd graphd && python3 app.py)。
+try:
+    from graphd.gd.transition_log import log_transition as _transition_log_fn
+except Exception:
+    try:
+        from gd.transition_log import log_transition as _transition_log_fn
+    except Exception:
+        _transition_log_fn = None
+
+
+def _log_transition(entry):
+    """8-1: 转态旁路日志统一出口。log_transition 内部自吞一切异常(静默计数), 此处不重复
+    包裹 —— 日志故障绝不影响转态成功响应(_audit_event 同款哲学)。调用点: 三转态端点
+    (/write/transition、/write/experience-transition、/write/frontier-transition)成功路径,
+    与既有 _audit_event('…-transition') 成功审计互补(审计记动作留痕, 本日志记转态本体行)。"""
+    if _transition_log_fn is not None:
+        _transition_log_fn(entry)
+
 # 可移植性: DB 默认落在脚本同目录(每仓天然隔离); 端口由各仓 start.sh 钉定
 DB_PATH = os.environ.get("P2P_GRAPH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kuzu_db"))
 # M8 守护自愈锚: /health 回显三要素。发版必须改 VERSION — preflight 据版本差异识别 stale 旧实例;
@@ -950,6 +970,12 @@ class Handler(BaseHTTPRequestHandler):
                           "reviewer": str(req.get("reviewer") or "host")[:80],
                           "reason": str(req.get("reviewer_note") or ""),
                           "ts": datetime.now(timezone.utc).isoformat()})
+            # 8-1: 转态旁路日志(仅插调用行, 既有语句零改动)。锁外追加; log_transition 内部
+            # 自吞异常静默计数 —— 写失败绝不影响下方 200 响应(_audit_event 同款哲学)。
+            _log_transition({"node_id": xid, "from_status": cur, "to_status": to,
+                             "actor": str(req.get("reviewer") or "host"),
+                             "reason": str(req.get("reviewer_note") or ""),
+                             "source_batch": str(req.get("source_batch") or "")})
             return self._send(200, {"ok": True, "id": xid, "from": cur, "to": to})
 
         # ---- 3.6-1-2(前沿子系统 C 数据层): /write/frontier —— Frontier 探索方向提案写入通道。
@@ -1275,6 +1301,12 @@ class Handler(BaseHTTPRequestHandler):
                           **({"accepted_to_hypothesis_ref": _ref_hyp} if _ref_hyp else {}),
                           **({"hypothesis_to_confirmed_ref": _ref_fnd} if _ref_fnd else {}),
                           **({"utility_effective": _util_eff} if _util_eff is not None else {})})
+            # 8-1: 转态旁路日志(仅插调用行, 既有语句零改动)。锁外追加; log_transition 内部
+            # 自吞异常静默计数 —— 写失败绝不影响下方 200 响应(_audit_event 同款哲学)。
+            _log_transition({"node_id": xid, "from_status": cur, "to_status": to,
+                             "actor": str(req.get("reviewer") or "host"),
+                             "reason": str(req.get("review_note") or ""),
+                             "source_batch": str(req.get("source_batch") or "")})
             return self._send(200, {"ok": True, "id": xid, "from": cur, "to": to,
                                     **({"accepted_to_hypothesis_ref": _ref_hyp} if _ref_hyp else {}),
                                     **({"hypothesis_to_confirmed_ref": _ref_fnd} if _ref_fnd else {}),
@@ -1333,7 +1365,50 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
                 except Exception as e:
                     return self._send(500, {"ok": False, "error": str(e)[:200]})
+            # 8-1: 转态旁路日志(仅插调用行, 既有语句零改动)。锁外追加; log_transition 内部
+            # 自吞异常静默计数 —— 写失败绝不影响下方 200 响应(_audit_event 同款哲学)。
+            _log_transition({"node_id": fid, "from_status": cur, "to_status": to,
+                             "actor": str(req.get("actor") or ""),
+                             "reason": str(req.get("reason") or ""),
+                             "source_batch": str(req.get("source_batch") or "")})
             return self._send(200, {"ok": True, "from": cur, "to": to, "last_transition": traj})
+
+        # ---- 8-1: /write/transition-log —— 转态 JSONL 旁路日志的手动/工具追加通道 ----
+        # 独立早退路由(/write/transition 模板)。host-only(_auth("host") 恒等比较同款, worker
+        # token 403; 失败由 _auth 包装器既有 auth-fail 审计覆盖)。共享门自动生效: Content-Length
+        # 门/legacy token/R6 denylist 红线扫描(本 path 以 /write/ 开头且非 /write/transition —
+        # 刻意不豁免: 本通道是旁路留痕而非合规隔离转态本体, 引用红线资产的转移 reason 应走
+        # /write/transition 本体(其豁免语义见上方 :471 注释), 豁免不随之扩散)。append-only:
+        # 仅经 log_transition 追加单行(0600/0700 + O_NOFOLLOW, 见 gd/transition_log.py),
+        # 不读不改既有行; 无 SQL 无出网。写失败如实 500(本端点的业务就是落盘, 不假成功);
+        # 超长截断收敛在模块单点(_MAX), 此处只做必填校验(现有端点 400 惯例)。
+        if self.path == "/write/transition-log":
+            if not self._auth("host"):
+                return self._send(403, {"ok": False, "error": "transition-log requires host token"})
+            _tl_node = str(req.get("node_id") or "").strip()
+            _tl_from = str(req.get("from_status") or "").strip()
+            _tl_to = str(req.get("to_status") or "").strip()
+            _tl_actor = str(req.get("actor") or "").strip()
+            _tl_reason = str(req.get("reason") or "").strip()
+            if not _tl_node:
+                return self._send(400, {"ok": False, "error": "node_id required"})
+            if not _tl_from or not _tl_to:
+                return self._send(400, {"ok": False, "error": "from_status and to_status required"})
+            if not _tl_actor:
+                return self._send(400, {"ok": False, "error": "actor required"})
+            if not _tl_reason:
+                return self._send(400, {"ok": False, "error": "reason required"})
+            _tl_id = str(uuid.uuid4())
+            _tl_ok = False
+            if _transition_log_fn is not None:
+                _tl_ok = bool(_transition_log_fn({
+                    "transition_id": _tl_id, "node_id": _tl_node,
+                    "from_status": _tl_from, "to_status": _tl_to,
+                    "actor": _tl_actor, "reason": _tl_reason,
+                    "source_batch": str(req.get("source_batch") or "")}))
+            if not _tl_ok:
+                return self._send(500, {"ok": False, "error": "transition-log write failed (degraded)"})
+            return self._send(200, {"ok": True, "transition_id": _tl_id})
 
         # 经验库写权限收归 host(防被注入的 worker 给自己刷经验权重) — V-06: re.I + REMOVE
         if re.search(r"ExperienceWeight", req.get("cypher", "")) and \
