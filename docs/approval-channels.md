@@ -148,3 +148,27 @@ signal abort → `cancelled`；policy `never` → `rejected`（**answerer 之前
 | checkBash deny | deny（原文，零变化） | deny（零变化） | deny（零变化） |
 | 高危命中 | **allow（分类器关闭，零变化）** | 落单+阻塞轮询，approved→allow / 其余→deny | 落单+ask→宿主链→桥读队列 |
 | 其余 | allow（零变化） | allow（零变化） | allow（零变化） |
+
+## 7. 4-4 子批次 C 记录（转向机制最小版，不依赖 SUGGESTS 边）
+
+### C-4 SUGGESTS / PRIOR_FOR 边：全仓零生产写入（留创意环扩展）
+
+- 现状核实（2026-09-26 全仓 grep）：`SUGGESTS`/`PRIOR_FOR` 仅出现在 schema 建表
+  （graphd/gd/schema.py:49/51）、消费侧只读查询（scheduler/loop.mjs 跨链因子 `sugRows` 的
+  SUGGESTS MATCH）与注释；**没有任何生产写入通道**。唯一「想建边」的指令在 creative 简报
+  （domain/briefs.mjs:97「用 SUGGESTS 边连接相关 Endpoint」），但 worker 无边可写：`/query`
+  对 worker 是只读门（graphd/gd/gates.py `worker_query_allowed`，mutation 关键字全拒），
+  `/write/hypothesis` 只 CREATE 节点（graphd/app.py:798-805）——简报指令与写入通道矛盾，
+  实图该边恒空、跨链特征恒 0。
+- 处置：4-4 转向机制**不依赖** SUGGESTS 边（三源否决聚合见 `domain/pivot.mjs`，阻断判定三源：
+  Finding gate_status='rejected' / Signal_ status∈['refuted','pruned'] / Hypothesis status='refuted'）。
+  写入通道留创意环扩展：graphd `/write/hypothesis` 加 `action=link`，或 host 代写边——先例为
+  N2 AT 边（app.py:711-718「graphd 代写 Endpoint 节点 + (s)-[:AT]->(e)」）。不属本批。
+
+### C-5 Gate-V 位置更正（避免后续混淆）
+
+- 纯函数 `gateV` 在 **domain/verify-verdicts.mjs:147-163**（V_ANCHORS 七类锚表 :133-141），
+  **不在** domain/gates.mjs；domain/gates.mjs 实有 gateD1 / gateR / gateP / needsDualSign /
+  canSpawnDualSign（gateR 的 openIntents 拒绝项在 gates.mjs:43）。
+- 语义侧别：Gate-V =「缺确定性锚不盖章」（验证准入），与转向 =「被阻断就转向」（消费降权，
+  domain/pivot.mjs）语义相反侧，不混用。
