@@ -1,0 +1,38 @@
+name: dsh-compat
+
+# 蓝图 #20: dsh 版本兼容性矩阵 — pinned 失败=阻塞, latest 失败=仅通知。
+# dsh 是 developer preview(每周 breaking), 六个 @deepseek-ai/dsh-* 包精确 pin 为
+# 0.1.1-rc.2; 本 workflow 在上游发新版时第一时间暴露兼容性差异。
+# 步骤风格沿用 ci.yml/gates.yml 惯例(checkout@v4 → setup-node@v4 → 容错安装);
+# node 统一 22(与仓库 engines>=22.5 对齐; gates.yml npm-audit 的 node 20 为既有不一致, 此处不跟随不改)。
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dsh-compat-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [pinned, latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # node 22 有意保留：与仓库 engines(node>=22.5) 对齐（见本文件头第 7 行注释）；ci.yml 的 24 为测试轨另行选择
+          node-version: 22
+      - name: dsh 兼容冒烟(${{ matrix.channel }} 列)
+        id: smoke
+        run: bash scripts/check-dsh-compat.sh --channel ${{ matrix.channel }}
+        # latest 列失败不阻塞: continue-on-error 让结论保持绿, 由下一步发 warning 通知
+        # (对应脚本退出码语义: pinned=2 阻塞 / latest=3 仅通知)
+        continue-on-error: ${{ matrix.channel == 'latest' }}
+      - name: latest 列失败通知(非阻塞)
+        if: ${{ matrix.channel == 'latest' && steps.smoke.outcome == 'failure' }}
+        run: |
+          echo "::warning::dsh latest 兼容冒烟失败 — 上游 @deepseek-ai/dsh-* 可能存在 breaking change。pinned(0.1.1-rc.2) 列未受影响; 请查看上方日志并评估是否需要重锁版本。"
