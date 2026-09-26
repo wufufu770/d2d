@@ -27,7 +27,9 @@ jobs:
           if git grep -qiE 'X-Auth.*[0-9a-f]{32}' -- ':!*.md' ':!docs/*'; then echo "❌ 疑似凭证入库"; exit 1; fi
       - name: "Manifest integrity (V-16: 白名单口径, 排除活跃日志)"
         run: sha256sum -c manifest.sha256 --quiet
-      - run: pytest tests/test_graphd_gates.py -q
+      - name: Install pytest
+        run: python -m pip install pytest==9.1.1
+      - run: python -m pytest tests/test_graphd_gates.py -q
 
   # V-15: CodeQL 默认查询集 (js/py 双语言)
   codeql:
