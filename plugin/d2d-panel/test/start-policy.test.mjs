@@ -92,3 +92,80 @@ test('validateStartRequest: scope 非法形态拒(单段主机名/通配符/带 
     assert.equal(v.ok, false, `scope "${scope}" 应被拒`)
   }
 })
+
+// ── 0928 环回旋钮: P2P_START_POLICY_ALLOW_LOOPBACK=1 仅豁免「本机环回」(localhost/.localhost/
+//    127/8、::1 — target 无点规则与 FORBIDDEN 正则双重豁免 + scope 逐条目豁免), 其余私有/保留段
+//    (10/8、172.16/12、192.168/16、169.254、0.0.0.0、CGNAT、ULA、链路本地)与单段别名不受影响;
+//    缺省(未设/≠'1')行为与旧版逐字节一致。env 自守: try/finally 还原 — 本文件此前无 env 用例,
+//    防用例间串染(validateStartRequest 调用点现读 env)。
+const KNOB = 'P2P_START_POLICY_ALLOW_LOOPBACK'
+const withKnob = (value, fn) => {
+  const saved = process.env[KNOB]
+  if (value === undefined) delete process.env[KNOB]
+  else process.env[KNOB] = value
+  try { return fn() } finally {
+    if (saved === undefined) delete process.env[KNOB]
+    else process.env[KNOB] = saved
+  }
+}
+
+test('validateStartRequest: 默认 off(未设 env) 环回 target 与 scope 全拒(旋钮关闭基线)', () => {
+  withKnob(undefined, () => {
+    for (const t of ['localhost', '127.0.0.1', 'http://127.0.0.1:8080', 'https://[::1]:3000']) {
+      const v = validateStartRequest({ target: t })
+      assert.equal(v.ok, false, `${t} 默认应被拒绝`)
+    }
+    for (const scope of ['localhost', '127.0.0.1', '::1', '127.0.0.0/8']) {
+      const v = validateStartRequest({ target: 'demo-src.example.com', scope })
+      assert.equal(v.ok, false, `scope "${scope}" 默认应被拒`)
+    }
+  })
+})
+
+test('validateStartRequest: =1 时 target 环回豁免(localhost/裸 IP/scheme 形态/[::1] 双重豁免)', () => {
+  withKnob('1', () => {
+    for (const t of ['localhost', '127.0.0.1', 'http://127.0.0.1:8080', 'https://[::1]:3000']) {
+      const v = validateStartRequest({ target: t })
+      assert.equal(v.ok, true, `${t} 旋钮开启应放行`)
+    }
+    // 正路用例断返回字段值
+    const v = validateStartRequest({ target: 'http://127.0.0.1:8080', instances: 2 })
+    assert.equal(v.ok, true)
+    assert.equal(v.host, '127.0.0.1')
+    assert.equal(v.target, 'http://127.0.0.1:8080')
+    assert.equal(v.instances, 2)
+  })
+})
+
+test('validateStartRequest: =1 时 scope 环回条目双重豁免(逐条目纯环回放行, 与公网条目混排仍可)', () => {
+  withKnob('1', () => {
+    for (const scope of ['localhost', '127.0.0.1', '::1', '127.0.0.0/8', 'demo-src.example.com,localhost,127.0.0.1']) {
+      const v = validateStartRequest({ target: 'demo-src.example.com', scope })
+      assert.equal(v.ok, true, `scope "${scope}" 旋钮开启应放行`)
+    }
+    const v = validateStartRequest({ target: 'demo-src.example.com', scope: 'demo-src.example.com,localhost,127.0.0.1' })
+    assert.equal(v.ok, true)
+    assert.ok(v.scope.includes('localhost') && v.scope.includes('127.0.0.1'), '环回条目原样入库')
+  })
+})
+
+test('validateStartRequest: =1 只豁免本机环回 — 其余私有/保留段与单段别名 target 仍拒', () => {
+  withKnob('1', () => {
+    for (const t of ['10.0.0.5', '192.168.1.10', '172.16.0.9', '169.254.169.254', '0.0.0.0', '100.64.0.1', 'fd00::1', 'kali-box']) {
+      const v = validateStartRequest({ target: t })
+      assert.equal(v.ok, false, `${t} 非本机环回, 旋钮开启仍应拒绝`)
+    }
+  })
+})
+
+test('validateStartRequest: =1 只豁免本机环回 — scope 非环回禁入条目仍拒(169.254/部分覆盖 CIDR/ULA 等)', () => {
+  withKnob('1', () => {
+    for (const scope of ['10.0.0.5', '192.168.1.10', '169.254.169.254', '0.0.0.0', '0.0.0.0/1', '128.0.0.0/1',
+      '10.0.0.0/8', '172.16.0.0/12', '192.168.1.0/24', '100.64.0.0/10', 'fd00::1', 'fe80::1',
+      '::ffff:10.0.0.5', 'kali-box', 'demo-src.example.com,169.254.169.254']) {
+      const v = validateStartRequest({ target: 'demo-src.example.com', scope })
+      assert.equal(v.ok, false, `scope "${scope}" 非纯环回, 旋钮开启仍应拒`)
+      assert.match(v.error, /scope 条目/, `${scope} 错误语应指出具体条目`)
+    }
+  })
+})
