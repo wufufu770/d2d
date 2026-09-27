@@ -38,7 +38,7 @@
 
 | d2d 机制 | 面板呈现 |
 |---|---|
-| 七态 FSM（candidate→triaged→verified→isolated→reported→accepted→rejected，actor+reason 必填） | 4 宏观列看板 + 管线步进器 + **转移审计时间线**（last_transition 直接消费） |
+| 八态 FSM（candidate→triaged→verified→isolated→reported→accepted→rejected→needs-scope，actor+reason 必填） | 4 宏观列看板 + 管线步进器 + **转移审计时间线**（last_transition 直接消费） |
 | 五角色（discovery/deep/creative 产出 + verify/study 服务） | 角色泳道双色系（产出彩色 / 服务中性） |
 | per-role 模型主备 + 配额感知 failover（model-usage.jsonl） | **fleet 模型矩阵卡** + 配额卡（failover 事件专行） |
 | 75min × 3 attempts + gapHints 回填 | engagement 卡 attempt 段 + **gapHints 卡** |
@@ -60,7 +60,7 @@
 | engagement | 走多远了 | 厚（大数字+attempt 回合刻度） | engagement 节点 + attempts |
 | fleet 模型矩阵 | 谁在用哪个模型 | 中（每角色主备一行） | model-policies + failover 事件 |
 | 配额 | 还剩多少弹药 | 中（每模型一条 bar） | model-usage.jsonl 聚合 |
-| findings 漏斗 | 管线卡在哪 | 中（七态计数条形） | finding 计数聚合 |
+| findings 漏斗 | 管线卡在哪 | 中（八态计数条形） | finding 计数聚合 |
 | workers | 谁活着在干嘛 | 薄（状态点+id+一行任务+时长） | AgentIdentity 心跳 |
 | gapHints | 下轮补什么 | 薄（≤3 行） | gapHints 队列 |
 
@@ -78,8 +78,8 @@
 ### 4.3 engagement 卡
 - 覆盖度大数字（唯一 title 级元素）+ attempt 回合刻度条：每刻度=1 finding，悬停出该 attempt 摘要（蓝鲸模式），进行中 attempt 高亮
 
-### 4.4 findings 七态看板
-- **宏观 4 列**：活跃（candidate+triaged）/ 已验证（verified+isolated）/ 已交付（reported+accepted）/ 已驳回（rejected）——窄面板放不下 7 列，rejected 列常年空置
+### 4.4 findings 八态看板
+- **宏观 4 列**：活跃（candidate+triaged）/ 已验证（verified+isolated）/ 已交付（reported+accepted）/ 已驳回（rejected）——窄面板放不下 8 列，rejected 列常年空置
 - 卡上精确态用 mono 小徽章（candidate/triaged/…）+ severity 边条 + CVSS 数值
 - 顶部管线步进器（6 主态 + 驳回虚线分支），当前态高亮
 - **抽屉**：标题/状态徽章/severity 胶囊/CVSS/置信（ExperienceWeight prior 只读）；**转移审计时间线**（每行 = 时间 + 态 + actor + reason，消费 last_transition）；证据摘要；复现命令；时间线（ts→verified_at）；动作区（复制向量/复现命令/打开证据目录→openTab 深链/查看 SRC 报告[reported+accepted 态]）
@@ -110,7 +110,7 @@
 
 ## 5. 数据契约（host 半代理）
 
-- `GET /d2d/api/snapshot`：**一条聚合响应** = engagement(active+attempts+gapHints 计数) + agents(五角色心跳) + signals tail(20) + findings 计数(七态) + fleet(每角色模型主备) + `now`
+- `GET /d2d/api/snapshot`：**一条聚合响应** = engagement(active+attempts+gapHints 计数) + agents(五角色心跳) + signals tail(20) + findings 计数(八态) + fleet(每角色模型主备) + `now`
 - `GET /d2d/api/trajectory?worker=<id>`：鱼骨事件流（P3）
 - `POST /d2d/api/start` `{target, scope?, instances?, objective?}`：engagement 启动 API（0906 图队列）— 校验后写 `status='requested'` 节点，web 宿主调度器 ≤15s 采纳（adopt 置 active + 认领租约）；仅 http/https 公网域名（环回/私有/保留段拒绝，政策见 `start-policy.mjs`）；已有 active/requested → 409
 - `POST /d2d/api/stop`：对 active engagement 置 `cancel='true'` 令牌 — 调度器栅栏自停（P0 取消流程），无 active → 409
@@ -185,7 +185,7 @@
 │ │ 活跃12 已验5 交2│ │ —             │ │ 活跃0  已验1 交0│ │               │  │
 │ │ 性价比 6.0/10万 │ │ —             │ │ 1.2/10万      │ │               │  │
 │ └────────────────┘ └────────────────┘ └───────────────┘ └───────────────┘  │
-│ ┌─选中项目七态漏斗(大)───────────┐ ┌─覆盖 M/N ──────┐ ┌─性价比·总消耗───────┐  │
+│ ┌─选中项目八态漏斗(大)───────────┐ ┌─覆盖 M/N ──────┐ ┌─性价比·总消耗───────┐  │
 │ │ candidate ████████ 12        │ │ 34/120 端点     │ │ 6.0 findings/10万  │  │
 │ │ triaged   ███ 3              │ │ 28%            │ │ 2.0 triaged/10万   │  │
 │ │ verified  ██ 5 …             │ │ 缺口: checkout  │ │ 输入 12.3万 tok    │  │
@@ -270,7 +270,7 @@
 
 | 端点/字段 | 说明 |
 |---|---|
-| coverage 表（**新增节点** `CoverageCell`） | 属性：`{eng, main, sub, state('tested-hit'|'tested-miss'|'na'|'budget-stop'), votes, evidence_digest, updated_at, by}`；写门走 graphd `/write/coverage-cell`（eng 必须匹配 active engagement，枚举外 state 400，与七态门同风格）。归格兜底：无 coverage 行时由 finding `category` 首段归格推 'tested-hit' |
+| coverage 表（**新增节点** `CoverageCell`） | 属性：`{eng, main, sub, state('tested-hit'|'tested-miss'|'na'|'budget-stop'), votes, evidence_digest, updated_at, by}`；写门走 graphd `/write/coverage-cell`（eng 必须匹配 active engagement，枚举外 state 400，与八态门同风格）。归格兜底：无 coverage 行时由 finding `category` 首段归格推 'tested-hit' |
 | `GET /d2d-matrix/matrix?eng=` | **新增**：`MATCH (c:CoverageCell) WHERE c.eng=$eng RETURN c.main,c.sub,c.state,c.votes,c.updated_at` ∪ `MATCH (f:Finding) WHERE f.eng=$eng RETURN f.category AS cat, count(f) AS n`（两查询 host 合并成 `{main:[{sub, state, findings}]}` 树一次下发） |
 | `GET /d2d-matrix/taxonomy` | 13 主类 × 子项清单（`domain/categories.mjs` 导出，前端不内嵌分类学） |
 | `POST /d2d-matrix/dispatch {main, sub}` | **新增**：双击派单。host 校验格子与分类学合法 → 对当前选中 engagement 写任务块（`/write/signal` `type='matrix-dispatch'`，evidence 带 `main/sub/brief_digest`），下一轮 discovery/deep 取信号即消费；当前无 active engagement → 409 |

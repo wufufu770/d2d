@@ -1345,7 +1345,7 @@ class Handler(BaseHTTPRequestHandler):
                                     **({"hypothesis_to_confirmed_ref": _ref_fnd} if _ref_fnd else {}),
                                     **({"utility_effective": _util_eff} if _util_eff is not None else {})})
 
-        # R3: Finding 七态状态机转换（host 专属；worker 的 verified 结论仍须经验证器环独立重放背书）
+        # R3: Finding 八态状态机转换（host 专属；worker 的 verified 结论仍须经验证器环独立重放背书）
         # #73 token 归属复核: 本端点已 host-only —— _auth("host") 只接受与 HOST_TOKEN 的恒等
         # 比较, worker token 无法通过(403), 无需改动。/query 维持 worker 级(见下方统一 _auth("worker"))。
         if self.path == "/write/transition":
@@ -1364,7 +1364,7 @@ class Handler(BaseHTTPRequestHandler):
                     cur = str(r.get_next()[0] or "candidate")
                     ok, err, traj = transition_gate(cur, to, req.get("actor"), req.get("reason"))
                     if not ok:
-                        # #73: 非法迁移审计(七态机拒绝动作可追溯: cur/to/actor)
+                        # #73: 非法迁移审计(八态机拒绝动作可追溯: cur/to/actor)
                         _audit_event("transition-illegal",
                                      {"id": fid, "cur": cur, "to": to,
                                       "actor": str(req.get("actor") or ""), "err": err})
@@ -1383,7 +1383,7 @@ class Handler(BaseHTTPRequestHandler):
                             parameters={"id": fid, "to": to, "traj": traj_s})
                     # 3E 报告门: reported 态可选携带 report_status(report.mjs 统一过门的报告状态
                     # 标记, 如 complete/incomplete/missing_evidence) → 落图供面板/复核读。
-                    # 现有七态机 transition_gate(actor/reason)语义零改动 — 仅扩展可选参数;
+                    # 现有八态机 transition_gate(actor/reason)语义零改动 — 仅扩展可选参数;
                     # 缺列/写失败降级 stderr 不阻塞转换(schema.py 已三处同步 + SCHEMA_DEGRADED 兜底)。
                     if to == "reported":
                         _rs = str(req.get("report_status") or "").strip()[:200]
