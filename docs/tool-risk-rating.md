@@ -81,3 +81,16 @@
 - 两个 cordis.patch.yml 勿混：`~/.dsh/profiles/headless/cordis.patch.yml`（宿主部署稿，70 行；`:58-64` = sandbox=danger-full-access + approval=never 成对切换；`:13-21` 为 MiniMax 模型配置）≠ `@deepseek-ai/dsh-headless/cordis.patch.yml`（包实装补丁，DSH_TOOLS_MODE 旋钮 `:16`、code-runtime insert `:18-21`）。grep 全部 `~/.dsh/profiles/**/*.yml` 无 DSH_TOOLS_MODE/code-runtime。
 - p2p_start 依据勘误：初稿误写『杀全部 worker』（实为 p2p_stop 行为，`index.js:95-96`『停止全部渗透 worker 并冻结当前 engagement』）；p2p_start（`index.js:70`）为启动 engagement。评级结论（高/特殊档）不受影响。
 - 未能在本轮定位到行级锚、按审计原文收录（不加锚）：宿主层『公网 HTTP(S)+地址 pinning』注释（审计自述未逐行验证）、pwsh 非 win32 禁用守卫行。
+
+## 缺口③情况C 补账本（T0-C 批，2026-09-27）
+
+> 口径：只追加不改写。上表 41 行评级与「门覆盖现状」列为本批前的静态核验原值；本节记载缺口③中情况 C 的账本已落地。
+
+- **范围**：缺口③（41 工具中只有 bash 过 checkBash 链；定义实体 docs/gate-coverage-gaps.md:14，本文件交叉引用行 :75、评级表本体 :11/:18-58，subagent 行=:21）中的**情况 C**——审计实证 worker 进程内 spawn 的宿主子代理结构性不进 d2d 容量账本（d2d 计数点全部位于 runWorker 内部，只认调度器自派 worker；scheduler.js:752/:716/:749 注册/删除、dispatching :264/:268、_verifyLive :753/:717/:750）。
+- **实现**：`plugin/pentest-dsh/scheduler/subagent-cap.mjs`（纯函数判定核心 + 进程内账本单例）+ 两处既有文件最小接线（`index.js` 组合层 / `scheduler/gates.mjs`）。
+- **工具路径计数**（上表 #4/#5/#6/#7：subagent / subagent_fork / workflow / ralph）：经宿主 spawn 事件 hook（`dsh-subagent/lib/index.js:210` `subagent/start` / `:199` `subagent/end`，identity.runId 唯一、start/end 严格成对，创建失败无边=不计）在 index.js 组合层挂计数——**只计数不拒绝**（拒绝须把 subagent 塞进 GATED_TOOLS/adapters 门链=禁区，未做；超发留 runLog `subagent-cap-breach` 轨迹）。这 4 行的「无门（横向扩展面）」自此补上**账本观测面**；风险等级评级本身不变。
+- **bash 嵌套路径**（worker 继承父 env + 凭据 symlink，实证 adapter-dsh.mjs:199/:148，会话内 `dsh --profile headless <task>` 可拉起第二个宿主）：index.js 门组合层新增嵌套 dsh 调用判定（classifyNestedDsh，**checkBash 契约本体零改动**——规则加在组合层），账本满 → deny 回执（硬规则不随 P2P_APPROVAL_MODE 灰度降级；行为矩阵见 subagent-cap.mjs 头注与 commit body）。
+- **共享硬顶**：live(子代理) + workers + dispatching < MAX_AGENTS + CAP_VERIFY + 2 —— 与 `domain/gates.mjs:97-101` canSpawnDualSign 总量闸同式（含 +2 松弛，较双签预述多一项松弛已在审计中更正）；MAX_AGENTS/CAP_VERIFY 读 env 与 `scheduler.js:75/:77` 同源同式。双签派发（gates.mjs applyVerifyResults）与 respin 处**并列容量判定**——既有 dual-sign 语义零变化（canSpawnDualSign 判定式/入参逐字未动，账本零计数时并列门恒真=行为逐字节等价）。
+- **开关与持久化**：`P2P_SUBAGENT_CAP=off` 整体旁路（计数/判定/bash 规则全停=接入前行为）；`P2P_SUBAGENT_CAP_PERSIST=1` 可选 D2D_DATA_DIR 子树切片合计（跨进程，缺省关）。进程生命周期内计数为主，重启清零——子代理生命周期短，重启即无孤儿，清零是保守方向（只可能暂时多放行、不会幽灵占坑）。
+- **未覆盖残差（如实登记）**：①工具路径无拒绝（须动禁区，未做）；②backgrounded 嵌套 dsh 由占坑 TTL 全额持有（`P2P_SUBAGENT_RESERVATION_TTL_MS`，默认 20min）——提前退出多记、伪装前台少记，双向有界（记账面非对抗面）；③`sudo -u <user> dsh` 类带位置参数的包装命令漏判；④跨进程合计依赖可选持久化，缺省下调度器进程只见本进程账目（in-process 模式 P2P_INPROCESS=1 下账目天然同进程全可见）。
+- **回归**：`test/subagent-cap.test.mjs` 49 例（含 canSpawnDualSign 现值零变化锚 + classifyNestedDsh 正反例 26 例）；全量套件 `npm test` 1314 passing / fail 0（含新增 49 例）。
