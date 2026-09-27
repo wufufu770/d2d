@@ -747,8 +747,28 @@ class Handler(BaseHTTPRequestHandler):
                         _boundary = str(req.get("boundary") or "").strip().lower()
                         if _boundary not in ("outer", "inner", "cross"):
                             _boundary = ""
+                        # T1-4-2: gate_anchor 门禁结构化锚(可选字段, schema 权威定义
+                        # docs/gate-anchor-schema.md)。校验语义(拍板三条, 见文档 §3):
+                        # ①空/缺 → 列落 ''(DEFAULT 同语义, 存量写入零变化);
+                        # ②非空 → 须为 ≤8192 字符的合法 JSON object 且顶层含 gate_d1/gate_v 键之一,
+                        #   任一不满足即 400(fail 防规避: 锚是调度器确定性消费的数据, 残缺锚比无锚
+                        #   更危险 — 刻意不做 surface/boundary 式"枚举外置空"软降级); 长度钳在
+                        #   parse 之前(防超大 JSON 拖慢解析)。错误码沿现有惯例 {"ok":false,"error":…}。
+                        # ③合法 → 原文透传入库(参数绑定 $ga, 服务端不派生不改写; denylist 红线
+                        #   扫描已在上游对整包 req 生效, 锚内容无豁免); /query 读侧零改动(列随行返回)。
+                        _ga = str(req.get("gate_anchor") or "").strip()
+                        if _ga:
+                            if len(_ga) > 8192:
+                                return self._send(400, {"ok": False, "error": "gate_anchor too long (must be <= 8192 chars)"})
+                            try:
+                                _ga_obj = json.loads(_ga)
+                            except Exception as e:
+                                return self._send(400, {"ok": False, "error": f"invalid gate_anchor (must be JSON): {str(e)[:80]}"})
+                            if not isinstance(_ga_obj, dict) or not ("gate_d1" in _ga_obj or "gate_v" in _ga_obj):
+                                return self._send(400, {"ok": False, "error": "gate_anchor must be a JSON object with a gate_d1 or gate_v key"})
                         conn.execute(
                             "CREATE (s:Signal_ {id:$id, type:$t, weight:$w, status:$st, evidence:$ev, ts:$ts, ring:$ring, eng:$eng, surface:$su, boundary:$bo, "
+                            "gate_anchor:$ga, "
                             "content_hash:$ch, source_hash:$sh, evidence_ref:$eref})",
                             parameters={"id": _sid,
                                         "t": str(req.get("type") or "unknown"),
@@ -760,6 +780,7 @@ class Handler(BaseHTTPRequestHandler):
                                         "eng": _eng,
                                         "su": _surface,
                                         "bo": _boundary,
+                                        "ga": _ga,
                                         "ch": _ch, "sh": _sh, "eref": _eref})
                         # #5: 内联 endpoint_url — graphd 代写 Endpoint 节点(缺则建) + AT 边,
                         # N2 规则(Signal-[:AT]->Endpoint)由此闭环(worker /query 只读无法自建边)。

@@ -1447,7 +1447,8 @@ def _3b_old_db_conn(tmp_path, drop_col="", drop_from="Finding"):
                 "replay_matrix STRING DEFAULT '', related_to STRING DEFAULT ''")
     s_common = ("id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', "
                 "evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', "
-                "verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT ''")
+                "verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', "
+                "gate_anchor STRING DEFAULT ''")  # T1-4-2: gate_anchor 入关键列清单后随 verify_tries/surface 同款补入(否则降级测试"Signal_ 零误报"断言被真缺列击穿)
     _3b_cols = ("content_hash STRING DEFAULT ''", "source_hash STRING DEFAULT ''",
                 "evidence_ref STRING DEFAULT ''")
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
