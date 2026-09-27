@@ -9,6 +9,7 @@ graphd/kuzu_db*
 graphd/graphd.log
 *.log
 *.jsonl
+!tests/gate-failures/*.jsonl
 nohup.out
 __pycache__/
 checkpoints/
