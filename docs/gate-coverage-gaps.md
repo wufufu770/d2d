@@ -31,3 +31,18 @@
 - 主缺口 ③ 的机制前提（事件层对全部工具派发、listener 自过滤可扩展）已由 docs/routing-integration-points.md 锚定；但审批两态约束（附录 gap 2/3）不解决，扩展后仍只有 deny/放行。
 - 次级 gap 1（risk 字段被丢）是『把档位表外置进 tool-policy 配置』路线的直接阻塞项——档位表宜按 docs/false-positive-schema.md 同款外置热载表形态独立成表，而非塞进 parseToolPolicyCfg。
 - 附录 gap 7 与 docs/tier-depth-mapping.md 的档位词表对齐后即可修复（审计行补 risk/tier 字段）。
+
+## T1-3-2 4-3c 甲方案：call-site 语义决策记录（6 处不可修点，只决策零改动）
+
+> 来源：T1-3-2 call-site 重钉审计（12 处，era→现行；主漂移=其中 4 处已被 0913/0917 批次修复）。可修 6 处中：index.js 镜像读侧凭据收敛已按『行为等价止损线』实施；**briefs.mjs 两处（:63/:64 教学查询 eng 谓词）曾实施后经白名单裁定越界（白名单外改动既有文件）、已 git checkout 撤销（git diff vs HEAD=0），本批维持 HEAD 现状，待重新归属批次实施**；planner/loop×2/starmap 4 处经核实已修复，零改动。以下 6 处按审计建议保留现状，归档语义依据。
+
+| # | 位置 | 决策 | 语义依据 |
+|---|---|---|---|
+| 7 | scheduler.js:378 `creditRows`（ExperienceWeight `card:` 战果回流，注入 runWorker 模型简报知识检索得分贝叶斯加权） | **保留全局，不补 eng** | 审计重钉所指『index.js 模型运行时生成』在现行 index.js 无独立实锚（q() 仅 4 处：p2p_graph/p2p_eng resume/p2p_eng stop/burp q 透传），最贴合同描述即本处。知识卡跨 eng 共享是文档化设计（经验先验全局，planner.js:9 同口径自证）；host 侧调度器服务消费，甲方案后模型直接读图已受 worker_query_allowed 约束，简报生成是 host 侧行为不受影响 |
+| 8 | digest.mjs:23（era:23 全局统计段查询） | **无动作** | 0909 修复(3) 已给全部段查询加条件 eng（:13-15 engClause/engAnd/engParams，:19-32 逐段），era 行号即现行 :23 `MATCH (e:Endpoint)${engClause('e')}`；engName 空时保持原查询是 :12 文档化回退（无活跃 engagement 的裸调用） |
+| 9 | experience.mjs:208 `harvest()` succ（CONFIRMS→Signal_ 全图 LIMIT 20） | **保留全局** | 消费方 = host 侧 /pentest-harvest（index.js sched.harvest()）经验沉淀服务；经验先验跨 eng 共享为文档化设计（同 #7），按 eng 切分会把经验库坍缩成每项目孤岛 |
+| 10 | experience.mjs:215 `confirmed`（:214 `fails` 同形态） | **保留全局** | 同 #9：succ/fails/confirmed 三源对照判定经验 wins/fails，必须同口径全图，单源切 eng 会产生 succ/confirmed 判定错位 |
+| 11 | state.mjs:96 `engagementsSummary()` byEng | **保留跨 eng（功能本体）** | `RETURN f.eng AS eng, ... count(f)` 本身按 eng GROUP，跨 eng 是 W5 多项目总览的功能本体（p2p_status/面板同源，host 侧消费）；加 WHERE f.eng 反而使总览退化为单项目视图 |
+| 12 | scheduler.js:438 `nodeCount()`（:433-442 nodesBefore） | **保留原样（禁区，零改动）** | 实锚语义与 ask 标注（『面板漏斗』）不符：这是 R4c 零写入防线派发前快照（Finding/Signal_/Endpoint/Hypothesis 四表全图计数，终态比对判『零写入』），host 侧调度器合规检查消费。只数本 eng 会漏判零写（worker 把战果写到别家 eng 也是零写入失败面）；跨 eng 计数是语义本体 |
+
+**镜像收敛附带说明（可修点 6 之决策细节）**：index.js p2p_graph 动态 Cypher 无法静态内联 f.eng 谓词，甲方案实施为读侧凭据收敛——镜像改持 worker token 直连 /query，graphd `worker_query_allowed` 的跨 eng 全表扫禁（gd/gates.py WORKER_FULLSCAN_RE）成为权威 eng 隔离；host 会话其余路径（sched.q：合规快照/面板漏斗/经验库写/burp q 透传）保留 host token 不变。凭据全部缺失时不回退 host token（401 fail-closed，不静默重开跨 eng 读面）。
