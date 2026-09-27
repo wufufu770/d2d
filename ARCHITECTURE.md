@@ -58,6 +58,7 @@ frozen(存量待迁移) / rejected(红线越权永久隔离)
 
 - **Gate-D1** 侦察基线（七项齐才派深环）／**Gate-V** 验证（对照三件套+确定性信号锚）／**Gate-R** 报告（覆盖 M/N 算术对账+未收口意图拦终版）／**Gate-P** 派单四字段（任务标识/授权边界/唯一子目标/成功标准）
 - 红线三层：scope `!` 排除 → bash 门(checkBash 链) → graphd 写门；判定落 gate-log/enforce-log 审计
+- Gate-D1/Gate-V 另接受**结构化锚**（`Signal_.gate_anchor` JSON 列，schema 见 `docs/gate-anchor-schema.md`）：结构化优先、散文回退、残缺锚 fail 防规避；拦截判定采集沉门禁失败样本库（运行时 sink `$D2D_DATA_DIR/gate-failures/` 绝不写仓库，curated 种子在 `tests/gate-failures/` 供回归回放）
 
 ## 7. 知识脑（自进化）
 
