@@ -9,7 +9,12 @@ from datetime import datetime, timezone
 SCHEMA = [
     "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, PRIMARY KEY(name))",
     "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', authorized BOOL DEFAULT false, PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))",
+    # T1-4-2(门禁结构化锚): gate_anchor — Gate-D1 画像信号(protection-profile)与 Gate-V
+    # verify-result 信号共用的可选结构化锚列(列内存 JSON 串, schema 权威定义
+    # docs/gate-anchor-schema.md; 写入通道 /write/signal 可选字段非空须过校验, 消费接线留后续
+    # 批次 — repairability 同款先落列占位节奏)。三处同步(SCHEMA CREATE + 下方 ALTER +
+    # _CRITICAL_COLUMNS), 缺一即静默降级(SCHEMA_DEGRADED)。
+    "CREATE NODE TABLE IF NOT EXISTS Signal_(id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', gate_anchor STRING DEFAULT '', PRIMARY KEY(id))",
     # 命名区分(3B): Hypothesis.evidence_ref = 验证引用文本(存 signal/finding id);
     # Finding/Signal_ 的 evidence_ref 列(见下两行) = 证据文件指针 ev/<eng>/<node-id>.txt — 同名不同义。
     # 3.6-4 段 C: value_score 列(启发式价值分, 消费点认领时回写 — 下方 ALTER/_CRITICAL_COLUMNS
@@ -203,6 +208,15 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Finding ADD repairability STRING DEFAULT ''")
     except Exception:
         pass
+    # T1-4-2(门禁结构化锚): gate_anchor — Signal_ 可选结构化锚列(schema 权威定义
+    # docs/gate-anchor-schema.md; 两信号共用单列, 列内 JSON 串按 type 自判形态)。
+    # 三处同步(SCHEMA CREATE + 本 ALTER + _CRITICAL_COLUMNS), 缺一即静默降级(SCHEMA_DEGRADED);
+    # 幂等: 列已存在时 ALTER 抛错被吞(同 3B/3A/3E/repairability 先例);
+    # 列名为字面量枚举(同上, 防扫描器 SIDI 判定)。
+    try:
+        conn.execute("ALTER TABLE Signal_ ADD gate_anchor STRING DEFAULT ''")
+    except Exception:
+        pass
     # 3.5-1(经验回流 A): Experience 表旧库逐列补缺迁移 —— 新表场景: 已存在但列缺失的 Experience
     # (早期形态/半建表)由本段幂等 ALTER 补齐(列已存在时 ALTER 抛错被吞, 同 3B/3A/3E 先例)。
     # 列名为字面量枚举(无外部输入可拼入, 防扫描器 SIDI 判定); 类型/默认值与 SCHEMA CREATE 逐字
@@ -269,8 +283,10 @@ _CRITICAL_COLUMNS = {
     # 消费点 SET 被 scheduler .catch 静默吞, 修复性标注断链)
     "Finding": ("dual_sign", "eng", "replay_matrix", "related_to", "last_transition",
                 "content_hash", "source_hash", "evidence_ref", "report_status", "repairability"),
+    # T1-4-2: +gate_anchor(门禁结构化锚 — 三处同步之三; 缺列时写入/消费点 SET 被
+    # 调度器 .catch 静默吞, D1/V 锚断链)
     "Signal_": ("verify_tries", "eng", "surface", "boundary",
-                "content_hash", "source_hash", "evidence_ref"),
+                "content_hash", "source_hash", "evidence_ref", "gate_anchor"),
     "Endpoint": ("eng", "authorized"),
     # 3.6-4 段 C: +value_score(启发式价值分落列 — SCHEMA CREATE + 上方 ALTER + 此处三处同步;
     # 缺列时消费点回写 SET 被 scheduler .catch 静默吞, 价值分/aging 审计断链)
