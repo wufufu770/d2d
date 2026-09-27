@@ -89,3 +89,20 @@ Mimosa `scan-contract.md:46` 自认：*verdictEffect 保持 none，直到产品�
    钩子扩展为向账本/runLog 计数 — 二选一即可，保证每次 spawn 都有账可查。
 3. **CI 组合面防漂移**：CI 增加 `dsh --profile headless --dump-config` 与预期工具白名单的
    diff 检查，防 bundle 升级静默改变组合面（新工具悄悄进场而无审计）。
+
+## dsh web 会话与实例面 — 上游建议（T1.5 顺手入库，不做实施；源：T1.5 首次试运行 2026-09-27）
+
+1. **worker 会话标记与分组**：engagement 派生的 worker 会话 cwd 指向 artifacts 目录、
+   不匹配任何工作区（证据：`~/.dsh/sessions/--home-kali-.d2d-data-runs-eng-*-artifacts-*--`），
+   全部涌入「未分组」且可被误输入提示词。建议 UI 将 delegation/scheduler-owned 会话标记为
+   系统会话、按 engagement 分组并默认折叠。
+2. **webserver 单实例行为文档化**：`dsh web` 无单实例锁可多开，多实例共享
+   `~/.dsh/sessions` 与 storages 但内存态独立 → 工作区注册表视图分裂、端口抢夺
+   EADDRINUSE 崩溃循环（实锚 journalctl 2026-09-27 21:01/21:03）。建议文档化单实例锁
+   或写明多实例行为契约。
+3. **settings.yaml 支持 env 旋钮级配置**：P2P_* 旋钮只认进程环境变量，手动 `dsh web` 与
+   systemd 单元（`d2d-dsh-web.service`）行为漂移（T1.5 实测 distill-skip）。建议
+   settings.yaml 支持旋钮级 env 配置，两通道收敛到同一真源。
+4. **stale 实例版本漂移检测**：graphd/`dsh web` 长跑旧代码，升级后必须 restart 的纪律
+   靠注释记忆（0905 僵尸教训、T1.5 实测 1.2.0 挂 5 天）。建议 `d2d-sentinel` 增加
+   repo 版本 vs 进程版本漂移告警，漂移即提醒 restart。
