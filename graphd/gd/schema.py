@@ -102,7 +102,7 @@ def init_schema(conn):
         conn.execute("ALTER TABLE Task ADD eng STRING DEFAULT ''")
     except Exception:
         pass
-    # W1: 七态转换审计轨迹列(旧库迁移, 新库由 SCHEMA 直接建全)
+    # W1: 八态转换审计轨迹列(旧库迁移, 新库由 SCHEMA 直接建全)
     try:
         conn.execute("ALTER TABLE Finding ADD last_transition STRING DEFAULT ''")
     except Exception:

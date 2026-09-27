@@ -322,7 +322,7 @@ def test_canonical_passthrough_and_case():
     assert canonical_cat("") == ""
 
 
-# ---- R3 回归: 七态机 / config-advice 归类 ----
+# ---- R3 回归: 八态机 / config-advice 归类 ----
 from graphd.app import FINDING_STATES, FINDING_TRANSITIONS, CONFIG_ADVICE_RE
 
 
@@ -370,7 +370,7 @@ def test_r3_seven_state_transitions_source_of_truth():
     assert "candidate" in FINDING_TRANSITIONS["isolated"]  # 隔离可凭新证据重开
 
 
-# ---- W1: 七态转换审计门(纯函数真源) —— actor/reason 必填 + 轨迹完整 + 非法迁移仍拒 ----
+# ---- W1: 八态转换审计门(纯函数真源) —— actor/reason 必填 + 轨迹完整 + 非法迁移仍拒 ----
 def test_w1_transition_requires_actor():
     ok, err, _ = transition_gate("candidate", "verified", "", "verify replay")
     assert not ok and "actor" in err
@@ -1951,7 +1951,7 @@ def test_3e_transition_reported_writes_report_status(tmp_path, monkeypatch):
 
 def test_3e_transition_report_status_write_failure_degrades_not_blocks(tmp_path, monkeypatch, capsys):
     """拍板语义: report_status 写失败降级 stderr 不阻塞 — 缺列(模拟 ALTER 未生效的存量库)时
-    reported 转换必须仍 200(七态机主语句先行成功), 仅 stderr 留痕。"""
+    reported 转换必须仍 200(八态机主语句先行成功), 仅 stderr 留痕。"""
     base_url, conn, srv = _3e_spawn_server(tmp_path, monkeypatch)
     try:
         conn.execute("ALTER TABLE Finding DROP report_status")  # 模拟存量库缺列(写入路径必抛)

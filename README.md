@@ -43,7 +43,7 @@
 
 ## 特性
 
-- **七态 FSM** — candidate → triaged → verified → isolated → reported → accepted / rejected，结论由独立重放回写，agent 无法自封
+- **八态 FSM** — candidate → triaged → verified → isolated → reported → accepted / rejected，结论由独立重放回写，agent 无法自封
 - **双签复核** — critical/high 首签后净室派第二模型独立复核，一致才 verified，不一致留人工仲裁
 - **自动分诊** — 近重复检测（词集 Jaccard + trigram 语义余弦）、问题签名判据、链签名归并
 - **生命周期防护** — 图状态栅栏、调度器租约（CAS + TTL 心跳 + 硬杀孤儿自愈）、取消令牌（409 优雅停机）、额度全局熔断

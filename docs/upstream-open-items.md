@@ -78,3 +78,14 @@ Mimosa `scan-contract.md:46` 自认：*verdictEffect 保持 none，直到产品�
 
 - **工作流 harness 通道**：落 commit 不受门拦（本批修复即经该通道提交，本文件不含 git 操作）。
 - **人工会话**：`medium=ask`，遇到 medium 级 finding 需人工确认后方可继续。
+
+## dsh headless 组合面 — 宿主侧建议（T1-2 顺手入库，不做实施；源：T0-C 缺口③ 审计 2026-09-27）
+
+1. **文档化 headless 默认组合面**：profile 的 `cordis.yml=[]` 易误读为「无插件」，实际
+   dsh-base bundle 默认携带 subagent/workflow/ralph 全栈。建议在宿主侧文档标注
+   「空 cordis.yml ≠ 空工具面，以 `--dump-config` 实际输出为准」，防后续排障时误判工具来源。
+2. **堵未入账 spawn**：worker 侧 profile patch 对 `tool-subagent`/`tool-subagent-fork`/
+   `tool-workflow`/`tool-ralph` 加显式 disabled 行；或把 `index.js` 的 subagent/start
+   钩子扩展为向账本/runLog 计数 — 二选一即可，保证每次 spawn 都有账可查。
+3. **CI 组合面防漂移**：CI 增加 `dsh --profile headless --dump-config` 与预期工具白名单的
+   diff 检查，防 bundle 升级静默改变组合面（新工具悄悄进场而无审计）。

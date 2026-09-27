@@ -32,7 +32,7 @@ d2d 是跑在 dsh（DeepSeek agent 宿主）上的自主渗透测试插件：三
 
 接力依赖：asset-recon → info-recon 串行（asset 未产出时 info 用降级简报）；资产环收敛三条件（新增资产<3/新指纹=0/连续 2 轮无新增）。
 
-## 3. Finding 状态机（七态）
+## 3. Finding 状态机（八态）
 
 ```
 candidate ──auto-triage(去重/链归并/口径拒收)──▶ triaged ──Gate-V 过──▶ verified ──▶ fixed
