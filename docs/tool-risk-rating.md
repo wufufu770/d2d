@@ -8,28 +8,28 @@
   - **中**：有副作用但部分受约束（工具体内组合门 / 认证 / 额度 / 作用域受限）；
   - **低**：只读或会话内状态，无门、无公网出网；
   - **特殊档**：不在 headless worker 工具面（宿主专用管理面 / 平台禁用 / 默认不挂载），单列评级并注记，不参与 worker 侧分级路由，也不进入 4-2 档位词表（见 docs/tier-depth-mapping.md）。
-- **门覆盖现状**：该工具当前实际经过的运行时门（checkBash 链 / gateEgress 工具体内组合门 / 个体级软约束 / 无门）。headless 下宿主兜底已被置空（`~/.dsh/profiles/headless/cordis.patch.yml:58-64`：sandbox=danger-full-access 与 approval=never 成对钉死），故本列即各工具当前**唯一**的运行时约束面。
+- **门覆盖现状**：该工具当前实际经过的运行时门（checkBash 链 / d2d 门链（pre-execute 三态门：write/edit=gateWriteEdit，T0-C-2；本批 7 高危工具=classifyToolGate，T1-3-1）/ gateEgress 工具体内组合门 / 个体级软约束 / 无门）。headless 下宿主兜底已被置空（`~/.dsh/profiles/headless/cordis.patch.yml:58-64`：sandbox=danger-full-access 与 approval=never 成对钉死），故本列即各工具当前**唯一**的运行时约束面。
 - **出网通道**：`curl 类`（走 env 代理 + checkBash）/ `gateEgress 组合门`（体内 synthCurl 再注入 checkBash）/ `Node 原生`（进程内 fetch 直连，绕过 env 代理）/ `无公网出网` / `不适用（未挂载）`（未挂载工具无出网面可言）。两类结论见文末「出网通道两类」。
 
 ## 评级表（41 行，工具名逐个可 grep）
 
 | # | 工具 | 风险等级 | 门覆盖现状 | 出网通道 | 依据（4-2-0 审计锚点） |
 |---|---|---|---|---|---|
-| 1 | bash | 高 | checkBash 链（41 工具中唯一） | curl 类（env 代理 + checkBash） | 唯一过 checkBash 链：`adapter-dsh.mjs:15` wireGate → `scheduler.js:148-165` scope/denylist → tool-policy 限速熔断；deny-only 文本匹配，编码/变量/落盘执行等绕过面仍在；headless 下宿主兜底被置空（danger-full-access + approval=never），d2d 门是它唯一运行时门 |
-| 2 | web_fetch | 高 | 无门 | Node 原生（绕过 env 代理） | `dsh-tool-web/lib/index.js:737`（注册行；web_fetch 不在 dsh-tool-fs 包——该包全文 0 命中，原审计误标已复核修正，见文末复核注记）；Node 侧直连不吃 http_proxy env = 绕过 V-08 egress-gateway 注入路径；宿主层仅『公网 HTTP(S)+地址 pinning』注释且未逐行验证 |
-| 3 | web_search | 高 | 无门 | Node 原生（绕过 env 代理） | 注册行 `dsh-tool-web/lib/index.js:262`；API key env 处理在另一包：`dsh-web-search-deepseek/lib/index.js:243` `DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"` 直连（两锚勿混） |
-| 4 | subagent | 高 | 无门（横向扩展面） | 继承派生 agent 全工具面 | `dsh-tool-subagent/lib/index.js:398`（注册上下文）；派生 agent 继承全工具面 = 权限放大 |
-| 5 | subagent_fork | 高 | 无门（横向扩展面） | 继承派生 agent 全工具面 | `dsh-tool-subagent/lib/index.js:398`；派生 agent 继承全工具面 = 权限放大 |
-| 6 | workflow | 高 | 无门（多 agent 编排） | 编排派生面 | `dsh-tool-workflow/lib/index.js:144` 多 agent 编排 |
-| 7 | ralph | 高 | 无门（固定循环） | 循环执行面 | `dsh-tool-ralph/lib/index.js:301` 固定 64 轮循环 |
-| 8 | write | 中 | 无门 | 无公网出网 | `dsh-tool-fs/lib/index.js:597` 任意路径写，无门 |
-| 9 | edit | 中 | 无门 | 无公网出网 | `dsh-tool-fs/lib/index.js:742` 任意路径写，无门 |
+| 1 | bash | 高 | checkBash 链 + d2d 门链（pre-execute handler） | curl 类（env 代理 + checkBash） | 唯一过 checkBash 链：`adapter-dsh.mjs:15` wireGate → `scheduler.js:148-165` scope/denylist → tool-policy 限速熔断；deny-only 文本匹配，编码/变量/落盘执行等绕过面仍在；headless 下宿主兜底被置空（danger-full-access + approval=never），d2d 门是它唯一运行时门。『41 工具中唯一』自 T0-C-2/T1-3-1 起仅指 checkBash 链：write/edit 与本批 7 工具同过 pre-execute d2d 门链（checkBash 链本身仍唯 bash） |
+| 2 | web_fetch | 高 | d2d 工具门（classifyToolGate 三态：非 http/https scheme deny 硬规则/其余 ask 档；T1-3-1） | Node 原生（绕过 env 代理） | `dsh-tool-web/lib/index.js:737`（注册行；web_fetch 不在 dsh-tool-fs 包——该包全文 0 命中，原审计误标已复核修正，见文末复核注记）；Node 侧直连不吃 http_proxy env = 绕过 V-08 egress-gateway 注入路径；宿主层仅『公网 HTTP(S)+地址 pinning』注释且未逐行验证 |
+| 3 | web_search | 高 | d2d 工具门（ask 档；T1-3-1） | Node 原生（绕过 env 代理） | 注册行 `dsh-tool-web/lib/index.js:262`；API key env 处理在另一包：`dsh-web-search-deepseek/lib/index.js:243` `DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"` 直连（两锚勿混） |
+| 4 | subagent | 高 | d2d 工具门（ask 档，横向扩展面事前审批；T1-3-1）+ subagent-cap 账本观测面（T0-C，只计数不拒绝） | 继承派生 agent 全工具面 | `dsh-tool-subagent/lib/index.js:398`（注册上下文）；派生 agent 继承全工具面 = 权限放大 |
+| 5 | subagent_fork | 高 | d2d 工具门（ask 档；T1-3-1；非独立工具——fork 经同一 subagent 工具 args.provider='fork' 选路，门键 exec.name='subagent'）+ subagent-cap 账本观测面（T0-C） | 继承派生 agent 全工具面 | `dsh-tool-subagent/lib/index.js:398`；派生 agent 继承全工具面 = 权限放大 |
+| 6 | workflow | 高 | d2d 工具门（ask 档，多 agent 编排；T1-3-1）+ subagent-cap 账本观测面（T0-C） | 编排派生面 | `dsh-tool-workflow/lib/index.js:144` 多 agent 编排 |
+| 7 | ralph | 高 | d2d 工具门（ask 档，固定循环；T1-3-1）+ subagent-cap 账本观测面（T0-C） | 循环执行面 | `dsh-tool-ralph/lib/index.js:301` 固定 64 轮循环 |
+| 8 | write | 中 | d2d write/edit 门（gateWriteEdit 三态：deny 硬规则/ask 档/allow；T0-C-2，index.js gateWriteEdit） | 无公网出网 | `dsh-tool-fs/lib/index.js:597` 任意路径写，无门 |
+| 9 | edit | 中 | d2d write/edit 门（gateWriteEdit 三态；T0-C-2，index.js gateWriteEdit） | 无公网出网 | `dsh-tool-fs/lib/index.js:742` 任意路径写，无门 |
 | 10 | burp_repeater | 中 | gateEgress 工具体内组合门 | gateEgress 组合门（synthCurl 注入 checkBash） | 熔断 → synthCurl 注入 checkBash → 20 req/min 滑窗（`gate.mjs:18` `BURP_DEFAULT_RATE_PER_MIN = 20`）→ burp-audit.jsonl 审计，`tools/gate.mjs:59-86`——治理最好的出网面 |
 | 11 | burp_intruder | 中 | gateEgress 工具体内组合门 | gateEgress 组合门（synthCurl 注入 checkBash） | 同上：熔断 → synthCurl 注入 checkBash → 20 req/min 滑窗 → burp-audit.jsonl 审计，`tools/gate.mjs:59-86` |
 | 12 | job_kill | 中 | 无门 | 无公网出网 | `dsh-tool-jobs/lib/index.js:305` |
 | 13 | send_message | 中 | 无门 | 无公网出网 | dsh-tool-subagent-control 包，操控后台子 agent |
 | 14 | interrupt_agent | 中 | 无门 | 无公网出网 | dsh-tool-subagent-control 包，操控后台子 agent |
-| 15 | skill | 中 | 无门 | 无公网出网（指令注入面） | `dsh-tool-skill/lib/index.js:60`，技能文件=指令注入面 |
+| 15 | skill | 中 | d2d 工具门（ask 档，指令注入面；T1-3-1） | 无公网出网（指令注入面） | `dsh-tool-skill/lib/index.js:60`，技能文件=指令注入面 |
 | 16 | propose_direction | 中 | graphd worker 级认证 + 会话额度 3（`frontier.mjs:48` `FRONTIER_PROPOSAL_CAP = 3`） | Node 原生（graphd 写） | `tools/frontier.mjs:110`，graphd 写 + worker 级认证 + 会话额度 3 |
 | 17 | read | 低 | 无门（只读） | 无公网出网 | dsh-tool-fs |
 | 18 | read_image | 低 | 无门（只读） | 无公网出网 | dsh-tool-fs |
@@ -72,7 +72,7 @@
 - 本表驱动的 listener 扩展路径（改过滤 → 加档位表消费 → 接审批通道）见 docs/routing-integration-points.md。
 - docs/false-positive-schema.md 的 `routingSafe` 语义锚定本表档位，落点唯一：模式完整命中（判别式含内置 guard 全过）才允许把处置自动路由为低档（异步免批）；`routingSafe=false` 的命中（含账本归纳）与 guard 任一失败一律升高档（阻塞同步审批），误报模式维度无中档落点。
 - 特殊档 6 工具不在 headless worker 面，不参与 worker 侧分级路由；其评级（p2p_start/p2p_stop/p2p_eng 标高）仅作宿主侧风险记录。
-- 门覆盖现状列的完整缺口登记（write/edit 无门、Node 原生直连、仅 bash 过链）见 docs/gate-coverage-gaps.md 三条主缺口。
+- 门覆盖现状列的完整缺口登记（write/edit 无门、Node 原生直连、仅 bash 过链）见 docs/gate-coverage-gaps.md 三条主缺口（登记为 4-2 时点静态快照：write/edit 自 T0-C-2、本批 7 工具自 T1-3-1 起已有 d2d 门，见文末批记；job_kill/send_message/interrupt_agent 等仍无门）。
 
 ## 复核注记（4-2 撰写批实证）
 
@@ -94,3 +94,13 @@
 - **开关与持久化**：`P2P_SUBAGENT_CAP=off` 整体旁路（计数/判定/bash 规则全停=接入前行为）；`P2P_SUBAGENT_CAP_PERSIST=1` 可选 D2D_DATA_DIR 子树切片合计（跨进程，缺省关）。进程生命周期内计数为主，重启清零——子代理生命周期短，重启即无孤儿，清零是保守方向（只可能暂时多放行、不会幽灵占坑）。
 - **未覆盖残差（如实登记）**：①工具路径无拒绝（须动禁区，未做）；②backgrounded 嵌套 dsh 由占坑 TTL 全额持有（`P2P_SUBAGENT_RESERVATION_TTL_MS`，默认 20min）——提前退出多记、伪装前台少记，双向有界（记账面非对抗面）；③`sudo -u <user> dsh` 类带位置参数的包装命令漏判；④跨进程合计依赖可选持久化，缺省下调度器进程只见本进程账目（in-process 模式 P2P_INPROCESS=1 下账目天然同进程全可见）。
 - **回归**：`test/subagent-cap.test.mjs` 49 例（含 canSpawnDualSign 现值零变化锚 + classifyNestedDsh 正反例 26 例）；全量套件 `npm test` 1314 passing / fail 0（含新增 49 例）。
+
+## 缺口③门覆盖扩展批记（T1-3-1 批，2026-09-27）
+
+> 口径：只更正「门覆盖现状」事实列与交叉引用，不重写表；风险等级列与 :60 档位小计不变。
+
+- **范围**：缺口③残余（工具路径门覆盖）。本批把 `GATED_TOOLS`（`plugin/pentest-dsh/domain/write-gate.mjs`）从 {bash, write, edit} 扩为 10 名，追加 web_fetch / web_search / subagent / subagent_fork / workflow / ralph / skill（上表 #2-#7 与 #15）。三挂载点（`adapter-dsh.mjs` wireGate、`adapter-inprocess.mjs` 主会话 wireGate + worker 镜像 setup()）迭代同一集合，**adapter 零改动**自动扩展；事件层前提（dsh-tools `lib/index.js:3116` prepareExecution 对每次工具执行无条件 waterfall `tools/pre-execute`）已复核。
+- **实现**：新分类纯函数 `plugin/pentest-dsh/domain/tool-gate.mjs` classifyToolGate（三态 {allow}/{ask,reason}/{deny,reason}，与 4-4 handler 返回值同构）：web_fetch 非 http/https scheme=deny 硬规则（任何 P2P_APPROVAL_MODE 生效），其余全 ask（出网/横向扩展/编排/循环/指令注入面；拿不准一律 ask）。编排 `index.js` gateToolCall 与 gateWriteEdit 同构：off（P2P_APPROVAL_MODE 缺省）ask 降级 allow+runLog `tool-gate-ask-downgraded` 警告；queue/native 走既有 ask 通路（buildTicket/enqueueTicket + adapter resolveAskGate 零改动）。registerGate handler 新分支位于 write/edit 分支之后、bash 分支之前——bash/write/edit 分支逐字未动（bash→checkBash 链、write/edit→gateWriteEdit、本批 7 名→gateToolCall 三路分流互斥）。4-4 原语层（approvals.mjs/makeAskGateResolver/maybeAsk）只 import 复用零改动；scheduler.js/adapters/validator/subagent-cap 零触碰。
+- **off 矩阵（缺省=与扩展前行为一致）**：本批 7 工具扩展前不进门直接执行；扩展后 off 下 ask 档全部降级放行（null→adapter next()），行为不变，仅多 runLog 警告；唯一新增拒绝路径=web_fetch 显式非 http/https scheme deny 硬规则（不随灰度降级）。subagent-cap 事后计数与本门互补：门=事前审批，cap=事后账本（#4-#7 观测面保留）。
+- **仍未覆盖（如实）**：job_kill / send_message / interrupt_agent（上表 #12-#14）仍无门（本批未纳入）；deny/ask 分类为名面+参数面文本判定，不校验 URL 目标归属（scope 归属仍由 checkBash 链/egress-gateway 在 bash 路径承担）。
+- **回归**：`test/tool-gate.test.mjs` 14 例（集合精确断言/classifyToolGate 每工具三态正反例/gateToolCall off·queue·native 矩阵/三挂载点回归/index.js 接线静态锚）。

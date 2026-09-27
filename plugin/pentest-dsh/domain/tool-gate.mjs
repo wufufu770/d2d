@@ -1,0 +1,94 @@
+// domain/tool-gate.mjs — T1-3-1: 缺口③门覆盖扩展 —— 高危工具三态分类纯函数(零 IO)
+// 三态契约与 4-4 handler 返回值同构(与 domain/write-gate.mjs classifyWrite 同族):
+//   {kind:'allow'} | {kind:'ask',reason,matched,detail} | {kind:'deny',reason,matched,detail}
+// 灰度不进本模块: off(P2P_APPROVAL_MODE 缺省)模式 ask 降级 allow+runLog 警告在 index.js
+// gateToolCall 编排层做(T0-C-2 语义同款); deny 硬规则任何模式生效。
+//
+// 覆盖集合 TOOL_GATE_TOOLS(7 名, 已同步追加进 write-gate.mjs GATED_TOOLS —— 三挂载点迭代
+// 集合自动扩展, adapter 零改动; 参数 schema 均为宿主包实读锚):
+//   web_fetch      dsh-tool-web/lib/index.js:737   params: url:string required(:739-743)
+//   web_search     dsh-tool-web/lib/index.js:262   params: queries:array<string> required(:264-268)
+//   subagent       dsh-tool-subagent/lib/index.js:398(名=toolName, 缺省'subagent':373)
+//                  params: description:string required + prompt:string required(:401-411)
+//                  + provider/model/reasoning_effort/run_in_background optional(:412-431)
+//                  —— 无 task 字段, 审批摘要取 description
+//   subagent_fork  非独立工具(bundle 全文 'subagent_fork' 字面 0 命中): fork=
+//                  dsh-subagent-fork-in-process/lib/index.js:15 providerName 缺省'fork' +
+//                  :59-60 registerProvider, 经同一 subagent 工具 args.provider='fork' 选路
+//                  (该参 optional) —— 运行时分类/门实际只能键 exec.name==='subagent'; 名单
+//                  列它是审计口径完整性(防宿主未来挂出独立 fork 工具名时漏门)
+//   workflow       dsh-tool-workflow/lib/index.js:144(名=toolName)  params: script:string
+//                  required + meta:object required(:146-158)
+//   ralph          dsh-tool-ralph/lib/index.js:301  params: objective:string required +
+//                  maxRounds:number optional(:303-311)
+//   skill          dsh-tool-skill/lib/index.js:60   params: name required(:62-65)
+//
+// 分类拍板(审计结论):
+//   web_fetch — deny=显式非 http/https scheme(URL 可解析且 protocol 不属 http/https:
+//               file:/data:/ftp:/javascript: 等)——硬规则任何模式生效; ask=其余(http/https
+//               Node 原生出网面); 空/解析失败(拿不准)一律 ask(off 降级 allow, 不误伤)
+//   web_search — ask(出网检索)
+//   subagent / subagent_fork — ask(横向扩展面; 与 subagent-cap 事后计数互补: 门=事前审批,
+//               cap=事后账本)
+//   workflow / ralph — ask(多 agent 编排/固定循环)
+//   skill — ask(指令注入面, 与 write-gate hooks 配置 deny 同族)
+//   集合外工具 — {kind:'allow'}(挂载过滤 GATED_TOOLS 已分流: bash→checkBash 链、
+//               write/edit→gateWriteEdit, 均不归本分类管)
+//   防御兜底 — 集合内但未显式接住的名(理论不可达)→ ask(白名单语义, 拿不准一律 ask)
+
+/** 本批进门工具名(T1-3-1; GATED_TOOLS 中除 bash/write/edit 外的 7 名, 集合精确断言见测试) */
+export const TOOL_GATE_TOOLS = new Set(['web_fetch', 'web_search', 'subagent', 'subagent_fork', 'workflow', 'ralph', 'skill'])
+
+/** web_fetch scheme 硬规则白名单(审计拍板: 仅 http/https; 其余显式 scheme deny) */
+export const WEB_FETCH_SCHEMES = ['http', 'https']
+
+/** 有界摘要(空白折叠 + 截断; deny/ask 理由与审批单 command 共用, 百字节级不回显长文本) */
+function clip(v, n = 80) {
+  return String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n)
+}
+
+/** 三态判定(纯函数): deny 硬规则(web_fetch scheme)优先, 其余命中即 ask, 集合外恒 allow。
+ *  未知/缺失参数不猜: 一律 ask 兜底(off 模式降级 allow, 不误伤)。 */
+export function classifyToolGate(tool, args) {
+  const t = String(tool ?? '')
+  if (!TOOL_GATE_TOOLS.has(t)) return { kind: 'allow' }
+  const a = (args && typeof args === 'object') ? args : {}
+  if (t === 'web_fetch') {
+    const url = clip(a.url, 160)
+    let scheme = null
+    try { scheme = new URL(String(a.url ?? '').trim()).protocol.replace(/:$/, '') } catch { /* 解析失败=拿不准 → ask 兜底 */ }
+    if (scheme !== null && !WEB_FETCH_SCHEMES.includes(scheme)) {
+      return {
+        kind: 'deny', matched: 'web_fetch-scheme', detail: url,
+        reason: `⛔ d2d 工具门(web_fetch-scheme): 非 http/https scheme(${scheme}:)禁止出网: ${url}`,
+      }
+    }
+    return { kind: 'ask', matched: 'egress', detail: url, reason: `d2d 工具门待审批[egress]: web_fetch → ${url || '(url 缺失, 拿不准兜底)'}` }
+  }
+  if (t === 'web_search') {
+    const detail = clip(Array.isArray(a.queries) ? a.queries.map((q) => clip(q, 40)).join(' | ') : a.queries, 120)
+    return { kind: 'ask', matched: 'egress', detail, reason: `d2d 工具门待审批[egress]: web_search → ${detail || '(queries 缺失, 拿不准兜底)'}` }
+  }
+  if (t === 'subagent' || t === 'subagent_fork') {
+    // fork 非独立工具: args.provider='fork'(dsh-subagent-fork-in-process 选路)只在摘要里标注,
+    // 门判定与普通 subagent 同档(同一横向扩展面)
+    const fork = String(a.provider ?? '') === 'fork'
+    const detail = clip(a.description, 120)
+    return { kind: 'ask', matched: 'lateral', detail, reason: `d2d 工具门待审批[lateral]: ${t}${fork ? '(fork 路由)' : ''} → ${detail || '(description 缺失, 拿不准兜底)'}` }
+  }
+  if (t === 'workflow') {
+    const detail = clip(a.meta?.name, 120)
+    return { kind: 'ask', matched: 'orchestration', detail, reason: `d2d 工具门待审批[orchestration]: workflow(多 agent 编排) → ${detail || '(meta.name 缺失, 拿不准兜底)'}` }
+  }
+  if (t === 'ralph') {
+    const detail = clip(a.objective, 120)
+    const rounds = Number.isFinite(a.maxRounds) ? ` maxRounds=${a.maxRounds}` : ''
+    return { kind: 'ask', matched: 'orchestration', detail, reason: `d2d 工具门待审批[orchestration]: ralph(固定循环${rounds}) → ${detail || '(objective 缺失, 拿不准兜底)'}` }
+  }
+  if (t === 'skill') {
+    const detail = clip(a.name, 120)
+    return { kind: 'ask', matched: 'instruction-injection', detail, reason: `d2d 工具门待审批[instruction-injection]: skill → ${detail || '(name 缺失, 拿不准兜底)'}` }
+  }
+  // 防御兜底: 集合内但上方未显式接住(理论不可达 —— 白名单语义, 拿不准一律 ask)
+  return { kind: 'ask', matched: 'unclassified', detail: clip(t, 80), reason: `d2d 工具门待审批[unclassified]: ${clip(t, 80)}` }
+}
