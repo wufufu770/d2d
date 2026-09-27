@@ -2,10 +2,22 @@
 // 0906 engagement 启动 API 化(图队列: status='requested' → web 宿主调度器 ≤15s 采纳)。
 // 外露控制面 fail-closed: 仅 http/https 公网域名 — 环回/私有/保留段一律拒绝(本地靶场走
 // /pentest 聊天命令), 单段主机名(=本地别名)拒绝, instances 收敛 1..4, 文本字段截断。
+// 0928 环回旋钮: P2P_START_POLICY_ALLOW_LOOPBACK=1 仅豁免「本机环回」(localhost/.localhost/
+// 127/8、::1 — target 与 scope 逐条目双重豁免), 10/8、172.16/12、192.168/16、169.254(云元数据)、
+// 0.0.0.0、CGNAT、ULA/链路本地等其余私有/保留段与单段别名仍拒; 缺省(未设/≠1)行为逐字节不变。
 
 // 环回/私有/保留段: 127/8, 10/8, 172.16/12, 192.168/16, 169.254/16(link-local),
 // 0.0.0.0, 100.64/10(CGNAT), ::1, fc00::/7(ULA)
 const FORBIDDEN_HOST_RE = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.0\.0\.0|100\.6[4-9]\.|100\.7[01]\.|172\.(1[6-9]|2\d|3[01])\.|::1|f[cd][0-9a-f]{2}:)/i
+
+// 0928 环回旋钮判定: 「纯环回」白名单 — 剥 '[]'(URL hostname 对 IPv6 保留方括号, 实证
+// 'http://[::1]:3000' → hostname '[::1]')小写后比对。只豁免 localhost(+.localhost)/127/8/::1/
+// IPv4-mapped 点分形态; Node 把 '[::ffff:127.0.0.1]' 规范化成 '[::ffff:7f00:1]'(无点), 落在
+// 无点规则仍拒(fail-closed)。单段主机名('kali-box')非环回, 不豁免(留面板政策口径, 不属本旋钮)。
+function _isLoopbackHost(h) {
+  const s = String(h ?? '').replace(/^\[/, '').replace(/\]$/, '').toLowerCase()
+  return s === 'localhost' || s.endsWith('.localhost') || /^127\./.test(s) || s === '::1' || /^::ffff:127\./.test(s)
+}
 
 // ── C6(审计 0910): scope 逐条目与 target 同级 FORBIDDEN 校验 ──
 // 旧版 scope 只有 trim+截断, 攻击者可 POST scope:'0.0.0.0/0,localhost,169.254.169.254' 直接入图;
@@ -67,19 +79,38 @@ const _v6Forbidden = (h) => {
   return false
 }
 // 单个 scope 条目校验: 返回拒绝原因(字符串)或 null(通过)。`!` 前缀(排除清单语法)剥掉后同规校验。
-function _scopeEntryError(rawEntry) {
+// 0928 第二参 allowLoopback(缺省 false = 旧行为): '1' 旋钮下逐分支「纯环回」短路 —
+// localhost / IPv4 首段=127 / CIDR 区间完整 ⊆ 127/8 / '::1'; 其余私有/保留段与单段别名仍拒。
+// 原因串(:79/:81/:82)混装环回+私有+保留, 不能按原因串放行, 必须按纯环回再判(fail-closed)。
+function _scopeEntryError(rawEntry, allowLoopback = false) {
   let e = String(rawEntry ?? '').trim().toLowerCase()
   if (!e) return null
   if (e.startsWith('!')) e = e.slice(1).trim()
   if (!e) return null
-  if (e === 'localhost' || e.endsWith('.localhost')) return '环回地址'
+  if (e === 'localhost' || e.endsWith('.localhost')) return allowLoopback ? null : '环回地址'
   if (e.includes('/')) {
     if (e.includes(':')) return '暂不支持 IPv6 CIDR'
     if (_rangeOf(e) === null) return '非法 CIDR'
-    return _cidrOverlapsForbidden(e) ? 'CIDR 覆盖环回/私有/保留段' : null
+    if (_cidrOverlapsForbidden(e)) {
+      // 仅当条目区间完整 ⊆ 127.0.0.0/8 豁免 — '0.0.0.0/1'/'128.0.0.0/1' 等部分覆盖仍拒
+      if (allowLoopback) {
+        const r = _rangeOf(e)
+        const lb = _rangeOf('127.0.0.0/8')
+        if (r[0] >= lb[0] && r[1] <= lb[1]) return null
+      }
+      return 'CIDR 覆盖环回/私有/保留段'
+    }
+    return null
   }
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(e)) return _inForbiddenV4(e) ? '环回/私有/保留 IP' : (_ip4(e) === null ? '非法 IPv4' : null)
-  if (e.includes(':')) return _v6Forbidden(e) ? '环回/私有/链路本地 IPv6' : null
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(e)) {
+    if (_inForbiddenV4(e)) {
+      // 仅 /8 首段=127 豁免 — 10/8、192.168/16、169.254(云元数据)、0.0.0.0 等仍拒
+      if (allowLoopback && ((_ip4(e) >>> 24) === 127)) return null
+      return '环回/私有/保留 IP'
+    }
+    return _ip4(e) === null ? '非法 IPv4' : null
+  }
+  if (e.includes(':')) return _v6Forbidden(e) ? (allowLoopback && e === '::1' ? null : '环回/私有/链路本地 IPv6') : null
   if (e.includes('*') || e.includes('/') || e.includes(' ') || e.includes(':')) return '非法条目字符'
   if (!e.includes('.')) return '单段主机名(本地别名)'
   return null
@@ -93,13 +124,17 @@ export function validateStartRequest(body = {}) {
   try { u = new URL(withScheme) } catch { return { ok: false, error: 'target 不是合法 URL' } }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false, error: '仅允许 http/https' }
   const host = String(u.hostname ?? '').toLowerCase()
-  if (!host || !host.includes('.')) return { ok: false, error: `target 必须是含点分的公网域名/IP(得到 "${host || '空'}")` }
-  if (FORBIDDEN_HOST_RE.test(host)) return { ok: false, error: `拒绝环回/私有/保留地址: ${host} — 本地靶场请走 /pentest 聊天命令` }
+  // 0928 环回旋钮(默认 off): '1' 时对 target 双重豁免 — 无点规则与 FORBIDDEN 正则两处都要放
+  // ('localhost'/'[::1]' 实际落在无点规则, '127.0.0.1' 落在正则; 只豁免一处环回仍被另一处拦),
+  // 且仅豁免「纯环回」, 其余私有/保留段不受影响。
+  const allowLoopback = process.env.P2P_START_POLICY_ALLOW_LOOPBACK === '1'
+  if ((!host || !host.includes('.')) && !(allowLoopback && _isLoopbackHost(host))) return { ok: false, error: `target 必须是含点分的公网域名/IP(得到 "${host || '空'}")` }
+  if (FORBIDDEN_HOST_RE.test(host) && !(allowLoopback && _isLoopbackHost(host))) return { ok: false, error: `拒绝环回/私有/保留地址: ${host} — 本地靶场请走 /pentest 聊天命令` }
   const instances = Math.min(Math.max(Number.parseInt(String(body.instances ?? '2'), 10) || 2, 1), 4)
   // C6: 先截断再逐条校验(校验对象=入库字符串本身), 任一条目命中环回/私有/保留/链路本地/CGNAT 即整体拒绝
   const scope = String(body.scope ?? '').trim().slice(0, 2000)
   for (const entry of scope.split(',')) {
-    const why = _scopeEntryError(entry)
+    const why = _scopeEntryError(entry, allowLoopback)
     if (why) return { ok: false, error: `scope 条目 "${String(entry).trim().slice(0, 60)}" 被拒(${why}) — 环回/私有/保留/链路本地/CGNAT 不得进入授权范围` }
   }
   const objective = String(body.objective ?? '').trim().slice(0, 1200)
