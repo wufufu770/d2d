@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
-import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs, readCaps, writeCaps } from '../lib/host/snapshot.mjs'
+import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, computeConversion, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs, readCaps, writeCaps } from '../lib/host/snapshot.mjs'
 import { apply as applyHostRoutes } from '../lib/host/index.mjs'
 
 // fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应); params 透传给断言用断言器
@@ -23,6 +23,7 @@ function makeFake(t = {}) {
     if (cypher.includes('sum(CASE')) return t.coverage ?? [{ total: 0, covered: null }]
     if (cypher.includes('business_chain AS bc')) return t.gaps ?? []
     if (cypher.includes('h.digest AS digest')) return t.handoffs ?? []
+    if (cypher.includes('x.accepted_to_hypothesis_ref')) return t.frontier ?? [] // T2-1-2: Frontier 两 ref 列(按 $eng)
     if (cypher.includes('x.pattern AS pattern')) return t.experienceTail ?? []
     if (cypher.includes('count(e)')) return t.endpoints ?? [{ n: 0 }]
     if (cypher.includes('count(s)')) return t.signalsOpen ?? [{ n: 0 }]
@@ -638,4 +639,60 @@ test('writeCaps engConverge: 合法键写入, 其他 caps 写操作不丢该节,
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// ── T2-1-2: 转化率卡(看板 8.5-2) — computeConversion 纯函数 + buildSnapshot frontier 键 ──
+// 口径真源 = graphd/gd/gates.py:1003-1028 frontier_conversion_rate: 两 ref 各自非空行数/total,
+// 空池三值全零(无分母不产 NaN); JS 侧与 gates 同名同义, pytest 与本测试同锚锁定。
+
+test('computeConversion: 构造 rows 三值口径 — ref 非空行数/total(gates.py:1003-1028 同名同义)', () => {
+  const r = computeConversion([
+    { accepted_to_hypothesis_ref: 'H-1', hypothesis_to_confirmed_ref: 'F-9' },
+    { accepted_to_hypothesis_ref: 'H-2', hypothesis_to_confirmed_ref: '' },
+    { accepted_to_hypothesis_ref: '', hypothesis_to_confirmed_ref: null },
+  ])
+  assert.deepEqual(r, { total: 3, accepted_to_hypothesis: 2 / 3, hypothesis_to_confirmed: 1 / 3 })
+  // 空白串/缺列行与空串同记空(str(v or '').strip() 同义), total 仍计数
+  const r2 = computeConversion([
+    { accepted_to_hypothesis_ref: '  ', hypothesis_to_confirmed_ref: 'F-1' },
+    {},
+    { accepted_to_hypothesis_ref: undefined, hypothesis_to_confirmed_ref: 'F-2' },
+  ])
+  assert.equal(r2.total, 3)
+  assert.equal(r2.accepted_to_hypothesis, 0)
+  assert.equal(r2.hypothesis_to_confirmed, 2 / 3)
+})
+
+test('computeConversion: 空池/rows 缺席 → 三值全零(无分母不产 NaN); 二元组行形态同义 gates', () => {
+  assert.deepEqual(computeConversion([]), { total: 0, accepted_to_hypothesis: 0.0, hypothesis_to_confirmed: 0.0 })
+  assert.deepEqual(computeConversion(null), { total: 0, accepted_to_hypothesis: 0.0, hypothesis_to_confirmed: 0.0 })
+  assert.deepEqual(computeConversion(), { total: 0, accepted_to_hypothesis: 0.0, hypothesis_to_confirmed: 0.0 })
+  // gates.py:1016-1018 二元组 (a2h, h2c) 形态同义支持
+  assert.deepEqual(
+    computeConversion([['H-1', 'F-1'], ['H-2', ''], ['', '']]),
+    { total: 3, accepted_to_hypothesis: 2 / 3, hypothesis_to_confirmed: 1 / 3 },
+  )
+  const r = computeConversion([{ accepted_to_hypothesis_ref: '', hypothesis_to_confirmed_ref: '' }])
+  assert.ok(!Number.isNaN(r.accepted_to_hypothesis) && !Number.isNaN(r.hypothesis_to_confirmed), '全空 ref 不得产 NaN')
+})
+
+test('buildSnapshot: frontier 键 — Q.frontierConversion 按 $eng 过滤, total=该 eng Frontier 行数', async () => {
+  const seen = []
+  const base = makeFake({
+    engList: [{ name: 'eng-x', target: 'http://t.local', scope: 't.local', status: 'active', created_at: '2026-09-01T00:00:00Z' }],
+    frontier: [
+      { accepted_to_hypothesis_ref: 'H-1', hypothesis_to_confirmed_ref: 'F-1' },
+      { accepted_to_hypothesis_ref: 'H-2', hypothesis_to_confirmed_ref: '' },
+      { accepted_to_hypothesis_ref: '', hypothesis_to_confirmed_ref: '' },
+    ],
+  })
+  const q = async (cypher, params) => { seen.push({ cypher, params }); return base(cypher, params) }
+  const s = await buildSnapshot(q, { eng: 'eng-x' })
+  assert.deepEqual(s.frontier, { total: 3, accepted_to_hypothesis: 2 / 3, hypothesis_to_confirmed: 1 / 3 })
+  const fq = seen.find((x) => x.cypher.includes('x.accepted_to_hypothesis_ref'))
+  assert.ok(fq, 'frontier 查询已随聚合下发')
+  assert.equal(fq.params?.eng, 'eng-x') // W5: 池子按 selected eng 过滤(eng_id 列)
+  // 空池(无 Frontier 行) → 三值全零, 快照不炸(转化率卡降级「暂无前沿数据」)
+  const s2 = await buildSnapshot(makeFake(), { eng: 'eng-x' })
+  assert.deepEqual(s2.frontier, { total: 0, accepted_to_hypothesis: 0, hypothesis_to_confirmed: 0 })
 })
