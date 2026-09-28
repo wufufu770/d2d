@@ -118,7 +118,7 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
                     auth_check, bounded_rows, candidate_watermark_reject,
                     canonical_cat, config_reject, content_length_gate,
                     cvss_or_default, dedup_cat, engagement_cap_gate,
-                    endpoint_sig_duplicate,
+                    endpoint_sig_duplicate, auth_tier_gate,
                     eng_time_windows, finding_gates, host_in_scope, hostport_of,
                     init_schema, is_engagement_create, l1_gate, legacy_token_ok,
                     normalize_title, parse_scope_allows, pick_write_eng,
