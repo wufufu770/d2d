@@ -67,6 +67,14 @@ def test_normal_writes_pass_ddl(cypher):
     "Login has no rate limit",
     "Missing security header X-Frame-Options",
     "CORS configuration allows all origins",
+    # T1.8.1 补丁: 7 条新条目逐条拒收断言(rate-limit 同义改写绕过收敛)
+    "DVWA 登录无速率限制与锁定,暴力破解窗口全开",
+    "登录速率限制缺失,可无限尝试爆破",
+    "该端点没有速率限制",
+    "缺少速率限制的验证码接口",
+    "登录失败无账号锁定",
+    "无登录锁定机制,凭证填充窗口全开",
+    "No rate-limit on login endpoint",
 ])
 def test_junk_titles_rejected(title):
     assert junk_rejected(f'CREATE (f:Finding {{id:"j", title:"{title}", severity:"low"}})')
@@ -75,9 +83,68 @@ def test_junk_titles_rejected(title):
     "SQL injection in login bypasses auth",
     "BOLA in payment history access",
     "JWT none-algorithm admin forge",
+    # T1.8.1 补丁: 裸词 '速率限制'/'rate-limit' 刻意不入词表 — 真洞表述不得被误拒
+    "速率限制绕过绕过限流",
+    "rate-limit bypass allows brute force",
 ])
 def test_real_titles_pass_junk_gate(title):
     assert not junk_rejected(f'CREATE (f:Finding {{id:"r", title:"{title}", severity:"high"}})')
+
+# ---- T1.8.1(eng-0928-2340-127-1l) 实战回归: 21 条真 finding title 不得被垃圾门误拒 ----
+# 词表扩展的对照实证集: 扩表前 22 条全过(漏放 1 条噪声), 扩表后必须精确命中且零误伤。
+T181_REAL_TITLES = [
+    'dvwa command injection - rce via ip parameter (security=low)',
+    'dvwa sql injection - credential hash exfiltration via union select',
+    'dvwa file upload - unrestricted .php upload leading to rce',
+    'dvwa 默认凭证 admin/password 直接登录,setup.php 公开文档强化可利用性',
+    'dvwa hackable uploads shell farm - zero-cookie persistent rce (verified',
+    'command injection at /vulnerabilities/exec/ under security=medium',
+    '未鉴权 setup.php 数据库重置/csrf token 可重用',
+    'dvwa file inclusion - local file read (lfi) via page parameter',
+    'dvwa reflected xss via name parameter (security=low)',
+    'dvwa hackable uploads directory - prior-engagement web shells persistent',
+    'dvwa blind sql injection - boolean-based detection on id parameter',
+    'dvwa 认证链路缺 csrf 防护,管理员密码可被 get 一键改写',
+    'dvwa dvwasession 自增整数,会话 id 可预测可遍历',
+    'dvwa stored xss via xss_s guestbook mtxmessage parameter (security',
+    'dvwa webroot unauthenticated php execution on uploaded files (uploaded',
+    'view_source.php 全模块源码明文泄露',
+    '目录列举+配置文件备份泄露(db凭证)',
+    'dvwa file inclusion - php source disclosure via php://filter',
+    'dvwa setup - db reset endpoint exposes db credentials and admin reset',
+    'dvwa rce stops at www-data privilege boundary (cat /etc/shadow per',
+    '[probe-test]',
+]
+
+
+def _t181_finding(title: str) -> str:
+    """按实战档位构造完整 finding Cypher(severity=medium 避开鉴权档位门干扰,
+    repro 非空满足 repro 语义) — 断言目标单门为垃圾门。"""
+    return (f"CREATE (f:Finding {{eng:'e', title:'{title}', severity:'medium', "
+            f"repro:'curl -s http://target.example/endpoint; 响应含可利用证据'}})")
+
+
+def test_t181_titles_not_falsely_rejected():
+    # 21 条真 finding title 逐条过 finding_gates 垃圾门路径: 必须全量放行
+    for title in T181_REAL_TITLES:
+        cypher = _t181_finding(title)
+        ok, err = finding_gates(cypher)
+        assert ok, f"实战 title 被垃圾门误拒: {title!r} → {err}"
+        assert not junk_rejected(cypher), title
+    # 噪声 finding(本次扩表的目标样本)必须且只能被垃圾门拒收
+    noise = 'dvwa 登录无速率限制与锁定,暴力破解窗口全开'
+    ok_n, err_n = finding_gates(_t181_finding(noise))
+    assert not ok_n and "garbage-listed" in err_n
+
+
+@pytest.mark.parametrize("title", ["速率限制绕过绕过限流", "rate-limit bypass allows brute force"])
+def test_rate_limit_bypass_phrases_fully_pass_all_gates(title):
+    """真洞表述的整门放行(补 test_real_titles_pass_junk_gate 的单门断言):
+    high 档 + 档位标注齐备时 finding_gates 必须 ok=True, 而非仅'非垃圾门拒收'。"""
+    cypher = (f"CREATE (f:Finding {{eng:'e', title:'{title}', severity:'high', "
+              f"repro:'鉴权档位: 零cookie; curl -s http://target.example/login; 返回可利用回显'}})")
+    ok, err = finding_gates(cypher)
+    assert ok, err
 
 # ---- 0917 鉴权档位门: high/critical 必须注明档位(微博实证教训: 「零鉴权」头条实为游客态) ----
 from graphd.app import finding_gates as _fg
