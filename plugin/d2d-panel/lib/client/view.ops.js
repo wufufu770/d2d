@@ -84,6 +84,7 @@
         !off.has('fleet') ? h(FleetCard, { fleet: snap.fleet, run: snap.run, refresh }) : null,
         !off.has('usage') ? h(UsageCard, { run: snap.run }) : null,
         !off.has('cost') ? h(CostCard, { snap }) : null,
+        h(ConversionCard, { snap }), // T2-1-2 转化率卡(只读, 性价比卡之后; 纯展示无交互)
         !off.has('workers') ? h(WorkersCard, { snap, now }) : null,
         !off.has('funnel') ? h(FunnelCard, { snap }) : null,
         !off.has('gaps') ? h(GapsCard, { snap }) : null,

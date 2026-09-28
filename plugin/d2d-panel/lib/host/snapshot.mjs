@@ -36,6 +36,10 @@ const Q = {
   cntSignalsOpen: `MATCH (s:Signal_) WHERE s.status = 'open' AND s.eng = $eng RETURN count(s) AS n`,
   cntHypsOpen: `MATCH (h:Hypothesis) WHERE h.status = 'open' AND h.eng = $eng RETURN count(h) AS n`,
   cntExperience: `MATCH (x:ExperienceWeight) RETURN count(x) AS n`,
+  // T2-1-2 转化率卡(看板 8.5-2): Frontier 两闭环锚点列按 selected eng 直读 — /query/frontier 不返回
+  // ref 列, 直发只读 MATCH 最省; 列名是 eng_id(Frontier 表专用, 非 Finding/Hypothesis 的 eng)。
+  // 口径真源 = graphd/gd/gates.py:1003-1028 frontier_conversion_rate, 计算抽在 computeConversion。
+  frontierConversion: `MATCH (x:Frontier) WHERE x.eng_id = $eng RETURN x.accepted_to_hypothesis_ref AS accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref AS hypothesis_to_confirmed_ref`,
 }
 
 // ---------- 纯工具 ----------
@@ -538,6 +542,25 @@ export function costEfficiency({ findingsTotal = 0, triagedTotal = 0, inputToken
   }
 }
 
+/** 转化率度量(纯函数) — 与 graphd/gd/gates.py:1003-1028 frontier_conversion_rate 同名同义:
+ *  两个闭环锚点列各自非空行数 / 总行数(空串/空白串 ref 记空, `v || ''` 与 gates str(v or '') 同义);
+ *  空池三值全零(total=0, 两比率 0.0 — 无分母不产 NaN)。
+ *  行形态: dict(按列名取, graphd /query 返回形态)或二元组 [a2h, h2c](gates 二元组支同义)。
+ *  读侧消费(T2-1-2): 行来自 Q.frontierConversion(Frontier 按 selected eng 过滤); pytest 与本测试同锚。 */
+export function computeConversion(rows) {
+  let total = 0, a2h = 0, h2c = 0
+  for (const r of rows ?? []) {
+    const va = Array.isArray(r) ? r[0] : r?.accepted_to_hypothesis_ref
+    const vc = Array.isArray(r) ? r[1] : r?.hypothesis_to_confirmed_ref
+    total += 1
+    if (String(va || '').trim()) a2h += 1
+    if (String(vc || '').trim()) h2c += 1
+  }
+  return { total,
+    accepted_to_hypothesis: total > 0 ? a2h / total : 0.0,
+    hypothesis_to_confirmed: total > 0 ? h2c / total : 0.0 }
+}
+
 export function createGraphdQuery({ graphdUrl, token, fetchImpl = fetch, timeoutMs = 5000 }) {
   return async function query(cypher, params = {}) {
     const res = await fetchImpl(`${graphdUrl}/query`, {
@@ -598,7 +621,7 @@ function projectEngagement(row) {
 export async function buildSnapshot(query, { fleet = null, runEvents = null, modelUsage = null, eng = '', approvalSummary } = {}) {
   const strategies = await loadStrategies(process.env, query).catch(() => [])
   const approvals = approvalSummary !== undefined ? approvalSummary : await readApprovalSummary()
-  const [engListRows, byEngRows, workersByEngRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows] = await Promise.all([
+  const [engListRows, byEngRows, workersByEngRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows, frontierRows] = await Promise.all([
     query(Q.engList),
     query(Q.findingsByEng),
     query(Q.workersByEng).catch(() => []),
@@ -614,6 +637,7 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, mod
     query(Q.coverage, { eng }),
     query(Q.gaps, { eng }),
     query(Q.handoffs, { eng }),
+    query(Q.frontierConversion, { eng }), // T2-1-2: Frontier 两 ref 列按 selected eng(空选中 → 空池全零)
   ])
 
   // W5: 选中 = 显式 selected 文件 > 最新 active > 最新任意(历史回看)。每 engagement 进度聚合。
@@ -693,6 +717,9 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, mod
       source: modelUsage?.source ?? 'none',
     }),
     coverage: { total: covTotal, covered: covCovered },
+    // T2-1-2 转化率卡(8.5-2): Frontier 闭环锚点非空比率 — {total, accepted_to_hypothesis,
+    // hypothesis_to_confirmed}, 口径同 gates.py frontier_conversion_rate(total = 该 eng Frontier 行数)
+    frontier: computeConversion(frontierRows),
     gaps: (gapRows ?? []).map((g) => String(g?.bc ?? '')).filter(Boolean),
     milestones: (handoffRows ?? []).map((h) => ({
       id: String(h?.id ?? ''),

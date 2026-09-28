@@ -313,3 +313,25 @@
           h('span', panel.chip(), `派发 ${c?.dispatches ?? 0} 次`)),
         has ? h('div', panel.muted(0.45), `总消耗 ${fmtTokens((c?.inputTokens ?? 0) + (c?.outputTokens ?? 0))} tokens · findings ${c?.findings ?? 0} / triaged ${c?.triaged ?? 0}`) : null)
     }
+
+    // ---- 转化率卡(T2-1-2, 看板 8.5-2): Frontier 两闭环锚点列非空比率 — 只读卡。
+    //      数据 = snap.frontier(host buildSnapshot → computeConversion, 口径与 graphd/gd/gates.py
+    //      frontier_conversion_rate 同源: ref 非空行数 ÷ 该 eng Frontier 总数); total=0 降级「暂无前沿
+    //      数据」不除零。 ----
+    function ConversionCard({ snap }) {
+      const f = snap?.frontier
+      const pct = (v) => `${(Number(v ?? 0) * 100).toFixed(1)}%`
+      const row = (value, label) => h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 } },
+        h('span', { style: { fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', minWidth: '52px' } }, value),
+        h('span', panel.muted(0.55), label))
+      return h(Card, {
+        title: '转化率 · 前沿闭环',
+        extra: h('span', panel.muted(0.45), `Frontier ${f?.total ?? 0} 条`),
+      },
+        f && f.total > 0
+          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px' } },
+            row(pct(f.accepted_to_hypothesis), 'accepted → hypothesis(采纳→假设)'),
+            row(pct(f.hypothesis_to_confirmed), 'hypothesis → confirmed(假设→确证)'))
+          : h('div', panel.muted(0.45), '暂无前沿数据 — Frontier 闭环 ref 回填后自动出数'),
+        h('div', panel.muted(0.45), '口径: 闭环锚点 ref 非空行数 ÷ Frontier 总数(graphd frontier_conversion_rate 同源)'))
+    }
