@@ -4673,3 +4673,62 @@ def test_43c1_host_query_comment_call_denied_endpoint(tmp_path, monkeypatch):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# =====================================================================
+# ---- 0928 防复发锁 + high 正向落图 e2e(/write/finding 全链瘫痪修复实证) ----
+# 根因(e603887, 09-19): app.py 双形态导入中 except 分支(from gd import ...)漏抄
+# auth_tier_gate(try 分支 from graphd.gd import ... 有) → 脚本直跑形态
+# (cd graphd && python3 app.py, 线上实跑形态)每个 /write/finding 请求在
+# auth_tier_gate 调用点抛 NameError → 500。本节两条: 纯文本级名单对齐锁 +
+# high 带「鉴权档位: 零cookie」marker 的正向端到端(200 + 落库 + candidate)。
+# =====================================================================
+
+def _app_py_gd_import_names(source: str, stmt: str) -> set:
+    """从 app.py 源码文本解析 `stmt (...)` 括号内导入名单(去行内注释/空白/空段)。"""
+    m = re.search(re.escape(stmt) + r"\s*\((.*?)\)", source, re.S)
+    assert m, f"app.py 缺少导入语句: {stmt!r} (文本锁解析失效)"
+    names: list = []
+    for line in m.group(1).splitlines():
+        line = line.split("#", 1)[0]  # 行内注释不参与名单
+        names.extend(tok.strip() for tok in line.split(","))
+    parsed = {n for n in names if n}
+    assert parsed, f"导入名单解析为空: {stmt!r}"
+    return parsed
+
+
+def test_app_py_dual_form_import_lists_aligned():
+    """防复发锁: app.py try 分支 `from graphd.gd import (...)` 与 except 分支
+    `from gd import (...)` 两份名单集合必须相等(允许顺序不同)。纯文本级解析,
+    不经 import —— 脚本直跑形态(走 except 分支)漏抄名字时本测试即红。"""
+    src = _pathlib.Path(graphd_app.__file__).read_text(encoding="utf-8")
+    try_names = _app_py_gd_import_names(src, "from graphd.gd import")
+    except_names = _app_py_gd_import_names(src, "from gd import")
+    assert try_names == except_names, (
+        "app.py 双形态导入名单不一致(脚本直跑形态将 NameError): "
+        f"try 独有={sorted(try_names - except_names)} "
+        f"except 独有={sorted(except_names - try_names)}")
+
+
+def test_write_finding_high_with_tier_marker_wires_candidate(tmp_path, monkeypatch):
+    """high 正向落图 e2e: repro 首行含「鉴权档位: 零cookie」(AUTH_TIER_MARKER_RE 认可)
+    → auth_tier_gate 放行 → 200 ok + 图内 (f:Finding) 落库 + gate_status='candidate'
+    (写入侧 :708 显式, 与 SCHEMA 缺省同值)。无 marker 的 high 拒收已有纯函数
+    直测覆盖(test_high_finding_without_tier_marker_rejected 等), 此处不重复。"""
+    base_url, conn, srv = _3c_spawn_server(tmp_path, monkeypatch)
+    try:
+        payload = {"id": "f-tier-ok", "title": "Unauth API read leaks user rows",
+                   "severity": "high", "category": "vuln",
+                   "repro": "鉴权档位: 零cookie\ncurl -s https://probe.example.com/api/users",
+                   "evidence_dir": "/ev/tier"}  # 无 eng 字段: 唯一 active 归属 e3c(W5 ②)
+        status, out = _3c_post(base_url, "/write/finding", payload)
+        assert status == 200 and out["ok"] is True, out
+        row = conn.execute("MATCH (f:Finding {id:'f-tier-ok'}) "
+                           "RETURN f.title, f.severity, f.gate_status, f.eng").get_next()
+        assert str(row[0]) == "Unauth API read leaks user rows"
+        assert str(row[1]) == "high"
+        assert str(row[2]) == "candidate"  # gate_status 缺省 candidate
+        assert str(row[3]) == "e3c"
+    finally:
+        srv.shutdown()
+        srv.server_close()
