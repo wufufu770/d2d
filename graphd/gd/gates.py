@@ -60,10 +60,18 @@ def cvss_or_default(raw):
     return min(10.0, max(0.0, v))
 
 
+# T1.8.1(eng-0928-2340-127-1l) rate-limit 同义改写绕过补丁: 实战噪声 finding
+# 「DVWA 登录无速率限制与锁定,暴力破解窗口全开」落图 — title 含「无速率限制」, 而中文
+# 词表仅有「限速缺失/未限速」两种否定构词, any(j in tv) 纯子串匹配全 miss。本补丁只扩
+# 词表(13→20 条), 匹配机制与两出口(finding_gates :344-346 / app.py 结构化 /write/finding)
+# 语义零改动。'no rate limiting' 已被 'no rate limit' 前缀覆盖不加; 刻意不加裸词
+# '速率限制'/'rate-limit' — 会误伤 '速率限制绕过'/'rate-limit bypass' 真洞类(测试锁定)。
 JUNK_PATTERNS = ["no rate limit", "missing rate limit", "lack of rate limiting",
                  "rate limiting disabled", "限速缺失", "未限速",
                  "security header", "安全头", "cors configuration",
-                 "sourcemap", "版本号指纹", "self-xss", "tls warning"]
+                 "sourcemap", "版本号指纹", "self-xss", "tls warning",
+                 "无速率限制", "速率限制缺失", "没有速率限制", "缺少速率限制",
+                 "无账号锁定", "无登录锁定", "no rate-limit"]
 
 # R3: 配置建议归类 —— 加固建议不作为漏洞结论（原设定质量门控条目），降级为 config-advice 单独归类
 CONFIG_ADVICE_RE = re.compile(
