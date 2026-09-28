@@ -99,3 +99,4 @@ output/
 .release-message
 # 浏览器半构建产物(片段在 lib/client/, node scripts/build-client.mjs 生成)
 plugin/d2d-panel/lib/client.js
+!experiments/dataset/*.jsonl
