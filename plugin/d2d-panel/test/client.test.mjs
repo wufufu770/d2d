@@ -149,6 +149,7 @@ test('client(bug回归): OpsView 策略库卡 — 模块开启且有数据才渲
     Card: function Card() {}, Style: () => null, FailClosedBanner: function F() {}, Skeleton: function S() {},
     EngagementCard: function E() {}, DenylistCard: function D() {}, CapsCard: function C() {},
     FleetCard: function F() {}, UsageCard: function U() {}, CostCard: function CO() {},
+    ConversionCard: function CV() {}, // T2-1-2: 转化率卡(view.ops.js 新增工厂作用域依赖)
     WorkersCard: function W() {}, FunnelCard: function FU() {}, GapsCard: function G() {},
     ExperienceCard: function EX() {}, StrategiesCard: function ST() {}, MODULES: [],
     ...panelStubs(),
