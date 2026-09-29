@@ -5,7 +5,12 @@
 //   ①X-Auth = host-token 或 worker-token(复用图通道凭据) ②域名白名单 = 静态 P2P_PROXY_ALLOW ∪
 //   graphd 动态 scope(30s 刷新, 与 egress-gateway 同源) ③CDP Fetch.enable 请求级拦截 — 非白名单
 //   导航/子资源/重定向一律 AccessDenied(含页面内 JS 触发的跳转) ④仅绑 127.0.0.1 ⑤浏览器 profile
-//   per-engagement 独立目录, 绝不附着用户日常 profile(凭据隔离 + 单实例锁)。
+//   per-engagement 独立目录, 绝不附着用户日常 profile(凭据隔离 + 单实例锁) ⑥强制代理 =
+//   launch 参数级(--proxy-server/--disable-quic) — env 代理(http_proxy 等)对 WS/WebRTC/QUIC
+//   无效, 浏览器出网的权威通道只有 spawn flags; WebRTC 无 launch 开关(chromium 150 strings
+//   实证), 禁用走页内注入(--proxy-server 管不住 WebRTC 的 UDP 面, 故叠加注入) ⑦代理 bypass
+//   列表默认空(不发 --proxy-bypass-list) — 回环靶场(SPA 8894/DVWA 80)流量不豁免, 与 ③ 的
+//   scope 门同闸, 显式 <local>/回环豁免会让靶场流量绕开网关。
 // 用法: P2P_CDP_PROXY_PORT=8893 nohup node cdp-proxy.mjs &
 //   chrome 来源: P2P_CDP_URL=http://127.0.0.1:9222 附着 | 自动找 chrome 拉起(headless, 可 P2P_CDP_HEADED=1)
 // 端点: /health /targets /new /navigate /eval /click /clickAt /fill /scroll /screenshot /close (X-Auth)
@@ -14,6 +19,7 @@ import os from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
 import { execFileSync, spawn } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 import { buildMatcher } from './scope-match.mjs'
 
 const PORT = parseInt(process.env.P2P_CDP_PROXY_PORT ?? '8893', 10)
@@ -55,7 +61,7 @@ async function refreshScope() {
   }
   dynScope = next
 }
-refreshScope(); setInterval(refreshScope, 30_000)
+refreshScope(); setInterval(refreshScope, 30_000).unref() // unref: import 方(单测)不挂事件循环, 守护进程行为不变
 const scopeAllowed = buildMatcher([...STATIC_ALLOW], () => dynScope)
 
 // ---- chrome 发现/拉起(per-engagement profile + 单例锁, spa-render 同款) ----
@@ -69,12 +75,33 @@ function findChrome() {
   }
   return ''
 }
+// H16 同款(spa-render :55-84 形态移植): 旧实现 statSync(新鲜度)后 writeFileSync 直接覆盖写 ——
+// 检查与写非原子(TOCTOU), 两实例可同时读到「过期/不存在」再双双写入, 各自以为持锁。现改为
+// O_EXCL 独占创建(writeFileSync flag:'wx', 内核级原子 create): 竞争创建只有一个成功; 过期锁
+// 先删再抢, 删与建之间的窗口由 wx 兜底。releaseLock 只释放自己持有的锁 —— 旧版 exit 钩子
+// 无条件 rm, 抢锁失败的进程退出会删掉胜者的锁。
 const LOCK = `${DATA_DIR}/cdp-proxy-${ENG.replace(/[^\w.-]/g, '_')}.lock`
-function tryAcquireLock() {
-  try { if (Date.now() - fs.statSync(LOCK).mtimeMs < 45_000) return false } catch {}
-  try { fs.writeFileSync(LOCK, JSON.stringify({ pid: process.pid, at: Date.now() })); return true } catch { return false }
+export { LOCK } // 供测试取路径
+const LOCK_STALE_MS = 45_000
+let ownsLock = false
+export function tryAcquireLock() {
+  try {
+    const st = fs.statSync(LOCK)
+    if (Date.now() - st.mtimeMs < LOCK_STALE_MS) return false // 他者新鲜持有(崩溃残留按过期接管)
+    try { fs.rmSync(LOCK, { force: true }) } catch {} // 过期残留: 先删, 下方 wx 独占重建
+  } catch {} // 不存在: 直接独占创建
+  try {
+    fs.writeFileSync(LOCK, JSON.stringify({ pid: process.pid, at: Date.now() }), { flag: 'wx' })
+    ownsLock = true
+    return true
+  } catch { return false } // EEXIST = 他者抢先持锁
 }
-process.on('exit', () => { try { fs.rmSync(LOCK, { force: true }) } catch {} })
+export function releaseLock() {
+  if (!ownsLock) return // 只释放自己持有的锁
+  ownsLock = false
+  try { fs.rmSync(LOCK, { force: true }) } catch {}
+}
+process.on('exit', releaseLock)
 
 async function chromeAlive() {
   if (!cdpHttp) return false
@@ -87,11 +114,7 @@ async function ensureChrome() {
   if (!bin || !tryAcquireLock()) return false
   fs.mkdirSync(PROFILE_DIR, { recursive: true })
   const port = 9400 + (process.pid % 400)
-  chromeProc = spawn(bin, [
-    process.env.P2P_CDP_HEADED === '1' ? '--start-maximized' : '--headless=new',
-    `--remote-debugging-port=${port}`, `--user-data-dir=${PROFILE_DIR}`,
-    '--no-first-run', '--no-sandbox', '--disable-gpu', '--window-size=1440,900',
-  ], { stdio: 'ignore' })
+  chromeProc = spawn(bin, buildChromeArgs(port), { stdio: 'ignore' })
   chromeProc.on('exit', () => { chromeProc = null; cdpHttp = '' })
   cdpHttp = `http://127.0.0.1:${port}`
   for (let i = 0; i < 60; i++) {
@@ -100,6 +123,33 @@ async function ensureChrome() {
   }
   return false
 }
+
+// ---- 强制代理(launch 参数级, 审计②⑦): env 代理(http_proxy 等)对 WS/WebRTC/QUIC 无效 ----
+// spawn 参数是浏览器出网的权威通道: --proxy-server 承载 HTTP/HTTPS/WSS 全量(DNS 由代理端
+// 解析); QUIC 同为 UDP 绕代理 → --disable-quic 硬关, 流量收敛回代理通道。bypass 列表默认空
+// — 不发 --proxy-bypass-list, 回环靶场(SPA 8894/DVWA 80)流量不豁免, 与 Fetch.requestPaused
+// 的 scope 门同闸(显式 <local>/回环豁免会让靶场流量绕开网关)。P2P_PROXY_URL=off|none →
+// 省略 --proxy-server 退直连(仅供无网关环境调试)。导出纯函数供单测锁定 spawn argv。
+export function buildChromeArgs(port) {
+  const args = [
+    process.env.P2P_CDP_HEADED === '1' ? '--start-maximized' : '--headless=new',
+    `--remote-debugging-port=${port}`, `--user-data-dir=${PROFILE_DIR}`,
+    '--no-first-run', '--no-sandbox', '--disable-gpu', '--window-size=1440,900',
+    '--disable-quic',
+  ]
+  const p = String(process.env.P2P_PROXY_URL ?? '').trim()
+  if (!/^(off|none)$/i.test(p)) args.push(`--proxy-server=${p || 'http://127.0.0.1:8888'}`)
+  return args
+}
+
+// ---- WebRTC 禁用(页内注入, 审计①): chromium 150 无 --disable-webrtc/
+// --force-webrtc-ip-handling-policy launch 开关(strings 实证), 页内注入是可验证禁用 —
+// defineProperty 覆写为 undefined 且不可写不可配置(页面无法复活), 经
+// Page.addScriptToEvaluateOnNewDocument 前置到每个新文档(先于页面脚本); /eval 探测
+// typeof RTCPeerConnection==='undefined' 直接可用。
+export const WEBRTC_DISABLE_SCRIPT =
+  "Object.defineProperty(window,'RTCPeerConnection',{value:undefined,writable:false,configurable:false});" +
+  "Object.defineProperty(window,'RTCDataChannel',{value:undefined,writable:false,configurable:false});"
 
 // ---- CDP 最小驱动(浏览器级 WS + flatten 会话池 + Fetch 拦截), 零依赖 native WebSocket ----
 let ws = null
@@ -129,6 +179,8 @@ async function ensureSession(targetId) {
   if (sessions.has(targetId)) return sessions.get(targetId)
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
   await send('Page.enable', {}, sessionId)
+  // WebRTC 禁用(审计①: chromium 150 无 launch 开关) — 每会话注入, 先于任何页面脚本生效
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: WEBRTC_DISABLE_SCRIPT }, sessionId)
   // 请求级 scope 拦截: 导航/子资源/重定向全过本闸 — 非 scope 一律 AccessDenied(fail-closed)
   await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, sessionId)
   sessions.set(targetId, sessionId)
@@ -248,7 +300,11 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
+// isMain 守卫(spa-render 同款): 模块可被单测 import(取导出纯函数), 仅直跑时监听
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+if (isMain) {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[cdp-proxy] http://127.0.0.1:${PORT} eng=${ENG} profile=${PROFILE_DIR}`)
   console.log('[cdp-proxy] worker 用法: curl -X POST http://127.0.0.1:8893/new -H "X-Auth: $P2P_WORKER_TOKEN" -H \'Content-Type: application/json\' -d \'{"url":"https://<scope 内目标>"}\'')
 })
+}

@@ -1,10 +1,15 @@
 #!/usr/bin/env node
-// spa-render.mjs — E-7 SPA 渲染执行器: CDP 驱动 headless chrome, 提取 JS 渲染后的端点(DOM 链接 + XHR/fetch)
-//                   并可选写入 Kuzu 图(Endpoint 节点, tech='spa-cdp'), 补齐 katana 爬不到的渲染后面。
+// spa-render.mjs — E-7 SPA 渲染执行器: CDP 驱动 headless chrome, 提取 JS 渲染后的端点(DOM 链接 + XHR/fetch + WS 握手)
+//                   并可选写入 Kuzu 图(Endpoint 节点, tech='spa-cdp'/WS 归一后 'websocket'), 补齐 katana 爬不到的渲染后面。
 // 用法: P2P_SPA_PORT=8892 nohup node spa-render.mjs &
 //   chrome 来源(二选一, 都缺则服务降级 ready=false, /render 返 503):
 //   ①P2P_CDP_URL=http://127.0.0.1:9222  附着已运行的 chrome(--remote-debugging-port=9222)
 //   ②P2P_CHROME_PATH=/usr/bin/chromium  由本服务拉起(headless)
+//   T2-2b-2: ①可 P2P_CDP_URL 附着 cdp-proxy 池拉起的浏览器(端口见 cdp-proxy /health 的 cdp 字段)
+//   — 侦察面与治理面共用同一 chrome 同一 per-eng profile, 消除双 chrome; ②WS 双盲修复 — 旧实现
+//   只听 Network.requestWillBeSent 且过滤非 http(s), ws://wss:// 全盲; 现订阅
+//   Network.webSocketCreated, normalizeWsUrl 归一(ws://→http://, wss://→https://)后入图
+//   (graphd /write/endpoint 硬拒非 http(s)), tech='websocket' 标记传输层。
 //   写图: POST /render body {"url":"...", "graph":true, "port":"8766"} → 渲染端点 MERGE 进图(去重)
 // 健康: GET /health → {ok, ready, chrome}
 import crypto from 'node:crypto'
@@ -22,18 +27,30 @@ const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
 const hostToken = (() => { try { return fs.readFileSync(`${os.homedir()}/.config/d2d/host-token`, 'utf8').trim() } catch { return '' } })()
 
 // ---------- 纯函数: 渲染产物 → 端点清单(去重/分类), 单测锁定 ----------
-export function extractEndpoints(networkEvents = [], domLinks = []) {
+// T2-2b-2 WS 归一: ws://→http://, wss://→https:// — graphd /write/endpoint 硬拒非 http(s)
+// (app.py ^https?:// 门), 归一后零 graphd 改动直写; 非 ws(s):// 或坏 URL 返 ''(调用方跳过)。
+export function normalizeWsUrl(u) {
+  try {
+    const x = new URL(String(u))
+    if (x.protocol === 'ws:') { x.protocol = 'http:'; return x.href }
+    if (x.protocol === 'wss:') { x.protocol = 'https:'; return x.href }
+  } catch {}
+  return ''
+}
+export function extractEndpoints(networkEvents = [], domLinks = [], wsEvents = []) {
   const seen = new Map()
-  const add = (url, method, via) => {
+  const add = (url, method, via, tech) => {
     try {
       const u = new URL(url)
       if (!/^https?:$/.test(u.protocol)) return
       const key = `${u.origin}${u.pathname}${u.search}`
-      if (!seen.has(key)) seen.set(key, { url: key, method: method || 'GET', via })
+      if (!seen.has(key)) seen.set(key, tech ? { url: key, method: method || 'GET', via, tech } : { url: key, method: method || 'GET', via })
     } catch {}
   }
-  for (const e of networkEvents) if (e?.url) add(e.url, e.method, e.type === 'XHR' || e.type === 'Fetch' ? 'xhr' : 'doc')
+  for (const e of networkEvents) if (e?.url) add(e.url, e.method, e.type === 'XHR' || e.type === 'Fetch' ? 'xhr' : 'doc', e.tech)
   for (const l of domLinks) if (l) add(l, 'GET', 'dom')
+  // WS 握手事件(Network.webSocketCreated 形状 {url}): 归一 http(s) 后以 tech='websocket' 入列
+  for (const w of wsEvents ?? []) { const n = normalizeWsUrl(w?.url); if (n) add(n, 'GET', 'websocket', 'websocket') }
   return [...seen.values()]
 }
 
@@ -156,7 +173,11 @@ async function renderPage(url, waitMs) {
     await c.send('Page.enable', {}, sessionId)
     await c.send('Network.enable', {}, sessionId)
     const net = []
-    const onMsg = (msg) => { if (msg.method === 'Network.requestWillBeSent') { const r = msg.params.request; net.push({ url: r.url, method: r.method, type: msg.params.type }) } }
+    const wsEvents = [] // T2-2b-2: Network.webSocketCreated 握手事件(旧实现 WS 双盲)
+    const onMsg = (msg) => {
+      if (msg.method === 'Network.requestWillBeSent') { const r = msg.params.request; net.push({ url: r.url, method: r.method, type: msg.params.type }) }
+      else if (msg.method === 'Network.webSocketCreated') wsEvents.push({ url: msg.params.url })
+    }
     c.events.push = Array.prototype.push.bind(c.events) // keep default
     const origPush = c.events.push.bind(c.events)
     c.events.push = (m) => { try { onMsg(m) } catch {} ; return origPush(m) }
@@ -167,7 +188,7 @@ async function renderPage(url, waitMs) {
       const ev = await c.send('Runtime.evaluate', { expression: `[...new Set([...document.querySelectorAll('a[href]')].map(a => a.href))].slice(0,300)`, returnByValue: true }, sessionId)
       domLinks = ev.result?.value ?? []
     } catch {}
-    return extractEndpoints(net, domLinks)
+    return extractEndpoints(net, domLinks, wsEvents)
   } finally {
     // 中危审计修复(0910): 断开/异常路径统一清理 — 关 target + 关 ws, 无僵尸页无 socket 泄漏
     try { if (targetId) await c.send('Target.closeTarget', { targetId }) } catch {}
@@ -186,10 +207,14 @@ export function normalizeMethod(m) {
   const s = String(m ?? '').trim().toUpperCase()
   return HTTP_METHODS.has(s) ? s : 'GET' // 白名单外(渲染页面可影响的 XHR method)一律归 GET
 }
+// T2-2b-2 入图 5 字段(id/url/method/tech/eng): ①tech 用端点自带值(WS 归一端点='websocket'),
+// 缺省仍 'spa-cdp'(coalesce 语义不变, 既有节点不抢占); ②补 eng — spa-render 无 engagement
+// 语境, 缺省空串(可用 P2P_SPA_ENG 指定), 与 /write/endpoint W5 回填兼容: coalesce 不把
+// 已归属行改写为空, eng='' 的无主行由 W5(upsert_endpoint: cur_eng=='' 时补写)认领。
 export function endpointWritePayload(e) {
   return {
-    cypher: "MERGE (e:Endpoint {id:$id}) SET e.url=$url, e.method=$method, e.tech=coalesce(e.tech,'spa-cdp')",
-    params: { id: String(e.id), url: String(e.url), method: normalizeMethod(e.method) },
+    cypher: "MERGE (e:Endpoint {id:$id}) SET e.url=$url, e.method=$method, e.tech=coalesce(e.tech,$tech), e.eng=coalesce(e.eng,$eng)",
+    params: { id: String(e.id), url: String(e.url), method: normalizeMethod(e.method), tech: String(e.tech ?? '') || 'spa-cdp', eng: String(e.eng ?? '') },
   }
 }
 function writeEndpoints(port, endpoints) {
@@ -197,7 +222,7 @@ function writeEndpoints(port, endpoints) {
   for (const e of endpoints.slice(0, 200)) {
     const id = `ep-${crypto.createHash('sha1').update(e.url).digest('hex').slice(0, 10)}`
     try {
-      const payload = endpointWritePayload({ id, url: e.url, method: e.method })
+      const payload = endpointWritePayload({ id, url: e.url, method: e.method, tech: e.tech, eng: process.env.P2P_SPA_ENG ?? '' })
       execFileSync('curl', ['-s', '-m', '8', '-X', 'POST', `http://127.0.0.1:${port}/query`, '-H', 'Content-Type: application/json',
         '-H', `X-Auth: ${hostToken}`, '-d', JSON.stringify(payload)], { encoding: 'utf8' })
       n++
