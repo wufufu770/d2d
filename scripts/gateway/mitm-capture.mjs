@@ -5,25 +5,28 @@
 //     出口硬黑面(H14)直接复用 egress-gateway 的 isForbiddenTarget, 元数据/链路本地永不经手。
 //   ②TLS 拦截 opt-in(D2D_MITM_TLS=1): 首启生成自签 CA(~/.d2d-data/mitm/ca.key+ca.crt, 600),
 //     按 host 动态签发叶子证书(SNICallback + openssl); 默认 D2D_MITM_TLS=0 → CONNECT 直通不解密。
-//   ③落盘+入图: 每笔事务写 ${D2D_DATA_DIR}/evidence/mitm/<eng>/<ts>.json(tmp+rename 原子落盘);
+//     (4.5-1: CA/叶子签发/内部 TLS 服务原样抽至共享模块 scripts/gateway/tls-intercept.mjs, 与 egress 解密分支共用)
+//   ③落盘+入图: 每笔事务写 ${D2D_DATA_DIR}/evidence/mitm/<eng>/<ts>.json(tmp+rename 原子落盘;
+//     T2-2b-1 起默认加密(aes-256-gcm, 密钥=SHA-256(host-token), 见 evidence-crypto.mjs);
+//     D2D_EVIDENCE_ENC=0 显式降级为既有明文格式);
 //     每 N 笔(D2D_MITM_FLUSH, 默认 20)聚合写 Signal_(type=http-txn, evidence 摘要)走 /write 通道
 //     — graphd 侧 denylist 门兜底红线资产。
 //   ④WSS 帧审计 opt-in(D2D_MITM_WSS=1): ws 握手入证据 + 帧级(opcode/长度/方向)审计, 不解帧内容。
 //   ⑤限速: 全局令牌桶 ≤100 req/s(D2D_MITM_RATE 可调), 超限 503。
 // 用法: D2D_MITM=1 node scripts/gateway/mitm-capture.mjs   (worker: export http_proxy=http://127.0.0.1:8895)
 import http from 'node:http'
-import https from 'node:https'
 import net from 'node:net'
-import tls from 'node:tls'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import crypto from 'node:crypto'
-import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { Transform } from 'node:stream'
 import { hostAllowed } from '../../plugin/pentest-dsh/domain/scope.mjs'
 import { isForbiddenTarget } from './egress-gateway.mjs'
+// 4.5-1: TLS 拦截面(ensureCA/signLeaf/tlsSrvPort)原样抽至共享模块 ./tls-intercept.mjs — 只搬移+导出, 行为零变化
+import { ensureCA as _ensureCA, signLeaf as _signLeaf, tlsSrvPort as _tlsSrvPort, _tlsSrv } from './tls-intercept.mjs'
+// T2-2b-1: 证据存储加密壳 — captureTxn 落盘改走加密 sink(密钥=SHA-256(host-token 64-hex 原文))
+import { createEvidenceSink, keyFromFile } from './evidence-crypto.mjs'
 
 const PORT = parseInt(process.env.D2D_MITM_PORT ?? '8895', 10)
 const GRAPHD = process.env.P2P_GRAPHD ?? 'http://127.0.0.1:8766'
@@ -139,9 +142,15 @@ function captureTxn(txn) {
     const dir = path.join(EVID_DIR, sanitize(txn.eng))
     fs.mkdirSync(dir, { recursive: true })
     const file = path.join(dir, `${Date.now()}-${++seq}.json`)
-    const tmp = `${file}.${process.pid}.tmp`
-    fs.writeFileSync(tmp, JSON.stringify(txn, null, 2))
-    fs.renameSync(tmp, file)
+    // T2-2b-1: 证据加密落盘(默认 on; env D2D_EVIDENCE_ENC=0 显式降级 = 既有明文字节格式, 供回归)。
+    // 密钥 = SHA-256(host-token 文件 64-hex 原文)(D2D_EVIDENCE_KEY_FILE 可重定向); 密钥缺文件/形态
+    // 不对 → fail-closed 拒写(catch 落 audit, 绝不降级明文 — Cookie/Authorization 头明文不落盘)。
+    // 落盘路径只有密文(单行 JSON {v,alg,iv,tag,ct}), 明文串为函数局部量写后即弃。
+    const encOff = process.env.D2D_EVIDENCE_ENC === '0'
+    const sink = createEvidenceSink(
+      encOff ? { dir } : { keyHex: keyFromFile(process.env.D2D_EVIDENCE_KEY_FILE ?? TOKEN_FILE), dir },
+    )
+    sink.write(txn, file)
   } catch (e) { audit({ event: 'evidence-write-error', error: String(e.message ?? e).slice(0, 120) }) }
   pending.push(txn)
   if (pending.length >= FLUSH_N) return flushSignal()
@@ -250,45 +259,11 @@ async function handle(req, res) {
   req.pipe(up)
 }
 
-// ---- TLS opt-in: 自签 CA + 按 host 动态叶子证书(openssl) ----
-export function ensureCA(dir = CA_DIR) {
-  const caKey = path.join(dir, 'ca.key'), caCrt = path.join(dir, 'ca.crt')
-  if (fs.existsSync(caKey) && fs.existsSync(caCrt)) return { caKey, caCrt }
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const r = spawnSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-days', '3650', '-nodes',
-    '-subj', '/CN=d2d MITM CA/O=d2d', '-keyout', caKey, '-out', caCrt], { stdio: 'ignore' })
-  if (r.status !== 0) throw new Error('openssl req CA 生成失败(需 openssl 在 PATH)')
-  fs.chmodSync(caKey, 0o600)
-  fs.chmodSync(caCrt, 0o644)
-  audit({ event: 'ca-created', dir })
-  return { caKey, caCrt }
-}
-const leafCache = new Map()
-export function signLeaf(host, dir = CA_DIR) {
-  const h = normalizeHost(host)
-  const hit = leafCache.get(h)
-  if (hit) return hit
-  const { caKey, caCrt } = ensureCA(dir)
-  const leafDir = path.join(dir, 'leaves')
-  fs.mkdirSync(leafDir, { recursive: true })
-  const keyF = path.join(leafDir, `${sanitize(h)}.key`), crtF = path.join(leafDir, `${sanitize(h)}.crt`)
-  if (!fs.existsSync(crtF)) {
-    const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs1', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } })
-    fs.writeFileSync(keyF, privateKey, { mode: 0o600 })
-    const csrF = path.join(leafDir, `${sanitize(h)}.csr`), extF = path.join(leafDir, `${sanitize(h)}.ext`)
-    fs.writeFileSync(csrF, '') // 占位防 spawn 失败残留脏文件判定
-    const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(h)
-    const san = isIp ? `IP:${h}` : `DNS:${h}`
-    fs.writeFileSync(extF, `subjectAltName=${san}\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n`)
-    const csr = spawnSync('openssl', ['req', '-new', '-key', keyF, '-subj', `/CN=${h}`, '-out', csrF], { stdio: 'ignore' })
-    const x509 = spawnSync('openssl', ['x509', '-req', '-in', csrF, '-CA', caCrt, '-CAkey', caKey, '-CAcreateserial', '-days', '30', '-sha256', '-extfile', extF, '-out', crtF], { stdio: 'ignore' })
-    fs.rmSync(csrF, { force: true }); fs.rmSync(extF, { force: true })
-    if (csr.status !== 0 || x509.status !== 0) throw new Error(`openssl 叶子证书签发失败: ${h}`)
-  }
-  const ctx = tls.createSecureContext({ key: fs.readFileSync(keyF), cert: fs.readFileSync(crtF) })
-  leafCache.set(h, ctx)
-  return ctx
-}
+// ---- TLS opt-in: 自签 CA + 按 host 动态叶子证书(openssl) — 4.5-1 原样抽至 ./tls-intercept.mjs ----
+// 本文件仅保留绑定面: mitm 侧缺省目录(CA_DIR) + audit 注入(ca-created/leaf-sign-error 仍落 mitm-audit.jsonl),
+// 判定逻辑/openssl 参数/文件布局与抽出前逐字节一致(零行为变化, mitm-capture.test.mjs 全量回归兜底)。
+export const ensureCA = (dir = CA_DIR) => _ensureCA(dir, audit)
+export const signLeaf = (host, dir = CA_DIR) => _signLeaf(host, dir, audit)
 
 const server = http.createServer((req, res) => { handle(req, res).catch(() => { try { res.writeHead(500); res.end() } catch {} }) })
 // ws:// 明文升级(D2D_MITM_WSS=1 审计; 否则原样隧道)
@@ -351,18 +326,13 @@ server.on('connect', (req, sock, head) => { // HTTPS CONNECT: TLS_ON 解密(经�
 })
 server.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n') } catch {} })
 
-// TLS 解密模式: 内部 https 服务(SNI 动态证书) — CONNECT 隧道回环至此, 明文请求进同一 handle
-let _tlsSrv = null
+// TLS 解密模式: 内部 https 服务(SNI 动态证书)在共享模块(进程级单例面) — CONNECT 隧道回环至此,
+// 明文请求进同一 handle; mitm 侧只注入缺省目录/audit/handle/upgrade 转发(原样搬移, 行为零变化)。
 function tlsSrvPort() {
-  if (_tlsSrv) return _tlsSrv.address().port
-  _tlsSrv = https.createServer({
-    SNICallback: (servername, cb) => {
-      try { cb(null, signLeaf(servername)) } catch (e) { audit({ event: 'leaf-sign-error', host: String(servername).slice(0, 60), error: String(e.message ?? e).slice(0, 120) }); cb(e) }
-    },
-  }, (req, res) => { handle(req, res).catch(() => { try { res.writeHead(500); res.end() } catch {} }) })
-  _tlsSrv.on('upgrade', (req, sock, head) => server.emit('upgrade', req, sock, head))
-  _tlsSrv.listen(0, '127.0.0.1')
-  return _tlsSrv.address().port
+  return _tlsSrvPort(
+    (req, res) => { handle(req, res).catch(() => { try { res.writeHead(500); res.end() } catch {} }) },
+    { caDir: CA_DIR, onAudit: audit, onUpgrade: (req, sock, head) => server.emit('upgrade', req, sock, head) },
+  )
 }
 
 // main 守卫: 直接运行才起服务; mocha 纯 import 只取纯函数/真身 server。D2D_MITM=1 才启用(防误启动)。
