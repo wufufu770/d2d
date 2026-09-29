@@ -190,7 +190,7 @@ a7d1a62e2843caa65fd0a187748ac27459e81c7da5ce2a7969c2676ae113c7b8  plugin/pentest
 88536f3de0017f6d25030c694eda08b33b01be8d2b350ede5433e11c4db14e32  plugin/pentest-dsh/test/bias-detector.test.mjs
 61672a656cf3f40453e07b080a3ca6ead447810085445b6f3640ea294c090a58  plugin/pentest-dsh/test/boot-import.test.mjs
 df199d4a33ea3c102ed6bf1f1e9bf13440b576e55eaa509ecfdace24a704b9e8  plugin/pentest-dsh/test/briefs.test.mjs
-1473557ad1ccad3356bdfc44df646b305cab5412fc68a1f2c4ae0fe1496766ed  plugin/pentest-dsh/test/browser-recon.test.mjs
+e3462bf08418d1beeef6709f7aed25132590a83b6a541dcca8533ce0013ff987  plugin/pentest-dsh/test/browser-recon.test.mjs
 31e71f33ab93f451e53ec52e870ea4c42b79384002ce4cf36fa0fd6cb90ca5b0  plugin/pentest-dsh/test/burp-tools.test.mjs
 d9dd0e53c3f0724220c050826dcc696840bc2d137c9a884211d23eb7794afe95  plugin/pentest-dsh/test/callsite-eng-predicate.test.mjs
 61335a98bb4874b1e5e7f09a4f7590c984f4b0beb92a2514a88cb91bdc26165b  plugin/pentest-dsh/test/caps.test.mjs
