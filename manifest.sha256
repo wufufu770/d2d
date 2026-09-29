@@ -218,7 +218,7 @@ c58c231f0770ddb429224549151081e1748ab14e179cfc829ffde95226f9aea1  plugin/pentest
 85b48ff83d1d6c6d6c5c71bf5b03097a666935e1f95a9391453a9458854dbf3e  plugin/pentest-dsh/test/gate-anchor.test.mjs
 9980535babf011e9e087e37c3b2e00a34dad0b7354e0c3a46df8c02d21730c11  plugin/pentest-dsh/test/gate-failure-capture.test.mjs
 9d81c1162e87f98172e366253ec578c7ec6f3685ae08000fe2537633c257f988  plugin/pentest-dsh/test/gates.test.mjs
-ec972f9d73325e76c6cb1e78eca3cb9ddae971a570041ecdb2930d7f53983ab5  plugin/pentest-dsh/test/gateway-mitm-merge.test.mjs
+91c01c3d265b26c52ee97f09ed5eda160df09f9c6d7de629de93cce006a7d784  plugin/pentest-dsh/test/gateway-mitm-merge.test.mjs
 2ef394ad3fb680194c8e35c0c5ea87b796158add0e8369aa2e97fdbd514c20e7  plugin/pentest-dsh/test/golden-spa.test.mjs
 ea96c14950838a6c6d8155bf8bcf7e0b0bd6b922d86b87c3a97782d81474915e  plugin/pentest-dsh/test/hardening-regressions.test.mjs
 662ad91b2e16dd9e3b0278bb853312ee97bfc3a43cb9e2bae9d717310b1009d0  plugin/pentest-dsh/test/hypothesis-aging.test.mjs
@@ -239,7 +239,7 @@ aa0d16bb4e8ca17a1912bd0e1a877342c5bcb80a11e5de791b002d7e2f446f63  plugin/pentest
 3a98640faa5b7fda0b07ad452b82718f9842dbf14cd6572cc9aec482977d7a12  plugin/pentest-dsh/test/post-execute-gate.test.mjs
 e0083013eda3e84bca0a76e3e4e1c30865da0bf533d67f0be80147a6cfef808c  plugin/pentest-dsh/test/prompt-maxlens.test.mjs
 c25d8d100e858875e46955bcd708e0d532eba83797d9cebc579a81a7a57a844d  plugin/pentest-dsh/test/r4a-boundary.test.mjs
-d236dbff690e913e51c02cfeb88f3dcf2a579d88adb32020fda8d80efc107e88  plugin/pentest-dsh/test/rate-backoff.test.mjs
+01f60009d6ba99c7c92615281c348ce3f9d3ee7ae0a9f847560a4407b8760be3  plugin/pentest-dsh/test/rate-backoff.test.mjs
 39d5e2b500e2ddd137e14e3b6cd1932236429ccc081fb7aaa278edf469745188  plugin/pentest-dsh/test/recon-relax.test.mjs
 99b00cc66f2bff3fc65a41083ea7796f381ae9d87dfecf160204192c9fb04a31  plugin/pentest-dsh/test/recon.test.mjs
 2751a32986413eb4b54018e10b8e55373d03af29e39c4ed433dcfd4b76e14bfd  plugin/pentest-dsh/test/redact-text.test.mjs
