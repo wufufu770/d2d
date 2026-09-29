@@ -115,13 +115,14 @@ cat > "$DSH_HOME/profiles/web/cordis.yml" <<'EOF'
 EOF
 cp "$DSH_HOME/profiles/web/cordis.yml" "$DSH_HOME/profiles/headless/cordis.yml"
 
+# sidebar 精确 pin 消除 caret 浮动（0.24.1 需 DSH 0.2.0-rc.1+，装了会直接失败）；成对升级见 docs/dsh-sidebar-compat.md
 cat > "$DSH_HOME/profiles/web/package.json" <<EOF
 {
   "name": "dsh-profile-web",
   "private": true,
   "dependencies": {
     "d2d-panel": "link:$REPO_DIR/plugin/d2d-panel",
-    "dsh-better-sidebar": "^0.17.1",
+    "dsh-better-sidebar": "0.17.1",
     "dsh-sidebar-leap": "^0.3.2",
     "pentest-dsh": "link:$REPO_DIR/plugin/pentest-dsh"
   },
