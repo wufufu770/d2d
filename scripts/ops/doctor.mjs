@@ -13,6 +13,8 @@ const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
 const GRAPH = process.env.P2P_GRAPHD ?? 'http://127.0.0.1:8766'
 const rows = []
 const check = (name, ok, detail = '') => rows.push({ name, ok, detail })
+// WARN 级检查(T2-2b-1): 提示问题但不计入阻断(exit 0) — 照 doctor 现有 check 风格, 仅多 warn 标记
+const checkWarn = (name, ok, detail = '') => rows.push({ name, ok, warn: true, detail })
 
 // 1. graphd 健康
 let graphdOk = false
@@ -80,6 +82,27 @@ check('写通道暂停开关', !paused, paused ? 'paused.json 存在 — 新 eng
   check('NO_PROXY 保护区含回环', noproxy === '' || /127\.0\.0\.1|localhost/.test(noproxy), noproxy ? (noproxy.includes('127.0.0.1') ? 'OK' : '缺 127.0.0.1 — graphd/CDP 写通道会被推进代理') : '未配置(worker 侧由 adapter 默认注入, 无需处理)')
 }
 
+// 3.6 T2-2b-1 网关解密面证书(WARN 级, 不阻断): D2D_EGRESS_MITM=1 时解密 CA 就绪性 + worker 注入条件
+{
+  const mitmOn = String(process.env.D2D_EGRESS_MITM ?? '') === '1'
+  const caDir = path.join(DATA_DIR, 'mitm')
+  const caCrt = path.join(caDir, 'ca.crt'), caKey = path.join(caDir, 'ca.key')
+  if (mitmOn) {
+    const crtOk = fs.existsSync(caCrt)
+    const key0600 = (() => { try { return (fs.statSync(caKey).mode & 0o777) === 0o600 } catch { return false } })()
+    checkWarn('egress 解密面 CA(D2D_EGRESS_MITM=1)', crtOk && key0600, !crtOk
+      ? `缺 ${caCrt} — 解密面按 SNI 签叶子会失败回退直通; 先跑 tls-intercept 的 ensureCA(共享模块 scripts/gateway/tls-intercept.mjs, 需 openssl 在 PATH)自动生成`
+      : !key0600 ? `ca.key 权限非 0600 — 私钥过宽, chmod 600 ${caKey}` : `${caCrt} 在, ca.key 0600`)
+    const nxa = String(process.env.NODE_EXTRA_CA_CERTS ?? '').trim()
+    checkWarn('worker 证书注入条件(NODE_EXTRA_CA_CERTS)', true, crtOk
+      ? (nxa ? `宿主 env 已设 ${nxa}; adapter-dsh 另按 ${caCrt} 存在性向 worker 进程自动注入 NODE_EXTRA_CA_CERTS 与 CURL_CA_BUNDLE 合并`
+        : `ca.crt 在 — adapter-dsh 启动 worker 时自动注入; 宿主侧手动跑 Node 客户端需自行 export NODE_EXTRA_CA_CERTS=${caCrt}`)
+      : `缺 ${caCrt} — worker 不注入网关 CA, D2D_EGRESS_MITM=1 下 TLS 校验将失败; 先跑 tls-intercept ensureCA 生成`)
+  } else {
+    checkWarn('egress 解密面 CA', true, 'D2D_EGRESS_MITM 未启用(CONNECT 直通, 默认) — 解密面检查跳过')
+  }
+}
+
 // 4. 模型策略: 占位符/空值检测(#3) + study 角色可达
 const pol = (() => { try { return JSON.parse(fs.readFileSync(`${DATA_DIR}/config/model-policies.json`, 'utf8')) } catch { return null } })()
 check('model-policies.json 存在', Boolean(pol))
@@ -124,7 +147,7 @@ try { inboxN = fs.readdirSync(`${DATA_DIR}/knowledge/inbox`).filter((f) => /\.(m
 check('学习队列状态', true, inboxN ? `inbox 待蒸馏 ${inboxN} 篇(下次 auto-study 消化)` : 'inbox 空(已消化)')
 
 // ---- 汇总 ----
-const bad = rows.filter((r) => !r.ok)
-for (const r of rows) console.log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`)
-console.log(`\n${rows.length - bad.length}/${rows.length} 项通过${bad.length ? `；${bad.length} 项异常需处理` : '，全部健康'}`)
+const bad = rows.filter((r) => !r.ok && !r.warn) // WARN 级不阻断
+for (const r of rows) console.log(`${r.ok ? '✓' : r.warn ? '⚠' : '✗'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`)
+console.log(`\n${rows.length - rows.filter((r) => !r.ok).length}/${rows.length} 项通过${bad.length ? `；${bad.length} 项异常需处理` : '，全部健康'}${rows.some((r) => !r.ok && r.warn) ? '（另有 WARN 提示项, 不阻断）' : ''}`)
 process.exit(bad.length ? 1 : 0)
