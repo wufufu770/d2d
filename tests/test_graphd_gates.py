@@ -1099,8 +1099,10 @@ def _spa_eval(body, tmp_path):
     assert p.returncode == 0, f"node subprocess failed: {p.stderr[-800:]}"
     return json.loads(p.stdout.strip().splitlines()[-1])
 
+# T2-2b-2: 入图 4→6 处占位 — tech 改走 $tech(WS 归一端点带 tech='websocket', 缺省仍 spa-cdp),
+# 补 eng(W5 回填兼容: coalesce 不抢占已归属行, 缺省空串)。参数化锁实质不变: cypher 仍全 $ 占位。
 H15_EXPECTED_CYPHER = ("MERGE (e:Endpoint {id:$id}) SET e.url=$url, e.method=$method, "
-                       "e.tech=coalesce(e.tech,'spa-cdp')")
+                       "e.tech=coalesce(e.tech,$tech), e.eng=coalesce(e.eng,$eng)")
 
 def test_h15_payload_parameterized_method_whitelisted(tmp_path):
     out = _spa_eval("""
