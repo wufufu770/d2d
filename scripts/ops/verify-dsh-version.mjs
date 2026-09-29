@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // verify-dsh-version.mjs — dsh 版本三处一致性校验 + manifest node_modules 段本地哈希校验(4-3d-2)
+//   + sidebar 成对性校验(④, T2-2b-0)
 //
 // 背景(4-1/4-2 审计 + 4-3d-2 复核): 全局 CLI 包 @deepseek-ai/dsh 与插件库包
 // @deepseek-ai/dsh-*(plugin/pentest-dsh 六依赖)是两条独立的版本序列。install.sh 曾未锁版
@@ -15,6 +16,11 @@
 //   ③ 全局 CLI 实装版本 — dsh --version → `npm root -g` 下 @deepseek-ai/dsh/package.json →
 //     ~/.npm-global/lib/node_modules/@deepseek-ai/dsh/package.json 三级回退; 环境缺失=SKIP
 //     (不计失败), 检出且≠pin=失败(如实告警 4-1 偏斜本体, 本机 0.1.5-rc.1 vs pin)。
+//   ④ sidebar 成对性(T2-2b-0) — 正则提取 install.sh heredoc 内 "dsh-better-sidebar": "<spec>"
+//     的 pin, 与 ③ 宿主实装版本对照内置 SIDEBAR_COMPAT_TABLE 区间表(与
+//     docs/dsh-sidebar-compat.md 版本对应表同源): 同区间=OK; 跨区间/未收录=WARN(不 exit 1,
+//     仅 --strict 计失败, 照 manifest 段先例); heredoc 无 pin/缺文件/宿主缺失=SKIP
+//     (④ 结果行走 checks 打印, 不进 skips 数组 — 保持既有 skips 断言口径)。
 //
 // manifest node_modules 段(--with-manifest 默认开; --no-manifest 关):
 //   manifest.sha256 末段条目以 # 锚定 — GNU sha256sum -c 忽略 # 行(实证), 故 CI
@@ -27,7 +33,7 @@
 //   node scripts/ops/verify-dsh-version.mjs [--root <dir>] [--no-manifest] [--strict]
 //   node scripts/ops/verify-dsh-version.mjs --emit-manifest-section   # 打印 node_modules 段
 //     (pin 变更后: 手工删 manifest.sha256 旧段 → 本命令输出 >> manifest.sha256)
-// 退出码: 0=版本一致(manifest 仅 WARN) / 1=版本不一致或 --strict 下有 WARN / 2=输入文件缺失无法检查
+// 退出码: 0=版本一致(manifest/④ 仅 WARN) / 1=版本不一致或 --strict 下有 WARN / 2=输入文件缺失无法检查
 // 测试: tests/ops/verify-dsh-version.test.mjs(mocha; 全部检查函数可注入 globalProvider/paths/hashFn)
 import fs from 'node:fs'
 import os from 'node:os'
@@ -76,6 +82,92 @@ export function parseInstallPin(installShText) {
     }
   }
   return { pin: null, line: null, lineText: null, pinned: null }
+}
+
+// ── ④ sidebar 成对性(T2-2b-0) ──────────────────────────────────────────────────
+export const SIDEBAR_PKG = 'dsh-better-sidebar'
+// 区间表与 docs/dsh-sidebar-compat.md 版本对应表同源(勿单边改动; npm dist-tags 实查
+// 0.17.1/0.19.1/0.22.1/0.24.1 吻合, 2026-09-29)。行: [dshLow, dshHigh, sidebarVer, 备注];
+// dsh 区间为闭区间, dshHigh=null=无上界。
+export const SIDEBAR_COMPAT_TABLE = [
+  ['0.1.1-rc.2', '0.1.1-rc.2', '0.17.1', '当前 pin/当前基线'],
+  ['0.1.5-rc.1', '0.1.6-alpha.2', '0.19.1', '升级时同步'],
+  ['0.1.7-rc.1', '0.1.7-rc.2', '0.22.1', '升级时同步'],
+  ['0.2.0-rc.1', null, '0.24.1', '升级时同步'],
+]
+// 预发布感知 semver 比较: <0 a<b / 0 相等 / >0 a>b / null=任一侧不可解析。
+// 主.次.补丁数值比; 有 pre < 无 pre; pre 标识符按标准 semver(数值比/ASCII 比, 数值标识符
+// < 字母标识符, 前缀相等时短者更低)。
+export function compareVersions(a, b) {
+  const parse = (v) => {
+    const m = String(v).trim().match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/)
+    return m ? { nums: [+m[1], +m[2], +m[3]], pre: m[4] === undefined ? null : m[4].split('.') } : null
+  }
+  const va = parse(a)
+  const vb = parse(b)
+  if (!va || !vb) return null
+  for (let i = 0; i < 3; i++) {
+    if (va.nums[i] !== vb.nums[i]) return va.nums[i] < vb.nums[i] ? -1 : 1
+  }
+  if (va.pre === null || vb.pre === null) return va.pre === vb.pre ? 0 : va.pre === null ? 1 : -1
+  const len = Math.max(va.pre.length, vb.pre.length)
+  for (let i = 0; i < len; i++) {
+    const x = va.pre[i]
+    const y = vb.pre[i]
+    if (x === undefined) return -1
+    if (y === undefined) return 1
+    const nx = /^\d+$/.test(x)
+    const ny = /^\d+$/.test(y)
+    if (nx && ny) {
+      const d = Number(x) - Number(y)
+      if (d) return d < 0 ? -1 : 1
+    } else if (nx !== ny) {
+      return nx ? -1 : 1
+    } else if (x !== y) {
+      return x < y ? -1 : 1
+    }
+  }
+  return 0
+}
+// DSH 版本 → 区间下标(dshLow~dshHigh 闭区间; 不可解析/未收录=-1)
+export function findCompatRowByDsh(version, table = SIDEBAR_COMPAT_TABLE) {
+  for (let i = 0; i < table.length; i++) {
+    const geLo = compareVersions(version, table[i][0])
+    const leHi = table[i][1] === null ? 0 : compareVersions(version, table[i][1])
+    if (geLo === null || leHi === null) return -1
+    if (geLo >= 0 && leHi <= 0) return i
+  }
+  return -1
+}
+// sidebar pin spec(剥 ^/~) → 区间下标(按 sidebar 版本列精确匹配; 未收录=-1)
+export function findCompatRowBySidebarSpec(spec, table = SIDEBAR_COMPAT_TABLE) {
+  const v = String(spec).replace(/^[~^]/, '')
+  return table.findIndex((row) => row[2] === v)
+}
+// ④ install.sh 文本 → heredoc 内 SIDEBAR_PKG 的 pin { spec, line, lineText } | null。
+// 只认 heredoc 体(<<[-]?['"]DELIM … DELIM)内的 JSON 依赖行 "dsh-better-sidebar": "<spec>";
+// heredoc 外提及/无 heredoc/无 pin → null(上层 SKIP)。bundles 数组 "dsh-better-sidebar", 无
+// 冒号不命中。
+const SIDEBAR_PIN_RE = /^\s*"dsh-better-sidebar"\s*:\s*"([^"]+)"/
+const HEREDOC_START_RE = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/
+export function parseInstallSidebarPin(installShText) {
+  const lines = installShText.split('\n')
+  let delim = null
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (delim !== null) {
+      if (line.trim() === delim) {
+        delim = null
+      } else {
+        const m = line.match(SIDEBAR_PIN_RE)
+        if (m) return { spec: m[1], line: i + 1, lineText: line.trim() }
+      }
+      continue
+    }
+    const h = line.match(HEREDOC_START_RE)
+    if (h) delim = h[2]
+  }
+  return null
 }
 
 // manifest 文本 → { entries: [{hash, path}], markerFound }(仓库段条目不以 # 开头, 天然区分)
@@ -219,9 +311,10 @@ export async function runChecks({
     failures.push(`② 无法读取 ${installShPath}: ${e.message}`)
   }
 
-  // ③ 全局 CLI 实装(缺失=SKIP; 偏斜=失败)
+  // ③ 全局 CLI 实装(缺失=SKIP; 偏斜=失败) — 探测结果 g 复用给 ④ sidebar 成对性
+  let g = null
   try {
-    const g = await globalProvider()
+    g = await globalProvider()
     if (g.status === 'missing') {
       skips.push('[3/3] 全局 CLI: SKIP — 本机未检出全局 dsh(PATH 与 npm prefix 均无); 新装将取 install.sh 锁定版')
     } else if (!ref) {
@@ -233,6 +326,30 @@ export async function runChecks({
     }
   } catch (e) {
     warnings.push(`③ 全局版本探测异常: ${e.message}`)
+  }
+
+  // ④ sidebar 成对性(T2-2b-0): 复用 ③ 宿主版本(g), 对照 SIDEBAR_COMPAT_TABLE(与
+  // docs/dsh-sidebar-compat.md 同源)。同区间=OK; 跨区间/未收录=WARN(不 exit 1, 仅 --strict
+  // 计失败, 照 manifest 段先例); heredoc 无 pin/缺文件/宿主缺失=SKIP(结果行走 checks 打印)。
+  try {
+    const sidebarPin = parseInstallSidebarPin(fs.readFileSync(installShPath, 'utf8'))
+    if (!sidebarPin) {
+      checks.push(`④ sidebar 成对性: SKIP — install.sh heredoc 内无 ${SIDEBAR_PKG} pin(未启用/非 heredoc)`)
+    } else if (!g || g.status !== 'ok') {
+      checks.push(`④ sidebar 成对性: SKIP — 宿主 DSH 版本未检出(新装将随 install.sh 成对落位)`)
+    } else {
+      const hostRow = findCompatRowByDsh(g.version)
+      const pinRow = findCompatRowBySidebarSpec(sidebarPin.spec)
+      if (hostRow >= 0 && hostRow === pinRow) {
+        checks.push(`④ sidebar 成对性: ✓ 宿主 DSH ${g.version} ↔ ${SIDEBAR_PKG} ${sidebarPin.spec} 同区间(对应 sidebar ${SIDEBAR_COMPAT_TABLE[hostRow][2]}, install.sh:${sidebarPin.line})`)
+      } else if (hostRow < 0 || pinRow < 0) {
+        warnings.push(`④ sidebar 成对性: 未收录 — 宿主 DSH ${g.version}${hostRow < 0 ? '(不在对应表任一区间)' : `(→ sidebar ${SIDEBAR_COMPAT_TABLE[hostRow][2]})`} / pin ${sidebarPin.spec}${pinRow < 0 ? '(不在对应表)' : `(→ 区间 ${SIDEBAR_COMPAT_TABLE[pinRow][2]})`} — 升级 DSH 时须与 dsh-better-sidebar 成对升级（docs/dsh-sidebar-compat.md）`)
+      } else {
+        warnings.push(`④ sidebar 成对性: 跨区间 — 宿主 DSH ${g.version}(对应 sidebar ${SIDEBAR_COMPAT_TABLE[hostRow][2]}) vs install.sh:${sidebarPin.line} ${SIDEBAR_PKG} ${sidebarPin.spec}(区间 ${SIDEBAR_COMPAT_TABLE[pinRow][2]}) — 升级 DSH 时须与 dsh-better-sidebar 成对升级（docs/dsh-sidebar-compat.md）`)
+      }
+    }
+  } catch (e) {
+    checks.push(`④ sidebar 成对性: SKIP — install.sh 不可读(${e.message})`)
   }
 
   // manifest node_modules 段(默认开)
