@@ -31,9 +31,14 @@ WS/WebRTC/QUIC 亦不吃 env 代理):
 (不发 --proxy-bypass-list)              # bypass 列表默认空
 ```
 
-- **回环靶场不豁免**: 不发 bypass 列表 → SPA(:8894)/DVWA(:80)的浏览器流量同样过网关与
-  `Fetch.requestPaused` scope 门(cdp-proxy.mjs:184-194, 非白名单一律 AccessDenied) — 显式 `<local>`
-  豁免会让靶场流量绕开治理面。DNS 由代理解析, 页面自行解析不出网。
+- **回环靶场的治理面 = CDP 层 scope 门(实测修正, T2-2b-4 开放项②)**: Chromium 对回环目标
+  (127.0.0.1/localhost)即使设 `--proxy-server` 也**默认隐式直连**——不发 `--proxy-bypass-list` 改变的
+  只是显式豁免清单, 回环流量本就不经 d2d-egress 网关(强制回环过代理需显式 `<-loopback>`, 会把
+  靶场流量拖进网关且无必要, 不采用)。实测口径(T2-2b-4 SPA 攻击验收, cdp audit.jsonl 17 行证据):
+  SPA(:8894)请求仍全部过 `Fetch.requestPaused` scope 门(cdp-proxy.mjs:184-194, 非白名单一律
+  AccessDenied)——该门在 CDP 网络层, 与代理无关。准确表述: **scope 门覆盖回环(实测成立),
+  egress 网关不经回环(Chromium 默认语义)**。DNS 由代理解析仅对走代理的非回环流量成立;
+  回环目标本机解析, 无出网面。(cdp-proxy.mjs:129-131 头注释仍是修正前表述, 勘误归代码属主批)
 - 进程级锁定(单测同款断言): `plugin/pentest-dsh/test/browser-recon.test.mjs` 用 fake chrome 捕获真实
   spawn argv, 锁定"有 `--proxy-server`/`--disable-quic` 且无 bypass"三条。
 - scope 白名单来源: 静态 `P2P_PROXY_ALLOW`(缺省 `127.0.0.1,localhost`)∪ graphd 动态 scope(30s 刷新,
