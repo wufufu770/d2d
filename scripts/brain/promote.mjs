@@ -17,6 +17,8 @@ import path from 'node:path'
 import { loadStore, saveStore, renewCards, sweepExpired } from '../../plugin/pentest-dsh/domain/memory-store.mjs'
 // #86 进化显式回路(消费端): 进化台账(brain/evolution.jsonl)聚合 → 降级复审清单(只报告不自动删)
 import { evolutionStats, downgradeReview } from '../../plugin/pentest-dsh/domain/strategy-evolution.mjs'
+// T3-1-2 A-MemGuard 共识验证 v1(纯函数; 输入行由本文件 gq() 只读拉取, 零写通道零加列)
+import { consensusCheck } from '../../plugin/pentest-dsh/domain/experience-consensus.mjs'
 
 const REPO = process.env.D2D ?? `${os.homedir()}/d2d`
 const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
@@ -132,6 +134,18 @@ function downgradeReviewReport(poolCards) {
   return review
 }
 
+// T3-1-2 A-MemGuard 共识前置信号: 晋级前对图内 Experience 做同面分歧/异常扫描 —
+// v1 只报告不阻断(阻断语义留给 v2 拍板); 图不可达/空库静默降级为一行提示, 绝不因信号失败挂晋级。
+function consensusPreSignal() {
+  try {
+    const rows = gq(`MATCH (x:Experience) RETURN x.id AS id, x.eng_id AS eng_id, x.category AS category, x.scope AS scope, x.title AS title, x.content AS content, x.status AS status, x.retrieval_count AS retrieval_count, x.success_count AS success_count, x.created_at AS created_at`)
+    const r = consensusCheck(rows)
+    console.log(`🛡 共识前置信号(T3-1-2 v1): ${r.stats.total} 条经验/${r.stats.groups} 组 — 分歧 ${r.deviations.length} 处, 异常 ${r.anomalies.length} 条(只报告不阻断)`)
+    for (const d of r.deviations) console.log(`   ⚠ [分歧·${d.kind}] ${d.group}: 新 ${d.newer.id}(${d.newer.category}) vs 旧 ${d.older.id}(${d.older.category}) 重叠=${d.overlap}`)
+    for (const a of r.anomalies) console.log(`   ⚠ [异常·${a.type}] ${a.group}: ${a.ids.join(',')}`)
+  } catch (e) { console.log(`🛡 共识前置信号不可用(不阻断): ${String(e?.message ?? e).slice(0, 80)}`) }
+}
+
 const cmd = process.argv[2]
 if (cmd === '--to-current') {
   const shadowLink = (() => { try { return fs.readlinkSync(`${BRAIN}/shadow`) } catch { return null } })()
@@ -143,6 +157,7 @@ if (cmd === '--to-current') {
       return Array.isArray(raw) ? raw : (raw.cards ?? [])
     } catch { return [] }
   })())
+  consensusPreSignal() // T3-1-2: shadow→current 晋级前置信号(只报告)
   const g3 = gate3(fieldEvidence())
   if (!g3.ok) {
     // #74/P0: --force 废除 — 门禁③证据(卡片实战命中)由命中归因自动累积:
@@ -232,6 +247,8 @@ console.log(`门禁② 复盘: 隔离 ${g2.quarantined.length} 张(撞已证伪�
 if (!g2.ok) { console.error('❌ 整版拒绝: 隔离率>30%'); process.exit(1) }
 const finalCards = g1.clean.filter((c) => !g2.quarantined.includes(c.id))
 if (!finalCards.length) { console.error('❌ 无有效新卡'); process.exit(1) }
+
+consensusPreSignal() // T3-1-2: staged→shadow 晋级前置信号(只报告, --check/--to-shadow 共用)
 
 if (cmd === '--check') { console.log(`✅ 门禁①②通过, 可 --to-shadow (${finalCards.length} 张)`); process.exit(0) }
 if (cmd === '--to-shadow') {
