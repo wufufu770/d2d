@@ -43,6 +43,9 @@
 | Mimosa L3 门既有拦截项 | 存量账目 |
 | approvals.mjs / tier-approval.mjs 浏览器⓪支（approvals.mjs:74-77 词表+116-121 isBrowserStateChange；tier-approval.mjs:79-82 镜像，均实锚） | T2-2b-4 已落地 |
 | scripts/browser/ 四文件（cdp-client/form-fuzzer/logic-tester/race-condition） | T2-2b-4 已落地 |
+| scheduler.js BG-2 业务闸注入行（:621-625 区新增 5 行, 禁区 [570,618] 之外） | BG-2 已落地 |
+| scheduler/loop.mjs 深环业务闸检查块（allocateOnce scope 过滤后 13 行） | BG-2 已落地 |
+| scheduler/business-gate.mjs 编排文件 | BG-2 已落地 |
 | tests/golden-targets/spa-attack-acceptance.md 验收结论 | T2-2b-4 已落地 |
 
 T3-1 新增：无（四子项零侵入落地）。HD-1 新增：无（纯文档批）。

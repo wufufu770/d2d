@@ -21,15 +21,14 @@
 T0 ✅ / T1 ✅ / T1.x 实战 ✅ / T2-1 ✅ / T2-2a ✅ / T2-2b-0~4 ✅ /
 T3-1 ✅（四子项全落地：Schema 校验 260 张全过 / A-MemGuard 共识 v1 离线路径 /
 misses 月度聚合 / 度量框架蒸馏+注入实效落地、检索有效性设计就绪）/
-HD-1 ✅（文档体系）/ BG-1 ✅（业务闸第一段：纯函数+schema+29 测试+BG-2 申请材料；
-scheduler 集成留 BG-2 待授权）
-下一步建议：BG-2（待用户对 docs/business-gate-design.md §二授权申请拍板）+ 滞留回填小批
-（穿插）→ T3-2（先发 T3-2-0 拆批方案）
+HD-1 ✅（文档体系）/ BG-1 ✅ + BG-2 ✅（业务闸全线收官：scheduler 集成上线,
+coverage_bias 死代码接线补完 T2-2a, 验收 docs/business-gate-acceptance.md）
+下一步建议：滞留回填小批（穿插）→ T3-2（先发 T3-2-0 拆批方案）
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
 |---|----|------|------|--------|
-| 1 | 业务闸 | **BG-1 完成**（schema+三纯函数 29 测试+BG-2 授权申请材料 docs/business-gate-design.md；BG-2 待用户对申请拍板） | BG-2 | P2 |
+| 1 | 业务闸 | **全线收官**（BG-1 纯函数+schema；BG-2 scheduler 集成上线：business_gate+coverage_bias 注入与深环派发闸，P2P_BUSINESS_GATE=0 回退；验收 docs/business-gate-acceptance.md） | — | P2 ✅ |
 | 2 | lease-cas-watchdog flaky | 多批未复发，观察 | 观察项 | P3 |
 | 3 | A/B 报告真 eng 名 | 未处理 | 仓库公开前必须 | P3 |
 | 4 | collect-results.mjs ts slice(0,15)（:172 实锚） | 未修 | 8.5 完整版 | P3 |
