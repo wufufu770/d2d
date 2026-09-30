@@ -134,13 +134,19 @@ bash ops/start-all.sh    # graphd :8766 · egress :8888 · oast :8890 · 面板 
 - **组合类**（不单独报）：通用 CORS、反射 XSS、CSRF —— 串成危害链后按链条报
 - **高价值优先**：越权、支付/提现逻辑、可遍历敏感信息、SQL 注入、RCE、内网 SSRF、打后台存储 XSS
 
+## For Other Agents（继任 AI 入口）
+
+继任 AI 会话入口为 **AGENTS.md**（接手协议/全局约束/批次规范/关键先例/回报格式）。
+当前状态见 docs/state.md（唯一状态真相源，每批更新），全阶段编排见 docs/roadmap.md，
+红线清单见 docs/do-not-touch.md（实施前必读）。信源分级：仓库代码 > 文档体系 > 对话记忆。
+
 ## 测试与自检
 
 ```bash
 node scripts/ops/doctor.mjs                      # 运行环境自检
-python3 -m pytest tests/test_graphd_gates.py     # graphd 门禁 145 例
-cd plugin/pentest-dsh && npm test                # 调度/分诊/工具面 596 例
-cd plugin/d2d-panel && npm test                  # 面板 46 例
+python3 -m pytest tests/ -q                      # graphd 门禁 368 例（HD-1 实锚更新）
+cd plugin/pentest-dsh && npm test                # 调度/分诊/工具面 1729 例
+cd plugin/d2d-panel && npm test                  # 面板 55 例
 node scripts/ops/backup-graph.sh                 # 图备份
 ```
 
