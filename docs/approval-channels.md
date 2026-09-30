@@ -231,9 +231,9 @@ signal abort → `cancelled`；policy `never` → `rejected`（**answerer 之前
 
 1. **dsh 工具面扩门**：`GATED_TOOLS`（domain/write-gate.mjs:37，现 `{bash, write, edit}`）按
    docs/tier-depth-mapping.md 档位表增补中档工具；集合形态已留缝，三挂载点零改动。
-2. **ATLAS 共用存储待确认**：信任/误报账本现落本仓自有存储 `<D2D_DATA_DIR>/trust/`（counters.json
-   + fp-ledger.json）；是否与 ATLAS 共用一套信任存储为开放决策项，未确认前不做跨系统假设
-   （docs/merge-plan-approval-trust.md:31 同口径）。
+2. **信任存储口径（T3-1 拍板，已收口）**：信任/误报账本落本仓自有存储 `<D2D_DATA_DIR>/trust/`
+   （counters.json + fp-ledger.json），为唯一存储——不做跨系统共用（原「ATLAS 共用存储」占位
+   撤销：所指上游规划不存在，悬置项定案；docs/merge-plan-approval-trust.md:31 同口径）。
 3. **第 3 层渐进信任收口**：放宽半径落点调参（免批面/TTL/降档幅度）、role 细分（in-process worker
    与宿主同归 host-session 的已知缺口）与跨 model 泛化。
 4. **第 4 层审批 Agent 后端**：`trust.setAdjudicator` 裁决器接缝已预留（fn(ctx)→boolean，抛异常按
