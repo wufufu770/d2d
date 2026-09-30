@@ -356,9 +356,11 @@ export P2P_OAST_HOST="127.0.0.1:$OAST_PORT"
 # nohup node "$REPO_DIR/scripts/gateway/spa-render.mjs" > "$D2D_DATA_DIR/spa-render.log" 2>&1 &
 # export P2P_SPA_URL="http://127.0.0.1:8891"
 
-# M5 浏览器 CDP 执行面(登录态/JS 渲染目标; 需本机 chrome; D2D_CDP=1 启用):
+# M5 浏览器 CDP 执行面(登录态/JS 渲染目标; 需本机 chrome) — T2-2b-3-1 常驻反转: 默认装,
+# D2D_CDP=0 逃生跳过(与 validator resolveCdpChannel「缺省启用/显式 0 关」同口径);
+# systemd 常驻形态见 scripts/systemd/d2d-cdp-proxy.service(安装器只装单元不拉起, 手工 enable)
 # worker 经 curl 调 127.0.0.1:8893(scope 白名单 + Fetch 请求级拦截, 见 SKILL.md 第 11 节)
-if [ "\${D2D_CDP:-0}" = "1" ]; then
+if [ "\${D2D_CDP:-1}" != "0" ]; then
   P2P_CDP_PROXY_PORT=8893 nohup node "$REPO_DIR/scripts/browser/cdp-proxy.mjs" > "$D2D_DATA_DIR/cdp-proxy.log" 2>&1 &
   echo "cdp-proxy → http://127.0.0.1:8893 (pid \$!)"
 fi
