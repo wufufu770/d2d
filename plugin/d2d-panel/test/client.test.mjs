@@ -69,21 +69,23 @@ test('client: bundle 执行仅注册 factory(零副作用); materialize 只 requ
   assert.deepEqual(Object.keys(exp).sort(), ['apply', 'inject'])
 })
 
-test('client: apply 注册 d2d:ops(60) / d2d:findings(61) 两个 single tab, badge 能力探测通过时挂 badge, component 装配到对应视图', () => {
+test('client: apply 注册 d2d:ops(60) / d2d:findings(61) / d2d:viz(62) 三个 single tab, badge 能力探测通过时挂 badge, component 装配到对应视图', () => {
   const { materialize } = loadBundle()
   const { apply } = materialize()
   const { ctx, tabs, effects } = fakeCtx({ features: ['badge'] })
   apply(ctx)
-  assert.deepEqual(effects, ['d2d-panel: ops tab', 'd2d-panel: findings tab'])
-  assert.deepEqual(tabs.map((t) => t.id), ['d2d:ops', 'd2d:findings'])
-  assert.deepEqual(tabs.map((t) => t.order), [60, 61])
-  assert.deepEqual(tabs.map((t) => t.single), [true, true])
-  assert.deepEqual(tabs.map((t) => t.title()), ['d2d', 'd2d Findings'])
-  assert.deepEqual(tabs.map((t) => t.badge()), [null, null], '未拉取快照前 badge 为 null(同步缓存读, 不发请求)')
+  assert.deepEqual(effects, ['d2d-panel: ops tab', 'd2d-panel: findings tab', 'd2d-panel: viz tab'])
+  assert.deepEqual(tabs.map((t) => t.id), ['d2d:ops', 'd2d:findings', 'd2d:viz'])
+  assert.deepEqual(tabs.map((t) => t.order), [60, 61, 62])
+  assert.deepEqual(tabs.map((t) => t.single), [true, true, true])
+  assert.deepEqual(tabs.map((t) => t.title()), ['d2d', 'd2d Findings', 'd2d Viz'])
+  assert.deepEqual(tabs.slice(0, 2).map((t) => t.badge()), [null, null], '未拉取快照前 badge 为 null(同步缓存读, 不发请求)')
+  assert.equal('badge' in tabs[2], false, 'viz tab 无 badge 语义(无廉价计数候选)')
   const props = { visible: true }
-  const [ops, findings] = tabs.map((t) => t.component(props))
+  const [ops, findings, viz] = tabs.map((t) => t.component(props))
   assert.equal(ops.type.name, 'OpsView')
   assert.equal(findings.type.name, 'FindingsView')
+  assert.equal(viz.type.name, 'VizView', 'T3-3-1: viz tab 装配 VizView')
   assert.equal(ops.props, props, 'props 原样透传给视图')
 })
 
@@ -92,10 +94,10 @@ test('client: 老版本 better-sidebar(无 features 数组)仍挂 badge; feature
   const { apply } = materialize()
   const legacy = fakeCtx({})
   apply(legacy.ctx)
-  assert.deepEqual(legacy.tabs.map((t) => typeof t.badge), ['function', 'function'])
+  assert.deepEqual(legacy.tabs.map((t) => typeof t.badge), ['function', 'function', 'undefined'], 'viz tab 无 badge 语义(T3-3-1)')
   const noBadge = fakeCtx({ features: ['something-else'] })
   apply(noBadge.ctx)
-  assert.deepEqual(noBadge.tabs.map((t) => 'badge' in t), [false, false])
+  assert.deepEqual(noBadge.tabs.map((t) => 'badge' in t), [false, false, false])
 })
 
 test('client: betterSidebar 服务缺失 → 记录日志并静默跳过(软依赖, 不注册 effect)', () => {
@@ -216,4 +218,84 @@ test('client(bug回归): FleetCard.saveCredential — 成功路径不再引用�
   assert.equal(posts[0][1].key, 'sk-2')
   assert.equal(refreshed.length, 1, '失败不触发 refresh')
   assert.equal(states[2].value, 'boom', '失败提示置入本组件 err state')
+})
+
+// ══════════ T3-3-1 可视化组件探针: view.viz.js 片段 vm 驱动 — 数据进 vnode 出(纯函数护栏) ══════════
+
+/** view.viz.js 片段加载桩: h 记录器 + 工厂作用域依赖(Card/Style/panel/hooks/localStorage)。 */
+function loadVizFragment() {
+  const { h, els } = makeH()
+  const ctx = loadFragment('view.viz.js', {
+    h,
+    panel: { muted: () => ({ style: {} }), chip: (e) => ({ style: e ?? {} }), btn: (e) => ({ style: e ?? {} }), mono: { style: {} }, root: { className: 'd2d-panel' }, dot: () => ({ style: {} }) },
+    Card: (p, ...children) => h('card', { title: p?.title, extra: p?.extra }, ...(children ?? [])),
+    Style: () => h('style'),
+    useState: (v) => [v, () => {}],
+    useEffect: () => {},
+    useCallback: (f) => f,
+    localStorage: { getItem: () => null, setItem: () => {} },
+  })
+  return { ctx, els }
+}
+const mkNodes = (n) => Array.from({ length: n }, (_, i) => ({ id: `s${i}`, type: 'asset-perimeter', weight: 1, ts: '2026-10-01', host: 'a.com' }))
+
+test('client(viz): StarMapChart 渲染护栏 — 500 节点输入渲染 ≤200 circle + 超限计数提示(数据不丢)', () => {
+  const { ctx, els } = loadVizFragment()
+  const el = ctx.StarMapChart({ starmap: { nodes: mkNodes(500), edges: [], total: 500, truncated: true, candidates: [] } })
+  assert.equal(el.type, 'div')
+  assert.ok(els.some((e) => e.type === 'svg'), '自绘 SVG 在位')
+  const circles = els.filter((e) => e.type === 'circle')
+  assert.ok(circles.length <= 200 && circles.length > 0, `circle 渲染上限(${circles.length})`)
+  assert.ok(JSON.stringify(els).includes('+300 未显示'), '超限计数提示(500-200)')
+})
+test('client(viz): StarMapChart 空态与候选连线 chip', () => {
+  const { ctx, els } = loadVizFragment()
+  ctx.StarMapChart({ starmap: { nodes: [], edges: [], total: 0, truncated: false, candidates: [] } })
+  assert.ok(JSON.stringify(els).includes('星图空'), '空态文案')
+  const { ctx: ctx2, els: els2 } = loadVizFragment()
+  ctx2.StarMapChart({ starmap: { nodes: mkNodes(2), edges: [], total: 2, truncated: false, candidates: [{ a: 's0', aType: 't1', b: 's1', bType: 't2', host: 'h' }] } })
+  assert.ok(JSON.stringify(els2).includes('t1~t2@h'), '候选连线提示 chip')
+})
+test('client(viz): CoverageHeat — 21 格渲染(空格也渲染, title 带格坐标)', () => {
+  const { ctx, els } = loadVizFragment()
+  const coverage = {
+    surfaces: ['request', 'response', 'js', 'business', 'flow', 'apk', 'mini'],
+    boundaries: ['outer', 'inner', 'cross'],
+    cells: Array.from({ length: 21 }, (_, i) => ({ su: ['request', 'response', 'js', 'business', 'flow', 'apk', 'mini'][Math.floor(i / 3)], bo: ['outer', 'inner', 'cross'][i % 3], n: i })),
+    total: 210,
+  }
+  ctx.CoverageHeat({ coverage })
+  const gridCells = els.filter((e) => typeof e.props?.title === 'string' && e.props.title.includes(' × '))
+  assert.equal(gridCells.length, 21, '21 格全渲染(含零格)')
+})
+test('client(viz): HypLaneSwim — 生命周期五列 + 时间窗 chips(localStorage 记忆)', () => {
+  const { ctx, els } = loadVizFragment()
+  ctx.HypLaneSwim({ hypotheses: { byStatus: { open: 2, claimed: 1, confirmed: 0, refuted: 0, suspected: 0 }, items: [{ id: 'h1', text: '假设甲', strategy: 's', status: 'open', ts: 't' }], windowDays: 14 } })
+  const blob = JSON.stringify(els)
+  for (const label of ['Open', 'Claimed', 'Confirmed', 'Refuted', 'Suspected']) assert.ok(blob.includes(label), `泳道列 ${label}`)
+  assert.ok(blob.includes('3d') && blob.includes('30d'), '时间窗 chips(3/7/14/30)')
+})
+test('client(viz): CapabilityCard — 形态计数 chips + 导出清单 + degraded 展示', () => {
+  const { ctx, els } = loadVizFragment()
+  ctx.CapabilityCard({ capability: { manifestValid: true, manifest: { generated: 'g', exports: [{ form: 'tool', id: 'browser_form_fuzzer', status: 'live', impl: 'a.mjs', note: '表单模糊' }] }, baselines: { version: 'v1', keys: 62, tools: ['p2p_status'] }, degraded: ['baselines: x'] } })
+  const blob = JSON.stringify(els)
+  assert.ok(blob.includes('live 1'), 'live 计数')
+  assert.ok(blob.includes('基线 62 键'), '基线键数')
+  assert.ok(blob.includes('browser_form_fuzzer'), '导出清单')
+  assert.ok(blob.includes('降级: baselines: x'), 'degraded 记因展示')
+})
+test('client(viz): VizView 容器 — visible 驱动 useViz, 数据未达时四卡全渲染不可用态(单卡降级不炸 tab)', () => {
+  const { ctx, els } = loadVizFragment()
+  ctx.VizView({ visible: true })
+  const cards = els.filter((e) => e.type === ctx.Card)
+  assert.equal(cards.length, 4, '四卡(热力/泳道/星图/能力)')
+  const blob = JSON.stringify(els)
+  for (const t of ['覆盖象限热力', '假设泳道', '信号星图', '能力看板']) assert.ok(blob.includes(t), `卡标题 ${t}`)
+  // makeH 不展开子组件 — 图组件 vnode 在位且收到 undefined 数据(路由失败单卡降级, 各图组件自渲染不可用态)
+  const comps = els.filter((e) => [ctx.CoverageHeat, ctx.HypLaneSwim, ctx.StarMapChart, ctx.CapabilityCard].includes(e.type))
+  assert.equal(comps.length, 4, '四图组件 vnode 在位')
+  for (const c of comps) {
+    const p = Object.values(c.props ?? {})[0]
+    assert.equal(p, undefined, `${c.type.name} 数据 undefined(降级态)`)
+  }
 })
