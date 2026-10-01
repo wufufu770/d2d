@@ -5,11 +5,11 @@
 > 以 `git log -1` 实测为准）。
 
 ## 当前底账
-- 远端 HEAD：T3-2-4 收官族末 commit（落库后以 `git log -1` 实测为准）
+- 远端 HEAD：T3-2-5 收官族末 commit（落库后以 `git log -1` 实测为准）
 - 分支：main 唯一活跃；31 个远端分支保留（历史基线/archive 回滚点，T4-5 清理）
 - 工作树：0 改动
-- CI：三 workflow（ci/dsh-compat/gates）全绿（T3-2-4 收官 run 以 gh 实测为准）
-- 测试基线（T3-2-4 固化）：pytest **368** / mocha **1849** / panel **55**
+- CI：三 workflow（ci/dsh-compat/gates）全绿（T3-2-5 收官 run 以 gh 实测为准）
+- 测试基线（T3-2-5 固化）：pytest **368** / mocha **1866** / panel **55**
 - stack：graphd :8766 ✅ / egress :8888 ✅（MITM 启用）/ oast :8890 ✅ /
   cdp-proxy :8893 ✅ 常驻 enable / dsh web :8899 按需（HD-1 审计时点未起）；
   SPA/DVWA 靶场就绪
@@ -34,8 +34,14 @@ T3-2-1 ✅（联网扩源：osintGet 网关化+Hackertarget 免费层+osint-subd
 T3-2-4 ✅（**6-5 双向 MCP 整项落地**：sanitize-ingest 统一消毒编排[osint 回补实战接线]+
 对外只读 stdio server[原生 JSON-RPC 零 SDK+只读双保险+审计留痕]+对内配置驱动发现
 [host 校验 fail-closed+探针降级]+MCP 导出条目 skeleton→实质；四安全底线全落地，
-设计定稿 docs/mcp-security-design.md）
-下一步建议：T3-2-5 环内 supervisor（6-4；撞 scheduler 核心禁区，须 4-3a 式显式例外设计先行）
+设计定稿 docs/mcp-security-design.md）/
+T3-2-5 ✅（**6-4 环内 supervisor 落地[worker 工具形态]**：delegate_subtask 工具
+[ctx.agents.create 只调用不修改/scope 严格子集机器判定/递归深度=1 结构性双通道/
+subagent-cap 既有账本硬顶预检/治理门继承 checkBash+post-execute 镜像/审计三事件+
+Signal(subagent-result) 回流]+devlog.md 历史回填[T0→本批逐批节, 三锚点核对]；
+零禁区实证：adapter 两文件/scheduler.js/loop.mjs/审批面本体零触碰；调度环自动创建
+切片明确出批[实战后另批 4-3a]；开发轨迹 docs/devlog.md 自本批起只追加）
+下一步建议：T3-2-6 闲时任务+自适应轮询+能力路由（**阶段 6 收官批**；吸收项承接 6-6 降级收益）
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
@@ -73,7 +79,11 @@ T3-2-4 ✅（**6-5 双向 MCP 整项落地**：sanitize-ingest 统一消毒编�
 后：六批顺序 1→(2∥3)→4→5→6 认可；6-6 本体降级长期项挂 T4-2，T3-2-6 承接）；
 **T3-2-4 安全四底线拍板**（写通道不外放/不过 sanitize-ingest 链不入图/配置即边界/
 双向各自可关；对外 server 原生 stdio JSON-RPC 零 SDK 选型；CALL 预检放行由 graphd
-权威兜底——镜像忠实 V-07 不越权加严）。
+权威兜底——镜像忠实 V-07 不越权加严）；**T3-2-5 拍板**（worker 工具形态零禁区路径；
+递归深度=1 硬限制 fail-closed 不降级；scope 继承=严格子集[不可判定维度不给]；
+子 Agent=进程内受控实体不走 external 消毒链[两道防线定性区隔]；结果回流=既有
+Signal/审计通道；调度环自动创建切片出批[实战后另批 4-3a，不出材料]；devlog 只追加
+[state=快照可覆盖/devlog=完整轨迹]）。
 待拍板（用户）：**T3-2 拆批方案拍板**（docs/stage6-batch-plan.md，含 6-6 重议建议：本体降级/闲时路由承接）；T4-2 LadybugDB 迁/不迁/观望；
 T4-4 OTel 插队或按序；T4-5 是否公开仓库及脱敏范围。
 
@@ -83,7 +93,7 @@ docs/upstream-open-items.md · docs/approval-channels.md · docs/tool-risk-ratin
 docs/gate-coverage-gaps.md · docs/gate-anchor-schema.md ·
 docs/merge-plan-approval-trust.md · docs/brain-audit-runbook.md ·
 docs/business-gate-design.md · docs/business-gate-acceptance.md · docs/stage6-batch-plan.md ·
-docs/mcp-security-design.md ·
+docs/mcp-security-design.md · docs/devlog.md（只追加轨迹）·
 experiments/dataset/eval-dataset.jsonl · experiments/results/ab-report-*.md ·
 brain/seed/seed-cards.json · tests/golden-targets/{baseline,spa-recon-acceptance,
 spa-verify-acceptance,spa-attack-acceptance}.md · scripts/ops/verify-dsh-version.mjs ·
@@ -93,7 +103,7 @@ evidence-crypto}.mjs · scripts/brain/{study,promote,validate-cards,consensus-ch
 misses-report,experience-metrics}.mjs · tools/js-scanner.mjs ·
 scripts/mcp/d2d-mcp-server.mjs · config/mcp-export.json · config/mcp-servers.json ·
 plugin/pentest-dsh/scheduler/{approval-agent,subagent-cap,bias-block,trust,
-tier-approval,external-tools}.mjs · plugin/pentest-dsh/domain/{card-schema,
+tier-approval,external-tools,supervisor-tools}.mjs · plugin/pentest-dsh/domain/{card-schema,
 experience-consensus,knowledge-gaps,experience-metrics,memory-store,sanitize-ingest,
 mcp-discovery,role-card-filter}.mjs · har-capture.mjs
 （路径均经 HD-1 审计核实存在）
