@@ -75,7 +75,9 @@
   tool-call（args 截头 200B）、**write-rejected**（cypher 截头 + sha256 前 12 位，
   不落原文全文）、tool-unknown。审计失败静默（不影响协议响应）。
 - **server 持 host token**：与 graphd 的认证通道同既有面（host-only 认证禁区
-  零触碰）；graphd 权威兜底不受 server 端预检影响。
+  零触碰）；graphd 权威兜底不受 server 端预检影响。graphQuery 带 token 注入
+  seam（可测性；缺省仍读 `~/.config/d2d/host-token`，生产行为零变化）——
+  CI 无 host-token 文件，测试必须注入（首跑 CI 红先例：环境依赖型失败）。
 
 ## 4. 对内发现（mcp-discovery.mjs + external-tools.mjs）
 

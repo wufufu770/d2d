@@ -46,11 +46,12 @@ export const TOOL_DEFS = [
   },
 ]
 
-/** graphd 只读查询(fetch 注入可测; server 持 host token — graphd host_query_gate CALL 禁兜底) */
-export async function graphQuery(graphdUrl, cypher, { fetchImpl = fetch } = {}) {
-  const token = fs.readFileSync(`${os.homedir()}/.config/d2d/host-token`, 'utf8').trim()
+/** graphd 只读查询(fetch 注入可测; token 注入可测性 seam — CI 无 host-token 文件, 缺省仍读文件;
+ * server 持 host token — graphd host_query_gate CALL 禁兜底) */
+export async function graphQuery(graphdUrl, cypher, { fetchImpl = fetch, token } = {}) {
+  const auth = token ?? fs.readFileSync(`${os.homedir()}/.config/d2d/host-token`, 'utf8').trim()
   const res = await fetchImpl(`${graphdUrl}/query`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth': token },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth': auth },
     body: JSON.stringify({ cypher }), signal: AbortSignal.timeout(10000),
   })
   const j = await res.json().catch(() => ({}))
@@ -58,8 +59,8 @@ export async function graphQuery(graphdUrl, cypher, { fetchImpl = fetch } = {}) 
   return j.rows ?? []
 }
 
-/** 工具执行(越界拒绝留痕; 写请求在预检即拒, 零图 IO) */
-export async function executeTool(name, args, { graphdUrl, fetchImpl, audit = auditEvent } = {}) {
+/** 工具执行(越界拒绝留痕; 写请求在预检即拒, 零图 IO; token 透传 graphQuery 可测 seam) */
+export async function executeTool(name, args, { graphdUrl, fetchImpl, audit = auditEvent, token } = {}) {
   if (!TOOL_DEFS.some((t) => t.name === name)) {
     audit('tool-unknown', { tool: name })
     return { isError: true, content: [{ type: 'text', text: `未知工具: ${name}(白名单外拒绝)` }] }
@@ -71,7 +72,7 @@ export async function executeTool(name, args, { graphdUrl, fetchImpl, audit = au
       return { isError: true, content: [{ type: 'text', text: '拒绝: 仅允许只读查询(MATCH/RETURN/WITH 首词且全文不含变更关键字) — 写通道不外放' }] }
     }
     try {
-      const rows = await graphQuery(graphdUrl, cy, { fetchImpl })
+      const rows = await graphQuery(graphdUrl, cy, { fetchImpl, token })
       return { content: [{ type: 'text', text: JSON.stringify(rows).slice(0, 20000) }] }
     } catch (e) {
       return { isError: true, content: [{ type: 'text', text: `查询失败: ${String(e?.message ?? e).slice(0, 160)}` }] }
@@ -83,7 +84,7 @@ export async function executeTool(name, args, { graphdUrl, fetchImpl, audit = au
       ? `MATCH (f:Finding) WHERE f.eng = '${eng.replaceAll("'", '')}' RETURN f.id AS id, f.title AS title, f.severity AS severity, f.gate_status AS gate ORDER BY f.id LIMIT 50`
       : 'MATCH (f:Finding) RETURN f.id AS id, f.title AS title, f.severity AS severity, f.gate_status AS gate ORDER BY f.id LIMIT 50'
     try {
-      const rows = await graphQuery(graphdUrl, cy, { fetchImpl })
+      const rows = await graphQuery(graphdUrl, cy, { fetchImpl, token })
       return { content: [{ type: 'text', text: JSON.stringify(rows).slice(0, 20000) }] }
     } catch (e) {
       return { isError: true, content: [{ type: 'text', text: `查询失败: ${String(e?.message ?? e).slice(0, 160)}` }] }
