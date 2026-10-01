@@ -13,8 +13,10 @@ const SKILLS = `${DATA_DIR}/brain/skills`
 const oi = process.argv.indexOf('--out')
 const OUT = oi > -1 ? path.resolve(process.argv[oi + 1]) : `${DATA_DIR}/export/skills`
 
+import { pathToFileURL } from 'node:url'
+const __isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 const index = []
-try {
+if (__isMain) try {
   for (const d of fs.readdirSync(SKILLS).sort()) {
     const md = path.join(SKILLS, d, 'SKILL.md')
     const st = path.join(SKILLS, d, 'state.json')
@@ -31,5 +33,5 @@ try {
 
 fs.mkdirSync(OUT, { recursive: true })
 fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify({ version: 1, exported_at: new Date().toISOString(), count: index.length, skills: index }, null, 1))
-console.log(`✅ Skill 导出完成: ${index.length} 个 current skill → ${OUT}(清单 index.json)`)
-if (!index.length) console.log('提示: 仅 current 态 skill 会导出; quarantine/shadow 不外发(晋级纪律)。')
+if (__isMain) { console.log(`✅ Skill 导出完成: ${index.length} 个 current skill → ${OUT}(清单 index.json)`)
+  if (!index.length) console.log('提示: 仅 current 态 skill 会导出; quarantine/shadow 不外发(晋级纪律)。') }
