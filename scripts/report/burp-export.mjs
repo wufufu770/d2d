@@ -33,9 +33,6 @@ function gq(cy) {
   return JSON.parse(res).rows ?? []
 }
 
-const rows = gq(`MATCH (f:Finding) RETURN f.id AS id, f.title AS title, f.severity AS severity, f.url AS url, f.evidence AS evidence, f.gate_status AS gate ORDER BY f.id LIMIT 500`)
-const picked = ONLY_VERIFIED ? rows.filter((r) => String(r.gate ?? '') === 'verified') : rows
-
 const issueXml = (r) => {
   const sev = SEV_MAP[String(r.severity ?? '').toLowerCase()] ?? 'Information'
   const host = String(r.url ?? '').replace(/^[a-z]+:\/\//i, '').split('/')[0] || '(unknown)'
@@ -50,9 +47,17 @@ const issueXml = (r) => {
     '  </issue>',
   ].join('\n')
 }
-const doc = ['<?xml version="1.0" encoding="UTF-8"?>', '<issues>', ...picked.map(issueXml), '</issues>', ''].join('\n')
 
-fs.mkdirSync(OUT.replace(/[/\\][^/\\]+$/, ''), { recursive: true })
-fs.writeFileSync(OUT, doc)
-console.log(`✅ Burp 形态 XML 导出: ${picked.length}/${rows.length} 条(${ONLY_VERIFIED ? '仅 verified, --all 全量' : '全量'}) → ${OUT}`)
-console.log('注: 通用 XML(降级路径) — Burp 实导入验证登记开放项; 零 DOCTYPE/零 ENTITY(结构消毒)。')
+// CLI 双形态守卫(标准纪律): 直接执行才跑主流程; 被 import(测试/复用)时零副作用 —
+// T3-2-3 CI 实证: 顶层直跑在 CI(无 host-token/无图)import 即抛 ENOENT。
+import { pathToFileURL } from 'node:url'
+const __isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+if (__isMain) {
+  const rows = gq(`MATCH (f:Finding) RETURN f.id AS id, f.title AS title, f.severity AS severity, f.url AS url, f.evidence AS evidence, f.gate_status AS gate ORDER BY f.id LIMIT 500`)
+  const picked = ONLY_VERIFIED ? rows.filter((r) => String(r.gate ?? '') === 'verified') : rows
+  const doc = ['<?xml version="1.0" encoding="UTF-8"?>', '<issues>', ...picked.map(issueXml), '</issues>', ''].join('\n')
+  fs.mkdirSync(OUT.replace(/[/\\][^/\\]+$/, ''), { recursive: true })
+  fs.writeFileSync(OUT, doc)
+  console.log(`✅ Burp 形态 XML 导出: ${picked.length}/${rows.length} 条(${ONLY_VERIFIED ? '仅 verified, --all 全量' : '全量'}) → ${OUT}`)
+  console.log('注: 通用 XML(降级路径) — Burp 实导入验证登记开放项; 零 DOCTYPE/零 ENTITY(结构消毒)。')
+}
