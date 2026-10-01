@@ -20,6 +20,9 @@ const captured = []
 const identityDefineTool = (def) => { captured.push(def); return def }
 const fakeTools = { register: () => {} } // 恒等面: register 侧无副作用
 
+import { pathToFileURL } from 'node:url'
+const __isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+
 const registerPaths = [
   ['tools/index.mjs', 'registerBurpTools'],
   ['tools/js-scanner.mjs', 'registerJsScanner'],
@@ -58,7 +61,9 @@ for (const [k, h] of fresh) {
 }
 const out = { version: cur.version ?? 'v1', baselines: [...existing.entries()].map(([tool, sha256]) => ({ tool, sha256 })).sort((a, b) => a.tool.localeCompare(b.tool)) }
 
-if (process.argv.includes('--check')) {
+if (!__isMain) {
+  // 被 import(如测试复用捕获逻辑) → 只暴露函数, 主流程不执行
+} else if (process.argv.includes('--check')) {
   const curMap = new Map(cur.baselines.map((b) => [b.tool, b.sha256]))
   const drift = [...fresh.entries()].filter(([k, h]) => curMap.get(k) !== h)
   console.log(drift.length ? `❌ 基线漂移 ${drift.length} 条: ${drift.slice(0, 5).map(([k]) => k).join(', ')}` : '✅ 基线一致(四族捕获全匹配)')
