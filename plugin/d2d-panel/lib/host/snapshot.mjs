@@ -42,6 +42,127 @@ const Q = {
   frontierConversion: `MATCH (x:Frontier) WHERE x.eng_id = $eng RETURN x.accepted_to_hypothesis_ref AS accepted_to_hypothesis_ref, x.hypothesis_to_confirmed_ref AS hypothesis_to_confirmed_ref`,
 }
 
+// ---------- T3-3-1 viz 数据面(三图; 桑基归批 2) ----------
+// 护栏参数(t3-3-plan §1 定稿): 星图服务端取数 LIMIT 500 / 泳道明细 LIMIT 200 / 文本截断。
+// 渲染上限(节点 200/边 300)是 client 侧职责, 服务端只给 total 供截断提示。
+export const VIZ = {
+  starmapNodes: 500,
+  hypItems: 200,
+  hypLaneDaysDefault: 14,
+  hypLaneDaysMax: 90,
+  textCap: 160,
+}
+// 覆盖象限 21 格枚举(与 plugin/pentest-dsh/domain/allocator.mjs:363-364 同源 — 面板侧
+// 静态副本, 避免跨包 import 连坐; 枚举由 graphd 写入侧软校验钉死, 漂移即失真)。
+export const COVERAGE_SURFACES = ['request', 'response', 'js', 'business', 'flow', 'apk', 'mini']
+export const COVERAGE_BOUNDARIES = ['outer', 'inner', 'cross']
+
+const Q_VIZ = {
+  starmapSignals: `MATCH (s:Signal_) WHERE s.eng = $eng AND s.status = 'open' RETURN s.id AS id, s.type AS type, s.weight AS weight, s.ts AS ts, s.evidence AS evidence ORDER BY coalesce(s.ts, '') DESC LIMIT ${VIZ.starmapNodes}`,
+  starmapDerived: `MATCH (a:Signal_)-[:DERIVED_FROM]->(b:Signal_) WHERE a.eng = $eng RETURN a.id AS a, b.id AS b LIMIT 1000`,
+  covHeat: `MATCH (s:Signal_) WHERE s.eng = $eng AND s.surface <> '' AND s.boundary <> '' RETURN s.surface AS su, s.boundary AS bo, count(s) AS n`,
+  hypByStatus: `MATCH (h:Hypothesis) WHERE h.eng = $eng RETURN h.status AS status, count(h) AS n`,
+  hypItems: `MATCH (h:Hypothesis) WHERE h.eng = $eng AND coalesce(h.ts, '') > $since RETURN h.id AS id, h.text AS text, h.strategy AS strategy, h.status AS status, h.ts AS ts ORDER BY coalesce(h.ts, '') DESC LIMIT ${VIZ.hypItems}`,
+}
+
+/** evidence 文本提 hostname(starmap-tick.mjs:25 同款; wire 不带 evidence 全文, 只外传 host)。 */
+function vizHostOf(ev) {
+  try { return new URL((String(ev ?? '').match(/https?:\/\/[^\s"']+/) ?? [''])[0]).hostname.toLowerCase() } catch { return '' }
+}
+
+/** runLog candidate-links 事件 pairs 解析('aId(aType)~bId(bType)@host' 字符串数组 → 结构化;
+ *  解析失败整条丢弃不中断 — starmap-tick.mjs:58 产出, 候选连线唯一持久源[内存态重启即丢])。 */
+export function parseCandidatePairs(pairs) {
+  const out = []
+  for (const p of Array.isArray(pairs) ? pairs : []) {
+    const m = /^(.+)\(([^)]*)\)~(.+)\(([^)]*)\)@(.+)$/.exec(String(p ?? ''))
+    if (m) out.push({ a: m[1], aType: m[2], b: m[3], bType: m[4], host: m[5] })
+  }
+  return out
+}
+
+/** 泳道时间窗钳位(1..VIZ.hypLaneDaysMax; 非法回缺省 — writeCaps 钳位先例)。 */
+export function clampLaneDays(v) {
+  const n = parseInt(v, 10)
+  if (!Number.isFinite(n) || n <= 0) return VIZ.hypLaneDaysDefault
+  return Math.min(n, VIZ.hypLaneDaysMax)
+}
+
+/** viz 星图数据(纯函数): 节点(host 半提 hostname, evidence 不出 host)+DERIVED_FROM 边
+ *  (两端均在取数集内)+runLog 候选连线合成。查询抛错整体上抛(路由层 503 fail-closed)。 */
+export async function buildStarmap(q, { eng, runEvents = { events: [] } } = {}) {
+  const [sigRows, derivedRows] = await Promise.all([
+    q(Q_VIZ.starmapSignals, { eng }),
+    q(Q_VIZ.starmapDerived, { eng }),
+  ])
+  const nodes = (sigRows ?? []).map((r) => ({
+    id: String(r.id ?? ''), type: String(r.type ?? ''), weight: num(r.weight),
+    ts: String(r.ts ?? ''), host: vizHostOf(r.evidence),
+  }))
+  const nodeIds = new Set(nodes.map((n) => n.id))
+  const edges = (derivedRows ?? [])
+    .map((r) => ({ a: String(r.a ?? ''), b: String(r.b ?? '') }))
+    .filter((e) => nodeIds.has(e.a) && nodeIds.has(e.b))
+  // 候选连线(runLog 事件流; 内存态重启即丢 — tail 窗口内至多数条、每条 ≤5 对)
+  const candidates = (runEvents?.events ?? [])
+    .filter((e) => String(e?.kind ?? e?.event ?? '') === 'candidate-links')
+    .flatMap((e) => parseCandidatePairs(e.pairs))
+  return { nodes, edges, total: nodes.length, truncated: nodes.length >= VIZ.starmapNodes, candidates }
+}
+
+/** viz 覆盖热力(纯函数): 21 格填充(枚举外坐标已在服务端 WHERE 剔除; 格序按枚举稳定)。 */
+export async function buildCoverage(q, { eng } = {}) {
+  const heatRows = await q(Q_VIZ.covHeat, { eng })
+  const heatMap = new Map((heatRows ?? []).map((r) => [`${String(r.su)}|${String(r.bo)}`, num(r.n)]))
+  const cells = []
+  for (const su of COVERAGE_SURFACES) for (const bo of COVERAGE_BOUNDARIES) cells.push({ su, bo, n: heatMap.get(`${su}|${bo}`) ?? 0 })
+  return { surfaces: COVERAGE_SURFACES, boundaries: COVERAGE_BOUNDARIES, cells, total: cells.reduce((a, c) => a + c.n, 0) }
+}
+
+/** viz 假设泳道(纯函数): 生命周期 open→claimed→confirmed|refuted|suspected(app.py:849);
+ *  时间窗 $since 参数绑定(钳位 clampLaneDays)。 */
+export async function buildHypLane(q, { eng, days = VIZ.hypLaneDaysDefault, nowMs = Date.now() } = {}) {
+  const since = new Date(Math.max(0, nowMs - clampLaneDays(days) * 86_400_000)).toISOString()
+  const [statusRows, itemRows] = await Promise.all([
+    q(Q_VIZ.hypByStatus, { eng }),
+    q(Q_VIZ.hypItems, { eng, since }),
+  ])
+  const byStatus = { open: 0, claimed: 0, confirmed: 0, refuted: 0, suspected: 0 }
+  for (const r of statusRows ?? []) { const k = String(r.status ?? ''); if (k in byStatus) byStatus[k] = num(r.n) }
+  const items = (itemRows ?? []).map((r) => ({
+    id: String(r.id ?? ''), text: cap(r.text, VIZ.textCap), strategy: cap(r.strategy, 60),
+    status: String(r.status ?? 'open'), ts: String(r.ts ?? ''),
+  }))
+  return { byStatus, items, windowDays: clampLaneDays(days) }
+}
+
+/** 能力看板数据(纯静态读: manifest 符号 + baselines 键计数 + 工具清单推导; 零 graphd 查询)。
+ *  缺席降级: 各源独立 try/catch, 缺什么 degraded 记什么(看板卡非关键路径, fail-soft)。 */
+export function buildCapability({ manifest, baselinesRaw } = {}) {
+  const degraded = []
+  let exports = null, forms = null, manifestValid = null
+  try {
+    if (!manifest || !Array.isArray(manifest.exports)) throw new Error('manifest 形态非法')
+    forms = Array.isArray(manifest.forms) ? manifest.forms : null
+    manifestValid = true
+    exports = manifest.exports.map((e) => ({ form: String(e.form ?? ''), id: String(e.id ?? ''), status: String(e.status ?? ''), impl: String(e.impl ?? ''), note: String(e.note ?? '') }))
+  } catch (e) { degraded.push(`manifest: ${String(e?.message ?? e).slice(0, 80)}`) }
+  let baselineKeys = null, baselineVersion = null, tools = null
+  try {
+    const j = typeof baselinesRaw === 'string' ? JSON.parse(baselinesRaw) : baselinesRaw
+    if (!j || !Array.isArray(j.baselines)) throw new Error('baselines 形态非法')
+    baselineVersion = String(j.version ?? '')
+    baselineKeys = j.baselines.length
+    tools = [...new Set(j.baselines.map((b) => String(b.tool ?? '').split('.')[0]))].filter(Boolean).sort()
+  } catch (e) { degraded.push(`baselines: ${String(e?.message ?? e).slice(0, 80)}`) }
+  return {
+    manifest: exports ? { generated: String(manifest.generated ?? ''), forms, exports } : null,
+    manifestValid,
+    baselines: baselineKeys === null ? null : { version: baselineVersion, keys: baselineKeys, tools },
+    degraded,
+  }
+}
+
 // ---------- 纯工具 ----------
 function cap(v, n) {
   const t = String(v ?? '')
