@@ -56,11 +56,16 @@
 | scripts/mcp/d2d-mcp-server.mjs（对外只读 server：工具白名单+isReadOnlyCypher 预检+审计面） | T3-2-4 已落地 |
 | domain/mcp-discovery.mjs（endpoint host 校验 fail-closed 面 + 响应强制过链） | T3-2-4 已落地 |
 | config/mcp-servers.json 边界语义（配置即边界；缺省空清单=零注册安全态） | T3-2-4 已落地 |
+| scheduler/supervisor-tools.mjs（环内 supervisor：scope 严格子集判定+递归深度=1 双通道+cap 预检+治理门挂载） | T3-2-5 已落地 |
+| docs/devlog.md 追加式纪律（历史节只增不改；勘误以新节补记；state.md=快照可覆盖） | T3-2-5 已落地 |
 
 T3-1 新增：无（四子项零侵入落地）。HD-1 新增：无（纯文档批）。
 T3-2-4 新增全局纪律：**外部数据不过 sanitize-ingest 链不入图** —— 任何新的外部
 入图面（MCP/OSINT/未来扩源）必须过 sanitizeIngestExternal 全链（collect.mjs osint
 回补为先例，源码断言防死代码），见 docs/mcp-security-design.md §2/§5。
+T3-2-5 澄清（边界裁决沉淀）：环内子 Agent 是**进程内受控实体**（同 scope 门治理），
+不走 sanitize-ingest external 消毒链——那是外部数据纪律；两道防线定性区隔，
+不混淆不互借。
 
 ## 28H+9M 存量项
 - 含义：Mimosa L3 门预提交扫描的存量高危/中危项，历史遗留非新引入

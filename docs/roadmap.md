@@ -14,15 +14,15 @@
 | T2-2b-0~4 | sidebar 三条 + 浏览器环 4.5-0~4.5-4 全线收官（攻击档 V2 会话接管+V3 三件套实际影响证明） | ✅ |
 | T3-1 | 阶段 5 瘦身版（卡片 Schema 260 张全过+A-MemGuard 共识 v1+misses 月度聚合+度量框架①③落地②设计就绪；零禁区触碰零授权申请；测试污染口径确立） | ✅ |
 | HD-1 | 交接固化批（AGENTS.md/roadmap/state/do-not-touch 文档体系 + README 入口） | ✅ |
-| T3-2-1~T3-2-4 | 阶段 6 前四子批（联网扩源 / 6-1 经验→技能+角色过滤 / 6-3 插件打包 / 6-5 双向 MCP：sanitize-ingest 消毒链+只读 stdio server+配置驱动发现） | ✅ |
+| T3-2-1~T3-2-5 | 阶段 6 前五子批（联网扩源 / 6-1 经验→技能+角色过滤 / 6-3 插件打包 / 6-5 双向 MCP：sanitize-ingest 消毒链+只读 stdio server+配置驱动发现 / 6-4 环内 supervisor[worker 工具形态]+devlog 回填） | ✅ |
 
-## T3-2 · 阶段 6：学习升级 + 插件化 + 多 Agent 进化【进行中：6-1/6-2/6-3/6-5 ✅；余 6-4 supervisor、吸收】
+## T3-2 · 阶段 6：学习升级 + 插件化 + 多 Agent 进化【进行中：6-1/6-2/6-3/6-4/6-5 ✅；余 6-6 已降级、吸收(T3-2-6 收官批)】
 | 子项 | 内容 | 要点 |
 |------|------|------|
 | 6-1 经验→技能 | MUSE-AutoSkill 式技能抽取 | ✅ T3-2-2/2b 落地（skill 存储+三门通道+抽取管道+角色过滤接线） |
 | 6-2 联网搜索 | 免费被动情报 | ✅ T3-2-1 落地（CT log+Hackertarget，osintGet 网关化，osint-subdomain Signal） |
 | 6-3 插件打包 Hook | 能力对外导出 | ✅ T3-2-3 落地（五形态导出框架+三攻击工具 dsh 注册+Burp XML 导出） |
-| 6-4 环内 supervisor | 紧 scope 子 Agent | 运行中按需创建受 scope 约束子 Agent（下一子批；撞 scheduler 核心禁区） |
+| 6-4 环内 supervisor | 紧 scope 子 Agent | ✅ T3-2-5 落地（worker 工具形态 delegate_subtask：scope 严格子集+递归深度=1+cap 账本预检+治理门继承，零禁区；调度环自动创建切片实战后另批 4-3a） |
 | 6-5 双向 MCP | 对外输出+对内发现 | ✅ T3-2-4 落地（只读 stdio server+sanitize-ingest 消毒链+配置驱动发现；docs/mcp-security-design.md） |
 | 6-6 事件驱动并发 | worker 订阅事件流 | 轮询分配改订阅推送。【T3-2-0 审计 + 裁决降级】: Kùzu 无原生 watch, 真事件需 graphd 禁区通道 → 本体转长期项挂 T4-2 存储层决策后重评; 收益由 T3-2-6 闲时任务+自适应轮询+能力路由承接 |
 | 吸收 | 闲时任务 + 按能力路由 | 挂调度器空闲窗口；配合容量账本 |
