@@ -27,6 +27,7 @@ export const ORDER = [
   'cards.workers.js', // Workers 卡 + 鱼骨抽屉
   'view.ops.js', // 漏斗/缺口/经验库卡 + 模块开关 + OpsView 装配
   'view.findings.js', // 七态看板 + 人工裁决 + FindingsView 装配
+  'view.viz.js', // T3-3-1 可视化: 星图+热力+泳道+能力看板 + VizView 装配
   'router.js', // better-sidebar tab 注册(inject / apply / exports)
 ]
 
