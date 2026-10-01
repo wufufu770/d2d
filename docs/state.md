@@ -9,7 +9,7 @@
 - 分支：main 唯一活跃；31 个远端分支保留（历史基线/archive 回滚点，T4-5 清理）
 - 工作树：0 改动
 - CI：三 workflow（ci/dsh-compat/gates）全绿（T3-2-5 收官 run 以 gh 实测为准）
-- 测试基线（T3-2-5 固化）：pytest **368** / mocha **1866** / panel **55**
+- 测试基线（T3-2-6 固化）：pytest **368** / mocha **1882** / panel **55**
 - stack：graphd :8766 ✅ / egress :8888 ✅（MITM 启用）/ oast :8890 ✅ /
   cdp-proxy :8893 ✅ 常驻 enable / dsh web :8899 按需（HD-1 审计时点未起）；
   SPA/DVWA 靶场就绪
@@ -40,8 +40,14 @@ T3-2-5 ✅（**6-4 环内 supervisor 落地[worker 工具形态]**：delegate_su
 subagent-cap 既有账本硬顶预检/治理门继承 checkBash+post-execute 镜像/审计三事件+
 Signal(subagent-result) 回流]+devlog.md 历史回填[T0→本批逐批节, 三锚点核对]；
 零禁区实证：adapter 两文件/scheduler.js/loop.mjs/审批面本体零触碰；调度环自动创建
-切片明确出批[实战后另批 4-3a]；开发轨迹 docs/devlog.md 自本批起只追加）
-下一步建议：T3-2-6 闲时任务+自适应轮询+能力路由（**阶段 6 收官批**；吸收项承接 6-6 降级收益）
+切片明确出批[实战后另批 4-3a]；开发轨迹 docs/devlog.md 自本批起只追加）/
+**T3-2-6 ✅ 阶段 6 收官**（闲时任务框架[watchdog 同构外挂：预检硬门 active-eng+in-flight
+fail-closed+setTimeout 链自适应频率 60min→10min+失败退避进程隔离；P2P_IDLE_TASKS=0 可关]，
+首批两任务=既有 CLI[skill-distill 补跑/misses-report]；能力路由行为快照锁定[实测无真实
+缺口，短词精化挂开放项]；调度环核心零触碰为唯一新增硬边界；终态盘点 docs/stage6-finale.md；
+tag t3-2-stage6）
+下一步建议：**T3-3（6.5 余项：星图可视化+授权数字化+9 功能标签页）**；T4-2 存储/T4-3 信任
+/T4-4 OTel 可并行或按序
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
@@ -49,7 +55,7 @@ Signal(subagent-result) 回流]+devlog.md 历史回填[T0→本批逐批节, 三
 | 1 | 业务闸 | **全线收官**（BG-1 纯函数+schema；BG-2 scheduler 集成上线：business_gate+coverage_bias 注入与深环派发闸，P2P_BUSINESS_GATE=0 回退；验收 docs/business-gate-acceptance.md） | — | P2 ✅ |
 | 19 | 角色过滤接线（T3-2-2b） | **已落地**（T3-2-2b：面 1 修正形态纯新增接线+P2P_ROLE_FILTER 双覆盖；面 2 时序死结不实施——cards 组装在 role 赋值前，实锚见收官文档） | — | P2 ✅ |
 | 20 | skill wins 自动归因 | 未建（门③现 soft=evidence 非空） | 实战 used_knowledge 归因成熟后对齐 | P3 |
-| 21 | skill-distill LLM 蒸馏步骤 | 骨架产出（占位纪律防造假） | 素材积累后按零成本约束立项 | P3 |
+| 21 | skill-distill LLM 蒸馏步骤 | 骨架产出（占位纪律防造假）；**补跑通道已打通**（T3-2-6 闲时任务框架首批任务） | 素材积累后按零成本约束立项 | P3 |
 | 2 | lease-cas-watchdog flaky | 多批未复发，观察 | 观察项 | P3 |
 | 3 | A/B 报告真 eng 名 | 未处理 | 仓库公开前必须 | P3 |
 | 4 | collect-results.mjs ts slice(0,15)（:172 实锚） | 未修 | 8.5 完整版 | P3 |
@@ -68,6 +74,7 @@ Signal(subagent-result) 回流]+devlog.md 历史回填[T0→本批逐批节, 三
 | 17 | cdp-proxy.mjs:129-131 头注释 §② 修正前表述 | 勘误待代码属主批 | 随批顺手 | P3 |
 | 18 | 幻觉抽检人工循环首跑（--sample 工作单→人工审→--record 记账） | 框架就绪账本空 | 随批人工执行 | P3 |
 | 22 | MCP 会话化 + dsh 宿主原生接口跟进 + 首个真实 server 接入 | 设计就绪（v1 无会话态；独立 CLI 进程形态；配置面空清单安全态） | 触发条件见 docs/mcp-security-design.md §9 | P3 |
+| 23 | 能力路由短词 1 分档裸子串可误命中（surface-js→modeling-specialist 实锚；行为快照已锁定现状） | 登记性断言在位（idle-tasks.test 快照） | allocator 逻辑面精化（非禁区低优先，0911 评分刚定稿勿急动） | P3 |
 
 ## 决策账
 已拍板：五术语清理（ACON/ATLAS/MaTTS/SAGE 删，CNSR 留名；T3-1 执行：仓内前四者
@@ -83,7 +90,9 @@ Signal(subagent-result) 回流]+devlog.md 历史回填[T0→本批逐批节, 三
 递归深度=1 硬限制 fail-closed 不降级；scope 继承=严格子集[不可判定维度不给]；
 子 Agent=进程内受控实体不走 external 消毒链[两道防线定性区隔]；结果回流=既有
 Signal/审计通道；调度环自动创建切片出批[实战后另批 4-3a，不出材料]；devlog 只追加
-[state=快照可覆盖/devlog=完整轨迹]）。
+[state=快照可覆盖/devlog=完整轨迹]）；**T3-2-6 拍板**（调度环核心零改动为唯一新增
+硬边界；闲时任务预检硬门不可妥协；能力路由数据面优先[实测无缺口→快照锁定]；
+6-6 本体不做挂 T4-2；首批任务 1-2 个防批次膨胀；收官件=盘点+devlog 收官节+tag）。
 待拍板（用户）：**T3-2 拆批方案拍板**（docs/stage6-batch-plan.md，含 6-6 重议建议：本体降级/闲时路由承接）；T4-2 LadybugDB 迁/不迁/观望；
 T4-4 OTel 插队或按序；T4-5 是否公开仓库及脱敏范围。
 
@@ -93,7 +102,7 @@ docs/upstream-open-items.md · docs/approval-channels.md · docs/tool-risk-ratin
 docs/gate-coverage-gaps.md · docs/gate-anchor-schema.md ·
 docs/merge-plan-approval-trust.md · docs/brain-audit-runbook.md ·
 docs/business-gate-design.md · docs/business-gate-acceptance.md · docs/stage6-batch-plan.md ·
-docs/mcp-security-design.md · docs/devlog.md（只追加轨迹）·
+docs/mcp-security-design.md · docs/stage6-finale.md · docs/devlog.md（只追加轨迹）·
 experiments/dataset/eval-dataset.jsonl · experiments/results/ab-report-*.md ·
 brain/seed/seed-cards.json · tests/golden-targets/{baseline,spa-recon-acceptance,
 spa-verify-acceptance,spa-attack-acceptance}.md · scripts/ops/verify-dsh-version.mjs ·
@@ -103,7 +112,7 @@ evidence-crypto}.mjs · scripts/brain/{study,promote,validate-cards,consensus-ch
 misses-report,experience-metrics}.mjs · tools/js-scanner.mjs ·
 scripts/mcp/d2d-mcp-server.mjs · config/mcp-export.json · config/mcp-servers.json ·
 plugin/pentest-dsh/scheduler/{approval-agent,subagent-cap,bias-block,trust,
-tier-approval,external-tools,supervisor-tools}.mjs · plugin/pentest-dsh/domain/{card-schema,
+tier-approval,external-tools,supervisor-tools,idle-tasks}.mjs · plugin/pentest-dsh/domain/{card-schema,
 experience-consensus,knowledge-gaps,experience-metrics,memory-store,sanitize-ingest,
 mcp-discovery,role-card-filter}.mjs · har-capture.mjs
 （路径均经 HD-1 审计核实存在）
