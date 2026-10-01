@@ -5,11 +5,11 @@
 > 以 `git log -1` 实测为准）。
 
 ## 当前底账
-- 远端 HEAD：`f115f6d`（T3-1 收官七族末 commit；HD-1 merge 后以 git log 实测为准）
+- 远端 HEAD：T3-2-4 收官族末 commit（落库后以 `git log -1` 实测为准）
 - 分支：main 唯一活跃；31 个远端分支保留（历史基线/archive 回滚点，T4-5 清理）
 - 工作树：0 改动
-- CI：三 workflow（ci/dsh-compat/gates）全绿（T3-1 run 36717743144/36717743365/36717743481）
-- 测试基线（T3-2-1 固化）：pytest **368** / mocha **1791** / panel **55**
+- CI：三 workflow（ci/dsh-compat/gates）全绿（T3-2-4 收官 run 以 gh 实测为准）
+- 测试基线（T3-2-4 固化）：pytest **368** / mocha **1849** / panel **55**
 - stack：graphd :8766 ✅ / egress :8888 ✅（MITM 启用）/ oast :8890 ✅ /
   cdp-proxy :8893 ✅ 常驻 enable / dsh web :8899 按需（HD-1 审计时点未起）；
   SPA/DVWA 靶场就绪
@@ -30,8 +30,12 @@ T3-2-1 ✅（联网扩源：osintGet 网关化+Hackertarget 免费层+osint-subd
 验收 smoke 实证）/ T3-2-2 ✅ + T3-2-2b ✅（**6-1 经验→技能整项全清**：skill 存储+三门通道
 +抽取管道+示例 2 张+domain 补齐+角色过滤接线[P2P_ROLE_FILTER 回退开关, 三实质 diff
 +59/-0 实证]）/ T3-2-3 ✅（插件打包：三攻击工具 dsh 注册+基线 regen 收编 js_scan
-[开放项 8/13 销账]+五形态导出框架[Tool/Skill 实质, 其余声明]+Burp 通用 XML 导出[降级登记]）
-下一步建议：T3-2-4 双向 MCP（依赖 T3-2-3 框架，MCP 骨架已备）
+[开放项 8/13 销账]+五形态导出框架[Tool/Skill 实质, 其余声明]+Burp 通用 XML 导出[降级登记]）/
+T3-2-4 ✅（**6-5 双向 MCP 整项落地**：sanitize-ingest 统一消毒编排[osint 回补实战接线]+
+对外只读 stdio server[原生 JSON-RPC 零 SDK+只读双保险+审计留痕]+对内配置驱动发现
+[host 校验 fail-closed+探针降级]+MCP 导出条目 skeleton→实质；四安全底线全落地，
+设计定稿 docs/mcp-security-design.md）
+下一步建议：T3-2-5 环内 supervisor（6-4；撞 scheduler 核心禁区，须 4-3a 式显式例外设计先行）
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
@@ -57,6 +61,7 @@ T3-2-1 ✅（联网扩源：osintGet 网关化+Hackertarget 免费层+osint-subd
 | 16 | misses 采集面加固（scheduler.js:398 邻域两档 miss 判定） | 设计就绪（brain-audit-runbook.md §6.2） | 同上授权 | P2 |
 | 17 | cdp-proxy.mjs:129-131 头注释 §② 修正前表述 | 勘误待代码属主批 | 随批顺手 | P3 |
 | 18 | 幻觉抽检人工循环首跑（--sample 工作单→人工审→--record 记账） | 框架就绪账本空 | 随批人工执行 | P3 |
+| 22 | MCP 会话化 + dsh 宿主原生接口跟进 + 首个真实 server 接入 | 设计就绪（v1 无会话态；独立 CLI 进程形态；配置面空清单安全态） | 触发条件见 docs/mcp-security-design.md §9 | P3 |
 
 ## 决策账
 已拍板：五术语清理（ACON/ATLAS/MaTTS/SAGE 删，CNSR 留名；T3-1 执行：仓内前四者
@@ -65,7 +70,10 @@ T3-2-1 ✅（联网扩源：osintGet 网关化+Hackertarget 免费层+osint-subd
 授权）；分层压缩保留编排（本批仅确认现状）；业务闸独立小批（不混批）；js-scanner
 维持只读；lease-cas-watchdog 继续观察；活文档机制（HD-1：回报固定含「状态文档更新」
 节）；PR 流程授权（HD-1：CI 三 workflow 绿即可合并）；**T3-2 拆批方案拍板**（T3-2-0
-后：六批顺序 1→(2∥3)→4→5→6 认可；6-6 本体降级长期项挂 T4-2，T3-2-6 承接）。
+后：六批顺序 1→(2∥3)→4→5→6 认可；6-6 本体降级长期项挂 T4-2，T3-2-6 承接）；
+**T3-2-4 安全四底线拍板**（写通道不外放/不过 sanitize-ingest 链不入图/配置即边界/
+双向各自可关；对外 server 原生 stdio JSON-RPC 零 SDK 选型；CALL 预检放行由 graphd
+权威兜底——镜像忠实 V-07 不越权加严）。
 待拍板（用户）：**T3-2 拆批方案拍板**（docs/stage6-batch-plan.md，含 6-6 重议建议：本体降级/闲时路由承接）；T4-2 LadybugDB 迁/不迁/观望；
 T4-4 OTel 插队或按序；T4-5 是否公开仓库及脱敏范围。
 
@@ -75,6 +83,7 @@ docs/upstream-open-items.md · docs/approval-channels.md · docs/tool-risk-ratin
 docs/gate-coverage-gaps.md · docs/gate-anchor-schema.md ·
 docs/merge-plan-approval-trust.md · docs/brain-audit-runbook.md ·
 docs/business-gate-design.md · docs/business-gate-acceptance.md · docs/stage6-batch-plan.md ·
+docs/mcp-security-design.md ·
 experiments/dataset/eval-dataset.jsonl · experiments/results/ab-report-*.md ·
 brain/seed/seed-cards.json · tests/golden-targets/{baseline,spa-recon-acceptance,
 spa-verify-acceptance,spa-attack-acceptance}.md · scripts/ops/verify-dsh-version.mjs ·
@@ -82,7 +91,9 @@ scripts/ops/dvwa-reset.sh · scripts/browser/{cdp-proxy,cdp-client,form-fuzzer,
 logic-tester,race-condition}.mjs · scripts/gateway/{egress-gateway,tls-intercept,
 evidence-crypto}.mjs · scripts/brain/{study,promote,validate-cards,consensus-check,
 misses-report,experience-metrics}.mjs · tools/js-scanner.mjs ·
+scripts/mcp/d2d-mcp-server.mjs · config/mcp-export.json · config/mcp-servers.json ·
 plugin/pentest-dsh/scheduler/{approval-agent,subagent-cap,bias-block,trust,
-tier-approval}.mjs · plugin/pentest-dsh/domain/{card-schema,experience-consensus,
-knowledge-gaps,experience-metrics,memory-store}.mjs · har-capture.mjs
+tier-approval,external-tools}.mjs · plugin/pentest-dsh/domain/{card-schema,
+experience-consensus,knowledge-gaps,experience-metrics,memory-store,sanitize-ingest,
+mcp-discovery,role-card-filter}.mjs · har-capture.mjs
 （路径均经 HD-1 审计核实存在）

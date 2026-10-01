@@ -81,6 +81,12 @@ mocha 通道瞬断（-1）按先例手动实锚 + CI 全量最终裁决。
    graphd 实例（含 pytest 临时实例）；聚合统计须按 id 真实形状过滤
    （经验 id = exp-<12位hex>，eng_id = eng-MMDD-* 日期形态），见
    docs/brain-audit-runbook.md §四。
+10. 新 CLI/入口脚本主流程守卫：凡可能被测试 import 的脚本（CLI/网关/server）必须带
+   `import.meta.url === pathToFileURL(process.argv[1]).href` 守卫包住直跑主流程 ——
+   否则 CI import 时执行主流程体（T3-2-3 实证：burp-export 直跑缺 host-token 抛
+   ENOENT 三连红）。T3-2-3 教训固化为固定纪律（scripts/mcp/d2d-mcp-server.mjs 等
+   同款）；mocha 调用通道 = `cd plugin/pentest-dsh && npx mocha "test/*.test.mjs"`
+   （插件本地 node_modules，仓库根 npx 会拉错版本）。
 
 ## 提示词生成规范（给生成批次提示词的一方，人或 AI）
 固定结构：进入[阶段号] → 背景 → 拍板决定（已授权决策直接执行）→
