@@ -131,3 +131,10 @@
 关键裁决：四图全部可经既有 /query 只读通道实现（零新增 endpoint——6-6 禁区教训遵守）；授权数字化 ed25519 零外部依赖实测通过无阻断项（多纯新增挂接点；授权与审批两体系正交实锚）；8.5 定级=看板并入可视化批/变异试点缩水/评测集半自动（取舍归用户）；**子 agent 并行派发首例**（4 派 1 自做，软上限 4 守住，硬结论四条主 agent 亲自复证全过）
 教训沉淀：审计纠偏三处（Hypothesis 生命周期实为 open→claimed→confirmed|refuted|suspected 非 pending→validated；dsh-sidebar-compat.md 是版本配对表非功能差距登记；manifest 实为 6 形态注释遗留）——任务书表述与仓库实态冲突时以代码为准；panel client 是零依赖拼接（无 JSX 手写 h()），前端工作量评估须按此形态
 开放项：新增审计发现登记（hostAllowed 空 scope fail-open/目录 775/manifest 注释遗留/panel 测试盲区）；等用户对拆批方案与 8.5 取舍拍板后进 T3-3-1
+
+## 2026-10-02 · T3-3-1 可视化数据面+三图+能力看板卡（6.5 首实施批）
+底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest 368 / mocha 1882 / panel **69**（+14）
+产出：host 四路由（starmap/coverage/hypotheses/capability——独立微缓存+503 fail-closed[capability 静态读 fail-soft]+graphd 零改动零新增 endpoint+$eng/$since 参数绑定）· snapshot.mjs 三纯函数（buildStarmap[host 提取 evidence 不出 wire+边两端过滤+candidate-links pairs 解析坏对丢弃]/buildCoverage[21 格枚举序稳定补零]/buildHypLane[五态分组+时间窗钳位 1..90 天]）· client view.viz.js 片段（StarMapChart 自绘 SVG 确定性极角布局+CoverageHeat CSS grid+HypLaneSwim 五列泳道+CapabilityCard manifest 消费；渲染护栏 200 节点/300 边+超限计数提示；useViz 独立 5s 轮询 allSettled 单卡降级）· d2d:viz tab（order 62）· 测试 +14（host 纯函数/路由级含 #24 盲区顺手+组件探针）
+关键裁决：路由形态照拍板 4 条（审计曾建议聚合为 1 条——故障隔离理由成立但范围决策归拍板，4 条各自微缓存实现同等隔离）；capability 零 graphd 依赖 fail-soft 恒 200（与 graphd 依赖路由 503 fail-closed 语义区分）；client 工厂无 useRef→星图用 id 哈希确定性极角布局（无状态天然稳定）；桑基图出批（transition-log 归 T3-3-2）
+教训沉淀：loadFragment 探针的 makeH 不展开子组件——组件内部渲染断言要下沉到子组件级测试或断言 vnode props（'数据不可用' 文本在子组件内，父层只断 vnode）；client.test.mjs tab 断言是精确 deepEqual——加 tab 必须同步改（审计预警兑现，CI 免红）
+开放项：#24 两项顺手销账（manifest 注释勘误+路由测试盲区补齐）；余不变。下一批 T3-3-3 授权契约数字化
