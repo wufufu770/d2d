@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
-import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, computeConversion, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs, readCaps, writeCaps } from '../lib/host/snapshot.mjs'
+import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, computeConversion, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs, readCaps, writeCaps, buildStarmap, buildCoverage, buildHypLane, parseCandidatePairs, buildCapability, clampLaneDays } from '../lib/host/snapshot.mjs'
 import { apply as applyHostRoutes } from '../lib/host/index.mjs'
 
 // fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应); params 透传给断言用断言器
@@ -695,4 +695,115 @@ test('buildSnapshot: frontier 键 — Q.frontierConversion 按 $eng 过滤, tota
   // 空池(无 Frontier 行) → 三值全零, 快照不炸(转化率卡降级「暂无前沿数据」)
   const s2 = await buildSnapshot(makeFake(), { eng: 'eng-x' })
   assert.deepEqual(s2.frontier, { total: 0, accepted_to_hypothesis: 0, hypothesis_to_confirmed: 0 })
+})
+
+// ══════════ T3-3-1 viz 数据面: 三纯函数 + capability + 路由级(含 #24 盲区顺手补) ══════════
+
+test('viz buildStarmap: 节点 host 提取(evidence 不出 host)+边两端过滤+candidate-links pairs 解析(坏对丢弃)', async () => {
+  const q = async (cy) => {
+    if (cy.includes('DERIVED_FROM')) return [{ a: 's1', b: 's2' }, { a: 's1', b: 's-ghost' }]
+    if (cy.includes('s.weight AS weight')) return [
+      { id: 's1', type: 'asset-perimeter', weight: 2, ts: '2026-10-01', evidence: 'http://a.com/x?y=1' },
+      { id: 's2', type: 'js-endpoint', weight: 1, ts: '2026-10-02', evidence: 'no-url-here' },
+    ]
+    throw new Error(`unmatched: ${cy.slice(0, 50)}`)
+  }
+  const sm = await buildStarmap(q, { eng: 'e', runEvents: { events: [
+    { kind: 'candidate-links', pairs: ['s1(asset-perimeter)~s2(js-endpoint)@a.com', 'bad-pair-form'] },
+    { kind: 'tick' },
+  ] } })
+  assert.equal(sm.nodes.length, 2)
+  assert.equal(sm.nodes[0].host, 'a.com', 'hostname 提取')
+  assert.equal(sm.nodes[1].host, '', '无 URL → 空 host')
+  assert.equal(sm.edges.length, 1, '两端不在集内的边被过滤(ghost)')
+  assert.deepEqual(sm.candidates, [{ a: 's1', aType: 'asset-perimeter', b: 's2', bType: 'js-endpoint', host: 'a.com' }], '坏对丢弃不中断')
+  assert.equal(sm.truncated, false)
+})
+
+test('viz buildCoverage: 21 格固定网格填充(枚举序稳定, 空格补零)', async () => {
+  const q = async (cy) => [{ su: 'js', bo: 'outer', n: 7 }, { su: 'apk', bo: 'cross', n: 2 }]
+  const cov = await buildCoverage(q, { eng: 'e' })
+  assert.equal(cov.cells.length, 21, '7 面 × 3 周界')
+  assert.equal(cov.cells.find((c) => c.su === 'js' && c.bo === 'outer').n, 7)
+  assert.equal(cov.cells.find((c) => c.su === 'request' && c.bo === 'outer').n, 0, '无数据格补零')
+  assert.equal(cov.total, 9)
+  assert.deepEqual(cov.surfaces, ['request', 'response', 'js', 'business', 'flow', 'apk', 'mini'])
+})
+
+test('viz buildHypLane: 五态分组 + since 参数下发($eng/$since 绑定) + 天数钳位', async () => {
+  let seen = null
+  const q = async (cy, params) => {
+    if (cy.includes('count(h)')) return [{ status: 'open', n: 3 }, { status: 'confirmed', n: 1 }, { status: 'bogus', n: 9 }]
+    if (cy.includes('$since')) { seen = params; return [{ id: 'h1', text: 'x'.repeat(300), strategy: 'strat', status: 'open', ts: '2026-10-01' }] }
+    throw new Error(`unmatched: ${cy.slice(0, 50)}`)
+  }
+  const hl = await buildHypLane(q, { eng: 'e', days: 9999, nowMs: Date.parse('2026-10-01T00:00:00Z') })
+  assert.deepEqual(hl.byStatus, { open: 3, claimed: 0, confirmed: 1, refuted: 0, suspected: 0 }, '未知态忽略')
+  assert.equal(hl.windowDays, 90, '钳位 1..90')
+  assert.ok(seen && typeof seen.since === 'string' && seen.seen === undefined, 'since 为 ISO 串参数绑定')
+  assert.ok(seen.since < '2026-10-01', 'since = now - 90d')
+  assert.ok(hl.items[0].text.length <= 161, 'text 截断')
+  assert.equal(clampLaneDays('bogus'), 14, '非法回缺省')
+  assert.equal(clampLaneDays('0'), 14)
+})
+
+test('viz parseCandidatePairs/buildCapability: 静态读降级语义(fail-soft, degraded 记因)', () => {
+  assert.deepEqual(parseCandidatePairs(['x']), [])
+  const cap1 = buildCapability({ manifest: null, baselinesRaw: null })
+  assert.equal(cap1.manifest, null)
+  assert.equal(cap1.baselines, null)
+  assert.equal(cap1.degraded.length, 2, '两源均缺席 → degraded 记两条')
+  const cap2 = buildCapability({
+    manifest: { generated: '2026-10-01', exports: [{ form: 'tool', id: 'x', status: 'live', impl: 'a.mjs', note: 'n' }] },
+    baselinesRaw: JSON.stringify({ version: 'v1', baselines: [{ tool: 'p2p_status' }, { tool: 'p2p_status.cypher' }, { tool: 'delegate_subtask' }] }),
+  })
+  assert.equal(cap2.manifest.exports.length, 1)
+  assert.equal(cap2.manifestValid, true)
+  assert.deepEqual(cap2.baselines.tools, ['delegate_subtask', 'p2p_status'], '参数级键去 . 后缀去重')
+  assert.equal(cap2.baselines.keys, 3)
+  assert.equal(cap2.degraded.length, 0)
+})
+
+// #24 盲区顺手补: host 路由级 — viz 四路由 + approval/caps/denylist 既有路由分型
+test('host 路由: capability 静态读路由真实可达(fail-soft 200, 兄弟包链接部署下读真实 manifest/baselines)', async () => {
+  const handler = mountPanelHost()
+  const r = await driveRoute(handler, 'GET', '/d2d/api/capability')
+  assert.equal(r.code, 200, r.raw)
+  assert.equal(r.body.ok, true)
+  assert.ok(r.body.capability, 'capability 字段恒在(缺席走 degraded)')
+})
+test('host 路由: viz 三路由 graphd 不可达 → 503 fail-closed(不下发半截数据); capability 不受牵动', async () => {
+  const handler = mountPanelHost() // graphdUrl=127.0.0.1:1 不可达
+  for (const m of ['starmap', 'coverage', 'hypotheses']) {
+    const r = await driveRoute(handler, 'GET', `/d2d/api/${m}`)
+    assert.equal(r.code, 503, `${m} fail-closed`)
+    assert.equal(r.body.error?.code, 'graphd-unreachable')
+  }
+  const cap = await driveRoute(handler, 'GET', '/d2d/api/capability')
+  assert.equal(cap.code, 200, 'capability 零 graphd 依赖, 不随 graphd 不可达降级')
+})
+test('host 路由: viz 路由 POST → 405(只读); 未知名 → 404 兜底', async () => {
+  const handler = mountPanelHost()
+  const post = await driveRoute(handler, 'POST', '/d2d/api/starmap', {})
+  assert.equal(post.code, 405)
+  const nf = await driveRoute(handler, 'GET', '/d2d/api/viz-bogus')
+  assert.equal(nf.code, 404)
+})
+test('host 路由(#24 盲区顺手): approval GET 200 / caps GET 200 / denylist POST 非法 → 400 分型', async () => {
+  const saved = { D2D_DATA_DIR: process.env.D2D_DATA_DIR }
+  process.env.D2D_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-panel-route-'))
+  try {
+    const handler = mountPanelHost()
+    const ap = await driveRoute(handler, 'GET', '/d2d/api/approval')
+    assert.equal(ap.code, 200, ap.raw.slice(0, 120))
+    assert.equal(ap.body.ok, true)
+    const caps = await driveRoute(handler, 'GET', '/d2d/api/caps')
+    assert.equal(caps.code, 200)
+    const dl = await driveRoute(handler, 'POST', '/d2d/api/denylist', { op: 'add', kind: 'bogus-kind', value: 'x' })
+    assert.ok([200, 400].includes(dl.code), `denylist 非法 kind 分型(实现定义): ${dl.code}`)
+  } finally {
+    fs.rmSync(process.env.D2D_DATA_DIR, { recursive: true, force: true })
+    if (saved.D2D_DATA_DIR === undefined) delete process.env.D2D_DATA_DIR
+    else process.env.D2D_DATA_DIR = saved.D2D_DATA_DIR
+  }
 })
