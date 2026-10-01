@@ -29,7 +29,9 @@ T3-2-5 supervisor → T3-2-6 闲时路由；6-6 本体与 graphd 架构冲突→
 T3-2-1 ✅（联网扩源：osintGet 网关化+Hackertarget 免费层+osint-subdomain Signal，
 验收 smoke 实证）/ T3-2-2 ✅ + T3-2-2b ✅（**6-1 经验→技能整项全清**：skill 存储+三门通道
 +抽取管道+示例 2 张+domain 补齐+角色过滤接线[P2P_ROLE_FILTER 回退开关, 三实质 diff
-+59/-0 实证]）/ 下一步建议：T3-2-3 插件打包（无依赖）
++59/-0 实证]）/ T3-2-3 ✅（插件打包：三攻击工具 dsh 注册+基线 regen 收编 js_scan
+[开放项 8/13 销账]+五形态导出框架[Tool/Skill 实质, 其余声明]+Burp 通用 XML 导出[降级登记]）
+下一步建议：T3-2-4 双向 MCP（依赖 T3-2-3 框架，MCP 骨架已备）
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
@@ -44,12 +46,12 @@ T3-2-1 ✅（联网扩源：osintGet 网关化+Hackertarget 免费层+osint-subd
 | 5 | 8.5 完整版余量（看板/变异测试/评测集跑测） | 未做 | T3-3 前后 | P2 |
 | 6 | 上游四条宿主建议（upstream-open-items.md:82-107 实锚） | 仅入库 | 随批顺手 | P3 |
 | 7 | js-scanner active 模式 | 未实现（已拍板维持只读，实现需独立授权设计） | — | P3 |
-| 8 | p2p_js_scan description 基线告警 | unbaselined | 下次基线重生成收编 | P3 |
+| 8 | p2p_js_scan description 基线告警 | **已收编销账**（T3-2-3 基线 regen ×3 条入基线） | — | P3 ✅ |
 | 9 | bias 检测阈值 80% | 首版参数 | 真实目标跑 1-2 场后回调 | P2 |
 | 10 | dvwaSession 自增可预测 | 8.5 评测集人工裁决 | T3 | P2 |
 | 11 | 滞留信号回填（5 场 50 条） | 未做 | 独立小批 | P2 |
 | 12 | egress MITM HTTPS 全链 | 本地无 HTTPS 靶场降级；解密分支有单测 | 真 HTTPS 靶场侦察时实锚 | P3 |
-| 13 | 三攻击工具 dsh 注册 | CLI/模块形态，审批面已覆盖 | T3-2 6-3 | P3 |
+| 13 | 三攻击工具 dsh 注册 | **已销账**（T3-2-3：三工具 defineTool 注册+基线钉扎 14 条；纯接线四文件本体零改动） | — | P3 ✅ |
 | 14 | V3 独立外带端点 | audit.jsonl+/api/search 已够闭环 | 按需 | P3 |
 | 15 | 检索有效性（recall@k/MRR）数据采集 | 设计就绪（brain-audit-runbook.md §6.1） | scheduler.js 邻域授权后实施 | P2 |
 | 16 | misses 采集面加固（scheduler.js:398 邻域两档 miss 判定） | 设计就绪（brain-audit-runbook.md §6.2） | 同上授权 | P2 |
