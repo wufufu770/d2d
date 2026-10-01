@@ -52,8 +52,15 @@
 | experience-ref.mjs 角色过滤编排 buildExperienceRefFiltered（文件末尾纯新增） | T3-2-2b 已落地 |
 | scheduler.js 角色过滤覆盖行（taskFull 前，EI×RF 双开关前置） | T3-2-2b 已落地 |
 | tests/golden-targets/spa-attack-acceptance.md 验收结论 | T2-2b-4 已落地 |
+| domain/sanitize-ingest.mjs（消毒链编排本体：链序/HIGH 镜像词面/fail-closed 语义） | T3-2-4 已落地 |
+| scripts/mcp/d2d-mcp-server.mjs（对外只读 server：工具白名单+isReadOnlyCypher 预检+审计面） | T3-2-4 已落地 |
+| domain/mcp-discovery.mjs（endpoint host 校验 fail-closed 面 + 响应强制过链） | T3-2-4 已落地 |
+| config/mcp-servers.json 边界语义（配置即边界；缺省空清单=零注册安全态） | T3-2-4 已落地 |
 
 T3-1 新增：无（四子项零侵入落地）。HD-1 新增：无（纯文档批）。
+T3-2-4 新增全局纪律：**外部数据不过 sanitize-ingest 链不入图** —— 任何新的外部
+入图面（MCP/OSINT/未来扩源）必须过 sanitizeIngestExternal 全链（collect.mjs osint
+回补为先例，源码断言防死代码），见 docs/mcp-security-design.md §2/§5。
 
 ## 28H+9M 存量项
 - 含义：Mimosa L3 门预提交扫描的存量高危/中危项，历史遗留非新引入
