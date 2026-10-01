@@ -59,6 +59,7 @@
 | scheduler/supervisor-tools.mjs（环内 supervisor：scope 严格子集判定+递归深度=1 双通道+cap 预检+治理门挂载） | T3-2-5 已落地 |
 | docs/devlog.md 追加式纪律（历史节只增不改；勘误以新节补记；state.md=快照可覆盖） | T3-2-5 已落地 |
 | scheduler/idle-tasks.mjs（闲时任务框架：预检硬门+自适应频率+失败降级；**调度环核心 tick→allocateOnce→planAllocation→runWorker 零改动为 T3-2-6 唯一新增硬边界**） | T3-2-6 已落地 |
+| plugin/d2d-panel viz 面（lib/client/view.viz.js 三图组件+lib/host/snapshot.mjs buildStarmap/Coverage/HypLane+index.mjs viz 四路由；**graphd 全域零改动零新增 endpoint 为 T3-3-1 硬边界**——数据全走既有 /query host-token 通道；wire 不带 evidence 全文） | T3-3-1 已落地 |
 
 T3-1 新增：无（四子项零侵入落地）。HD-1 新增：无（纯文档批）。
 T3-2-4 新增全局纪律：**外部数据不过 sanitize-ingest 链不入图** —— 任何新的外部

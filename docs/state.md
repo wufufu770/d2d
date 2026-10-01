@@ -9,7 +9,7 @@
 - 分支：main 唯一活跃；31 个远端分支保留（历史基线/archive 回滚点，T4-5 清理）
 - 工作树：0 改动
 - CI：三 workflow（ci/dsh-compat/gates）全绿（T3-2-5 收官 run 以 gh 实测为准）
-- 测试基线（T3-2-6 固化）：pytest **368** / mocha **1882** / panel **55**
+- 测试基线（T3-3-1 固化）：pytest **368** / mocha **1882** / panel **69**
 - stack：graphd :8766 ✅ / egress :8888 ✅（MITM 启用）/ oast :8890 ✅ /
   cdp-proxy :8893 ✅ 常驻 enable / dsh web :8899 按需（HD-1 审计时点未起）；
   SPA/DVWA 靶场就绪
@@ -51,7 +51,15 @@ T3-3-0 ✅（**6.5 前置审计+拆批方案**[只读批]：docs/t3-3-plan.md—
 [看板并入/变异缩水/评测半自动]/3 实施批建议；**子 agent 并行派发首例**[4 派 1 自做，
 硬结论四条复证全过]；**等用户拍板 §7 后进 T3-3-1**）
 下一步建议：**等用户对 docs/t3-3-plan.md §7 五个拍板点拍板** → T3-3-1 可视化数据面+三图
-（拍板前 T4-2 存储/T4-3 信任/T4-4 OTel 材料准备可穿插）
+（拍板前 T4-2 存储/T4-3 信任/T4-4 OTel 材料准备可穿插）/
+T3-3-1 ✅（**可视化数据面+三图+能力看板卡**[§7 已拍板, 顺序 1→3→2]：host 四路由
+[starmap/coverage/hypotheses/capability, 独立微缓存, graphd 零改动零新增 endpoint,
+capability 静态读 fail-soft]+三图纯函数[buildStarmap/buildCoverage/buildHypLane,
+$eng/$since 参数绑定]+d2d:viz tab[自绘 SVG/CSS grid 零图表库, 渲染护栏 200 节点/300 边/
+泳道窗口 chips+localStorage+钳位 1..90 天]+#24 顺手两件[panel host 路由测试盲区补齐/
+manifest"五形态"注释勘误]）
+下一步建议：**T3-3-3 授权契约数字化**（拍板顺序 1→3→2；ed25519 契约模块+四挂接点+
+P2P_AUTH_CONTRACT 缺省 off）
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
@@ -79,7 +87,7 @@ T3-3-0 ✅（**6.5 前置审计+拆批方案**[只读批]：docs/t3-3-plan.md—
 | 18 | 幻觉抽检人工循环首跑（--sample 工作单→人工审→--record 记账） | 框架就绪账本空 | 随批人工执行 | P3 |
 | 22 | MCP 会话化 + dsh 宿主原生接口跟进 + 首个真实 server 接入 | 设计就绪（v1 无会话态；独立 CLI 进程形态；配置面空清单安全态） | 触发条件见 docs/mcp-security-design.md §9 | P3 |
 | 23 | 能力路由短词 1 分档裸子串可误命中（surface-js→modeling-specialist 实锚；行为快照已锁定现状） | 登记性断言在位（idle-tasks.test 快照） | allocator 逻辑面精化（非禁区低优先，0911 评分刚定稿勿急动） | P3 |
-| 24 | 审计发现登记（T3-3-0，均不修）：hostAllowed 空 scope fail-open（checkBash 层已 fail-closed 兜底）/~/.config/d2d 目录 775（私钥子目录应 0700）/manifest 文件头「五形态」注释遗留（实 6 形态）/panel host 路由测试盲区（approval/eng/start 分支） | 如实登记 | 随批顺手或 T4-5 清理 | P3 |
+| 24 | 审计发现登记（T3-3-0，均不修）：hostAllowed 空 scope fail-open（checkBash 层已 fail-closed 兜底）/~/.config/d2d 目录 775（私钥子目录应 0700）/manifest 文件头「五形态」注释遗留（实 6 形态）/panel host 路由测试盲区（approval/eng/start 分支） | **两项已顺手销账**（T3-3-1：manifest 注释勘误+panel 路由测试盲区补齐[viz 四路由+approval/caps/denylist 分型]）；余两项登记不修 | 随批顺手或 T4-5 清理 | P3 |
 
 ## 决策账
 已拍板：五术语清理（ACON/ATLAS/MaTTS/SAGE 删，CNSR 留名；T3-1 执行：仓内前四者
@@ -122,7 +130,9 @@ evidence-crypto}.mjs · scripts/brain/{study,promote,validate-cards,consensus-ch
 misses-report,experience-metrics}.mjs · tools/js-scanner.mjs ·
 scripts/mcp/d2d-mcp-server.mjs · config/mcp-export.json · config/mcp-servers.json ·
 plugin/pentest-dsh/scheduler/{approval-agent,subagent-cap,bias-block,trust,
-tier-approval,external-tools,supervisor-tools,idle-tasks}.mjs · plugin/pentest-dsh/domain/{card-schema,
+tier-approval,external-tools,supervisor-tools,idle-tasks}.mjs ·
+plugin/d2d-panel/lib/client/view.viz.js · plugin/d2d-panel/lib/host/{snapshot,index}.mjs(viz 面) ·
+plugin/pentest-dsh/domain/{card-schema,
 experience-consensus,knowledge-gaps,experience-metrics,memory-store,sanitize-ingest,
 mcp-discovery,role-card-filter}.mjs · har-capture.mjs
 （路径均经 HD-1 审计核实存在）
