@@ -203,46 +203,50 @@ export function apply(ctx, config = {}) {
         }
         return eng
       }
-      const microCache = (fn) => {
-        let c = null
-        let f = null
-        return async () => {
-          if (c && Date.now() - c.ts < MICRO_CACHE_MS) return c.val
-          if (f) return f
-          f = (async () => {
-            const val = await fn()
-            c = { ts: Date.now(), val }
+      const microCaches = new Map() // key → {c, f}: 每路由独立 500ms 缓存槽(viz ×4 与主快照互不牵动)
+      const microCache = (key, fn) => {
+        if (!microCaches.has(key)) microCaches.set(key, { c: null, f: null })
+        const slot = microCaches.get(key)
+        return async (...args) => {
+          if (slot.c && Date.now() - slot.c.ts < MICRO_CACHE_MS) return slot.c.val
+          if (slot.f) return slot.f
+          slot.f = (async () => {
+            const val = await fn(...args)
+            slot.c = { ts: Date.now(), val }
             return val
-          })().finally(() => { f = null })
-          return f
+          })().finally(() => { slot.f = null })
+          return slot.f
         }
       }
-      const vizGet = (name, fn) => {
-        if (method !== name) return false
-        if (req.method !== 'GET') { send(405, { ok: false, error: { code: 'method-error', message: 'method not allowed (read-only)' } }); return true }
-        const run = microCache(async () => {
+      const vizRoute = async (name, fn) => {
+        if (req.method !== 'GET') { send(405, { ok: false, error: { code: 'method-error', message: 'method not allowed (read-only)' } }); return }
+        try {
+          // await 到 send 完成(非 fire-and-forget) — 测试驱动与慢链路下响应写入必然可见
           const eng = await vizEng()
-          if (!eng) return { ok: true, eng: '', [name]: null }
-          const val = await fn(eng, new URL(req.url ?? '/', 'http://dsh.internal').searchParams)
-          return { ok: true, eng, [name]: val }
-        })
-        run().then((v) => send(200, v)).catch((e) => send(503, { ok: false, error: { code: 'graphd-unreachable', message: `fail-closed: ${String(e?.message ?? e).slice(0, 140)}` } }))
-        return true
+          if (!eng) return send(200, { ok: true, eng: '', [name]: null })
+          const sp = new URL(req.url ?? '/', 'http://dsh.internal').searchParams
+          return send(200, { ok: true, eng, [name]: await microCache(`viz:${name}`, fn)(eng, sp) })
+        } catch (e) {
+          return send(503, { ok: false, error: { code: 'graphd-unreachable', message: `fail-closed: ${String(e?.message ?? e).slice(0, 140)}` } })
+        }
       }
-      if (vizGet('starmap', (eng) => buildStarmap(query, { eng, runEvents: readRunEvents({ engName: eng }) }))) return
-      if (vizGet('coverage', (eng) => buildCoverage(query, { eng }))) return
-      if (vizGet('hypotheses', (eng, sp) => buildHypLane(query, { eng, days: sp.get('days') ?? undefined }))) return
+      if (method === 'starmap') return vizRoute('starmap', (eng) => buildStarmap(query, { eng, runEvents: readRunEvents({ engName: eng }) }))
+      if (method === 'coverage') return vizRoute('coverage', (eng) => buildCoverage(query, { eng }))
+      if (method === 'hypotheses') return vizRoute('hypotheses', (eng, sp) => buildHypLane(query, { eng, days: sp.get('days') ?? undefined }))
       if (method === 'capability') {
         if (req.method !== 'GET') return send(405, { ok: false, error: { code: 'method-error', message: 'method not allowed (read-only)' } })
-        const run = microCache(async () => {
-          let manifest = null
-          let baselinesRaw = null
-          try { manifest = (await import('../../../pentest-dsh/export/manifest.mjs')).EXPORT_MANIFEST } catch { manifest = null }
-          try { baselinesRaw = fs.readFileSync(new URL('../../../pentest-dsh/config/description-baselines.json', import.meta.url), 'utf8') } catch { baselinesRaw = null }
-          return { ok: true, capability: buildCapability({ manifest, baselinesRaw }) }
-        })
-        run().then((v) => send(200, v)).catch((e) => send(200, { ok: true, capability: { degraded: [`capability: ${String(e?.message ?? e).slice(0, 120)}`], manifest: null, baselines: null } }))
-        return
+        try {
+          const run = microCache('capability', async () => {
+            let manifest = null
+            let baselinesRaw = null
+            try { manifest = (await import('../../../pentest-dsh/export/manifest.mjs')).EXPORT_MANIFEST } catch { manifest = null }
+            try { baselinesRaw = fs.readFileSync(new URL('../../../pentest-dsh/config/description-baselines.json', import.meta.url), 'utf8') } catch { baselinesRaw = null }
+            return { ok: true, capability: buildCapability({ manifest, baselinesRaw }) }
+          })()
+          return send(200, await run)
+        } catch (e) {
+          return send(200, { ok: true, capability: { degraded: [`capability: ${String(e?.message ?? e).slice(0, 120)}`], manifest: null, baselines: null } })
+        }
       }
       // ---- 4-4 子批次 A: 通道①审批面 — GET 列 pending(+计数/模式), POST {id,decision,decided_by} 裁决。
       // 鉴权/写端点模式复用上方既有门(trustedHosts + POST + readBody + BODY_MAX)。队列模块
