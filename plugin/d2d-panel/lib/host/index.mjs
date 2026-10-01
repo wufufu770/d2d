@@ -194,14 +194,12 @@ export function apply(ctx, config = {}) {
       // capability 路由零 graphd(纯本地静态读) → fail-soft 恒 200 + degraded 记因, 与
       // graphd 依赖路由的 503 fail-closed 语义区分(看板卡非关键路径)。
       const vizEng = async () => {
-        let eng = readSelectedEngagement()
-        if (!eng) {
-          try {
-            const act = await query(`MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name AS name ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`)
-            eng = String(act?.[0]?.name ?? '')
-          } catch { eng = '' }
-        }
-        return eng
+        const local = readSelectedEngagement()
+        if (local) return local
+        // 无 selected 文件: 查 graphd 兜底 — **graphd 不可达必须上抛**(路由层 503 fail-closed),
+        // 不可静默吞成空 eng 返回 200 空态(首版缺陷: CI 无 selected 文件暴露; 本机有文件掩盖)。
+        const act = await query(`MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name AS name ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`)
+        return String(act?.[0]?.name ?? '')
       }
       const microCaches = new Map() // key → {c, f}: 每路由独立 500ms 缓存槽(viz ×4 与主快照互不牵动)
       const microCache = (key, fn) => {
