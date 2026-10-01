@@ -58,6 +58,7 @@
 | config/mcp-servers.json 边界语义（配置即边界；缺省空清单=零注册安全态） | T3-2-4 已落地 |
 | scheduler/supervisor-tools.mjs（环内 supervisor：scope 严格子集判定+递归深度=1 双通道+cap 预检+治理门挂载） | T3-2-5 已落地 |
 | docs/devlog.md 追加式纪律（历史节只增不改；勘误以新节补记；state.md=快照可覆盖） | T3-2-5 已落地 |
+| scheduler/idle-tasks.mjs（闲时任务框架：预检硬门+自适应频率+失败降级；**调度环核心 tick→allocateOnce→planAllocation→runWorker 零改动为 T3-2-6 唯一新增硬边界**） | T3-2-6 已落地 |
 
 T3-1 新增：无（四子项零侵入落地）。HD-1 新增：无（纯文档批）。
 T3-2-4 新增全局纪律：**外部数据不过 sanitize-ingest 链不入图** —— 任何新的外部
