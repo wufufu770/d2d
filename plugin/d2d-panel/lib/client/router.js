@@ -28,6 +28,15 @@
         ...(cap('badge') ? { badge: () => badgeState.verified ?? null } : {}),
         component: (props) => h(FindingsView, props),
       }), 'd2d-panel: findings tab')
+
+      // T3-3-1 可视化 tab(星图+热力+泳道+能力看板; 独立 useViz 轮询, 无 badge 语义)
+      ctx.effect(() => svc.registerTab({
+        id: 'd2d:viz',
+        title: () => 'd2d Viz',
+        order: 62,
+        single: true,
+        component: (props) => h(VizView, props),
+      }), 'd2d-panel: viz tab')
     }
 
     exports.apply = apply
