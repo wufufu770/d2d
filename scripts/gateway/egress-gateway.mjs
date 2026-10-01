@@ -42,6 +42,14 @@ const MODEL_HOSTS = new Set([
   'api.moonshot.cn', 'dashscope.aliyuncs.com',
   ...(process.env.D2D_EGRESS_MODEL_HOSTS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
 ])
+// T3-2-1: osint 情报源豁免(基础设施, 非目标流量) — 被动源(crt.sh/Hackertarget)查询经本网关时
+// 免 scope 门(scope 只约束目标侧; 情报源主机不在任何 engagement scope 内, 不豁免会被全拦)。
+// 硬黑面仍优先于本豁免; 令牌桶限速与审计对豁免主机照常生效(豁免≠免治理)。
+// D2D_EGRESS_OSINT_HOSTS 逗号分隔可增补。
+const OSINT_HOSTS = new Set([
+  'crt.sh', 'api.hackertarget.com', 'www.hackertarget.com',
+  ...(process.env.D2D_EGRESS_OSINT_HOSTS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+])
 // 中危审计修复(9): 上游请求/隧道超时 — 旧版 http.request/net.connect 无任何超时, 上游挂住 =
 // worker 连接与 socket 永久悬挂。默认 30s, P2P_PROXY_TIMEOUT_MS 可调(非法/非正值回退默认)。
 const UPSTREAM_TIMEOUT_MS = _envInt(process.env.P2P_PROXY_TIMEOUT_MS, 30_000)
@@ -214,6 +222,7 @@ function hostAllowed(host) {
   // 0911: 模型 API 豁免(基础设施, 非目标流量)——scope 只约束目标侧; LLM 端点不豁免会被
   // engagement scope 全拦(worker 模型调用全部 TRANSPORT error)。硬黑面仍优先于本豁免。
   if (MODEL_HOSTS.has(h)) return true
+  if (OSINT_HOSTS.has(h)) return true // T3-2-1: osint 情报源豁免(令牌桶/审计照常)
   if (STATIC_ALLOW.has(h)) return true
   for (const a of [...STATIC_ALLOW, ...dynScope]) {
     if (a.includes('/')) { if (ipInCidr(h, a)) return true }
