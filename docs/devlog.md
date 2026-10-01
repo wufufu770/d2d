@@ -101,5 +101,5 @@
 底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest 368 / mocha 1866 / panel 55
 产出：scheduler/supervisor-tools.mjs（delegate_subtask 工具：ctx.agents.create 既有通道只调用不修改/scope 严格子集机器判定[hostAllowed 归属+父 denied ⊆ 子 denied]/递归深度=1 结构性双通道[进程外 isWorkerProfile+in-process setup 递归锁门，挂门失败 abort 不降级]/subagent-cap 既有账本硬顶预检/治理门继承[checkBash 直传+wirePostExecuteGate 镜像]/审计三事件+Signal(subagent-result) 回流）· index.js 纯新增接线块（sched 声明后）· description 基线 58→62（拍板 8 钉扎）· docs/devlog.md 历史回填（本文件）
 关键裁决：worker 工具形态零禁区实现（边界裁决守住——不走 adapter.spawnWorker 调度器槽位语义、adapter 两文件零触碰、scheduler.js/loop.mjs 零改动、审批面只标注）；调度环自动创建切片明确出批（实战后另批 4-3a）；子 Agent 定性=进程内受控实体（同 scope 门治理，不走 sanitize-ingest external 链——两道防线定性区隔）；cap 复用 T0-C 既有账本（二次 acquire 会与宿主 hook 双记，故只预检不占坑）
-教训沉淀：接线块 opts 引用 sched 必须置于 sched 声明之后（对象字面量立即求值 vs lambda 惰性引用——T3-2-4 块形态不适用于需实例的注入）；scope 排除项语法是逗号分隔（scope.mjs split(',') 口径，空格分隔会被整体当一条目）
+教训沉淀：接线块 opts 引用 sched 必须置于 sched 声明之后（对象字面量立即求值 vs lambda 惰性引用——T3-2-4 块形态不适用于需实例的注入）；scope 排除项语法是逗号分隔（scope.mjs split(',') 口径，空格分隔会被整体当一条目）；**CI 环境依赖第二次行使 token seam 先例**（emitResultSignal 读 host-token → CI 无文件 Signal 回流断言红 → hostToken 注入 seam + 空 HOME 复现验证，同 T3-2-4 graphQuery 形态）
 开放项：devlog 从本批起逐批追加；T3-2-6 闲时路由（阶段 6 收官批，下一批）
