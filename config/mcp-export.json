@@ -1,0 +1,13 @@
+{
+  "_说明": "T3-2-3 MCP 导出骨架(拍板 2: 只落形态声明, server 实质实现归 T3-2-4 / 6-5 双向 MCP)。安全核心预告: 只读能力暴露(零图写通道) + 响应过消毒链 + scope 继承调用方。",
+  "server": {
+    "name": "d2d",
+    "transport": "stdio(T3-2-4 定稿)",
+    "status": "skeleton"
+  },
+  "tools_planned": [
+    { "name": "d2d_graph_read", "desc": "只读 Cypher 查询(worker_query_allowed 同口径)", "write": false },
+    { "name": "d2d_findings_summary", "desc": "findings 摘要读取(脱敏)", "write": false }
+  ],
+  "todo": "T3-2-4: stdio server + sanitize-ingest 消毒编排 + 对内发现配置面"
+}
