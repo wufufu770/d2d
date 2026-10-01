@@ -1,0 +1,4 @@
+{
+  "_说明": "T3-2-4 对内 MCP 发现配置(配置即边界 — 零运行时自动发现)。servers 空数组=零发现(缺省安全态)。endpoint 仅 http/https 且缺省拒绝环回/私有/保留段(显式 allowPrivate:true 才放行本机/内网 server); tools 白名单 [a-z0-9_.-]。响应强制过 sanitize-ingest。",
+  "servers": []
+}
