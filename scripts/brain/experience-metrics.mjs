@@ -29,16 +29,17 @@ if (process.argv.includes('--record')) {
   const av = (k) => { const i = process.argv.indexOf(k); return i > -1 ? process.argv[i + 1] : '' }
   const card = av('--card')
   const verdict = av('--verdict')
-  if (!card || !['ok', 'hallucination', 'unverifiable'].includes(verdict)) {
-    console.error('用法: --record --card <card:id> --verdict ok|hallucination|unverifiable [--reviewer 名] [--note 说明]')
+  const kind = av('--kind') || 'card' // T3-2-2 补漏: 账本兼容 skill 条目(--kind card|skill, 缺省 card 兼容既有行)
+  if (!card || !['ok', 'hallucination', 'unverifiable'].includes(verdict) || !['card', 'skill'].includes(kind)) {
+    console.error('用法: --record --card <card:id|skill:id> --verdict ok|hallucination|unverifiable [--kind card|skill] [--reviewer 名] [--note 说明]')
     process.exit(1)
   }
   fs.mkdirSync(REPORTS, { recursive: true })
   fs.appendFileSync(SAMPLING_LOG, JSON.stringify({
-    ts: new Date().toISOString(), card_id: card, verdict,
+    ts: new Date().toISOString(), kind, card_id: card, verdict,
     reviewer: av('--reviewer') || 'human', note: av('--note') || '',
   }) + '\n')
-  console.log(`✅ 抽检结论已记账: ${SAMPLING_LOG}`)
+  console.log(`✅ 抽检结论已记账(${kind}): ${SAMPLING_LOG}`)
   process.exit(0)
 }
 

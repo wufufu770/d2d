@@ -46,6 +46,9 @@
 | scheduler.js BG-2 业务闸注入行（:621-625 区新增 5 行, 禁区 [570,618] 之外） | BG-2 已落地 |
 | scheduler/loop.mjs 深环业务闸检查块（allocateOnce scope 过滤后 13 行） | BG-2 已落地 |
 | scheduler/business-gate.mjs 编排文件 | BG-2 已落地 |
+| domain/skill-schema.mjs（skill Schema+结构门纯函数） | T3-2-2 已落地 |
+| scripts/brain/skill-promote.mjs（skill 三门晋级通道） | T3-2-2 已落地 |
+| scripts/brain/skill-distill.mjs（skill 抽取管道） | T3-2-2 已落地 |
 | tests/golden-targets/spa-attack-acceptance.md 验收结论 | T2-2b-4 已落地 |
 
 T3-1 新增：无（四子项零侵入落地）。HD-1 新增：无（纯文档批）。
