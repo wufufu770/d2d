@@ -49,6 +49,8 @@
 | domain/skill-schema.mjs（skill Schema+结构门纯函数） | T3-2-2 已落地 |
 | scripts/brain/skill-promote.mjs（skill 三门晋级通道） | T3-2-2 已落地 |
 | scripts/brain/skill-distill.mjs（skill 抽取管道） | T3-2-2 已落地 |
+| experience-ref.mjs 角色过滤编排 buildExperienceRefFiltered（文件末尾纯新增） | T3-2-2b 已落地 |
+| scheduler.js 角色过滤覆盖行（taskFull 前，EI×RF 双开关前置） | T3-2-2b 已落地 |
 | tests/golden-targets/spa-attack-acceptance.md 验收结论 | T2-2b-4 已落地 |
 
 T3-1 新增：无（四子项零侵入落地）。HD-1 新增：无（纯文档批）。
