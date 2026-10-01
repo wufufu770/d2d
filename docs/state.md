@@ -27,15 +27,15 @@ T3-2-0 ✅（阶段 6 前置审计七项 + 拆批方案 docs/stage6-batch-plan.m
 T3-2-1 联网扩源 → T3-2-2 经验技能 ∥ T3-2-3 插件打包 → T3-2-4 双向 MCP →
 T3-2-5 supervisor → T3-2-6 闲时路由；6-6 本体与 graphd 架构冲突→重议降级）/
 T3-2-1 ✅（联网扩源：osintGet 网关化+Hackertarget 免费层+osint-subdomain Signal，
-验收 smoke 实证）/ T3-2-2 ✅（经验→技能：skill 存储+三门通道+抽取管道+示例 2 张
-[quarantine→shadow 实跑]+角色过滤纯函数；接线拆 T3-2-2b 待授权 docs/skill-design.md §三）
-下一步建议：T3-2-2b（待你对 skill-design.md §三授权拍板）或 T3-2-3 插件打包（无依赖）
+验收 smoke 实证）/ T3-2-2 ✅ + T3-2-2b ✅（**6-1 经验→技能整项全清**：skill 存储+三门通道
++抽取管道+示例 2 张+domain 补齐+角色过滤接线[P2P_ROLE_FILTER 回退开关, 三实质 diff
++59/-0 实证]）/ 下一步建议：T3-2-3 插件打包（无依赖）
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
 |---|----|------|------|--------|
 | 1 | 业务闸 | **全线收官**（BG-1 纯函数+schema；BG-2 scheduler 集成上线：business_gate+coverage_bias 注入与深环派发闸，P2P_BUSINESS_GATE=0 回退；验收 docs/business-gate-acceptance.md） | — | P2 ✅ |
-| 19 | 角色过滤接线（T3-2-2b） | 设计就绪+授权申请材料 docs/skill-design.md §三（两面：experience-ref 选卡过滤 3.5-3 禁区 + knowledgeBlock 装配过滤） | 待用户对 T3-2-2b 拍板 | P2 |
+| 19 | 角色过滤接线（T3-2-2b） | **已落地**（T3-2-2b：面 1 修正形态纯新增接线+P2P_ROLE_FILTER 双覆盖；面 2 时序死结不实施——cards 组装在 role 赋值前，实锚见收官文档） | — | P2 ✅ |
 | 20 | skill wins 自动归因 | 未建（门③现 soft=evidence 非空） | 实战 used_knowledge 归因成熟后对齐 | P3 |
 | 21 | skill-distill LLM 蒸馏步骤 | 骨架产出（占位纪律防造假） | 素材积累后按零成本约束立项 | P3 |
 | 2 | lease-cas-watchdog flaky | 多批未复发，观察 | 观察项 | P3 |
