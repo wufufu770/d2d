@@ -96,7 +96,7 @@ fa7fa63b0ad67d91b6311f884e0da13882f19f8f552214a3958065ba753e8abe  plugin/d2d-pan
 13093da42b3f838dcfc7d0760de56dd60b7b867475351fa1a8130e01d4dd6d20  plugin/d2d-panel/lib/client/view.findings.js
 fc9a5d03959972974bea4e7e373f8a46a5184abd573f9d7b08cf49c4148271cc  plugin/d2d-panel/lib/client/view.ops.js
 68fb4152736c783c91ad7289a46290407ba0742cabcc5749035c1046e7c81f44  plugin/d2d-panel/lib/client/view.viz.js
-78bf40d56980d2bbd6f7b398b69cc68a6b5974099bd2b58a46c095c8f6afef4f  plugin/d2d-panel/lib/host/index.mjs
+6eee1868a418bacdda4b19eaf6fb8e8da3c9a8c97378db87e4d175e176ad4a4e  plugin/d2d-panel/lib/host/index.mjs
 3c7c0dcfb2c31b7becdadcbb47fd600a666e708e21a86f69800fdfc6bdc54cfd  plugin/d2d-panel/lib/host/snapshot.mjs
 4805177eb9503800f6d1603e3941f61048dac3b853b40d17a11c4504d980f48a  plugin/d2d-panel/lib/host/standalone.mjs
 c4851d7ead7a6b1a9fc3cc707d16ebe7dd9cecfdd9e6f81aa0a99258ea156ba0  plugin/d2d-panel/lib/host/start-policy.mjs
