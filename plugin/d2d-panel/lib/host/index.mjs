@@ -2,7 +2,7 @@
 // 路由: ctx.webServer.register({kind:'prefix', path:'/d2d/api'}) — 与 dsh /api 同一道
 // 浏览器信任栅栏(Host loopback/受信 + sec-fetch-site + Origin 同源), 同源零跨域,
 // token 全程留 host 侧。机制参照 dsh-sidebar-leap 宿主半(生态已验证模式)。
-import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, readModelUsage, transitionFinding, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement } from './snapshot.mjs'
+import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, readModelUsage, transitionFinding, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement, buildStarmap, buildCoverage, buildHypLane, buildCapability } from './snapshot.mjs'
 import { validateStartRequest } from './start-policy.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -187,6 +187,62 @@ export function apply(ctx, config = {}) {
         } catch (e) {
           return send(400, { ok: false, error: { code: 'caps-write-error', message: String(e?.message ?? e).slice(0, 160) } })
         }
+      }
+      // ---- T3-3-1 viz 数据面 ×4(GET 只读; 各自独立微缓存 — 与主快照互不牵动, viz 503 不炸 ops/findings) ----
+      // graphd 零改动零新增 endpoint: 全部走既有 /query host-token 通道($eng 参数绑定);
+      // wire 契约继承: 不带 evidence 全文/repro(host 半提 hostname, snapshot.mjs build*)。
+      // capability 路由零 graphd(纯本地静态读) → fail-soft 恒 200 + degraded 记因, 与
+      // graphd 依赖路由的 503 fail-closed 语义区分(看板卡非关键路径)。
+      const vizEng = async () => {
+        let eng = readSelectedEngagement()
+        if (!eng) {
+          try {
+            const act = await query(`MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name AS name ORDER BY coalesce(e.created_at, '') DESC LIMIT 1`)
+            eng = String(act?.[0]?.name ?? '')
+          } catch { eng = '' }
+        }
+        return eng
+      }
+      const microCache = (fn) => {
+        let c = null
+        let f = null
+        return async () => {
+          if (c && Date.now() - c.ts < MICRO_CACHE_MS) return c.val
+          if (f) return f
+          f = (async () => {
+            const val = await fn()
+            c = { ts: Date.now(), val }
+            return val
+          })().finally(() => { f = null })
+          return f
+        }
+      }
+      const vizGet = (name, fn) => {
+        if (method !== name) return false
+        if (req.method !== 'GET') { send(405, { ok: false, error: { code: 'method-error', message: 'method not allowed (read-only)' } }); return true }
+        const run = microCache(async () => {
+          const eng = await vizEng()
+          if (!eng) return { ok: true, eng: '', [name]: null }
+          const val = await fn(eng, new URL(req.url ?? '/', 'http://dsh.internal').searchParams)
+          return { ok: true, eng, [name]: val }
+        })
+        run().then((v) => send(200, v)).catch((e) => send(503, { ok: false, error: { code: 'graphd-unreachable', message: `fail-closed: ${String(e?.message ?? e).slice(0, 140)}` } }))
+        return true
+      }
+      if (vizGet('starmap', (eng) => buildStarmap(query, { eng, runEvents: readRunEvents({ engName: eng }) }))) return
+      if (vizGet('coverage', (eng) => buildCoverage(query, { eng }))) return
+      if (vizGet('hypotheses', (eng, sp) => buildHypLane(query, { eng, days: sp.get('days') ?? undefined }))) return
+      if (method === 'capability') {
+        if (req.method !== 'GET') return send(405, { ok: false, error: { code: 'method-error', message: 'method not allowed (read-only)' } })
+        const run = microCache(async () => {
+          let manifest = null
+          let baselinesRaw = null
+          try { manifest = (await import('../../../pentest-dsh/export/manifest.mjs')).EXPORT_MANIFEST } catch { manifest = null }
+          try { baselinesRaw = fs.readFileSync(new URL('../../../pentest-dsh/config/description-baselines.json', import.meta.url), 'utf8') } catch { baselinesRaw = null }
+          return { ok: true, capability: buildCapability({ manifest, baselinesRaw }) }
+        })
+        run().then((v) => send(200, v)).catch((e) => send(200, { ok: true, capability: { degraded: [`capability: ${String(e?.message ?? e).slice(0, 120)}`], manifest: null, baselines: null } }))
+        return
       }
       // ---- 4-4 子批次 A: 通道①审批面 — GET 列 pending(+计数/模式), POST {id,decision,decided_by} 裁决。
       // 鉴权/写端点模式复用上方既有门(trustedHosts + POST + readBody + BODY_MAX)。队列模块
