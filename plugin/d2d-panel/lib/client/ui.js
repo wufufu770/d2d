@@ -89,6 +89,7 @@
       { key: 'funnel', label: '漏斗' },
       { key: 'gaps', label: '缺口' },
       { key: 'exp', label: '经验库' },
+      { key: 'frontier', label: '前沿池' },
     ]
     function useModules() {
       const [off, setOff] = useState(() => {

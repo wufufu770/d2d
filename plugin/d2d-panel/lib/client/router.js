@@ -29,7 +29,7 @@
         component: (props) => h(FindingsView, props),
       }), 'd2d-panel: findings tab')
 
-      // T3-3-1 可视化 tab(星图+热力+泳道+能力看板; 独立 useViz 轮询, 无 badge 语义)
+      // T3-3-1 可视化 tab(星图+热力+泳道+桑基+能力看板; 独立 useViz 轮询, 无 badge 语义)
       ctx.effect(() => svc.registerTab({
         id: 'd2d:viz',
         title: () => 'd2d Viz',
@@ -37,6 +37,48 @@
         single: true,
         component: (props) => h(VizView, props),
       }), 'd2d-panel: viz tab')
+
+      // ---- T3-3-2 收官批: 9 标签页补全(五新 tab, order 63-67) ----
+      ctx.effect(() => svc.registerTab({
+        id: 'd2d:approval',
+        title: () => 'd2d Approval',
+        order: 63,
+        single: true,
+        ...(cap('badge') ? { badge: () => badgeState.approvals ?? null } : {}),
+        component: (props) => h(ApprovalView, props),
+      }), 'd2d-panel: approval tab')
+
+      ctx.effect(() => svc.registerTab({
+        id: 'd2d:chain',
+        title: () => 'd2d Chain',
+        order: 64,
+        single: true,
+        component: (props) => h(ChainView, props),
+      }), 'd2d-panel: chain tab')
+
+      ctx.effect(() => svc.registerTab({
+        id: 'd2d:tools',
+        title: () => 'd2d Tools',
+        order: 65,
+        single: true,
+        component: (props) => h(ToolsView, props),
+      }), 'd2d-panel: tools tab')
+
+      ctx.effect(() => svc.registerTab({
+        id: 'd2d:audit',
+        title: () => 'd2d Audit',
+        order: 66,
+        single: true,
+        component: (props) => h(AuditView, props),
+      }), 'd2d-panel: audit tab')
+
+      ctx.effect(() => svc.registerTab({
+        id: 'd2d:config',
+        title: () => 'd2d Config',
+        order: 67,
+        single: true,
+        component: (props) => h(ConfigView, props),
+      }), 'd2d-panel: config tab')
     }
 
     exports.apply = apply
