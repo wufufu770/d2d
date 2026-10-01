@@ -22,8 +22,11 @@ T0 ✅ / T1 ✅ / T1.x 实战 ✅ / T2-1 ✅ / T2-2a ✅ / T2-2b-0~4 ✅ /
 T3-1 ✅（四子项全落地：Schema 校验 260 张全过 / A-MemGuard 共识 v1 离线路径 /
 misses 月度聚合 / 度量框架蒸馏+注入实效落地、检索有效性设计就绪）/
 HD-1 ✅（文档体系）/ BG-1 ✅ + BG-2 ✅（业务闸全线收官：scheduler 集成上线,
-coverage_bias 死代码接线补完 T2-2a, 验收 docs/business-gate-acceptance.md）
-下一步建议：滞留回填小批（穿插）→ T3-2（先发 T3-2-0 拆批方案）
+coverage_bias 死代码接线补完 T2-2a, 验收 docs/business-gate-acceptance.md）/
+T3-2-0 ✅（阶段 6 前置审计七项 + 拆批方案 docs/stage6-batch-plan.md：
+T3-2-1 联网扩源 → T3-2-2 经验技能 ∥ T3-2-3 插件打包 → T3-2-4 双向 MCP →
+T3-2-5 supervisor → T3-2-6 闲时路由；6-6 本体与 graphd 架构冲突→重议降级）
+下一步建议：用户对拆批方案拍板 → T3-2-1 实施（滞留回填小批可穿插）
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
@@ -54,7 +57,7 @@ coverage_bias 死代码接线补完 T2-2a, 验收 docs/business-gate-acceptance.
 授权）；分层压缩保留编排（本批仅确认现状）；业务闸独立小批（不混批）；js-scanner
 维持只读；lease-cas-watchdog 继续观察；活文档机制（HD-1：回报固定含「状态文档更新」
 节）；PR 流程授权（HD-1：CI 三 workflow 绿即可合并）。
-待拍板（用户）：T3-2 拆批方案确认；T4-2 LadybugDB 迁/不迁/观望；
+待拍板（用户）：**T3-2 拆批方案拍板**（docs/stage6-batch-plan.md，含 6-6 重议建议：本体降级/闲时路由承接）；T4-2 LadybugDB 迁/不迁/观望；
 T4-4 OTel 插队或按序；T4-5 是否公开仓库及脱敏范围。
 
 ## 关键文件/脚本速查
@@ -62,6 +65,7 @@ docs/dsh-sidebar-compat.md · docs/assertion-dsl.md · docs/mitm-cert-runbook.md
 docs/upstream-open-items.md · docs/approval-channels.md · docs/tool-risk-rating.md ·
 docs/gate-coverage-gaps.md · docs/gate-anchor-schema.md ·
 docs/merge-plan-approval-trust.md · docs/brain-audit-runbook.md ·
+docs/business-gate-design.md · docs/business-gate-acceptance.md · docs/stage6-batch-plan.md ·
 experiments/dataset/eval-dataset.jsonl · experiments/results/ab-report-*.md ·
 brain/seed/seed-cards.json · tests/golden-targets/{baseline,spa-recon-acceptance,
 spa-verify-acceptance,spa-attack-acceptance}.md · scripts/ops/verify-dsh-version.mjs ·
