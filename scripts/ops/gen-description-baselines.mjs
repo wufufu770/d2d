@@ -28,6 +28,7 @@ const registerPaths = [
   ['tools/js-scanner.mjs', 'registerJsScanner'],
   ['tools/frontier.mjs', 'registerFrontierTools'],
   ['scheduler/browser-attack-tools.mjs', 'registerBrowserAttackTools'],
+  ['scheduler/supervisor-tools.mjs', 'registerSupervisorTools'], // T3-2-5: 静态注册入钉扎(拍板 8)
 ]
 for (const [rel, fnName] of registerPaths) {
   const mod = await import(path.join(REPO, 'plugin/pentest-dsh', rel))
