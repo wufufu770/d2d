@@ -45,9 +45,13 @@ Signal(subagent-result) 回流]+devlog.md 历史回填[T0→本批逐批节, 三
 fail-closed+setTimeout 链自适应频率 60min→10min+失败退避进程隔离；P2P_IDLE_TASKS=0 可关]，
 首批两任务=既有 CLI[skill-distill 补跑/misses-report]；能力路由行为快照锁定[实测无真实
 缺口，短词精化挂开放项]；调度环核心零触碰为唯一新增硬边界；终态盘点 docs/stage6-finale.md；
-tag t3-2-stage6）
-下一步建议：**T3-3（6.5 余项：星图可视化+授权数字化+9 功能标签页）**；T4-2 存储/T4-3 信任
-/T4-4 OTel 可并行或按序
+tag t3-2-stage6）/
+T3-3-0 ✅（**6.5 前置审计+拆批方案**[只读批]：docs/t3-3-plan.md——四图数据全可查
+[既有 /query 通道零新增 endpoint]/授权数字化 ed25519 零依赖实测通过无阻断/8.5 定级
+[看板并入/变异缩水/评测半自动]/3 实施批建议；**子 agent 并行派发首例**[4 派 1 自做，
+硬结论四条复证全过]；**等用户拍板 §7 后进 T3-3-1**）
+下一步建议：**等用户对 docs/t3-3-plan.md §7 五个拍板点拍板** → T3-3-1 可视化数据面+三图
+（拍板前 T4-2 存储/T4-3 信任/T4-4 OTel 材料准备可穿插）
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
@@ -75,6 +79,7 @@ tag t3-2-stage6）
 | 18 | 幻觉抽检人工循环首跑（--sample 工作单→人工审→--record 记账） | 框架就绪账本空 | 随批人工执行 | P3 |
 | 22 | MCP 会话化 + dsh 宿主原生接口跟进 + 首个真实 server 接入 | 设计就绪（v1 无会话态；独立 CLI 进程形态；配置面空清单安全态） | 触发条件见 docs/mcp-security-design.md §9 | P3 |
 | 23 | 能力路由短词 1 分档裸子串可误命中（surface-js→modeling-specialist 实锚；行为快照已锁定现状） | 登记性断言在位（idle-tasks.test 快照） | allocator 逻辑面精化（非禁区低优先，0911 评分刚定稿勿急动） | P3 |
+| 24 | 审计发现登记（T3-3-0，均不修）：hostAllowed 空 scope fail-open（checkBash 层已 fail-closed 兜底）/~/.config/d2d 目录 775（私钥子目录应 0700）/manifest 文件头「五形态」注释遗留（实 6 形态）/panel host 路由测试盲区（approval/eng/start 分支） | 如实登记 | 随批顺手或 T4-5 清理 | P3 |
 
 ## 决策账
 已拍板：五术语清理（ACON/ATLAS/MaTTS/SAGE 删，CNSR 留名；T3-1 执行：仓内前四者
@@ -92,7 +97,11 @@ tag t3-2-stage6）
 Signal/审计通道；调度环自动创建切片出批[实战后另批 4-3a，不出材料]；devlog 只追加
 [state=快照可覆盖/devlog=完整轨迹]）；**T3-2-6 拍板**（调度环核心零改动为唯一新增
 硬边界；闲时任务预检硬门不可妥协；能力路由数据面优先[实测无缺口→快照锁定]；
-6-6 本体不做挂 T4-2；首批任务 1-2 个防批次膨胀；收官件=盘点+devlog 收官节+tag）。
+6-6 本体不做挂 T4-2；首批任务 1-2 个防批次膨胀；收官件=盘点+devlog 收官节+tag）；
+**T3-3-0 拍板**（只读审计批+拆批方案；审计发现禁区即登记不绕行；8.5 取舍归用户；
+授权数字化密钥管理不落实则不排批；宿主侧 agent 协作常设授权=AGENTS 先例 11）。
+**待拍板（用户）**：T3-3 拆批方案（docs/t3-3-plan.md §7：3 实施批切分/8.5 三件取舍/
+授权数字化排批/灰度缺省值/graphd 侧不参与验签）。
 待拍板（用户）：**T3-2 拆批方案拍板**（docs/stage6-batch-plan.md，含 6-6 重议建议：本体降级/闲时路由承接）；T4-2 LadybugDB 迁/不迁/观望；
 T4-4 OTel 插队或按序；T4-5 是否公开仓库及脱敏范围。
 
@@ -102,7 +111,8 @@ docs/upstream-open-items.md · docs/approval-channels.md · docs/tool-risk-ratin
 docs/gate-coverage-gaps.md · docs/gate-anchor-schema.md ·
 docs/merge-plan-approval-trust.md · docs/brain-audit-runbook.md ·
 docs/business-gate-design.md · docs/business-gate-acceptance.md · docs/stage6-batch-plan.md ·
-docs/mcp-security-design.md · docs/stage6-finale.md · docs/devlog.md（只追加轨迹）·
+docs/mcp-security-design.md · docs/stage6-finale.md · docs/t3-3-plan.md ·
+docs/devlog.md（只追加轨迹）·
 experiments/dataset/eval-dataset.jsonl · experiments/results/ab-report-*.md ·
 brain/seed/seed-cards.json · tests/golden-targets/{baseline,spa-recon-acceptance,
 spa-verify-acceptance,spa-attack-acceptance}.md · scripts/ops/verify-dsh-version.mjs ·
