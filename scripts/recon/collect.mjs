@@ -15,6 +15,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
 import { loadDict, loadResolvers } from './wordlists.mjs'
+import { sanitizeUntrusted } from '../../plugin/pentest-dsh/sanitize.js'
 import { searchAll } from './mapping/aggregate.mjs'
 import { subdomainsOf } from './mapping/normalize.mjs'
 import { crtshSubs, hackertargetSubs } from './passive.mjs'
@@ -50,16 +51,29 @@ async function writeGraphSummary(base, snap) {
   }
   const live = (snap.live ?? []).slice(0, 20).map((l) => l.host)
   const fingers = [...new Set((snap.live ?? []).flatMap((l) => l.finger ?? []))].slice(0, 15)
+  // T3-2-4 安全底线 2 回补接线: 外部源(crt.sh/Hackertarget)响应衍生的 evidence 入图前过
+  // sanitize-ingest 全链(注入扫描→消毒→external 标记) — 消毒链第一次实战接线(防 coverage_bias
+  // 式死代码); 子域归属正则已天然白名单, 过链为统一入口+纵深(防未来扩面时裸写)。
+  const { sanitizeIngestExternal } = await import('../../plugin/pentest-dsh/domain/sanitize-ingest.mjs')
+  const ingest = (raw, source) => {
+    const r = sanitizeIngestExternal(raw, { source, sanitizeImpl: sanitizeUntrusted, maxLen: 4000 })
+    if (!r.ok) { console.error(`[sanitize-ingest] 丢弃(${source}): ${r.alerts.join(';')}`); return null }
+    if (r.alerts.length) console.error(`[sanitize-ingest] 告警(${source}): ${r.alerts.join(';')}`)
+    return r.text
+  }
   await writeSignal('asset-perimeter',
-    `collect(${base}): 子域 ${snap.subs.all.length} / 存活 ${snap.live.length}(示例: ${live.join(',') || '-'})` +
-    `/ 指纹 ${fingers.join(',') || '-'} / 泛解析嫌疑 IP ${snap.wildcardIps.length} — 候选资产, 人工确认归属后入 scope`)
+    ingest(`collect(${base}): 子域 ${snap.subs.all.length} / 存活 ${snap.live.length}(示例: ${live.join(',') || '-'})` +
+      `/ 指纹 ${fingers.join(',') || '-'} / 泛解析嫌疑 IP ${snap.wildcardIps.length} — 候选资产, 人工确认归属后入 scope`, 'collect')
+    || `collect(${base}): 摘要被消毒链丢弃(见 stderr 告警) — 候选资产入图阻断留痕`)
   // T3-2-1: osint-subdomain — 被动源发现面(crt.sh+Hackertarget)独立证据源, 供发现环多源交叉
   // 印证(distinctSources)消费; 只记候选不自动入 scope(与 asset-perimeter 同一人工确认红线)。
   const passive = (snap.subs.passive ?? []).slice(0, 15)
   if (passive.length) {
-    await writeSignal('osint-subdomain',
+    const osintText = ingest(
       `osint(${base}; crt.sh${report.stages?.crtsh ? ':降级' : ''},hackertarget${report.stages?.hackertarget ? ':降级' : ''}): ` +
-      `被动子域 ${snap.subs.passive.length}(样例: ${passive.join(',')}) — 公开证书透明/反向查询, 候选面供交叉印证`)
+      `被动子域 ${snap.subs.passive.length}(样例: ${passive.join(',')}) — 公开证书透明/反向查询, 候选面供交叉印证`, 'osint')
+    if (osintText) await writeSignal('osint-subdomain', osintText)
+    else console.error('[sanitize-ingest] osint-subdomain 丢弃(外部响应未过链不入图)')
   }
 }
 
