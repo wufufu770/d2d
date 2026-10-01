@@ -7,13 +7,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
-import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, computeConversion, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs, readCaps, writeCaps, buildStarmap, buildCoverage, buildHypLane, parseCandidatePairs, buildCapability, clampLaneDays } from '../lib/host/snapshot.mjs'
+import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, computeConversion, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs, readCaps, writeCaps, buildStarmap, buildCoverage, buildHypLane, parseCandidatePairs, buildCapability, clampLaneDays, aggregateTransitions, clampFlowDays, readTransitionFlows, readAuditTail, readToolCalls, buildChain, buildFrontierPool, frontierTransition, readConfigOverview, attachEngCosts } from '../lib/host/snapshot.mjs'
 import { apply as applyHostRoutes } from '../lib/host/index.mjs'
 
 // fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应); params 透传给断言用断言器
 function makeFake(t = {}) {
   return async (cypher, params) => {
     if (cypher.includes('e.instances AS instances')) return t.engList ?? [] // engList(全量 engagement)
+    if (cypher.includes('f.eng AS eng, f.severity AS severity')) return t.sevRows ?? [] // T3-3-2: 每 eng severity 聚合(全句特征, 防误吞 findingsList)
     if (cypher.includes('f.eng AS eng')) return t.findingsByEng ?? [] // 每 engagement 战果聚合
     if (cypher.includes('a.eng AS eng, count(a)')) return t.workersByEng ?? [] // 每 engagement 在跑 worker
     if (cypher.includes('AgentIdentity')) return t.agents ?? []
@@ -24,11 +25,19 @@ function makeFake(t = {}) {
     if (cypher.includes('business_chain AS bc')) return t.gaps ?? []
     if (cypher.includes('h.digest AS digest')) return t.handoffs ?? []
     if (cypher.includes('x.accepted_to_hypothesis_ref')) return t.frontier ?? [] // T2-1-2: Frontier 两 ref 列(按 $eng)
+    if (cypher.includes('x.direction AS direction')) return t.frontierPool ?? [] // T3-3-2: 前沿提案池
     if (cypher.includes('x.pattern AS pattern')) return t.experienceTail ?? []
     if (cypher.includes('count(e)')) return t.endpoints ?? [{ n: 0 }]
     if (cypher.includes('count(s)')) return t.signalsOpen ?? [{ n: 0 }]
     if (cypher.includes('count(h)')) return t.hyps ?? [{ n: 0 }]
     if (cypher.includes('count(x)')) return t.experience ?? [{ n: 0 }]
+    // T3-3-2 探索链路(chain 路由)九查询
+    if (cypher.includes('t.kind AS kind')) return t.chainTasks ?? []
+    if (cypher.includes('-[:CONFIRMS]->')) return t.confirms ?? []
+    if (cypher.includes('-[:AT]->')) return t.atEdges ?? []
+    if (cypher.includes('-[:SUGGESTS]->')) return t.suggests ?? []
+    if (cypher.includes('-[:DERIVED_FROM]->')) return t.derived ?? []
+    if (cypher.includes('e.url AS url')) return t.chainEndpoints ?? []
     throw new Error(`fake: unmatched query: ${cypher.slice(0, 60)}`)
   }
 }
@@ -805,5 +814,278 @@ test('host 路由(#24 盲区顺手): approval GET 200 / caps GET 200 / denylist 
     fs.rmSync(process.env.D2D_DATA_DIR, { recursive: true, force: true })
     if (saved.D2D_DATA_DIR === undefined) delete process.env.D2D_DATA_DIR
     else process.env.D2D_DATA_DIR = saved.D2D_DATA_DIR
+  }
+})
+
+// ══════════ T3-3-2 收官批: 9 标签页数据面(桑基/审计/工具调用/链路/前沿/配置/总览增量) ══════════
+
+/** 内存 fs 桩: {绝对路径: 内容}; 缺文件抛 ENOENT(真实 fail-soft 语义由被测函数承担)。 */
+function makeFs(files = {}) {
+  return {
+    readFileSync: (p) => {
+      if (String(p) in files) return files[String(p)]
+      const e = new Error('no such file'); e.code = 'ENOENT'; throw e
+    },
+    readdirSync: (p) => {
+      const hit = Object.keys(files).filter((f) => f.startsWith(`${String(p)}/`)).map((f) => f.slice(String(p).length + 1))
+      if (!hit.length) { const e = new Error('no such dir'); e.code = 'ENOENT'; throw e }
+      return hit
+    },
+  }
+}
+const NOW = Date.parse('2026-10-02T04:00:00Z')
+const iso = (hAgo) => new Date(NOW - hAgo * 3_600_000).toISOString()
+const ENV2 = { D2D_DATA_DIR: '/d2d-fake', P2P_TRANSITION_LOG: '/d2d-fake/logs/transition-log.jsonl', P2P_AUDIT_LOG: '/d2d-fake/logs/audit.log' }
+const TL_ROWS = [
+  { transition_id: 't1', node_id: 'f-1', from_status: 'candidate', to_status: 'verified', actor: 'host', reason: 'r1', source_batch: '', timestamp: iso(1) },
+  { transition_id: 't2', node_id: 'f-2', from_status: 'candidate', to_status: 'verified', actor: 'host', reason: 'r2', source_batch: '', timestamp: iso(2) },
+  { transition_id: 't3', node_id: 'fr-1', from_status: 'proposed', to_status: 'accepted', actor: 'master', reason: 'r3', source_batch: '', timestamp: iso(30 * 24) }, // 30 天前(窗口外)
+  { transition_id: 't4', node_id: 'exp-1', from_status: 'quarantined', to_status: 'active', actor: 'host', reason: 'r4', source_batch: '', timestamp: iso(3) },
+  '{"broken":', // 坏行(尾读纪律: 跳过不中断)
+  { transition_id: 't5', node_id: 'f-3', from_status: 'verified', to_status: 'verified', actor: 'host', reason: '自环防御', source_batch: '', timestamp: iso(1) },
+].map((r) => (typeof r === 'string' ? r : JSON.stringify(r))).join('\n')
+
+test('T3-3-2 aggregateTransitions: from→to 对计数合并 + 族过滤 + 自环/空字段防御', () => {
+  const rows = [
+    { node_id: 'f-1', from_status: 'candidate', to_status: 'verified' },
+    { node_id: 'f-2', from_status: 'candidate', to_status: 'verified' },
+    { node_id: 'fr-1', from_status: 'proposed', to_status: 'accepted', },
+    { node_id: 'f-3', from_status: 'verified', to_status: 'verified' }, // 自环跳过
+    { node_id: 'f-4', from_status: '', to_status: 'x' }, // 空字段跳过
+  ]
+  const all = aggregateTransitions(rows)
+  assert.deepEqual(all.map((l) => `${l.family}:${l.from}->${l.to}:${l.count}`), ['finding:candidate->verified:2', 'frontier:proposed->accepted:1'], '按 count 降序')
+  const onlyFinding = aggregateTransitions(rows, { family: 'finding' })
+  assert.equal(onlyFinding.length, 1)
+  assert.equal(onlyFinding[0].count, 2)
+  assert.equal(aggregateTransitions(rows, { family: 'experience' }).length, 0)
+})
+
+test('T3-3-2 clampFlowDays: 非法回缺省 7, 上限 90', () => {
+  assert.equal(clampFlowDays('abc'), 7)
+  assert.equal(clampFlowDays('0'), 7)
+  assert.equal(clampFlowDays('-3'), 7)
+  assert.equal(clampFlowDays('14'), 14)
+  assert.equal(clampFlowDays('3650'), 90)
+})
+
+test('T3-3-2 readTransitionFlows: 尾读+时间窗+族过滤聚合; 坏行跳过; 文件缺失 fail-soft 空态+degraded', () => {
+  const fsOk = makeFs({ '/d2d-fake/logs/transition-log.jsonl': TL_ROWS })
+  const flows = readTransitionFlows({ days: 7, family: 'all', nowMs: NOW }, fsOk, ENV2)
+  assert.equal(flows.linesRead, 6, '6 行全读(含坏行与自环)')
+  assert.equal(flows.matched, 4, '窗口内 4 行(坏行不计入 matched)')
+  assert.deepEqual(flows.links.map((l) => `${l.family}:${l.from}->${l.to}:${l.count}`), [
+    'finding:candidate->verified:2', 'experience:quarantined->active:1',
+  ], '30 天前沿迁移被窗口剔除; 自环剔除; 降序')
+  const onlyExp = readTransitionFlows({ days: 7, family: 'experience', nowMs: NOW }, fsOk, ENV2)
+  assert.equal(onlyExp.links.length, 1)
+  assert.equal(onlyExp.family, 'experience')
+  assert.equal(readTransitionFlows({ family: 'bogus', nowMs: NOW }, fsOk, ENV2).family, 'all', '非法族回 all')
+  const missing = readTransitionFlows({ nowMs: NOW }, makeFs({}), ENV2)
+  assert.deepEqual(missing.links, [])
+  assert.equal(missing.linesRead, 0)
+  assert.ok(missing.degraded[0].includes('transition-log 不可读'), 'fail-soft 记因(先例 10: CI 没有这个文件会怎样)')
+})
+
+test('T3-3-2 readAuditTail: audit.log+transition-log 双源合流降序 + kind 过滤 + limit 钳位 + 单侧缺失降级', () => {
+  const files = {
+    '/d2d-fake/logs/audit.log': [
+      JSON.stringify({ ts: iso(1), kind: 'transition-illegal', detail: { id: 'f-9', from: 'verified', to: 'accepted' } }),
+      JSON.stringify({ ts: iso(2), kind: 'auth-fail', detail: { path: '/query' } }),
+      '{"broken"',
+    ].join('\n'),
+    '/d2d-fake/logs/transition-log.jsonl': TL_ROWS,
+  }
+  const a = readAuditTail({ limit: 200 }, makeFs(files), ENV2)
+  assert.equal(a.total, 7, 'audit 2(坏行跳过)+transition 5(含自环/坏行? 坏行跳过→4+2 窗外也计入: 审计无时间窗) — 2+5 行中合法 6 行') // audit2 + transition 5 合法行(坏行跳过)
+  assert.ok(a.kinds.includes('transition-illegal') && a.kinds.includes('auth-fail') && a.kinds.includes('transition'))
+  assert.ok(a.events.some((e) => e.source === 'audit') && a.events.some((e) => e.source === 'transition'), '双源合流')
+  assert.equal(a.events[0].ts, iso(1), '降序: 最近事件在前(同 ts 双源并列, 稳定序不承诺跨源先后)')
+  const onlyIllegal = readAuditTail({ kind: 'transition-illegal' }, makeFs(files), ENV2)
+  assert.equal(onlyIllegal.total, 1)
+  assert.ok(onlyIllegal.events.every((e) => e.kind === 'transition-illegal'))
+  const lim = readAuditTail({ limit: '99999' }, makeFs(files), ENV2)
+  assert.ok(lim.events.length <= 500, 'limit 上钳 500')
+  const half = readAuditTail({}, makeFs({ '/d2d-fake/logs/transition-log.jsonl': TL_ROWS }), ENV2)
+  assert.equal(half.total, 5, 'audit.log 缺失 → transition 侧照常(降级不整路由失败)')
+  assert.ok(half.degraded[0].includes('audit.log 不可读'))
+  assert.ok(half.events.every((e) => e.detail && typeof e.detail.node_id === 'string'), 'transition 事件 detail 结构化(含 node_id/from/to/actor/reason 截尾)')
+})
+
+test('T3-3-2 readToolCalls: run-log 全事件投影 + kind 过滤/limit/eng 消毒 + 工具量榜; fail-soft', () => {
+  const runLog = [
+    JSON.stringify({ ts: iso(1), event: 'dispatch', worker_id: 'eng-x-deep-w1', ring: 'deep', role: 'attacker', model: 'prov/model-a' }),
+    JSON.stringify({ ts: iso(1), event: 'tool-gate-deny', worker_id: 'eng-x-deep-w1', tool: 'web_fetch', reason: 'scope 外目标', extra_field: 'kept' }),
+    JSON.stringify({ ts: iso(2), event: 'terminal', worker_id: 'eng-x-deep-w1', code: 'ok', quota: '', ms: 60000, tools: 7 }),
+    '{"broken"',
+  ].join('\n')
+  const usage = [
+    JSON.stringify({ ts: iso(1), worker: 'eng-x-deep-w1', role: 'attacker', model: 'prov/model-a' }),
+    JSON.stringify({ ts: iso(2), event: 'terminal', worker: 'eng-x-deep-w1', code: 'ok', ms: 60000, tools: 7, steps: 9 }),
+    JSON.stringify({ ts: iso(2), event: 'terminal', worker: 'eng-x-creative-w2', code: 'ok', ms: 30000, tools: 3, steps: 4 }),
+  ].join('\n')
+  const fsx = makeFs({
+    '/d2d-fake/runs/eng-x/run-log.jsonl': runLog,
+    '/d2d-fake/runs/eng-x/model-usage.jsonl': usage,
+  })
+  const tc = readToolCalls({ engName: 'eng-x', limit: 200 }, fsx, ENV2)
+  assert.equal(tc.eng, 'eng-x')
+  assert.equal(tc.events.length, 3, '坏行跳过')
+  assert.ok(tc.kinds.includes('dispatch') && tc.kinds.includes('tool-gate-deny') && tc.kinds.includes('terminal'))
+  const deny = tc.events.find((e) => e.kind === 'tool-gate-deny')
+  assert.equal(deny.tool, 'web_fetch')
+  assert.ok(deny.extra.includes('extra_field'), '白名单外字段经 extra 兜底不丢')
+  assert.deepEqual(tc.toolTotals, [{ worker: 'eng-x-deep-w1', tools: 7, terminals: 1 }, { worker: 'eng-x-creative-w2', tools: 3, terminals: 1 }], '按 tools 降序')
+  const filtered = readToolCalls({ engName: 'eng-x', kind: 'dispatch' }, fsx, ENV2)
+  assert.equal(filtered.events.length, 1)
+  assert.equal(filtered.events[0].model, 'prov/model-a')
+  assert.equal(readToolCalls({ engName: '../../evil', limit: 5 }, fsx, ENV2).eng, '....evil', 'H19 同款消毒(斜杠剥除后无路径穿越, 点保留与 readRunEvents 同口径)')
+  assert.deepEqual(readToolCalls({ engName: '' }, fsx, ENV2).events, [], '空 eng 直接空态')
+  const missing = readToolCalls({ engName: 'nope' }, makeFs({}), ENV2)
+  assert.ok(missing.degraded[0].includes('run-log 不可读'), '缺文件 fail-soft 记因')
+})
+
+test('T3-3-2 buildChain: 九查询装配(Task/worker/信号/端点/漏洞+四族边) + 边去重', async () => {
+  const q = async (cypher, params) => {
+    assert.equal(params.eng, 'eng-x')
+    if (cypher.includes('t.kind AS kind')) return [{ id: 'task-1', kind: 'probe', status: 'claimed', link_id: 'sig-1', claimed_by: 'w1', created_at: '2026-10-01' }]
+    if (cypher.includes('AgentIdentity')) return [{ worker_id: 'eng-x-deep-w1', ring: 'deep', chain: 'c', status: 'running' }]
+    if (cypher.includes('s.type AS type')) return [{ id: 'sig-1', type: 'asset-perimeter', weight: 2, ts: 't', evidence: 'http://a.com/x' }]
+    if (cypher.includes('-[:DERIVED_FROM]->')) return [{ a: 'sig-1', b: 'sig-0' }, { a: 'sig-1', b: 'sig-0' }]
+    if (cypher.includes('-[:AT]->')) return [{ a: 'sig-1', b: 'ep-1' }]
+    if (cypher.includes('-[:CONFIRMS]->')) return [{ a: 'fnd-1', b: 'sig-1' }]
+    if (cypher.includes('-[:SUGGESTS]->')) return []
+    if (cypher.includes('e.url AS url')) return [{ id: 'ep-1', url: 'https://a.com/x', method: 'GET' }]
+    if (cypher.includes('f.id AS id')) return [{ id: 'fnd-1', title: 'XSS in search', severity: 'high', state: 'verified' }]
+    throw new Error(`unmatched: ${cypher.slice(0, 50)}`)
+  }
+  const chain = await buildChain(q, { eng: 'eng-x' })
+  assert.equal(chain.tasks.length, 1)
+  assert.equal(chain.tasks[0].link_id, 'sig-1')
+  assert.equal(chain.workers[0].worker_id, 'eng-x-deep-w1')
+  assert.equal(chain.signals[0].host, 'a.com', 'evidence 提 hostname(evidence 全文不出 host)')
+  assert.deepEqual(chain.edges.derived, [{ a: 'sig-1', b: 'sig-0' }], '边去重')
+  assert.deepEqual(chain.edges.confirms, [{ a: 'fnd-1', b: 'sig-1' }])
+  assert.equal(chain.findings[0].severity, 'high')
+  assert.deepEqual(chain.caps, { tasks: 50, findings: 100, endpoints: 200, edges: 300 }, '护栏参数钉死')
+})
+
+test('T3-3-2 buildFrontierPool: 提案池映射+byStatus; frontierTransition 代理钉 reviewer=panel', async () => {
+  const pool = await buildFrontierPool(async () => [
+    { id: 'fr-1', direction: '探测 /api/v2', status: 'proposed', proposed_by: 'w1', created_at: '2026-10-01T00:00:00', value_score: 1.5, review_note: '', hypothesis_ref: '' },
+    { id: 'fr-2', direction: 'x'.repeat(400), status: 'accepted', proposed_by: 'w2', created_at: 't', value_score: 0, review_note: 'ok', hypothesis_ref: 'hyp-1' },
+  ], { eng: 'eng-x' })
+  assert.equal(pool.total, 2)
+  assert.deepEqual(pool.byStatus, { proposed: 1, accepted: 1 })
+  assert.equal(pool.pool[1].direction.length, 200, 'direction 截尾(MAX.title)')
+  assert.equal(pool.pool[1].hypothesis_ref, 'hyp-1', '闭环 ref 透出')
+  const calls = []
+  const r = await frontierTransition({
+    graphdUrl: 'http://gd', token: 'tok', frontierId: 'fr-1', targetStatus: 'accepted', reviewNote: 'lgtm',
+  }, async (url, opts) => {
+    calls.push({ url, opts })
+    return { ok: true, json: async () => ({ ok: true, status: 'accepted' }) }
+  })
+  assert.equal(calls[0].url, 'http://gd/write/frontier-transition', 'graphd 零改动 — 代理既有端点')
+  const body = JSON.parse(calls[0].opts.body)
+  assert.deepEqual(body, { frontier_id: 'fr-1', target_status: 'accepted', reviewer: 'panel', review_note: 'lgtm' }, 'reviewer 由 host 半钉死, 不接受调用方指定')
+  assert.equal(r.status, 'accepted')
+  await assert.rejects(() => frontierTransition({ graphdUrl: 'http://gd', token: '', frontierId: 'fr-1', targetStatus: 'bogus' },
+    async () => ({ ok: false, json: async () => ({ ok: false, error: 'invalid target' }) })), /invalid target/, 'graphd 拒绝 → 上抛(路由转 400)')
+})
+
+test('T3-3-2 readConfigOverview: notify 脱敏(configured/method/has_webhook, webhook_url 值不出)+paused 清单', () => {
+  const fsx = makeFs({
+    '/d2d-fake/config/notify.json': JSON.stringify({ webhook_url: 'https://push.example.com/token/SECRET', method: 'PUT' }),
+    '/d2d-fake/config/paused-eng-a.json': '{}',
+    '/d2d-fake/config/paused-eng-b.json': '{}',
+  })
+  const c = readConfigOverview(fsx, ENV2)
+  assert.deepEqual(c.notify, { configured: true, method: 'PUT', has_webhook: true })
+  assert.ok(!JSON.stringify(c).includes('SECRET'), 'webhook 值(内嵌 token)绝不进 wire — PANEL-UI-SPEC §5')
+  assert.deepEqual(c.paused, ['eng-a', 'eng-b'])
+  const none = readConfigOverview(makeFs({}), ENV2)
+  assert.equal(none.notify.configured, false, '缺文件=未配置, 不记因')
+  assert.deepEqual(none.paused, [])
+  const broken = readConfigOverview(makeFs({ '/d2d-fake/config/notify.json': '{broken' }), ENV2)
+  assert.equal(broken.notify.configured, false)
+  assert.ok(broken.degraded[0].includes('notify.json 不可读'), '非 ENOENT 错误记因(吞错必须记因 — 先例 10)')
+})
+
+test('T3-3-2 attachEngCosts: 活跃优先 ≤8 挂 per-eng 账本, 其余 null(原地标注)', () => {
+  const engs = Array.from({ length: 10 }, (_, i) => ({ name: `eng-${i}`, status: i === 3 ? 'active' : 'frozen' }))
+  const readImpl = ({ engName }) => ({ inputTokens: 100, outputTokens: 10, dispatches: 2, source: 'per-eng', engName })
+  const out = attachEngCosts(engs, readImpl, 8)
+  assert.equal(out, engs, '原地标注返回同数组')
+  const active = out.find((e) => e.status === 'active')
+  assert.equal(active.cost.inputTokens, 100, 'active 必在 ≤8 名单内')
+  assert.equal(out.filter((e) => e.cost !== null).length, 8, '恰好 8 个挂账')
+  assert.ok(out.filter((e) => e.cost === null).length === 2, '其余 null')
+})
+
+test('T3-3-2 buildSnapshot: sevRows → engagements[].sev 聚合(未知 eng 无键, 级别小写归一)', async () => {
+  const s = await buildSnapshot(makeFake({
+    engList: [{ name: 'eng-a', target: 'https://a.com', scope: 'a.com', status: 'active', created_at: 't', instances: 1, objective: 'o' }],
+    sevRows: [
+      { eng: 'eng-a', severity: 'HIGH', n: 2 },
+      { eng: 'eng-a', severity: 'critical', n: 1 },
+      { eng: 'eng-b', severity: 'low', n: 5 },
+    ],
+  }), { eng: 'eng-a', approvalSummary: null })
+  assert.deepEqual(s.engagements[0].sev, { high: 2, critical: 1 }, '按 eng 过滤 + 小写归一')
+})
+
+test('T3-3-2 host 路由: 四 fail-soft 本地面可达 + chain/frontier fail-closed 503 + frontier-transition 校验分型', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-panel-t332-'))
+  fs.mkdirSync(path.join(dir, 'logs'), { recursive: true })
+  fs.mkdirSync(path.join(dir, 'runs/eng-a'), { recursive: true })
+  fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
+  const nowIso = new Date().toISOString()
+  fs.writeFileSync(path.join(dir, 'logs/transition-log.jsonl'), JSON.stringify({ transition_id: 't', node_id: 'f-1', from_status: 'candidate', to_status: 'verified', actor: 'host', reason: 'r', source_batch: '', timestamp: nowIso }))
+  fs.writeFileSync(path.join(dir, 'logs/audit.log'), JSON.stringify({ ts: nowIso, kind: 'auth-fail', detail: { path: '/query' } }))
+  fs.writeFileSync(path.join(dir, 'runs/eng-a/run-log.jsonl'), JSON.stringify({ ts: nowIso, event: 'dispatch', worker_id: 'eng-a-deep-w1', ring: 'deep' }))
+  fs.writeFileSync(path.join(dir, 'config/paused-eng-a.json'), '{}')
+  const saved = { D2D_DATA_DIR: process.env.D2D_DATA_DIR, D2D_RUNS_DIR: process.env.D2D_RUNS_DIR, P2P_TRANSITION_LOG: process.env.P2P_TRANSITION_LOG, P2P_AUDIT_LOG: process.env.P2P_AUDIT_LOG }
+  process.env.D2D_DATA_DIR = dir
+  delete process.env.D2D_RUNS_DIR
+  delete process.env.P2P_TRANSITION_LOG
+  delete process.env.P2P_AUDIT_LOG
+  try {
+    const handler = mountPanelHost()
+    // 桑基: 文件面 fail-soft — 真数据聚合 + 家族/窗口参数透传
+    const flows = await driveRoute(handler, 'GET', '/d2d/api/transition-flows?days=7&family=finding')
+    assert.equal(flows.code, 200, flows.raw.slice(0, 120))
+    assert.equal(flows.body.flows.matched, 1)
+    assert.equal(flows.body.flows.links[0]?.count, 1)
+    assert.equal(flows.body.flows.family, 'finding')
+    // 工具调用明细: eng 显式 + 投影
+    const tools = await driveRoute(handler, 'GET', '/d2d/api/toolcalls?eng=eng-a')
+    assert.equal(tools.code, 200)
+    assert.equal(tools.body.toolcalls.events.length, 1)
+    assert.equal(tools.body.toolcalls.events[0].kind, 'dispatch')
+    // 审计时间线: kind 过滤
+    const audit = await driveRoute(handler, 'GET', '/d2d/api/audit?kind=auth-fail')
+    assert.equal(audit.body.audit.total, 1)
+    // 配置总览: paused 清单 + notify 未配置
+    const cfg = await driveRoute(handler, 'GET', '/d2d/api/configx')
+    assert.deepEqual(cfg.body.config.paused, ['eng-a'])
+    assert.equal(cfg.body.config.notify.configured, false)
+    // 图依赖路由: graphd 不可达 → 503 fail-closed(vizRoute 同款, 不下发空态)
+    const chain = await driveRoute(handler, 'GET', '/d2d/api/chain')
+    assert.equal(chain.code, 503)
+    assert.equal(chain.body.error.code, 'graphd-unreachable')
+    assert.equal((await driveRoute(handler, 'GET', '/d2d/api/frontier')).code, 503)
+    // frontier-transition 校验分型(400: 缺 id / 非法 target)
+    assert.equal((await driveRoute(handler, 'POST', '/d2d/api/frontier-transition', { frontier_id: '', target_status: 'accepted' })).code, 400)
+    assert.equal((await driveRoute(handler, 'POST', '/d2d/api/frontier-transition', { frontier_id: 'fr-1', target_status: 'bogus' })).code, 400)
+    // 只读路由 POST → 405
+    assert.equal((await driveRoute(handler, 'POST', '/d2d/api/transition-flows', {})).code, 405)
+    assert.equal((await driveRoute(handler, 'POST', '/d2d/api/configx', {})).code, 405)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+    for (const k of Object.keys(saved)) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k]
+    }
   }
 })
