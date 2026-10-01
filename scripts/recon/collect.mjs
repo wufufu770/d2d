@@ -17,7 +17,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { loadDict, loadResolvers } from './wordlists.mjs'
 import { searchAll } from './mapping/aggregate.mjs'
 import { subdomainsOf } from './mapping/normalize.mjs'
-import { crtshSubs } from './passive.mjs'
+import { crtshSubs, hackertargetSubs } from './passive.mjs'
 import { resolveBatch, pruneWildcard, candidateSubs, selectBases } from './net.mjs'
 import { probeHosts } from './probe.mjs'
 import { loadRules, detectFingerprint } from './fingerprint.mjs'
@@ -39,17 +39,28 @@ function readHostToken() {
 async function writeGraphSummary(base, snap) {
   const token = readHostToken()
   if (!token) throw new Error('缺 host-token(~/.config/d2d/host-token)')
+  const writeSignal = async (type, evidence) => {
+    const res = await fetch(`${GRAPHD}/write/signal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth': token },
+      body: JSON.stringify({ type, weight: 1.0, evidence }),
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) throw new Error(`graphd write ${res.status}`)
+  }
   const live = (snap.live ?? []).slice(0, 20).map((l) => l.host)
   const fingers = [...new Set((snap.live ?? []).flatMap((l) => l.finger ?? []))].slice(0, 15)
-  const evidence = `collect(${base}): 子域 ${snap.subs.all.length} / 存活 ${snap.live.length}(示例: ${live.join(',') || '-'})` +
-    `/ 指纹 ${fingers.join(',') || '-'} / 泛解析嫌疑 IP ${snap.wildcardIps.length} — 候选资产, 人工确认归属后入 scope`
-  const res = await fetch(`${GRAPHD}/write/signal`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Auth': token },
-    body: JSON.stringify({ type: 'asset-perimeter', weight: 1.0, evidence }),
-    signal: AbortSignal.timeout(8000),
-  })
-  if (!res.ok) throw new Error(`graphd write ${res.status}`)
+  await writeSignal('asset-perimeter',
+    `collect(${base}): 子域 ${snap.subs.all.length} / 存活 ${snap.live.length}(示例: ${live.join(',') || '-'})` +
+    `/ 指纹 ${fingers.join(',') || '-'} / 泛解析嫌疑 IP ${snap.wildcardIps.length} — 候选资产, 人工确认归属后入 scope`)
+  // T3-2-1: osint-subdomain — 被动源发现面(crt.sh+Hackertarget)独立证据源, 供发现环多源交叉
+  // 印证(distinctSources)消费; 只记候选不自动入 scope(与 asset-perimeter 同一人工确认红线)。
+  const passive = (snap.subs.passive ?? []).slice(0, 15)
+  if (passive.length) {
+    await writeSignal('osint-subdomain',
+      `osint(${base}; crt.sh${report.stages?.crtsh ? ':降级' : ''},hackertarget${report.stages?.hackertarget ? ':降级' : ''}): ` +
+      `被动子域 ${snap.subs.passive.length}(样例: ${passive.join(',')}) — 公开证书透明/反向查询, 候选面供交叉印证`)
+  }
 }
 
 // company 模式: 借道 company-sweep(ICP) 拿候选域名
@@ -112,13 +123,15 @@ if (!has('--skip-mapping')) {
   }
 }
 
-// Stage 2 被动子域
-console.error(`[2/4] 被动子域(crt.sh): ${bases.join(', ')} …`)
+// Stage 2 被动子域(T3-2-1 双源: crt.sh 证书透明 + Hackertarget 免费层; 两源独立降级 —
+// 一源失败不影响另一源; 请求经 osintGet 网关通道, 网关不可达自动降级直连)
+console.error(`[2/4] 被动子域(crt.sh + hackertarget): ${bases.join(', ')} …`)
 for (const b of bases) {
   try { report.subs.passive.push(...(await crtshSubs(b))) } catch (e) { report.stages.crtsh = String(e.message).slice(0, 120) }
+  try { report.subs.passive.push(...(await hackertargetSubs(b))) } catch (e) { report.stages.hackertarget = String(e.message).slice(0, 120) }
 }
 report.subs.passive = [...new Set(report.subs.passive)]
-console.error(`  crt.sh 子域 ${report.subs.passive.length}`)
+console.error(`  被动子域 ${report.subs.passive.length}(crt.sh ${report.stages.crtsh ? '降级' : 'ok'} / hackertarget ${report.stages.hackertarget ? '降级' : 'ok'})`)
 
 // Stage 3 字典爆破
 let resolvedAll = new Map()
