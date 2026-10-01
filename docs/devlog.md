@@ -103,3 +103,24 @@
 关键裁决：worker 工具形态零禁区实现（边界裁决守住——不走 adapter.spawnWorker 调度器槽位语义、adapter 两文件零触碰、scheduler.js/loop.mjs 零改动、审批面只标注）；调度环自动创建切片明确出批（实战后另批 4-3a）；子 Agent 定性=进程内受控实体（同 scope 门治理，不走 sanitize-ingest external 链——两道防线定性区隔）；cap 复用 T0-C 既有账本（二次 acquire 会与宿主 hook 双记，故只预检不占坑）
 教训沉淀：接线块 opts 引用 sched 必须置于 sched 声明之后（对象字面量立即求值 vs lambda 惰性引用——T3-2-4 块形态不适用于需实例的注入）；scope 排除项语法是逗号分隔（scope.mjs split(',') 口径，空格分隔会被整体当一条目）；**CI 环境依赖第二次行使 token seam 先例**（emitResultSignal 读 host-token → CI 无文件 Signal 回流断言红 → hostToken 注入 seam + 空 HOME 复现验证，同 T3-2-4 graphQuery 形态）
 开放项：devlog 从本批起逐批追加；T3-2-6 闲时路由（阶段 6 收官批，下一批）
+
+## 2026-10-01 · T3-2-6 闲时任务+自适应轮询+能力路由 + 阶段 6 收官（本批）
+底账：HEAD 本批收官（落库后以 git log -1 实测；tag t3-2-stage6 指向 manifest 收口 SHA）· 基线 pytest 368 / mocha 1882 / panel 55
+产出：scheduler/idle-tasks.mjs 闲时任务框架（watchdog 同构外挂：注册面+预检硬门[active engagement graphd 只读 + in-flight worker subagent-cap 公开账本；busyProbe 异常按忙 fail-closed]+setTimeout 链自适应频率[初始 max 60min→连续空闲 2 tick 收缩 min 10min，忙/失败退避回 max，审计 idle-task-interval]+失败降级进程隔离；P2P_IDLE_TASKS=0 零挂载）· 首批两任务=既有 CLI（skill-distill 补跑[开放项 21 空转保护解除路径]/misses-report 聚合）· 能力路由行为快照回归锁定（实测两环对新信号类型族无真实路由缺口——如实结论，不强补词表）· docs/stage6-finale.md 终态盘点 · index.js 接线纯新增块
+关键裁决：**调度环核心（tick→allocateOnce→planAllocation→runWorker）零改动**为本批唯一新增硬边界——自适应轮询只在闲时触发频率上做（框架内闭环），不做调度环轮询间隔改动；能力路由精化实测无缺口→落地为快照锁定而非改词表（防无意义 churn）；短词 1 分档裸子串粗糙点登记开放项（逻辑面不动，0911 评分刚定稿，收官批宁稳）；三层协同（路由选角/角色过滤/scope 继承）测试锁定互不重建
+教训沉淀：setTimeout 链（非 setInterval）才支持动态间隔自适应；工厂保守钳制（interval 下限 60s）与测试快跑冲突→显式 intervals 注入 seam（生产不受影响）；cat 读源码被 Mimosa hook 拦→Read 工具替代（hook 把 Bash 列源码当写操作防绕过）
+开放项：新增「路由短词 1 分档精化」（allocator 逻辑面，低优先）；6-6 本体（T4-2 挂账）；#21 打通补跑通道但 LLM 蒸馏仍待素材
+
+## 阶段 6 总账（T3-2-0 ~ T3-2-6 收官）
+
+| 子项 | 终态 | 批次 | 一句话裁决 |
+|------|------|------|-----------|
+| 6-1 经验→技能 | ✅ | T3-2-2/2b | 三实质硬门禁下纯新增接线形态；复核分层定型 |
+| 6-2 联网搜索 | ✅ | T3-2-1 | 状态文档同批纪律确立；Mimosa 工作流通道定型 |
+| 6-3 插件打包 | ✅ | T3-2-3 | CLI 主流程守卫固定纪律；Burp 实导入降级挂开放项 |
+| 6-4 环内 supervisor | ✅（工具形态） | T3-2-5 | 零禁区边界裁决守住；调度环自动创建切片实战后另批 4-3a |
+| 6-5 双向 MCP | ✅ | T3-2-4 | 安全四底线；外部数据不过链不入图全局纪律 |
+| 6-6 事件驱动并发 | ⏸ 降级 | T3-2-0→T4-2 | Kùzu 无原生 watch→本体挂 T4-2；收益由 T3-2-6 外挂承接（裁决链：审计发现架构冲突即降级重议，不硬做） |
+| 吸收（闲时任务+能力路由） | ✅ | T3-2-6 | 调度环核心零触碰为唯一新增硬边界；框架大于任务量 |
+
+阶段 6 方法论沉淀（跨批复用）：①前置审计发现禁区冲突即降级（6-6 先例），不转 4-3a 硬做；②agent 分层复核（A 授权面/B 存在性）+notes 全文落 report 自 T3-2-3 起为落库固定形态；③环境依赖型 CI 红两现两修（token seam 先例 T3-2-4/5 两度行使）；④description 基线随静态注册同步 regen（41→58→62）；⑤devlog 只追加+state 快照的双文档分工。下一步：T3-3（6.5 余项：可视化+授权数字化）。
