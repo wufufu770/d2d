@@ -136,13 +136,17 @@ function downgradeReviewReport(poolCards) {
 
 // T3-1-2 A-MemGuard 共识前置信号: 晋级前对图内 Experience 做同面分歧/异常扫描 —
 // v1 只报告不阻断(阻断语义留给 v2 拍板); 图不可达/空库静默降级为一行提示, 绝不因信号失败挂晋级。
+// T4-3-2 v2: 拉取 consensus_status 列(v1 扫描保留防未回填经验漏报) + 报告 superseded 落库行
+// (仍只报告不阻断 — 阻断语义留 v3)。
 function consensusPreSignal() {
   try {
-    const rows = gq(`MATCH (x:Experience) RETURN x.id AS id, x.eng_id AS eng_id, x.category AS category, x.scope AS scope, x.title AS title, x.content AS content, x.status AS status, x.retrieval_count AS retrieval_count, x.success_count AS success_count, x.created_at AS created_at`)
+    const rows = gq(`MATCH (x:Experience) RETURN x.id AS id, x.eng_id AS eng_id, x.category AS category, x.scope AS scope, x.title AS title, x.content AS content, x.status AS status, x.retrieval_count AS retrieval_count, x.success_count AS success_count, x.created_at AS created_at, x.consensus_status AS consensus_status`)
     const r = consensusCheck(rows)
-    console.log(`🛡 共识前置信号(T3-1-2 v1): ${r.stats.total} 条经验/${r.stats.groups} 组 — 分歧 ${r.deviations.length} 处, 异常 ${r.anomalies.length} 条(只报告不阻断)`)
+    console.log(`🛡 共识前置信号(T3-1-2 v1 + T4-3-2 v2 落库态): ${r.stats.total} 条经验/${r.stats.groups} 组 — 分歧 ${r.deviations.length} 处, 异常 ${r.anomalies.length} 条(只报告不阻断)`)
     for (const d of r.deviations) console.log(`   ⚠ [分歧·${d.kind}] ${d.group}: 新 ${d.newer.id}(${d.newer.category}) vs 旧 ${d.older.id}(${d.older.category}) 重叠=${d.overlap}`)
     for (const a of r.anomalies) console.log(`   ⚠ [异常·${a.type}] ${a.group}: ${a.ids.join(',')}`)
+    const sup = rows.filter((x) => String(x.consensus_status ?? '').startsWith('superseded:'))
+    if (sup.length) for (const s of sup) console.log(`   ⚠ [共识落库·superseded] ${s.id} → ${s.consensus_status}(T4-3-2 v2)`)
   } catch (e) { console.log(`🛡 共识前置信号不可用(不阻断): ${String(e?.message ?? e).slice(0, 80)}`) }
 }
 
