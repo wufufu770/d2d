@@ -328,8 +328,9 @@ def test_43b_app_wiring_after_redact_source_lock():
     src = (HERE.parent / "graphd" / "app.py").read_text(encoding="utf-8")
     # experience: redact → scan → 快照 → high 先采样后 400 / soft 前缀 → 兜底采样
     e_redact = src.index("_title, _k = redact_pii(_title)")
-    e_scan = src.index(r'_inj = experience_injection_scan(f"{_title}\n{_content}")')
-    e_snap = src.index(r'_inj_sample_src = f"{_title}\n{_content}"')
+    # T4-3-2: 扫描源改为条件拼接变量(_inj_src — rp 非空才拼, rp-less 写路径源逐字不变)
+    e_scan = src.index(r'_inj = experience_injection_scan(_inj_src)')
+    e_snap = src.index(r'_inj_sample_src = _inj_src')
     e_high = src.index('_inj_sample("experience"')
     e_return = src.index("experience rejected: 检出指令性文本")
     e_soft = src.index('_content = ("[SUSPECT] " + _content)[:512]')
