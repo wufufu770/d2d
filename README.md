@@ -9,7 +9,13 @@
 验证环   独立重放确认(双签), 杜绝 agent 自封结论
 ```
 
-## 本次更新（v0.3.0）
+## 能力快照（v0.3.0）
+
+> ⚠️ 本节是 **v0.3.0 时点的能力快照，不是当前状态**。v0.3.0 之后的增量
+> （T3-1 阶段 5 瘦身版 / T3-2 阶段 6 学习升级+插件化+多 Agent 进化 / T3-3 6.5 余项
+> 可视化+授权数字化）**尚未回填本节**。当前状态以 `docs/state.md` 为唯一真相源，
+> 阶段全景见 `docs/roadmap.md`，完整轨迹见 `docs/devlog.md`；README 全文重写已
+> 登记为 T4-5 待办（`docs/roadmap.md:66`）。
 
 ### 星图认知层
 
@@ -144,9 +150,9 @@ bash ops/start-all.sh    # graphd :8766 · egress :8888 · oast :8890 · 面板 
 
 ```bash
 node scripts/ops/doctor.mjs                      # 运行环境自检
-python3 -m pytest tests/ -q                      # graphd 门禁 368 例（HD-1 实锚更新）
-cd plugin/pentest-dsh && npm test                # 调度/分诊/工具面 1729 例
-cd plugin/d2d-panel && npm test                  # 面板 55 例
+python3 -m pytest tests/ -q                      # graphd 门禁 368 例（全目录 6 个 test_*.py，ci.yml/gates.yml 同口径）
+cd plugin/pentest-dsh && npm test                # 调度/分诊/工具面 1896 例
+cd plugin/d2d-panel && npm test                  # 面板 88 例
 node scripts/ops/backup-graph.sh                 # 图备份
 ```
 
