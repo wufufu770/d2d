@@ -27,7 +27,12 @@ export const ORDER = [
   'cards.workers.js', // Workers 卡 + 鱼骨抽屉
   'view.ops.js', // 漏斗/缺口/经验库卡 + 模块开关 + OpsView 装配
   'view.findings.js', // 七态看板 + 人工裁决 + FindingsView 装配
-  'view.viz.js', // T3-3-1 可视化: 星图+热力+泳道+能力看板 + VizView 装配
+  'view.viz.js', // T3-3-1 可视化: 星图+热力+泳道+能力看板; T3-3-2 桑基 + VizView 装配
+  'view.approval.js', // T3-3-2 审批 tab: 待决列单+裁决(既有 approval 路由消费)
+  'view.chain.js', // T3-3-2 探索链路 tab: 三列链路图+Task 看板
+  'view.tools.js', // T3-3-2 工具调用明细 tab: run-log 全事件投影+工具量榜
+  'view.audit.js', // T3-3-2 审计时间线 tab: audit.log+transition-log 合流
+  'view.config.js', // T3-3-2 配置 tab: 只读总览+配置写面卡集中
   'router.js', // better-sidebar tab 注册(inject / apply / exports)
 ]
 

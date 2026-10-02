@@ -17,7 +17,7 @@
       return j
     }
 
-    /** viz 容器层取数: 四路由 Promise.allSettled — 单路由 503 只降级该卡, 不炸整个 tab。 */
+    /** viz 容器层取数: 五路由 Promise.allSettled — 单路由 503 只降级该卡, 不炸整个 tab。 */
     function useViz(visible) {
       const [data, setData] = useState(null)
       const [errs, setErrs] = useState({})
@@ -27,7 +27,7 @@
         let stop = false
         const tick = async () => {
           const days = localStorage.getItem(VIZ_WINDOW_KEY) ?? '14'
-          const names = [`starmap`, `coverage`, `hypotheses?days=${encodeURIComponent(days)}`, `capability`]
+          const names = [`starmap`, `coverage`, `hypotheses?days=${encodeURIComponent(days)}`, `capability`, `transition-flows?days=${encodeURIComponent(days)}`]
           const rs = await Promise.allSettled(names.map((n) => fetchVizMethod(n)))
           if (stop) return
           const next = {}
@@ -149,7 +149,81 @@
         (capability.degraded ?? []).length ? h('div', { ...panel.muted(0.5), style: { fontSize: '10px', marginTop: '3px' } }, `降级: ${capability.degraded.join('; ')}`) : null)
     }
 
-    /** viz tab 容器: useViz 四路取数(allSettled 单卡降级) + 三图 + 看板卡装配。 */
+    // ---- T3-3-2 状态迁移桑基: transition-flows(fail-soft 文件面; 家族过滤 client 侧零重取) ----
+    // 数据 = transition-log.jsonl 合法迁移事件聚合(host 半 readTransitionFlows; 非法迁移在审计 tab)。
+    // 拍板 3 预期管理: 流量按历史事件聚合, 稀疏即真相 — 空态/注记直说, 不造数据不硬凑视觉。
+    const FLOW_FAMILIES = ['all', 'finding', 'experience', 'frontier']
+    const FLOW_FAMILY_LABEL = { all: '全部', finding: '漏洞', experience: '经验', frontier: '前沿', other: '其他' }
+    const FLOW_FAMILY_COLOR = { finding: 'var(--d2d-ring-discovery)', experience: 'var(--d2d-ring-deep)', frontier: 'var(--d2d-ring-creative)', other: 'var(--d2d-sev-info)' }
+    const FLOW_RENDER_NODES = 24 // 每列节点渲染上限(全家族状态数 ~16, 上限是护栏不是常态)
+
+    /** 桑基(自绘 SVG 纯函数): 左列=from 右列=to, 节点高固定/缎带宽∝流量(家族着色)。
+     *  数据进 vnode 出零副作用 — StarMapChart 同款纪律。 */
+    function SankeyChart({ flows, family }) {
+      const links = (flows?.links ?? []).filter((l) => family === 'all' || l.family === family)
+      if (!flows) return h('div', panel.muted(0.45), 'transition-flows 数据不可用')
+      if (!links.length) return h('div', panel.muted(0.45), `${flows?.windowDays ?? '?'} 天窗口内无迁移事件 — 稀疏即历史真相, 不造数据`)
+      const outTotals = new Map()
+      const inTotals = new Map()
+      for (const l of links) {
+        outTotals.set(l.from, (outTotals.get(l.from) ?? 0) + l.count)
+        inTotals.set(l.to, (inTotals.get(l.to) ?? 0) + l.count)
+      }
+      const byTotal = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, FLOW_RENDER_NODES)
+      const lefts = byTotal(outTotals)
+      const rights = byTotal(inTotals)
+      const lY = new Map(lefts.map(([s], i) => [s, 16 + i * 26]))
+      const rY = new Map(rights.map(([s], i) => [s, 16 + i * 26]))
+      const height = Math.max(lefts.length, rights.length, 1) * 26 + 28
+      const maxCount = Math.max(...links.map((l) => l.count), 1)
+      const nodeColor = (s) => {
+        const fam = links.find((l) => l.from === s || l.to === s)?.family
+        return FLOW_FAMILY_COLOR[fam] ?? 'var(--d2d-sev-info)'
+      }
+      const node = (s, y, x) => h('g', { key: `${x}:${s}` },
+        h('rect', { x, y, width: '128', height: '18', rx: '4', fill: nodeColor(s), opacity: '0.16', stroke: nodeColor(s), strokeWidth: '1' }),
+        h('text', { x: x + 6, y: y + 13, fontSize: '10px', fill: 'inherit', style: { fontFamily: 'var(--dsw-font-mono, monospace)' } }, `${s}`),
+        h('text', { x: x + 122, y: y + 13, fontSize: '10px', textAnchor: 'end', opacity: '0.6' }, String(x < 300 ? (outTotals.get(s) ?? 0) : (inTotals.get(s) ?? 0))))
+      return h('div', null,
+        h('svg', { viewBox: `0 0 600 ${height}`, width: '100%', style: { maxHeight: '420px', border: '1px solid var(--d2d-line)', borderRadius: '6px', background: 'rgba(128,140,165,.06)' } },
+          links.slice(0, 120).map((l, i) => {
+            const yl = lY.get(l.from)
+            const yr = rY.get(l.to)
+            if (yl === undefined || yr === undefined) return null
+            const w = Math.max(1.5, Math.min(14, (l.count / maxCount) * 14))
+            return h('path', {
+              key: i, d: `M 138 ${yl + 9} C 300 ${yl + 9}, 300 ${yr + 9}, 462 ${yr + 9}`,
+              stroke: FLOW_FAMILY_COLOR[l.family] ?? 'var(--d2d-sev-info)', strokeWidth: String(w), fill: 'none', opacity: '0.38',
+              title: `${FLOW_FAMILY_LABEL[l.family] ?? l.family}: ${l.from} → ${l.to} × ${l.count}`,
+            })
+          }),
+          lefts.map(([s, n]) => node(s, lY.get(s), 10)),
+          rights.map(([s, n]) => node(s, rY.get(s), 462))),
+        h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' } },
+          h('span', { ...panel.muted(0.45) }, `窗口 ${flows.windowDays} 天 · 读取 ${flows.linesRead} 行 / 匹配 ${flows.matched} 事件 · 边 ${Math.min(links.length, 120)} 条(共 ${links.length})`),
+          (flows.degraded ?? []).map((d, i) => h('span', { key: i, ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, d))))
+    }
+
+    /** 桑基卡(容器): 家族 chips(client 侧过滤, 不重取)+纯函数图+窗口注记。 */
+    function SankeyCard({ flows, errs }) {
+      const [family, setFamily] = useState('all')
+      return h(Card, {
+        title: '状态迁移桑基(合法迁移事件流)',
+        extra: errs['transition-flows']
+          ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `不可用: ${String(errs['transition-flows']?.message ?? '').slice(0, 60)}`)
+          : h('span', panel.muted(0.45), '左=迁出态 右=迁入态 · 缎带∝次数'),
+      },
+        h('div', { style: { display: 'flex', gap: '5px', marginBottom: '6px', flexWrap: 'wrap' } },
+          FLOW_FAMILIES.map((f) => h('button', {
+            key: f, ...panel.btn(family === f ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}),
+            onClick: () => setFamily(f),
+          }, FLOW_FAMILY_LABEL[f])),
+          h('span', { ...panel.muted(0.45), style: { alignSelf: 'center', marginLeft: '4px' } },
+            '流量按历史事件聚合 — 稀疏即历史真相, 不造数据; 非法迁移走审计 tab')),
+        h(SankeyChart, { flows, family }))
+    }
+
+    /** viz tab 容器: useViz 五路取数(allSettled 单卡降级) + 四图 + 桑基 + 看板卡装配。 */
     function VizView({ visible }) {
       const { data, errs } = useViz(visible)
       const card = (title, key, extra, body) => h(Card, { title, extra: extra ?? (errs[key] ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `不可用: ${String(errs[key]?.message ?? '').slice(0, 60)}`) : null) }, body)
@@ -157,5 +231,6 @@
         card(`覆盖象限热力(21 格)`, 'coverage', null, h(CoverageHeat, { coverage: data?.coverage?.coverage })),
         card(`假设泳道`, 'hypotheses', null, h(HypLaneSwim, { hypotheses: data?.hypotheses?.hypotheses })),
         card(`信号星图`, 'starmap', null, h(StarMapChart, { starmap: data?.starmap?.starmap })),
+        h(SankeyCard, { flows: data?.['transition-flows']?.flows, errs }),
         card(`能力看板(导出登记面)`, 'capability', null, h(CapabilityCard, { capability: data?.capability?.capability })))
     }

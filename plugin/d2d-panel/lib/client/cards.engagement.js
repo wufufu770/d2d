@@ -77,6 +77,11 @@
           h('span', panel.muted(0.55), `${e.target || '?'}`),
           h('span', panel.muted(0.5), `活跃 ${p.active ?? 0} · 已验证 ${p.verified ?? 0} · 已交付 ${p.delivered ?? 0}`),
           p.workers ? h('span', panel.muted(0.6), `⚙ ${p.workers}`) : null),
+        // T3-3-2 总览补全: severity 计数列(有记录才渲染) + per-eng token 总耗(活跃优先 ≤8, 其余 '—')
+        h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'baseline' } },
+          Object.entries(e.sev ?? {}).filter(([, n]) => n > 0).map(([k, n]) =>
+            h('span', { key: `sev:${k}`, ...panel.chip({ borderColor: sevColor(k) }), title: `severity ${k}` }, `${k} ${n}`)),
+          e.cost ? h('span', { ...panel.muted(0.5), title: `账本来源 ${e.cost.source}` }, `Σ ${((e.cost.inputTokens ?? 0) + (e.cost.outputTokens ?? 0)).toLocaleString()} tok`) : null),
         h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap' }, onClick: (ev) => ev.stopPropagation() },
           !e.selected ? h('button', { ...panel.btn(), disabled: busy, onClick: doSelect, title: '面板/dsh 视图切换到该项目' }, '选中') : null,
           running || queued ? h('button', { ...panel.btn({ borderColor: 'var(--d2d-sev-high)', color: 'var(--d2d-sev-high)' }), disabled: busy, onClick: doStop }, '停止') : null,
