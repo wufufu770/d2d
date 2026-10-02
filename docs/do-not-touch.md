@@ -62,6 +62,9 @@
 | plugin/d2d-panel viz 面（lib/client/view.viz.js 三图组件+lib/host/snapshot.mjs buildStarmap/Coverage/HypLane+index.mjs viz 四路由；**graphd 全域零改动零新增 endpoint 为 T3-3-1 硬边界**——数据全走既有 /query host-token 通道；wire 不带 evidence 全文） | T3-3-1 已落地 |
 | domain/auth-contract.mjs（授权契约套件：一体签名+六失败面归并三态+seen-auth 记忆；**「验签失败不放行」为 T3-3-3 全局纪律**——invalid/expired 恒拒不随灰度；挂接点四处置=启动/工具/bash 门/egress 纯新增） | T3-3-3 已落地 |
 | scripts/ops/graph-stats-probe.mjs（图规模只读探针：全 cypher 字面量零拼接+只读 /query+500MB 告警线；**源库零写/URL 代码内常量/token 不回显为其安全语义**——改动须保该语义并随批 smoke） | T4-2b 已落地 |
+| graphd worker /query 门三面（WORKER_FULLSCAN_RE 闭集自 schema.NODE_TABLES 单一来源生成+_WORKER_FULLSCAN_EXEMPT 仅 ExperienceWeight[briefs 活调用点锁定]+谓词内容锚 Engagement 严格锚/一般表选择性规则+无标签拒；**改动须同步 callsite 样本库 31 用例与 briefs 误伤面对照**） | GW-2 v2 已落地 |
+| Gate-V 锚存在性 seam（setGateVAnchorLookup 注册契约：req_id×2+marker 须命中本 run 记录；high/critical 未注册即拒——**签名零变更红线产物，gateV 形参恒不变**）+ 跨类双锚同链要求 | GW-2 v2 已落地 |
+| 工具门 STRICT 面（P2P_TOOL_GATE_STRICT 语义=off 高危档 fail-closed 拒；缺省 off=allow 维持 4-4 拍板；STRICT_HIGH_RISK_TOOLS 集合关系=进门集全 7 名） | GW-2 v2 已落地 |
 
 T4-2b 新增运维边界：存储归档/钉扎产物一律仓库外（DATA_DIR/backups/storage-archive/，
 含 3 份滚动物理快照与 wheel pin——见 docs/runbook-storage.md）；**"源库零写"为存储

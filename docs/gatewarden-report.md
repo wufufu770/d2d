@@ -93,9 +93,49 @@ blocked 分列（13/9/0）为记账口径（总数−gap it 数；G8 三 sev 为
 > 修复 commit 指针见 git log（fix(gatewarden) 族均带 gap 编号）；反向守护已翻转的用例
 > 在样本库中作为新行为守护（gap 用例断言翻转=非删除）。处置三态：已修/延后[原因]/豁免[理由]。
 
-### 终态统计
+### 终态统计（v1）
 **36 条 = 已修 12 + 豁免 7 + 延后 17**；组合链 8 条 = 闭合 2（G2G12/G4G6）+ 部分收窄 1（T7T8）+ 保留 5。
 样本库终态：graphd 26 用例（gap 3/blocked 21/exempt 1）+ plugin 29 it（gap 余 6 项）+ combo 8。
+
+## 处置态全景 v2（GW-2 门禁收紧批 v2 落账，2026-10-03；外部三轮冷读采信落地）
+
+### v2 终态统计（36 条 + N1-N4 结构性缺口 = 40 条面）
+**已修 19**（v1 12 + v2 净翻 7：#4 别名回注/#9 params 恒扫/#18 残余闭合(同链)/#19 seam 存在性/N1 闭集单一来源+内容锚+无标签拒/N2 双副本收敛/N4 闭集对账）+ **深化 4**（#1/#3/#16/#20 形态升级维持已修）+ **豁免 7**（v1 维持）+ **延后/登记 14**（#7/#10/#12/#13/#21 残余/#22/#23/#24/#25/#27 等维持；新增登记：N3 合成 eng_id=既有合法形态/#17 降级(使用模式冲突)/#26 write-gate.mjs 待按行授权）。
+组合链 8 = **闭合 4**（G2G12/G4G6/T7T8 v2 全闭/G5G8 部分——参数化面闭合）+ 保留 4。样本库：graphd **31 用例**（gap 3/blocked 25/exempt 2）+ plugin 33 it（gap 余 4 项）+ combo 8。
+
+### v2 逐条增补表（仅列状态变化条目；未列者维持 v1 处置态）
+| 编号 | v2 处置 | 说明/理由 |
+|---|---|---|
+| 1 | ✅已修(深化) | 闭集从 schema.NODE_TABLES 单一来源生成（新表自动入集防漏表复发）；**Experience 入集**（拍板③，v1 豁免撤销——worker 无谓词读需求为零实证）；唯一豁免 ExperienceWeight（跨项目共享设计+briefs 经验先验 worker 活调用点锁定）；**谓词内容锚**（恒真式/自引用/裸常量拒——kuzu 实跑 6/6 行泄漏钉死）+**无标签 MATCH 拒**（实跑全图命中）+内联 {} 形态收口 |
+| 2 | ✅已修(维持) | v1 host-only 形态**严格于** v2 提示词的"worker+强制 eng_id"方案（消费方普查全 host）——按只紧不松红线维持 host-only，登记不采纳理由 |
+| 3 | ✅已修(深化) | **MERGE 命中已存在≠新建**（锁内先 MATCH 存在性——参数绑定；键不可提取 fail-closed 计容量）+**双副本收敛单一来源**（外层 inline int() 并入 engagement_cap_gate，坏 P2P_MAX_ACTIVE 分叉消除——实锚 503 vs 回退 4） |
+| 4 | ✅已修(v2 翻案) | 参数化别名回注——`title:$t/severity:$s` 绑定值以字面形态并入被扫文本（签名零变更红线下的 app 层解法）；合法参数化误伤对照=放行 |
+| 9 | ✅已修(v2 翻案) | params 恒扫——v1 豁免翻案，所有写入 params（bounded 4KB）入红线/scope 扫描 |
+| 16 | ✅已修(深化) | D 子批：**P2P_TOOL_GATE_STRICT=1** off 模式高危档 fail-closed 拒绝+审计事件枚举免 ask 工具清单+首次评估配置横幅；缺省 off=allow 维持（拍板②）。高危子集=全 7 名（逐工具依据入拍板点节） |
+| 17 | ⏸降级登记 | 使用模式冲突：授权扫描是主场景，checkBash/flag 指纹静态判定必然误伤；realpath=进程白名单架构。不硬修 |
+| 18 | ✅已修(v2 闭合) | 分行塞料最后豁免收窄——high/critical 跨类双锚须**同攻击链标记**（两行共享 req-id/追踪号）；medium 松档保留（过渡期防误伤） |
+| 19 | ✅已修(v2 翻案) | 假锚闭合——**lookup seam 存在性校验**（模块级注册，签名零变更）：high/critical 锚 req_id×2+marker 须命中本 run 记录（scheduler/gates.mjs 注册 run-log+har 采样）；未注册/未命中=拒锚降人工复核；medium 形态级+标注。**OOB nonce 绑定**：oast /hits API 在（技术可行）但绑定链需 briefs.mjs（未在本批授权例外）+端到端靶场 → 登记后续批 |
+| 20 | ✅已修(收窄) | NFKC 兼容分解归一两副本同改（sanitize.js+graphd prose_denylist_hit）——全角/兼容字形闭合（实测 'ｉｇｎｏｒｅ'→命中）；**残余=跨脚本同形字**（ο↔o 是 confusables 非 compatibility 映射，探针实证 NFKC 不折叠）——需 TR39 skeleton 表，登记后续 |
+| 21 | ◐部分闭合 | 元数据/link-local 黑名单面 v1 已随 FORBIDDEN_CIDRS(169.254/16) 在 web_fetch+egress 双点闭合；**残余=L0 探测授权语义（originOf 在 validator.js——本批授权例外未含）**，与部署授权面拍板簇合并登记 |
+| 26 | ⏸待按行授权 | write-gate.mjs symlink realpath——文件头+测试头注自证"realpath 依赖 fs 的部分不进门"为设计边界（v1 豁免），本批授权例外刻意不含 write-gate.mjs（对照：D 子批显式含 tool-gate.mjs）→ 按绝不碰规则停下登记，兜底=dsh-tool-fs sandbox 维持 |
+| N1 | ✅已修 | 双逃逸钉死（kuzu 0.11.3 实跑）→ 谓词内容锚+无标签拒（见 #1 深化行） |
+| N2 | ✅已修 | 双副本行级实锚+行为分叉复现（坏 env：外层 ValueError→503 vs 锁内回退 4）→ 收敛单一来源+MERGE 存在性（见 #3 深化行） |
+| N3 | ⏸登记不修 | 写入方清单实锚：生产写入=distill-experience.mjs:446（真实 eng 名）；合成/自由标签为既有合法形态（28 处 pytest 夹具+评审工具按标签语义消费）；严格同-eng 绑定=worker 租约身份架构改造，登记后续批 |
+| N4 | ✅已修 | 闭集掩码实测（v1 集 10 表 vs schema 12 表）→ 单一来源生成对账（见 #1） |
+
+### v2 拍板点（供用户复核）
+1. **off/STRICT 子集清单**：STRICT_HIGH_RISK_TOOLS=全 7 名——web_fetch/web_search（出网直连=数据外发面）/subagent/subagent_fork/workflow/ralph（横向扩展，红线仅事后计数）/skill（指令注入面）。收窄子集不改进门集（集合关系测试锁定）。
+2. **Engagement 严格锚标定**：拍板③"整体禁全表+点查放行"落地为无谓词禁+点查/eng 收窄放行+**阈值式谓词拒**（WHERE status='active' 泄 scope 实证形态）；一般闭集表=选择性谓词放行（briefs:64 活调用点——高权重信号全局读/查重 title CONTAINS 为设计内跨面读，误伤面实锚）。阈值型全匹配写法（weight>=0）=已知残余（选择性静态不可判定）。
+3. **缺索引降级语义**：取"拒"（锚存在性未证实→verified 拒→人工复核路径承接）——锚优先放行是 bypass 面，缺记录采信=回到假锚时代。
+4. **verified 运营纪律**：C 子批已落地，人工复核保留至样本库验证后撤除（撤除条件已登记 state.md 决策账）。
+
+### 后续能力候选清单（拍板 8：只登记不排批）
+经验复利闭环（skill wins 归因+embedding hook 重测）/ auto-triage 真伪钳位（gap 6/7 方向）/ egress 加固（gap 23/24 方向）/ 暂停门全覆盖（gap 13，需授权）/ 面板假阳性裁决闭环（开放项 18，T4-3 收官批候选）/ OOB nonce 绑定（#19 残余，需 briefs 授权）/ TR39 同形字 skeleton（#20 残余）/ write-gate symlink realpath（#26，需按行授权）/ N3 同-eng 绑定（worker 租约身份架构）。
+### 遗留跟踪（归后续批）
+1. **Gate-V 架构批**：~~#18 分行残余+#19 假锚~~（v2 已闭合）→ 余 OOB nonce 绑定（候选清单）
+2. **端点编排批**：#12 认证顺序+#13 暂停扩面（HTTP 测试基建+暂停语义拍板）
+3. **部署/授权面拍板**：#16 内网 off 降级残余+#21 L0 探测授权语义+#24 CONNECT 端口（使用模式归用户）
+4. **按行授权池**：#26 write-gate.mjs realpath（设计边界+测试锁翻转需授权）
 
 ### 逐条处置表
 | 编号 | 处置 | 说明/理由 |
