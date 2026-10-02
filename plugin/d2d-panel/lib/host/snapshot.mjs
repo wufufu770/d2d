@@ -16,6 +16,45 @@ export const MACRO_GROUPS = [
 ]
 export const ZOMBIE_MS = 30_000
 const MAX = { title: 200, scope: 200, target: 200, workers: 50, findings: 200, signals: 50, exp: 100, checkpoint: 400, todo: 400, traj: 400, digest: 160, usageLines: 2000, runLogLines: 400, sigEvidence: 0 }
+// T3-3-2 收官批护栏(t3-3-plan §6 定稿): 文件尾读类路由全部 tail-N + 服务端钳位 —
+// transition-log/audit.log 无轮转(transition_log.py/audit.py 只追加), 线性增长, 严禁整文件进热路径。
+Object.assign(MAX, {
+  sankeyLines: 20000, // 桑基: transition-log.jsonl 尾读上限(现量 1652 行/6 天, 上限≈一年量级)
+  auditLines: 3000, // 审计时间线: audit.log 尾读上限
+  auditTransLines: 2000, // 审计时间线: transition-log.jsonl 合并尾读上限
+  toolLines: 600, // 工具调用明细: run-log 尾读上限(明细页比快照轨迹区 400 行略宽)
+})
+
+// ---------- T3-3-2: 9 标签页数据面(桑基/审计/工具调用/链路/前沿/配置) ----------
+// 图依赖路由(chain/frontier)复用 vizRoute fail-closed; 文件尾读路由(桑基/审计/工具调用/configx)
+// fail-soft 恒 200+degraded 记因 — 与 T3-3-1 capability 同款语义。
+export const FLOWS = {
+  daysDefault: 7,
+  daysMax: 90,
+  families: ['finding', 'experience', 'frontier', 'other'],
+  // node_id 前缀 → 迁移族(transition_log.py 写入方实锚: f-* Finding / exp-* Experience / fr-* Frontier)
+  familyOf: (nodeId) => {
+    const s = String(nodeId ?? '')
+    if (s.startsWith('f-')) return 'finding'
+    if (s.startsWith('exp-')) return 'experience'
+    if (s.startsWith('fr-')) return 'frontier'
+    return 'other'
+  },
+}
+export const CHAIN = { tasks: 50, findings: 100, endpoints: 200, edges: 300 }
+export const FRONTIER_POOL_LIMIT = 100
+
+const Q_CHAIN = {
+  tasks: `MATCH (t:Task) WHERE t.eng = $eng RETURN t.id AS id, t.kind AS kind, t.status AS status, t.link_id AS link_id, t.claimed_by AS claimed_by, t.created_at AS created_at ORDER BY coalesce(t.created_at, '') DESC LIMIT ${CHAIN.tasks}`,
+  confirms: `MATCH (f:Finding)-[:CONFIRMS]->(s:Signal_) WHERE f.eng = $eng RETURN f.id AS a, s.id AS b LIMIT ${CHAIN.edges}`,
+  at: `MATCH (s:Signal_)-[:AT]->(e:Endpoint) WHERE s.eng = $eng RETURN s.id AS a, e.id AS b LIMIT ${CHAIN.edges}`,
+  suggests: `MATCH (h:Hypothesis)-[:SUGGESTS]->(e:Endpoint) WHERE h.eng = $eng RETURN h.id AS a, e.id AS b LIMIT ${CHAIN.edges}`,
+  endpoints: `MATCH (e:Endpoint) WHERE e.eng = $eng RETURN e.id AS id, e.url AS url, e.method AS method LIMIT ${CHAIN.endpoints}`,
+  findings: `MATCH (f:Finding) WHERE f.eng = $eng RETURN f.id AS id, f.title AS title, f.severity AS severity, f.gate_status AS state ORDER BY coalesce(f.ts, '') DESC LIMIT ${CHAIN.findings}`,
+}
+const Q_FRONTIER_POOL = `MATCH (x:Frontier) WHERE x.eng_id = $eng RETURN x.id AS id, x.direction AS direction, x.status AS status, x.proposed_by AS proposed_by, x.created_at AS created_at, x.value_score AS value_score, x.review_note AS review_note, x.accepted_to_hypothesis_ref AS hypothesis_ref ORDER BY x.created_at DESC LIMIT ${FRONTIER_POOL_LIMIT}`
+// 总览补全(拍板 1): 每 engagement severity 计数 — 一条聚合查询喂全列表(逐 eng 循环查询会放大图读)
+const Q_FINDINGS_SEV = `MATCH (f:Finding) RETURN f.eng AS eng, f.severity AS severity, count(f) AS n`
 
 // 全部只读 MATCH; host token 通道下不触发 worker 只读白名单(本就放行)
 // W5: 池子查询全部按 $eng 过滤(engagement 池子隔离) — 面板只显示选中 engagement 的项目数据;
@@ -719,6 +758,284 @@ export async function readApprovalSummary() {
   } catch { return null }
 }
 
+// ---------- T3-3-2: 桑基数据面 — transition-log.jsonl host 侧聚合(graphd 零改动) ----------
+// 写入方实锚: graphd/gd/transition_log.py 恒 8 字段 append-only, 无轮转 — 尾读+时间窗,
+// 严禁整文件进面板热路径(先例 10: 写新面先想「CI/他机没有这个文件会怎样」→ fail-soft)。
+
+/** 整数钳位(非数值回缺省 — clampLaneDays 泛化)。 */
+function clampInt(v, min, max, dflt) {
+  const n = parseInt(v, 10)
+  if (!Number.isFinite(n)) return dflt
+  return Math.min(max, Math.max(min, n))
+}
+
+/** 时间窗钳位(1..FLOWS.daysMax)。 */
+export function clampFlowDays(v) {
+  const n = parseInt(v, 10)
+  if (!Number.isFinite(n) || n <= 0) return FLOWS.daysDefault
+  return Math.min(n, FLOWS.daysMax)
+}
+
+/** 逐节点流量聚合(纯函数): from→to 对计数, 族按 node_id 前缀分(f-/exp-/fr-);
+ *  from===to 防御性跳过(FSM 不产生, 手动通道 /write/transition-log 脏行不硬凑视觉)。 */
+export function aggregateTransitions(rows, { family = 'all' } = {}) {
+  const links = []
+  const index = new Map()
+  for (const r of rows ?? []) {
+    const from = String(r?.from_status ?? '')
+    const to = String(r?.to_status ?? '')
+    if (!from || !to || from === to) continue
+    const fam = FLOWS.familyOf(r?.node_id)
+    if (family !== 'all' && fam !== family) continue
+    const key = `${fam}|${from}|${to}`
+    let l = index.get(key)
+    if (!l) { l = { family: fam, from, to, count: 0 }; index.set(key, l); links.push(l) }
+    l.count++
+  }
+  return links.sort((a, b) => b.count - a.count)
+}
+
+/** 桑基数据(尾读+窗口+族过滤+聚合): 文件缺失/不可读 → 200 空态+degraded 记因(fail-soft),
+ *  坏行跳过(readRunEvents 同款纪律)。rows 均为合法迁移事件(非法迁移走 audit.log)。 */
+export function readTransitionFlows({ days = FLOWS.daysDefault, family = 'all', nowMs = Date.now() } = {}, fsImpl = fs, env = process.env) {
+  const windowDays = clampFlowDays(days)
+  const fam = FLOWS.families.includes(family) || family === 'all' ? String(family) : 'all'
+  const out = { links: [], linesRead: 0, matched: 0, windowDays, family: fam, degraded: [] }
+  const dir = env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
+  const file = env.P2P_TRANSITION_LOG ?? `${dir}/logs/transition-log.jsonl`
+  const since = nowMs - windowDays * 86_400_000
+  let lines
+  try {
+    lines = fsImpl.readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-MAX.sankeyLines)
+  } catch (e) {
+    out.degraded.push(`transition-log 不可读: ${String(e?.code ?? e?.message ?? e).slice(0, 80)}`)
+    return out
+  }
+  out.linesRead = lines.length
+  const rows = []
+  for (const ln of lines) {
+    try {
+      const r = JSON.parse(ln)
+      const t = Date.parse(r?.timestamp ?? '')
+      if (Number.isFinite(t) && t < since) continue
+      rows.push(r)
+    } catch { /* 坏行跳过 */ }
+  }
+  out.matched = rows.length
+  out.links = aggregateTransitions(rows, { family: fam })
+  return out
+}
+
+/** 审计时间线(双源合并尾读): audit.log({ts,kind,detail} — auth-fail/transition-illegal/
+ *  denylist-hit/frontier-* 等)+ transition-log.jsonl(转态成功) — 非法迁移只进 audit.log,
+ *  合流才是完整审计面。kind 过滤精确匹配; 降序取尾 limit。文件面 fail-soft。 */
+export function readAuditTail({ limit = 200, kind = '' } = {}, fsImpl = fs, env = process.env) {
+  const lim = clampInt(limit, 1, 500, 200)
+  const dir = env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
+  const events = []
+  const degraded = []
+  try {
+    const file = env.P2P_AUDIT_LOG ?? `${dir}/logs/audit.log`
+    const lines = fsImpl.readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-MAX.auditLines)
+    for (const ln of lines) {
+      try {
+        const r = JSON.parse(ln)
+        if (!r?.ts || !r?.kind) continue
+        events.push({ ts: String(r.ts), source: 'audit', kind: String(r.kind), detail: r?.detail ?? null })
+      } catch { /* 坏行跳过 */ }
+    }
+  } catch (e) { degraded.push(`audit.log 不可读: ${String(e?.code ?? e?.message ?? e).slice(0, 80)}`) }
+  try {
+    const tfile = env.P2P_TRANSITION_LOG ?? `${dir}/logs/transition-log.jsonl`
+    const lines = fsImpl.readFileSync(tfile, 'utf8').split('\n').filter(Boolean).slice(-MAX.auditTransLines)
+    for (const ln of lines) {
+      try {
+        const r = JSON.parse(ln)
+        if (!r?.timestamp) continue
+        events.push({
+          ts: String(r.timestamp), source: 'transition', kind: 'transition',
+          detail: { node_id: String(r?.node_id ?? ''), from_status: String(r?.from_status ?? ''), to_status: String(r?.to_status ?? ''), actor: String(r?.actor ?? ''), reason: cap(r?.reason, 160) },
+        })
+      } catch { /* 坏行跳过 */ }
+    }
+  } catch (e) { degraded.push(`transition-log 不可读: ${String(e?.code ?? e?.message ?? e).slice(0, 80)}`) }
+  const kinds = [...new Set(events.map((e) => e.kind))].sort()
+  const filtered = kind ? events.filter((e) => e.kind === String(kind)) : events
+  filtered.sort((a, b) => String(b.ts).localeCompare(String(a.ts)))
+  return { events: filtered.slice(0, lim), kinds, total: filtered.length, degraded }
+}
+
+/** run-log 其余键序列化截尾(事件词表非穷尽 — kind 白名单外的字段兜底渲染, 不丢关键线索)。 */
+function extraOf(r) {
+  const known = new Set(['ts', 'event', 'worker_id', 'ring', 'role', 'model', 'code', 'quota', 'reason', 'tool', 'command', 'cmd'])
+  const rest = {}
+  for (const k of Object.keys(r ?? {})) if (!known.has(k)) rest[k] = r[k]
+  const s = JSON.stringify(rest)
+  return s && s !== '{}' ? cap(s, 200) : ''
+}
+
+/** 工具调用明细(run-log 全事件投影 + per-worker 工具量): readRunEvents 同款尾读纪律 +
+ *  H19 同款 engName 消毒; 明细投影放宽(kind 全集/tool/command/extra), 坏行跳过。fail-soft。 */
+export function readToolCalls({ engName, limit = 200, kind = '' } = {}, fsImpl = fs, env = process.env) {
+  const out = { eng: '', events: [], kinds: [], toolTotals: [], truncated: false, degraded: [] }
+  const eng = String(engName ?? '').replace(/[^A-Za-z0-9._-]/g, '')
+  out.eng = eng
+  if (!eng) return out
+  const lim = clampInt(limit, 1, MAX.toolLines, 200)
+  const dir = env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
+  const runs = env.D2D_RUNS_DIR ?? env.P2P_RUNS_DIR ?? `${dir}/runs`
+  let lines
+  try {
+    lines = fsImpl.readFileSync(`${runs}/${eng}/run-log.jsonl`, 'utf8').split('\n').filter(Boolean).slice(-MAX.toolLines)
+  } catch (e) {
+    out.degraded.push(`run-log 不可读: ${String(e?.code ?? e?.message ?? e).slice(0, 80)}`)
+    return out
+  }
+  const all = []
+  for (const ln of lines) {
+    try {
+      const r = JSON.parse(ln)
+      const evKind = String(r?.event ?? '')
+      if (!evKind) continue
+      all.push({
+        ts: String(r?.ts ?? ''), kind: evKind,
+        worker: String(r?.worker_id ?? ''), ring: String(r?.ring ?? ''), role: String(r?.role ?? ''), model: String(r?.model ?? ''),
+        code: r?.code ?? null, quota: r?.quota ? String(r.quota) : '', reason: cap(r?.reason, 160),
+        tool: String(r?.tool ?? ''), command: cap(r?.command ?? r?.cmd, 160), extra: extraOf(r),
+      })
+    } catch { /* 坏行跳过 */ }
+  }
+  out.kinds = [...new Set(all.map((e) => e.kind))].sort()
+  const filtered = kind ? all.filter((e) => e.kind === String(kind)) : all
+  out.truncated = filtered.length > lim
+  out.events = filtered.slice(-lim)
+  // per-worker 工具量(model-usage.jsonl terminal 行 tools 字段 — scheduler.js 终态行实锚)
+  const totals = new Map()
+  try {
+    const ml = fsImpl.readFileSync(`${runs}/${eng}/model-usage.jsonl`, 'utf8').split('\n').filter(Boolean).slice(-MAX.usageLines)
+    for (const ln of ml) {
+      try {
+        const r = JSON.parse(ln)
+        if (r?.event !== 'terminal') continue
+        const w = String(r?.worker ?? '')
+        if (!w) continue
+        const cur = totals.get(w) ?? { worker: w, tools: 0, terminals: 0 }
+        cur.tools += Number(r?.tools) || 0
+        cur.terminals += 1
+        totals.set(w, cur)
+      } catch { /* 坏行跳过 */ }
+    }
+  } catch { /* 账本缺失 → toolTotals 空(降级不记因: 明细主源不受影响) */ }
+  out.toolTotals = [...totals.values()].sort((a, b) => b.tools - a.tools).slice(0, 20)
+  return out
+}
+
+/** 探索链路(纯函数): Task 看板(/pentest-tasks 对等)+ worker/信号/端点/漏洞节点 + 四族边。
+ *  查询抛错整体上抛(路由层 503 fail-closed) — buildStarmap 同款; 边两端不在取数集内则不画。 */
+export async function buildChain(q, { eng } = {}) {
+  const [taskRows, agentRows, sigRows, derivedRows, atRows, confirmsRows, suggestsRows, epRows, findingRows] = await Promise.all([
+    q(Q_CHAIN.tasks, { eng }),
+    q(Q.agents, { eng }),
+    q(Q_VIZ.starmapSignals, { eng }),
+    q(Q_VIZ.starmapDerived, { eng }),
+    q(Q_CHAIN.at, { eng }),
+    q(Q_CHAIN.confirms, { eng }),
+    q(Q_CHAIN.suggests, { eng }),
+    q(Q_CHAIN.endpoints, { eng }),
+    q(Q_CHAIN.findings, { eng }),
+  ])
+  const pair = (rows) => {
+    const seen = new Set()
+    const out = []
+    for (const r of rows ?? []) {
+      const a = String(r?.a ?? ''), b = String(r?.b ?? '')
+      if (!a || !b) continue
+      const k = `${a}->${b}`
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push({ a, b })
+    }
+    return out
+  }
+  return {
+    tasks: (taskRows ?? []).map((r) => ({
+      id: String(r?.id ?? ''), kind: String(r?.kind ?? ''), status: String(r?.status ?? ''),
+      link_id: String(r?.link_id ?? ''), claimed_by: String(r?.claimed_by ?? ''), created_at: String(r?.created_at ?? ''),
+    })),
+    workers: (agentRows ?? []).map((r) => ({ worker_id: String(r?.worker_id ?? ''), ring: String(r?.ring ?? ''), chain: String(r?.chain ?? ''), status: String(r?.status ?? '') })),
+    signals: (sigRows ?? []).map((r) => ({ id: String(r?.id ?? ''), type: String(r?.type ?? ''), weight: num(r?.weight), ts: String(r?.ts ?? ''), host: vizHostOf(r?.evidence) })),
+    endpoints: (epRows ?? []).map((r) => ({ id: String(r?.id ?? ''), url: cap(r?.url, 160), method: String(r?.method ?? '') })),
+    findings: (findingRows ?? []).map((r) => ({ id: String(r?.id ?? ''), title: cap(r?.title, MAX.title), severity: String(r?.severity ?? 'info'), state: String(r?.state ?? 'candidate') })),
+    edges: { derived: pair(derivedRows), at: pair(atRows), confirms: pair(confirmsRows), suggests: pair(suggestsRows) },
+    caps: { tasks: CHAIN.tasks, findings: CHAIN.findings, endpoints: CHAIN.endpoints, edges: CHAIN.edges },
+  }
+}
+
+/** 前沿提案池(纯函数): Frontier 按 eng_id 全态列表(评审态/提案人/价值分/闭环 ref)。
+ *  评审操作走 frontierTransition 代理(graphd FSM 门在服务端, 面板只透传)。 */
+export async function buildFrontierPool(q, { eng } = {}) {
+  const rows = await q(Q_FRONTIER_POOL, { eng })
+  const pool = (rows ?? []).map((r) => ({
+    id: String(r?.id ?? ''),
+    direction: cap(r?.direction, MAX.title),
+    status: String(r?.status ?? 'proposed'),
+    proposed_by: String(r?.proposed_by ?? ''),
+    created_at: String(r?.created_at ?? ''),
+    value_score: fnum(r?.value_score),
+    review_note: cap(r?.review_note, 160),
+    hypothesis_ref: String(r?.hypothesis_ref ?? ''),
+  }))
+  const byStatus = {}
+  for (const p of pool) byStatus[p.status] = (byStatus[p.status] ?? 0) + 1
+  return { pool, total: pool.length, byStatus }
+}
+
+/** 面板侧前沿评审: 代理 graphd /write/frontier-transition(host token 通道, 迁移门+review_note
+ *  审计在 graphd 校验)。transitionFinding 同款形态; reviewer 由 host 半钉死 'panel'。 */
+export async function frontierTransition({ graphdUrl, token, frontierId, targetStatus, reviewNote }, fetchImpl = fetch, timeoutMs = 8000) {
+  const res = await fetchImpl(`${graphdUrl}/write/frontier-transition`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Auth': token } : {}) },
+    body: JSON.stringify({ frontier_id: String(frontierId ?? ''), target_status: String(targetStatus ?? ''), reviewer: 'panel', review_note: String(reviewNote ?? '') }),
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok || !data?.ok) throw new Error(String(data?.error ?? `graphd http ${res.status}`))
+  return data
+}
+
+/** 配置总览(只读本地文件面): 通知通道(configured/method — webhook_url 内嵌推送 token,
+ *  wire 纪律绝不回显值)+ 暂停清单(paused-<eng>.json)。fail-soft: 缺失=未配置不记因。 */
+export function readConfigOverview(fsImpl = fs, env = process.env) {
+  const dir = env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
+  const out = { notify: { configured: false, method: '', has_webhook: false }, paused: [], degraded: [] }
+  try {
+    const raw = JSON.parse(fsImpl.readFileSync(`${dir}/config/notify.json`, 'utf8'))
+    out.notify = { configured: true, method: String(raw?.method ?? 'POST'), has_webhook: Boolean(raw?.webhook_url) }
+  } catch (e) {
+    if (e?.code !== 'ENOENT') out.degraded.push(`notify.json 不可读: ${String(e?.message ?? e).slice(0, 80)}`)
+  }
+  try {
+    out.paused = fsImpl.readdirSync(`${dir}/config`)
+      .filter((f) => f.startsWith('paused-') && f.endsWith('.json'))
+      .map((f) => f.slice('paused-'.length, -'.json'.length))
+  } catch { /* 目录缺失 = 无暂停项 */ }
+  return out
+}
+
+/** 总览补全(拍板 1): 每 engagement 性价比(活跃优先取 ≤8 — 逐 eng 文件尾读有成本, 不放大;
+ *  其余行 cost=null 前端渲染 '—')。原地标注(列表既有顺序不动 — 排序仅用于挑选 ≤8 名单)。 */
+export function attachEngCosts(engagements, readImpl = readModelUsage, max = 8) {
+  const rows = engagements ?? []
+  for (const e of rows) e.cost = null
+  const order = [...rows].sort((a, b) => (b.status === 'active' ? 1 : 0) - (a.status === 'active' ? 1 : 0))
+  for (const e of order.slice(0, max)) {
+    const mu = readImpl({ engName: e.name })
+    e.cost = { inputTokens: mu.inputTokens, outputTokens: mu.outputTokens, dispatches: mu.dispatches, source: mu.source }
+  }
+  return rows
+}
+
 // ---------- 聚合 ----------
 function projectEngagement(row) {
   if (!row) return null
@@ -742,7 +1059,7 @@ function projectEngagement(row) {
 export async function buildSnapshot(query, { fleet = null, runEvents = null, modelUsage = null, eng = '', approvalSummary } = {}) {
   const strategies = await loadStrategies(process.env, query).catch(() => [])
   const approvals = approvalSummary !== undefined ? approvalSummary : await readApprovalSummary()
-  const [engListRows, byEngRows, workersByEngRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows, frontierRows] = await Promise.all([
+  const [engListRows, byEngRows, workersByEngRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows, frontierRows, sevRows] = await Promise.all([
     query(Q.engList),
     query(Q.findingsByEng),
     query(Q.workersByEng).catch(() => []),
@@ -759,6 +1076,7 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, mod
     query(Q.gaps, { eng }),
     query(Q.handoffs, { eng }),
     query(Q.frontierConversion, { eng }), // T2-1-2: Frontier 两 ref 列按 selected eng(空选中 → 空池全零)
+    query(Q_FINDINGS_SEV), // T3-3-2 总览补全: 每 engagement severity 计数(一条聚合喂全列表)
   ])
 
   // W5: 选中 = 显式 selected 文件 > 最新 active > 最新任意(历史回看)。每 engagement 进度聚合。
@@ -783,6 +1101,16 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, mod
     for (const r of workersByEngRows ?? []) if (String(r.eng ?? '') === String(name)) return num(r.n)
     return 0
   }
+  // T3-3-2 总览补全: severity 按 eng 聚合(小写归一; 未知级别原样保留 — 渲染侧 sevColor 兜底)
+  const sevOf = (name) => {
+    const s = {}
+    for (const r of sevRows ?? []) {
+      if (String(r.eng ?? '') !== String(name)) continue
+      const k = String(r.severity ?? 'info').toLowerCase()
+      s[k] = (s[k] ?? 0) + num(r.n)
+    }
+    return s
+  }
   const engagements = engRows.map((e) => ({
     name: cap(e.name, MAX.title),
     target: cap(e.target, MAX.target),
@@ -793,6 +1121,7 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, mod
     instances: num(e.instances) || null,
     selected: String(e.name ?? '') === selName,
     progress: { ...funnelOf(String(e.name ?? '')), workers: runningOf(String(e.name ?? '')) },
+    sev: sevOf(String(e.name ?? '')), // T3-3-2: {critical: n, high: n, ...}(总览卡 severity 列)
   }))
 
   const byState = {}
