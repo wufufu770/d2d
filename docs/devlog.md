@@ -200,3 +200,11 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 子 agent 协作（先例 11）：2 派门体系盘点（graphd 侧 16 门+清单外 12 项/plugin 侧 12 门+run-injection 前身形态分析）；对抗用例生成主 agent 自做（质量核心）；盘点预测 vs 实测诚实账入报告 §三（两条 P 级预测首轮被错误 fixture 推翻又四轮修正实锤——子 agent 报告是输入不是事实的先例 11 纪律再次验证，且主 agent 的探针自身也要过"签名正确性"关）
 教训沉淀：**错误 fixture 比无测试更危险**——虚假 DENY 给人"门在工作"的错觉（首两轮结论写进 docs 前被第三轮探针自检抓住：裸形态 DENY 与引号形态 PASS 的差异才是判别性证据，全同结果=fixture 无效信号）；双向断言的反向守护设计（gap 用例断言"绕过成立"，修复后自动失败提示撤清单——对抗资产不腐烂的机制化）
 开放项：**36 条 gap 全清单**（docs/gatewarden-report.md §二——本批最大产出，修复归用户排批的"门禁收紧批"）；gap 23 DNS rebinding 复现归评测集（可控 DNS 环境）；下一批=评测集跑测（拍板排期，样本库=同源靶场）→ T4-3-2
+
+## 2026-10-02 · EV-1 评测集首跑批（T2-1 评测集 26 条首次真跑；检索层评测形态+半自动裁决清单）
+底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest 394 / mocha **1939**（+11：eval-harness 9+rebinding 2）/ panel 88
+产出：experiments/eval-harness.mjs（fixture 确定性构造+逐条编排+三层 garbage 判定+主流程守卫）+ eval-scorer.mjs（聚合/CNSR 段/人工裁决清单产出）+ results/eval-run-1.jsonl+adjudication.json（结构化可复跑）+ docs/eval-run-1.md（首跑报告）+ gatewarden gap 23 受控仿真复现（egress-rebinding-window.test.mjs：resolve 注入零真实 DNS——首查公网入缓存/窗内切元数据 IP 不可见 calls=1 实证，#23 升级动态仿真双证）+ 单测 11 + AGENTS 先例 13（重试型工作流幂等性）+ T4-3-1 补推收官登记（82d626b 已在远端，三 workflow 绿）
+首跑结果：26 条=pass 12/manual-pass 3/partial 7/fail 4；锚命中 25/45=55.6%（L1 75%/L2 60%/L3 28.6%）；**锚过期率 0/26=0%**（green 8+amber 18，远低 30% 止损线——评测集本体健康零重写）；garbage-control 三层全过；fail 四条=检索排序未进 topK（锚卡在池），属检索面真实召回弱点非锚错
+关键裁决：**检索层评测 only**——全链重放不可行三证（原始轨迹不入仓[0eb6454 自述+/tmp 已灭失]/蒸馏含 LLM 不可确定性重放/活卡库四快照零 run 衍生卡）；cards=数据集自身确定性构造（脱敏形态 canonical——活图原文精确匹配会确定性失配）；判定口径定稿=must_include all-of+主观字段（chain/verdict/跨场 severity）不自动判定进人工裁决清单（14 条待用户终裁）；CNSR 维持 T2-1 基线 5.73 引用（computeCnsr 复算回 5.73 无口径漂移——检索层评测不产 finding/token，不硬造分母）；立项卡"实弹全链路五指标跑测"=另一形态登记后续可选独立批
+教训沉淀：**fixture 陷阱第二次现身**（node:test import 在 mocha 下不可见——新测试文件 0 passing 但不报错，与 gatewarden 的 checkBash 对象形态同构：错误载体造虚假结果；两案合并口径=新测试文件先单跑确认 it 数再入全量）；world.run stdout 捕获对部分子进程不稳（npm/npx 空输出）——快速门统一纯 exit-code 口径+数字断言移交复核员实跑（与先例 13 同批沉淀）
+开放项：人工裁决清单 14 条待用户终裁（eval-run-1-adjudication.json）；检索面跨 run/链召回弱→embedding hook（R5 既有登记）重测；实弹全链路五指标跑测=可选独立批（立项卡口径）
