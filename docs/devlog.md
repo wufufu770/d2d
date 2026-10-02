@@ -231,3 +231,10 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 子 agent 协作（先例 11）：本轮主 agent 自做（净新增集中在 A/C 两面，行级实锚后并行派发对齐成本高于增益——白名单授权非义务）；工作流内 A/B 分层复核照常
 教训沉淀：**任务包/早前快照与仓内现实漂移时以实跑为准**（提示词底账 6dc85172 已前进两批/G12 用例快照为 v1 前形态——先跑当前态再改断言）；**mocha 全局钩子是 before/after 非 node:test 的 beforeAll**（fixture 陷阱家族第三例）；**Bash 写 tests/ 被 Mimosa hook 拦**（GW-2 教训再次自证——Edit 通道才过）；编辑吞换行会让 try: 并入注释（app.py 导入区事故，grep 复查救回）
 开放项：OOB nonce 绑定（需 briefs 授权）/TR39 skeleton（#20 残余）/write-gate realpath（#26 按行授权池）/N3 同-eng 绑定（架构）/validator.js L0 授权语义（#21 残余）/threshold 型全匹配写法（内容锚已知残余）；下一批=**HYG-1 工程卫生批**（workflow 依赖漂移+按行授权池核查）
+
+## 2026-10-03 · HYG-1 工程卫生批（外部复审采信落地；CI 治理+小修+日志轮转+清点，全小项非门禁面）
+底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest **406**（+2 轮转位移/双写入侧在位）/ mocha 1948 / panel 88（零回归）
+产出：CI 依赖统一（ci.yml python 3.11→3.12+`-r requirements.txt`[requirements 增 pytest==9.1.1 与 gates 单一来源；弃未钉版]）+ gates npm-audit node 20→24（engines>=22.5 下 20 违宪）+ dsh-compat 22=最低支持轨（注释定位）+ panel package-lock.json 入库（npm ci 口径统一）+ **基线数字三处对齐**（ci.yml 步骤名 368→406/README 角色 25→24/state 底账节）+ standalone 启动错误语义（server error→reject，入口 catch 退出非零——端口占用 EADDRINUSE 实证 exit=1）+ 守卫 5 处主判规范形（wmpf/wxapkg/wordlists/standalone endsWith→pathToFileURL 真实入口判定；match-site fileURLToPath+手拼 file:// 修复）+ **审计/转态日志轮转**（_rotate_if_needed 双写入侧同源镜像+锁内调用；50MB+保留 5 份，P2P_LOG_MAX_MB/P2P_LOG_KEEP 可调；读侧尾读活跃路径兼容不变）+ ARCHITECTURE 节点清单对齐 schema（Signal_ 无 host 列/Endpoint host/port=url 派生）+ **吞错清点分级落 docs/hyg1-swallowed-errors.md**（python 35=上下文记因 17+模式性 11[schema 幂等 ALTER]+有兜底 5+补记因 2[#4 别名块/词表回退]——python 真裸吞清零；js 空 catch 444=记因 298+无注释 146 归后续批逐文件清点）
+关键裁决：**任务包行号与本仓 HEAD 漂移以实测为准**（ci.yml python 实为 3.11 非"未对齐"叙述之直接形态；match-site 在 scripts/browser/ 但不在禁区四文件列举内——禁区按列举语义执行）；"build-client 先于测试致防漂移断言 CI 恒真"面按拍板登记不改（本地有效/CI 无害）；轮转放写入侧锁内（读侧零改动=兼容性设计而非补丁）
+教训沉淀：**探针自身先核对 env 名再下结论**（首探端口占用行为"挂住"实为探针用了默认端口空转——P2P_PANEL_PORT 核对后实证 exit=1）；窄窗口注释判定会把 2+ 行上的模式注释误判为裸吞（清点方法两档口径并列如实给数）
+开放项：js 空 catch 146 处逐文件补因（egress/mitm→snapshot→spa-render 优先级）；#26 write-gate realpath 按行授权池；dependabot/mods 远端分支处置（归用户）
