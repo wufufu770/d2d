@@ -68,6 +68,70 @@
           })))
     }
 
+    // ---- T3-3-2 探索前沿补全: 提案池列表 + 评审操作(POST frontier-transition 代理, reviewer=panel) ----
+    // 数据面: GET /d2d/api/frontier(vizRoute 家族 fail-closed)+POST /d2d/api/frontier-transition
+    // (迁移门/审计在 graphd, 面板只透传)。评审理由单行输入, 缺省 'panel review'。
+    const FRONTIER_POLL_MS = 5000
+    const FRONTIER_STATE = { proposed: '待评审', accepted: '已采纳', rejected: '已驳回', explored: '已探索' }
+
+    function useFrontier(visible) {
+      const [data, setData] = useState(null)
+      const [err, setErr] = useState(null)
+      const [rev, setRev] = useState(0)
+      useEffect(() => {
+        if (!visible) return
+        let stop = false
+        const tick = async () => {
+          try {
+            const j = await fetchApi('frontier')
+            if (!stop) { setData(j); setErr(null) }
+          } catch (e) { if (!stop) setErr(e) }
+        }
+        void tick()
+        const poll = setInterval(tick, FRONTIER_POLL_MS)
+        return () => { stop = true; clearInterval(poll) }
+      }, [visible, rev])
+      return { pool: data?.frontier?.pool ?? null, byStatus: data?.frontier?.byStatus ?? {}, err, refresh: () => setRev((r) => r + 1) }
+    }
+
+    function FrontierPoolCard({ visible }) {
+      const { pool, byStatus, err, refresh } = useFrontier(visible)
+      const [note, setNote] = useState('')
+      const [busyId, setBusyId] = useState('')
+      const [msg, setMsg] = useState(null) // {ok, text}
+      const decide = async (id, to) => {
+        setBusyId(`${id}:${to}`); setMsg(null)
+        try {
+          await postJson('frontier-transition', { frontier_id: id, target_status: to, review_note: note.trim() || 'panel review' })
+          setMsg({ ok: true, text: `已${to === 'accepted' ? '采纳' : to === 'rejected' ? '驳回' : '标记探索'} ${String(id).slice(0, 12)}` })
+          refresh()
+        } catch (e) { setMsg({ ok: false, text: String(e?.message ?? e) }) } finally { setBusyId('') }
+      }
+      const row = (p) => h('div', { key: p.id, style: { display: 'flex', flexDirection: 'column', gap: '2px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '4px' } },
+        h('div', { style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
+          h('span', panel.chip({ ...(p.status === 'proposed' ? { borderColor: 'var(--d2d-warn)' } : p.status === 'accepted' ? { borderColor: 'var(--d2d-ok)' } : {}) }), FRONTIER_STATE[p.status] ?? p.status),
+          h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }, title: p.direction }, p.direction || '(无方向文本)'),
+          p.value_score > 0 ? h('span', { ...panel.mono, style: { ...panel.mono.style, color: 'var(--d2d-ring-creative)' } }, `v=${Number(p.value_score).toFixed(2)}`) : null),
+        h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' } },
+          h('span', panel.muted(0.5), `${p.proposed_by || '?'} · ${String(p.created_at ?? '').slice(0, 16).replace('T', ' ')}`),
+          p.review_note ? h('span', panel.muted(0.55), `评审: ${p.review_note}`) : null,
+          p.hypothesis_ref ? h('span', panel.chip({ borderColor: 'var(--d2d-brand)' }), `→ ${String(p.hypothesis_ref).slice(0, 14)}`) : null,
+          p.status === 'proposed' ? h('span', { style: { marginLeft: 'auto', display: 'flex', gap: '4px' } },
+            h('button', { ...panel.btn({ borderColor: 'var(--d2d-ok)', color: 'var(--d2d-ok)' }), disabled: Boolean(busyId), onClick: () => decide(p.id, 'accepted') }, busyId === `${p.id}:accepted` ? '…' : '采纳'),
+            h('button', { ...panel.btn({ borderColor: 'var(--d2d-sev-high)', color: 'var(--d2d-sev-high)' }), disabled: Boolean(busyId), onClick: () => decide(p.id, 'rejected') }, busyId === `${p.id}:rejected` ? '…' : '驳回')) : null))
+      return h(Card, {
+        title: `前沿提案池 · ${pool?.length ?? 0}`,
+        extra: err
+          ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `不可用: ${String(err?.message ?? err).slice(0, 50)}`)
+          : h('span', panel.muted(0.45), `待评审 ${byStatus.proposed ?? 0} · 已采纳 ${byStatus.accepted ?? 0} · 已驳回 ${byStatus.rejected ?? 0}`),
+      },
+        h('input', { ...panel.input(), placeholder: '评审理由(缺省 panel review, 随转态入 graphd 审计)', value: note, onChange: (ev) => setNote(ev.target.value) }),
+        err && !pool ? h('div', panel.muted(0.45), '图服务不可达 — fail-closed 不显示过期提案池') : null,
+        !err && pool && !pool.length ? h('div', panel.muted(0.45), '暂无前沿提案 — worker 经 propose_direction 提案后入池') : null,
+        (pool ?? []).map(row),
+        msg ? h('div', { style: { fontSize: '10px', color: msg.ok ? 'var(--d2d-ok)' : 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, msg.text) : null)
+    }
+
     function OpsView(props) {
       const { visible } = props
       const { snap, err, now, refresh } = useSnapshot(visible)
@@ -85,6 +149,7 @@
         !off.has('usage') ? h(UsageCard, { run: snap.run }) : null,
         !off.has('cost') ? h(CostCard, { snap }) : null,
         h(ConversionCard, { snap }), // T2-1-2 转化率卡(只读, 性价比卡之后; 纯展示无交互)
+        !off.has('frontier') ? h(FrontierPoolCard, { visible }) : null, // T3-3-2 探索前沿补全(提案池+评审)
         !off.has('workers') ? h(WorkersCard, { snap, now }) : null,
         !off.has('funnel') ? h(FunnelCard, { snap }) : null,
         !off.has('gaps') ? h(GapsCard, { snap }) : null,
