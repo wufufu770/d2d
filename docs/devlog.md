@@ -183,3 +183,4 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 教训沉淀：**探针 smoke 抓住了决策书数字错误**——"先落探针再校数字"的顺序价值：只读探针把逐表计数机器化，加总错误无所遁形（人工合计的 14,146 vs 机器合计 9,223）；运维文档（runbook）的命令必须带"已实证"标注（本 runbook 每段命令都标注首执行实锚或审计锚——未实证的命令写"未验证"是 runbook 的诚实底线）
 开放项：**恢复演练单独立项**（IMPORT 临时库+只读重开物理快照——"包还在≠恢复计划"，runbook §五登记）；裁剪 >500MB 再议（拍板 ②）；B 迁移不排期（触发条件见 runbook §三）
 勘误补记（T4-2b 收官途中）：CI gates 首 red——semgrep p/security-audit 的 react-insecure-request 通用规则把探针 loopback fetch（http://127.0.0.1:8766，代码内常量）判 blocking（run 36986678189 实锚）；修复=行内 nosemgrep 精确规则 ID 豁免+理由注记（行为零变化，smoke 复跑绿）；教训——本机服务探针的 loopback HTTP 是 semgrep 通用安全规则的盲区误报面，新 ops 脚本触网前先过 semgrep 心智检查（本机无 CLI，以 CI 复扫为准）
+二轮补记：首版豁免注记放在命中行上方隔一行——semgrep nosemgrep 语义=同行或紧邻上一行才生效，未覆盖多行 fetch 的命中首行；改放 fetch 行尾同行豁免（第三轮，再红按止损停下回报）
