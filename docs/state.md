@@ -9,7 +9,7 @@
 - 分支：main 唯一活跃；31 个远端分支保留（历史基线/archive 回滚点，T4-5 清理）
 - 工作树：0 改动
 - CI：三 workflow（ci/dsh-compat/gates）全绿（T3-2-5 收官 run 以 gh 实测为准）
-- 测试基线（T3-3-3 固化）：pytest **368** / mocha **1896** / panel **69**
+- 测试基线（T3-3-2 固化）：pytest **368** / mocha **1896** / panel **88**
 - stack：graphd :8766 ✅ / egress :8888 ✅（MITM 启用）/ oast :8890 ✅ /
   cdp-proxy :8893 ✅ 常驻 enable / dsh web :8899 按需（HD-1 审计时点未起）；
   SPA/DVWA 靶场就绪
@@ -66,7 +66,25 @@ verify]+四挂接点纯新增接线[startEngagement 顶部覆盖 adopt/p2p_start
 组合层 T0-C 同位/egress refreshScope 整集校验 H14 同位]——**全部零降级**；验签失败不放行
 [invalid/expired 恒拒, 灰度 off 只豁免 missing]；P2P_AUTH_CONTRACT 缺省 off；授权与审批
 正交维持；hostAllowed 空 scope 不补收紧[测试锁定现状]；runbook docs/auth-contract-runbook.md）
-下一步建议：**T3-3-2 收官批**（桑基+9 标签页补全+侧边栏收口；收官 tag t3-3-stage65）
+下一步建议：**T3-3-2 收官批**（桑基+9 标签页补全+侧边栏收口；收官 tag t3-3-stage65）/
+T3-3-2 ✅（**6.5 收官批=T3-3 整体收官**[tag t3-3-stage65]：桑基数据面[transition-log
+host 侧聚合 readTransitionFlows+SankeyChart 家族过滤零重取, 入 d2d:viz]+五新 tab
+[approval 63/chain 64/tools 65/audit 66/config 67——审批纯 client 消费零后端零审批门/
+链路三列 SVG+Task 看板[/pentest-tasks 对等]+CONFIRMS 稀疏注记/工具调用明细 run-log
+全事件投影+工具量榜/审计 audit.log+transition-log 双源合流/配置只读总览+写面卡集中]+
+四部分补全[总览 sev 计数列+per-eng token 总耗 attachEngCosts/前沿提案池+评审代理
+frontierTransition reviewer 钉死 panel]+侧边栏对等三分法收口[豁免全清单
+docs/t3-3-finale.md §四]+禁区 grep 断言测试[auth-contract/tier-approval 零出现]）
+下一步建议：**T4-2 优先**（评测集跑测立项卡见下；T4-2/T4-3/T4-4 可并行）
+
+## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
+- **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
+  产出跑测报告一份
+- **预估**：2-3 人日（含靶场复位与报告整理）
+- **验收口径（draft）**：发现数/验证闭环率/误报率/端到端耗时/token 账本 五指标成表；
+  **L2-L3 人工裁决保留**（自动分级不作终态——#10 dvwaSession 自增可预测随跑测一并人工审）
+- **前置条件**：graphd/egress/oast/cdp-proxy 四服务就绪；评测集素材清点（未清点则先清点）
+- **挂靠**：T4 系列排批时与 T4-2 竞争优先级（用户拍板）
 
 ## 开放项（销账后现存）
 | # | 项 | 状态 | 挂靠 | 优先级 |
@@ -78,7 +96,7 @@ verify]+四挂接点纯新增接线[startEngagement 顶部覆盖 adopt/p2p_start
 | 2 | lease-cas-watchdog flaky | 多批未复发，观察 | 观察项 | P3 |
 | 3 | A/B 报告真 eng 名 | 未处理 | 仓库公开前必须 | P3 |
 | 4 | collect-results.mjs ts slice(0,15)（:172 实锚） | 未修 | 8.5 完整版 | P3 |
-| 5 | 8.5 完整版余量（看板/变异测试/评测集跑测） | 未做 | T3-3 前后 | P2 |
+| 5 | 8.5 完整版余量（看板/变异测试/评测集跑测） | **三件去向全定**（T3-3 收官：看板 ✅ 并入 T3-3-1 / 变异缩水 #25 / 评测集立项卡已登记 state.md，实施单独立项） | T4 排批 | P2 ✅ |
 | 6 | 上游四条宿主建议（upstream-open-items.md:82-107 实锚） | 仅入库 | 随批顺手 | P3 |
 | 7 | js-scanner active 模式 | 未实现（已拍板维持只读，实现需独立授权设计） | — | P3 |
 | 8 | p2p_js_scan description 基线告警 | **已收编销账**（T3-2-3 基线 regen ×3 条入基线） | — | P3 ✅ |
@@ -97,6 +115,7 @@ verify]+四挂接点纯新增接线[startEngagement 顶部覆盖 adopt/p2p_start
 | 24 | 审计发现登记（T3-3-0，均不修）：hostAllowed 空 scope fail-open（checkBash 层已 fail-closed 兜底）/~/.config/d2d 目录 775（私钥子目录应 0700）/manifest 文件头「五形态」注释遗留（实 6 形态）/panel host 路由测试盲区（approval/eng/start 分支） | **两项已顺手销账**（T3-3-1：manifest 注释勘误+panel 路由测试盲区补齐[viz 四路由+approval/caps/denylist 分型]）；hostAllowed 空 scope **测试锁定现状**（T3-3-3 结论不补收紧）；auth-signing 子目录 0700 已建（T3-3-3），父目录 775 登记不修 | 随批顺手或 T4-5 清理 | P3 |
 | 25 | 变异测试工具链兼容（@stryker-mutator/mocha-runner 插件与 mocha 12 冲突——run-helpers 内部路径不存在；364 mutant 已 instrument 卡 runner） | T3-3-3 观察跑未跑成（如实登记） | 修 mocha-runner 兼容后限新安全面文件补观察跑 | P3 |
 | 26 | graphd.json 运行时状态混入 ~/.config/d2d/（应归 DATA_DIR；契约/密钥面已按 0700/0600 收窄） | 登记不修 | T4-5 仓库清理批 | P3 |
+| 27 | T3-3-2 降级/豁免登记（findings 全量分页/单条 repro 抽屉/单条验证按钮[spec 已有设计位]/notify 写面/条目级 Experience 消费/deep-creative wakeups 计数[调度器内存无透出]/attempt 刻度[无数据源]） | 登记不修（豁免理由 docs/t3-3-finale.md §四） | 随批顺手或 T4 排批 | P3 |
 
 ## 决策账
 已拍板：五术语清理（ACON/ATLAS/MaTTS/SAGE 删，CNSR 留名；T3-1 执行：仓内前四者
