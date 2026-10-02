@@ -113,58 +113,10 @@ const MITM_TXN_BODY_CAP = 256 * 1024
 //     169.254.169.254)、fe80::/10(v6 链路本地)。环回/私有段(127/8, 10/8, 172.16/12, 192.168/16)不进硬黑面
 //     — 本地靶场(NoProxy 直连 DVLA 等)是合法目标, 仍走 scope 判定。
 // CIDR: 与保留段任一重叠即拒(`0.0.0.0/0` 在此被拦, 字符串后缀/IP 精确比对都挡不住它)。
-function _ip4ToInt(s) {
-  const p = String(s).split('.').map(Number)
-  if (p.length !== 4 || p.some((x) => !Number.isInteger(x) || x < 0 || x > 255)) return null
-  return (((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3]) >>> 0
-}
-function _rangeOf(cidr) {
-  const [base, bitsStr] = String(cidr).split('/')
-  const b = _ip4ToInt(base)
-  if (b === null) return null
-  const bits = bitsStr === undefined || bitsStr === '' ? 32 : Number(bitsStr)
-  if (!Number.isInteger(bits) || bits < 0 || bits > 32) return null
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0
-  const lo = (b & mask) >>> 0
-  return [lo, (lo | (~mask >>> 0)) >>> 0]
-}
-const FORBIDDEN_CIDRS = ['0.0.0.0/8', '100.64.0.0/10', '169.254.0.0/16']
-function normalizeHost(h) {
-  // 只剥 "host:port" 的端口(前缀无冒号才动刀), 不伤裸 IPv6 的尾组(fe80::1 ≠ 端口 1)
-  let s = String(h ?? '').trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '').replace(/%[0-9a-z._-]+$/i, '').replace(/^([^:]+):\d+$/, '$1')
-  const m = s.match(/^::ffff:(.+)$/)
-  if (m) {
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(m[1])) s = m[1]
-    else {
-      const g = m[1].split(':')
-      if (g.length === 2 && g.every((x) => /^[0-9a-f]{1,4}$/.test(x))) {
-        const hi = parseInt(g[0], 16), lo = parseInt(g[1], 16)
-        s = `${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`
-      }
-      // 解不动的 mapped 形态原样保留 → isForbiddenTarget 的 v6 规则保守拒
-    }
-  }
-  return s
-}
-function isForbiddenTarget(raw) {
-  const n = normalizeHost(raw)
-  if (!n) return false
-  if (n.includes('/')) {
-    const r = _rangeOf(n)
-    if (r === null) return true // 非法 CIDR 形态 → 保守拒
-    return FORBIDDEN_CIDRS.some((c) => { const f = _rangeOf(c); return r[0] <= f[1] && f[0] <= r[1] })
-  }
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(n)) {
-    const v = _ip4ToInt(n)
-    return v !== null && FORBIDDEN_CIDRS.some((c) => { const f = _rangeOf(c); return v >= f[0] && v <= f[1] })
-  }
-  if (n.includes(':')) {
-    if (/^fe[89ab][0-9a-f]:/.test(n)) return true // fe80::/10 链路本地
-    if (/^::ffff:/.test(n)) return true // 归一失败的 mapped 残留 → 保守拒
-    return false
-  }
-  return false
-}
+// GW-2 (gap #16): 判定逻辑平移至 plugin/pentest-dsh/domain/forbidden-target.mjs(单一事实源,
+// tool-gate web_fetch 分类层同源消费) — 此处 import + 原样 re-export(导出面不变, 行为零改动)。
+import { FORBIDDEN_CIDRS as _FORBIDDEN_CIDRS, _ip4ToInt, _rangeOf, normalizeHost, isForbiddenTarget } from '../../plugin/pentest-dsh/domain/forbidden-target.mjs'
+const FORBIDDEN_CIDRS = _FORBIDDEN_CIDRS
 
 // ---- 动态 scope: control 图的活跃 Engagement.scope, 30s 刷新 ----
 let dynScope = new Set()
