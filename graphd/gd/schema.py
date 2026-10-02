@@ -57,6 +57,15 @@ SCHEMA = [
     "CREATE REL TABLE IF NOT EXISTS RELATES(FROM Endpoint TO Endpoint)",
 ]
 
+# GW-2 v2 (拍板③/N4): 节点表清单单一来源 — 从上方 SCHEMA 逐条派生(新表加进 SCHEMA 即自动
+# 进入全部消费方, 防"门清单漏表"结构性复发)。消费方: gd/gates.py WORKER_FULLSCAN_RE 闭集
+# (标签闭集由此生成, 唯一豁免见其 _WORKER_FULLSCAN_EXEMPT); 表清单对账以本常量为权威
+# (12 节点表, 2026-10 实测)。派生用正则只认本文件字面量行, 无外部输入。
+NODE_TABLES = tuple(
+    re.search(r"CREATE NODE TABLE (?:IF NOT EXISTS )?(\w+)\(", s).group(1)
+    for s in SCHEMA if s.lstrip().startswith("CREATE NODE TABLE")
+)
+
 
 def init_schema(conn):
     for q in SCHEMA:

@@ -171,6 +171,12 @@ try:
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import frontier_transition_gate
 
+# GW-2 v2 (N2): MERGE 键提取纯函数 — 容量门"命中已存在≠新建"锁内存在性检查用。同 3C 哲学。
+try:
+    from graphd.gd.gates import engagement_merge_existing_key
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import engagement_merge_existing_key
+
 # 3.6-4 段 C(C-1 反馈闭环): 转态端点带参回填的格式门与 utility 键合并(纯函数, gates.py
 # 3.6-4 段 C 区块)。同 3C 哲学: 直接从子模块导入, 两种运行形态都接住。
 try:
@@ -1474,7 +1480,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, {"ok": False, "error": "ExperienceWeight mutations require host token"})
         cypher_raw = req.get("cypher", "")
         # I-009: 三个门已提取为 finding_gates 纯函数，单点调用（防复刻漏检）
-        ok, err = finding_gates(cypher_raw)
+        # GW-2 v2 (gap #4): 参数化载荷并入扫描文本 —— `title:$t` 使三正则子门全 miss(gatewarden
+        # 实锚)。别名回注: 把 params 绑定值以 `title:'…'/severity:'…'` 形态追加进被扫文本,
+        # 既有提取正则直接可见(签名零变更: finding_gates 形参不变)。有界(4KB+单值 200 字符截断);
+        # fail-closed: params 里的合法词面误报=拒绝方向可接受。
+        _fg_text = cypher_raw
+        if "$" in cypher_raw and "Finding" in cypher_raw:
+            try:
+                import re as _fg_re
+                _params = req.get("params") or {}
+                _blob = json.dumps(_params, ensure_ascii=False)[:4096]
+                for _pat, _cap in ((r"title\s*:\s*\$(\w+)", 200), (r"severity\s*:\s*\$(\w+)", 40)):
+                    for _m in _fg_re.finditer(_pat, cypher_raw):
+                        _v = str(_params.get(_m.group(1), ""))[:_cap].replace("'", "")
+                        _blob += f" {_m.group(0).split(':')[0].strip()}: '{_v}'"
+                _fg_text += " " + _blob
+            except Exception:
+                pass
+        ok, err = finding_gates(_fg_text)
         if not ok:
             code = 403 if "DDL" in err else 400
             return self._send(code, {"ok": False, "error": err})
@@ -1490,21 +1513,27 @@ class Handler(BaseHTTPRequestHandler):
                         _c1 = kuzu.Connection(db())
                         _r1 = _c1.execute("MATCH (e:Engagement) WHERE e.status IN ['active','requested'] RETURN count(e)")
                         _n_active = int(list(_r1.get_next())[0]) if _r1.has_next() else 0
-                        _cap = int(os.environ.get("P2P_MAX_ACTIVE", "4"))
-                        if _n_active >= _cap:
-                            return self._send(409, {"ok": False, "error": f"active engagements {_n_active} >= cap {_cap} — 先冻结部分 engagement 再新建(面板可管理)"})
+                        # GW-2 v2 (N2): 容量上限取值/话术收敛到 engagement_cap_gate 单一来源 ——
+                        # 本外层段原 inline int(os.environ...) 无回退(坏 P2P_MAX_ACTIVE → ValueError
+                        # → 503), 与锁内权威段 gates._max_active_cap 回退默认 4 形成分叉(实锚)。
+                        # 统一为坏值回退默认 4(两段同源); MERGE 形态不进本外层预检(命中已存在≠新建
+                        # 的存在性豁免在锁内权威段做, 外层无图会话, 预检 MERGE 会在 cap 满时误杀
+                        # 合法更新 —— 三通道 lifecycle-ops/panel/ab-compare 均 CREATE 形态零影响)。
+                        _cap_err = engagement_cap_gate(_n_active)
+                        if _cap_err:
+                            return self._send(409, {"ok": False, "error": _cap_err})
                     except Exception as e:
                         return self._send(503, {"ok": False, "error": f"max-active check failed (fail-closed): {str(e)[:120]}"})
             # H15 配套: Endpoint 写入的值改走 $params(spa-render 参数化)后不再出现在 cypher 文本,
             # 红线/scope 扫描必须连 params 一起看, 否则形成「参数化即绕过 scope/denylist 门」的旁路。
-            # 仅限 cypher 触及 Endpoint 的写入 —— ExperienceWeight 等跨项目共享文本里的他项目 URL
-            # 不受影响(那是既有 params 旁路的已知留白, 不在本审计范围)。
+            # GW-2 v2 (gap #9): params 恒扫 —— 原仅 Endpoint 写入附带 params, 其余写入的 params
+            # 是注释自认的已知留白(v1 豁免被本批低成本池翻案)。恒扫(bounded 4KB); ExperienceWeight
+            # 等跨项目共享文本里的他项目 URL 一并纳入(更紧方向, fail-closed)。
             _scan_blob = cypher_raw
-            if "Endpoint" in cypher_raw:
-                try:
-                    _scan_blob += " " + json.dumps(req.get("params") or {}, ensure_ascii=False)
-                except Exception:
-                    pass
+            try:
+                _scan_blob += " " + json.dumps(req.get("params") or {}, ensure_ascii=False)[:4096]
+            except Exception:
+                pass
             urls = _re.findall(r"https?://[A-Za-z0-9.\-]+", _scan_blob)
             hosts = set()
             for u in urls:
@@ -1691,11 +1720,27 @@ class Handler(BaseHTTPRequestHandler):
                     # 旧实现预检在外层独立锁窗口(:1197 一带), CREATE 在此处另一次加锁执行,
                     # 两并发请求可同时过检再双双 CREATE, P2P_MAX_ACTIVE 上限被并发击穿(TOCTOU)。
                     if is_engagement_create(cypher):
-                        _r1 = conn.execute("MATCH (e:Engagement) WHERE e.status IN ['active','requested'] RETURN count(e)")
-                        _n_active = int(list(_r1.get_next())[0]) if _r1.has_next() else 0
-                        _cap_err = engagement_cap_gate(_n_active)
-                        if _cap_err:
-                            return self._send(409, {"ok": False, "error": _cap_err})
+                        # GW-2 v2 (N2/拍板③): MERGE 命中已存在 ≠ 新建 —— 同锁内先按 {name:$k|'k'}
+                        # 点查存在性(参数绑定), 命中=更新语义不计容量; 键不可提取(形态偏离/多 MERGE)
+                        # → 按新建计容量(fail-closed)。外层纵深预检仅 CREATE(见上段注释)。
+                        _merge_key = engagement_merge_existing_key(cypher)
+                        _is_existing_update = False
+                        if _merge_key is not None:
+                            if "param" in _merge_key:
+                                _mk = conn.execute(
+                                    "MATCH (e:Engagement {name:$k}) RETURN count(e)",
+                                    parameters={"k": str(params.get(_merge_key["param"], ""))})
+                            else:
+                                _mk = conn.execute(
+                                    "MATCH (e:Engagement {name:$k}) RETURN count(e)",
+                                    parameters={"k": _merge_key["value"]})
+                            _is_existing_update = int(list(_mk.get_next())[0]) > 0 if _mk.has_next() else False
+                        if not _is_existing_update:
+                            _r1 = conn.execute("MATCH (e:Engagement) WHERE e.status IN ['active','requested'] RETURN count(e)")
+                            _n_active = int(list(_r1.get_next())[0]) if _r1.has_next() else 0
+                            _cap_err = engagement_cap_gate(_n_active)
+                            if _cap_err:
+                                return self._send(409, {"ok": False, "error": _cap_err})
                     res = conn.execute(cypher, params)
                     # H13: 行数上限封顶(bounded_rows 纯逻辑供 pytest) — 大图全量缓冲 OOM 面
                     rows, truncated = bounded_rows(res)
