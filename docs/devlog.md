@@ -192,3 +192,11 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 子 agent 协作（先例 11）：2 派（定义实锚考古/现状差距矩阵并行）——考古派穷尽 9 tag+stash+悬空 commit+workflow-runs+.mimosa 仍零命中（检索路径逐项声明）；差距派产出门体系全清单（graphd 14+门全 pytest/plugin 12+门全 mocha）与既有对抗测试盘点；硬结论主 agent 复证五条全过（roadmap 原文/v1 对照/gatewarden 唯一性/契约链禁区身份/8-4 已覆盖抽查）
 教训沉淀：**定义考古的"检索路径声明"与结论同等重要**——"零命中"只有在列出找过哪里之后才是证据（9 tag 逐个 grep+悬空对象+workflow-runs 全列）；一句话概称子项的处理分型：定义自足可先行（8-3 字面完整）/定义缺失不脑补（8-2 异构化语义/8-4 作用域——登记待用户补充而非按名字脑补设计）；上游规划语境的子项入仓时必须同步带定义原文，否则考古成本远超书写成本（本批 2 派 571s+609s）
 开放项：三子项定义补充请求（拍板点 1）/N-of-M 补记请求（拍板点 2）/8-2 failover 共用槽牵动面与 hardDeadline 交互未逐行核（实施批前置审计项）
+
+## 2026-10-02 · T4-3-1 gatewarden 门禁对抗测试（阶段 8 首实施批，8-3）
+底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest 394（+26 对抗）/ mocha 1928（+32 对抗）/ panel 88（零回归）
+产出：对抗样本库三件套（tests/gatewarden/test_gatewarden_graphd.py 26 用例[13 gap+13 blocked]/plugin test/gatewarden-plugin.test.mjs 24 用例[15 gap+9 blocked]/test/gatewarden-combo.test.mjs 8 组合链）+ docs/gatewarden-report.md（36 条 gap 分级清单🔴可绕过/🟡降级拦截/🔵告警缺失+对照 gate-coverage-gaps.md+7 条新发现）+ 双向断言形态（blocked=回归守护/gap=登记+反向守护防清单腐烂）+ N-of-M 放弃补记（拍板②闭环：v1 2-of-2 为终态）+ state/roadmap 终态
+关键裁决：**对抗样本必须以被测门真实签名与真实 fixture 形态驱动**——四轮探针实证：checkBash 三参位置调用+eng={scope} 直接对象，对象形态调用产生全量虚假 DENY，错误 fixture 差点把两条 🔴 P0 级 gap（DESTRUCTIVE 引号变体/bash 重定向写系统路径）洗成"已覆盖"（首两轮"全拦"为假象，修正签名后实锤零拦截/绕过）；gap 36 条（28 明细分级 🔴10/🟡11/🔵7+8 组合链单列——分级计数以 docs/gatewarden-report.md §二明细为准）——P0 级：bash 重定向写系统路径零拦截（write-gate 只看工具名+DESTRUCTIVE 无重定向规则）、Gate-V 塞料+假锚 verified 假阳性全链、缺省 P2P_APPROVAL_MODE=off 七工具零事前拦截、DESTRUCTIVE 编码面、FULLSCAN_RE 标签闭集缺五表；攻击者视角纯粹性兑现（发现不修，修复批候选集中登记）；评测集同源靶场地基交付（58 用例可直接复用）
+子 agent 协作（先例 11）：2 派门体系盘点（graphd 侧 16 门+清单外 12 项/plugin 侧 12 门+run-injection 前身形态分析）；对抗用例生成主 agent 自做（质量核心）；盘点预测 vs 实测诚实账入报告 §三（两条 P 级预测首轮被错误 fixture 推翻又四轮修正实锤——子 agent 报告是输入不是事实的先例 11 纪律再次验证，且主 agent 的探针自身也要过"签名正确性"关）
+教训沉淀：**错误 fixture 比无测试更危险**——虚假 DENY 给人"门在工作"的错觉（首两轮结论写进 docs 前被第三轮探针自检抓住：裸形态 DENY 与引号形态 PASS 的差异才是判别性证据，全同结果=fixture 无效信号）；双向断言的反向守护设计（gap 用例断言"绕过成立"，修复后自动失败提示撤清单——对抗资产不腐烂的机制化）
+开放项：**36 条 gap 全清单**（docs/gatewarden-report.md §二——本批最大产出，修复归用户排批的"门禁收紧批"）；gap 23 DNS rebinding 复现归评测集（可控 DNS 环境）；下一批=评测集跑测（拍板排期，样本库=同源靶场）→ T4-3-2
