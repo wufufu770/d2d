@@ -1,15 +1,22 @@
 # d2d 当前状态（活文档，每批收尾必更新）
 
 > 本文件是项目唯一状态真相源。批次回报的「状态文档更新」节执行更新。
-> 以下底账时点：HD-1 落库（T3-1 收官 `f115f6d` 之后；HD-1 合并后 HEAD 顺延，
-> 以 `git log -1` 实测为准）。
+> 以下底账时点：T3-3-2 收官（tag `t3-3-stage65` / `8aa8f60`）；本批文档校准后
+> HEAD 顺延，以 `git log -1` 实测为准。
 
 ## 当前底账
-- 远端 HEAD：T3-2-5 收官族末 commit（落库后以 `git log -1` 实测为准）
-- 分支：main 唯一活跃；31 个远端分支保留（历史基线/archive 回滚点，T4-5 清理）
+- 远端 HEAD：T3-3-2 收官族末 commit `8aa8f60`（收官 tag `t3-3-stage65`；
+  落库后以 `git log -1` 实测为准）
+- 分支：main 唯一活跃（实测 1 个远端分支；T4-5 的老基线分支清理已提前执行，
+  回滚点改由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
 - 工作树：0 改动
-- CI：三 workflow（ci/dsh-compat/gates）全绿（T3-2-5 收官 run 以 gh 实测为准）
-- 测试基线（T3-3-2 固化）：pytest **368** / mocha **1896** / panel **88**
+- CI：三 workflow（ci/dsh-compat/gates）全绿（T3-3-2 收官 run 以 gh 实测为准；
+  HEAD 8 个 check-run 全 success）
+- 测试基线（T3-3-2 固化）：pytest **368**（口径 = `pytest tests/` 全目录 6 个
+  test_*.py 合计；单跑 test_graphd_gates.py 仅 298 例，差额 70 例来自
+  test_audit_alert / test_gate_anchor / test_injection_sampling / test_repairability /
+  test_transition_log——此前这 5 个文件不在 ci.yml 与 gates.yml 执行范围内，
+  本批起两处均改跑全目录 `tests/`）/ mocha **1896** / panel **88**
 - stack：graphd :8766 ✅ / egress :8888 ✅（MITM 启用）/ oast :8890 ✅ /
   cdp-proxy :8893 ✅ 常驻 enable / dsh web :8899 按需（HD-1 审计时点未起）；
   SPA/DVWA 靶场就绪
@@ -50,7 +57,7 @@ T3-3-0 ✅（**6.5 前置审计+拆批方案**[只读批]：docs/t3-3-plan.md—
 [既有 /query 通道零新增 endpoint]/授权数字化 ed25519 零依赖实测通过无阻断/8.5 定级
 [看板并入/变异缩水/评测半自动]/3 实施批建议；**子 agent 并行派发首例**[4 派 1 自做，
 硬结论四条复证全过]；**等用户拍板 §7 后进 T3-3-1**）
-下一步建议：**等用户对 docs/t3-3-plan.md §7 五个拍板点拍板** → T3-3-1 可视化数据面+三图
+下一步建议（历史·T3-3-0 时点，已完成）：**等用户对 docs/t3-3-plan.md §7 五个拍板点拍板** → T3-3-1 可视化数据面+三图
 （拍板前 T4-2 存储/T4-3 信任/T4-4 OTel 材料准备可穿插）/
 T3-3-1 ✅（**可视化数据面+三图+能力看板卡**[§7 已拍板, 顺序 1→3→2]：host 四路由
 [starmap/coverage/hypotheses/capability, 独立微缓存, graphd 零改动零新增 endpoint,
@@ -58,7 +65,7 @@ capability 静态读 fail-soft]+三图纯函数[buildStarmap/buildCoverage/build
 $eng/$since 参数绑定]+d2d:viz tab[自绘 SVG/CSS grid 零图表库, 渲染护栏 200 节点/300 边/
 泳道窗口 chips+localStorage+钳位 1..90 天]+#24 顺手两件[panel host 路由测试盲区补齐/
 manifest"五形态"注释勘误]）
-下一步建议：**T3-3-3 授权契约数字化**（拍板顺序 1→3→2；ed25519 契约模块+四挂接点+
+下一步建议（历史·T3-3-1 时点，已完成）：**T3-3-3 授权契约数字化**（拍板顺序 1→3→2；ed25519 契约模块+四挂接点+
 P2P_AUTH_CONTRACT 缺省 off）/
 T3-3-3 ✅（**授权契约数字化落地**[安全敏感度最高批]：domain/auth-contract.mjs 套件模块
 [一体签名+ed25519+六失败面归并三态+seen-auth 双维记忆]+authctl CLI[keygen/keys/issue/
@@ -66,7 +73,7 @@ verify]+四挂接点纯新增接线[startEngagement 顶部覆盖 adopt/p2p_start
 组合层 T0-C 同位/egress refreshScope 整集校验 H14 同位]——**全部零降级**；验签失败不放行
 [invalid/expired 恒拒, 灰度 off 只豁免 missing]；P2P_AUTH_CONTRACT 缺省 off；授权与审批
 正交维持；hostAllowed 空 scope 不补收紧[测试锁定现状]；runbook docs/auth-contract-runbook.md）
-下一步建议：**T3-3-2 收官批**（桑基+9 标签页补全+侧边栏收口；收官 tag t3-3-stage65）/
+下一步建议（历史·T3-3-3 时点，已完成）：**T3-3-2 收官批**（桑基+9 标签页补全+侧边栏收口；收官 tag t3-3-stage65）/
 T3-3-2 ✅（**6.5 收官批=T3-3 整体收官**[tag t3-3-stage65]：桑基数据面[transition-log
 host 侧聚合 readTransitionFlows+SankeyChart 家族过滤零重取, 入 d2d:viz]+五新 tab
 [approval 63/chain 64/tools 65/audit 66/config 67——审批纯 client 消费零后端零审批门/
@@ -75,7 +82,7 @@ host 侧聚合 readTransitionFlows+SankeyChart 家族过滤零重取, 入 d2d:vi
 四部分补全[总览 sev 计数列+per-eng token 总耗 attachEngCosts/前沿提案池+评审代理
 frontierTransition reviewer 钉死 panel]+侧边栏对等三分法收口[豁免全清单
 docs/t3-3-finale.md §四]+禁区 grep 断言测试[auth-contract/tier-approval 零出现]）
-下一步建议：**T4-2 优先**（评测集跑测立项卡见下；T4-2/T4-3/T4-4 可并行）
+下一步建议（**当前唯一有效**·T3-3-2 收官时点）：**T4-2 优先**（评测集跑测立项卡见下；T4-2/T4-3/T4-4 可并行）
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
@@ -155,7 +162,7 @@ spa-verify-acceptance,spa-attack-acceptance}.md · scripts/ops/verify-dsh-versio
 scripts/ops/dvwa-reset.sh · scripts/browser/{cdp-proxy,cdp-client,form-fuzzer,
 logic-tester,race-condition}.mjs · scripts/gateway/{egress-gateway,tls-intercept,
 evidence-crypto}.mjs · scripts/brain/{study,promote,validate-cards,consensus-check,
-misses-report,experience-metrics}.mjs · tools/js-scanner.mjs ·
+misses-report,experience-metrics}.mjs · plugin/pentest-dsh/tools/js-scanner.mjs ·
 scripts/mcp/d2d-mcp-server.mjs · config/mcp-export.json · config/mcp-servers.json ·
 plugin/pentest-dsh/scheduler/{approval-agent,subagent-cap,bias-block,trust,
 tier-approval,external-tools,supervisor-tools,idle-tasks}.mjs ·
@@ -164,5 +171,5 @@ plugin/pentest-dsh/domain/auth-contract.mjs · scripts/ops/authctl.mjs ·
 docs/auth-contract-runbook.md ·
 plugin/pentest-dsh/domain/{card-schema,
 experience-consensus,knowledge-gaps,experience-metrics,memory-store,sanitize-ingest,
-mcp-discovery,role-card-filter}.mjs · har-capture.mjs
+mcp-discovery,role-card-filter}.mjs · plugin/pentest-dsh/har-capture.mjs
 （路径均经 HD-1 审计核实存在）
