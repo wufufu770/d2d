@@ -14,10 +14,9 @@
 - 工作树：0 改动
 - CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-2 收官 run=ci 37097982772/
   gates 37097982773/dsh-compat 37097982782 实测；本行曾停 GW-2 v1 时点，PLAN-1 偿还）
-- 测试基线（T4-3-2 固化）：pytest **412**（+6 共识 v2）/ mocha **1948** / panel **88**
-  （口径 = `pytest tests/` 全目录 / `npx mocha test/` / panel `npm test`；
-  HYG-1 期 406/1948/88——本行曾漏更，PLAN-1 偿还；T4-3-3-0 期 mocha 1951=+3 symlink
-  用例，随 T4-3-3 实施批一并固化入底账）
+- 测试基线（EV-2 固化）：pytest **412** / mocha **1955**（+4 采集单测；+3 symlink 用例随
+  T4-3-3-0 在库——PLAN-1 底账曾写 1948 并注"1951 随批固化"，实测修正=1955）/ panel **88**
+  （口径 = `pytest tests/` 全目录 / `npx mocha test/` / panel `npm test`）
 - CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
   来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
   （npm ci 确定性安装）
@@ -188,14 +187,27 @@ T4-3-3-0 ✅（**8-2 双签升级前置审计**[只读+#26]：docs/t4-3-3-plan.m
 风险面）+reasoning_path 为 8-2a 天然接点（净室兼容：经验先验非第一签结论）；**异构语义方案卡**
 [模型异构主选（id 级，M3/M2.7 现状已满足零迁移）/密钥异构独立小批候选/实现异构不选；
 8-2a=dualFocus 背景参考段 P2P_DUAL_BRIEF_EXP 缺省 off；强制边界=critical/high 维持+
-P2P_HETERO_ENFORCE warn 缺省/strict 拒配；dual_sign 转态门收编=11 处端点化]——**等用户确认
-后进 T4-3-3**；按行授权申请三条（scheduler 簿记 11 处/dualFocus 段/新端点）；承前补办：
-#26 write-gate symlink realpath 落地[升级判定+3 用例, /bin/sh 真身 symlink 改判 matched
-双形态]+夹具纪律先例 14（AGENTS）+/home/ 扫描=现存字面量均测试注入向量零需改+dependabot/
-mods 分支核查报告；基线 pytest 412/mocha **1951**/panel 88）
-下一步建议（**当前唯一有效**·T4-3-3-0 时点，PLAN-1 单值化校准）：**等用户对异构语义方案卡（t4-3-3-plan §二）
-确认** → T4-3-3 实施批（a+c+收编三件）；**EV-2 端到端评测换挡期已到**（方案确认等待期可插入，
-roadmap 待执行批次规划 #4）；T4-3-4 调和+8-4 L1+收官衔接既定
+P2P_HETERO_ENFORCE warn 缺省/strict 拒配；dual_sign 转态门收编=11 处端点化]——**用户已确认**
+（模型 id 级+warn 缺省+材料增强 off 缺省+11 处收编），实施排 EV-2 后；按行授权申请三条
+（scheduler 簿记 11 处/dualFocus 段/新端点）；承前补办：#26 write-gate symlink realpath 落地
+[升级判定+3 用例, /bin/sh 真身 symlink 改判 matched 双形态]+夹具纪律先例 14（AGENTS）+/home/
+扫描=现存字面量均测试注入向量零需改+dependabot/mods 分支核查报告）
+EV-2 ◐（**端到端实弹评测缩批**[立项卡 8.5；实弹缓行登记]：N-0 六项全锚——**新发现=调度宿主
+缺口**[调度环在 dsh web 会话宿主（cordis.patch.yml 装载），无 attended 启动路径，历史实弹
+eng-0928=用户会话期所跑——前置链断裂点]；DVWA 就绪交付[容器起+reset 全过+login 200]；
+**采集设施交付** experiments/eval-e2e-collect.mjs[--eng 隔离只读, 全参数绑定]+单测 4；
+五指标口径定稿[**token 数无采集设施→worker·时长代理面**本批补口径]；实弹 runbook=报告 §5
+[用户会话辅助执行步骤]；缩批裁决=宿主缺口按止损精神不硬凑不工程化；**实弹执行二选一归用户**
+[①会话辅助 ②宿主工程化立项]；报告 docs/eval-run-2-e2e.md；基线 pytest **412**/mocha
+**1955**/panel 88）
+下一步建议（**当前唯一有效**·EV-2 时点，PLAN-1 单值化承接）：**实弹执行二选一归用户**——①dsh
+web 会话辅助执行（docs/eval-run-2-e2e.md §5 runbook，DVWA 已就绪+采集脚本已备）②attended
+宿主工程化立项（4-3a 形态）；执行后后续批承接报告数据回填与裁决清单；**T4-3-3 实施待异构
+方案确认**（用户已确认方案=t4-3-3-plan §二组合，实施排 EV-2 后）
+下一步建议（**当前唯一有效**·EV-2 时点，PLAN-1 单值化承接）：**实弹执行二选一归用户**——①dsh
+web 会话辅助执行（docs/eval-run-2-e2e.md §5 runbook，DVWA 已就绪+采集脚本已备）②attended
+宿主工程化立项（4-3a 形态）；执行后后续批承接报告数据回填与裁决清单；**T4-3-3 实施待异构
+方案确认**（用户已确认方案=t4-3-3-plan §二组合，实施排 EV-2 后）
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
