@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import unicodedata
 from datetime import datetime, timezone
 
 # R6.1: 全局黑名单(denylist.json)运行时缓存 — 启动时从文件加载, 对所有 engagement 生效
@@ -391,29 +392,84 @@ WORKER_MUTATION_RE = re.compile(
     r"\b(CREATE|MERGE|SET|DELETE|DETACH|DROP|REMOVE|COPY|EXPORT|IMPORT|ATTACH|CALL)\b", re.I)
 # 0913 C10: 跨 engagement 全表扫禁 — 共享黑板表的无谓词 MATCH 可横扫其他项目数据
 # (读隔离此前只靠 brief 里的 eng 约定, graphd 不拦)。带 WHERE 或 {prop:..} 锚(含按 id 点查)放行。
-# GW-2 (gap #1): 闭集扩 Frontier/Engagement/Plan/Handoff —— 无谓词跨项目全表读收口
-# (gatewarden 58 用例实证: worker 可横扫提案池/全项目 scope/交接摘要)。Experience/
-# ExperienceWeight 维持设计豁免不入集(gate-coverage-gaps.md call-site 决策 #7/#9/#10:
-# 跨项目共享为有意设计, callsite-eng-predicate.test.mjs:24-32 锁定 by-design)。
+# GW-2 (gap #1): 闭集扩 Frontier/Engagement/Plan/Handoff。
+# GW-2 v2 (拍板③/N4): 闭集改由 schema.NODE_TABLES 单一来源生成(新表入 SCHEMA 即自动入集,
+# 防"门清单漏表"结构性复发; 12 节点表对账 2026-10 实测)。唯一豁免 ExperienceWeight:
+# 跨项目共享为文档化设计(gate-coverage-gaps.md 决策 #9), 且 briefs discovery 经验先验查询
+# 是经 worker 通道执行的活调用点(callsite-eng-predicate.test.mjs 锁定)。Experience 自 v2
+# 起入集(拍板③ —— v1 期 by-design 豁免撤销; 经验池读方 consensus-check/promote/EvolveR
+# 均 host 通道, worker 无谓词读需求为零)。修复面用例同步翻转(红线: 断言翻转非删用例)。
+from .schema import NODE_TABLES  # noqa: E402 — 单一来源(见上); schema 不反向依赖本模块, 无环
+
+_WORKER_FULLSCAN_EXEMPT = frozenset({"ExperienceWeight"})
+_WORKER_FULLSCAN_LABELS = "|".join(re.escape(t) for t in NODE_TABLES if t not in _WORKER_FULLSCAN_EXEMPT)
+# 组3 = 内联 {..} 属性锚(v2 前该形态整体绕过本检查 — GW-2 v2 收口): 严格表须含点查键
 WORKER_FULLSCAN_RE = re.compile(
-    r"MATCH\s*\(\s*\w+\s*:\s*(Finding|Signal_|Endpoint|Task|AgentIdentity|Hypothesis|Frontier|Engagement|Plan|Handoff)\s*\)", re.I)
+    r"MATCH\s*\(\s*(\w+)\s*:\s*((?:" + _WORKER_FULLSCAN_LABELS + r"))\s*(\{[^}]*\})?\s*\)", re.I)
+
+# GW-2 v2 (N1 实锚): 无标签节点模式 MATCH (n) 命中全部节点表(0.11.3 实跑 count=全图),
+# 标签闭集结构性不可覆盖 → worker 一律拒。已知误报(模式中段无标签节点, 如
+# MATCH (f:Finding)-[r]->(x))同 C10 口径 fail-closed 可接受。
+WORKER_UNLABELED_MATCH_RE = re.compile(r"\bMATCH\s*\(\s*\w+\s*\)", re.I)
+
+# GW-2 v2 (N1 实锚): 谓词占位逃逸 — `WHERE x.name = x.name` 恒真式过"WHERE 存在"检查,
+# 实跑 6/6 行含跨项目行。内容锚按表分档(误伤面实测校准):
+# ①严格锚表 Engagement(拍板③: scope/target 是跨项目敏感面, 仅点查自己放行) ——
+#   WHERE/{} 锚须为 name/eng/eng_id/id/worker_id 对字面量或参数的点查;
+# ②一般闭集表 —— WHERE 段须含 ≥1 个「属性 vs 字面量/参数」实质比较(选择性谓词:
+#   s.weight>=3 / f.title CONTAINS 'x' 等设计内跨面读保留, briefs:64 活调用点实证),
+#   恒真式(x.x=x)/自引用(x.y=x.z)/裸常量(1=1)不构成锚。已知残余: 阈值型全匹配写法
+#   (weight>=0)静态不可判定选择性 —— 误伤与漏判不可兼得, 如实登记。
+_WORKER_STRICT_TABLES = frozenset({"Engagement"})
+_WORKER_STRICT_ANCHOR_RE = re.compile(
+    r"\.\s*(?:name|eng|eng_id|id|worker_id)\s*=\s*(?:\$[A-Za-z_]|'[^']*'|\"[^\"]*\")", re.I)
+_WORKER_QUALIFYING_PRED_RE = re.compile(
+    r"\.\s*\w+\s*(?:=|<>|!=|<|>|<=|>=|CONTAINS|STARTS\s+WITH|ENDS\s+WITH|IN)\s*(?:\$[A-Za-z_]|'[^']*'|\"[^\"]*\"|[0-9]|\[)", re.I)
+# WHERE 子句段边界(截到下一个子句关键字, 防 ORDER BY 段内的巧合命中)
+_WORKER_CLAUSE_END_RE = re.compile(r"\b(?:RETURN|ORDER\s+BY|LIMIT|SKIP|WITH|UNWIND|CALL|DELETE|SET|MERGE|CREATE|REMOVE)\b", re.I)
 
 
 def worker_query_allowed(cypher: str) -> tuple[bool, str]:
     """worker token /query 只读门: 白名单首词 + 全文变更关键字扫描 + CALL/跨项目全表扫禁(均大小写不敏感)。
     误报取舍: 字符串字面量里含独立 'set/delete' 等词的查询会被拒 —— fail-closed 方向。
     0913 C10: ①CALL 从白名单移除(Kuzu 过程调用可枚举表结构/配置元数据, worker 无需);
-    ②共享黑板表的无 WHERE/无属性锚 MATCH 拒收(须带 WHERE x.eng='<eng>' 或 {id:..} 点查)。
+    ②共享黑板表的无 WHERE/无属性锚 MATCH 拒收(须带 WHERE x.eng='<engagement>' 或 {id:..} 点查)。
+    GW-2 v2 (N1): ③无标签节点模式 MATCH (n) 拒(跨全表扫描, 实锚); ④闭集表 WHERE 须含实质
+    谓词(本节点 .eng/.id/.name/.worker_id = $参数/'字面量'; 恒真式 WHERE x.x=x 不再放行)。
     已知误报(fail-closed 可接受): 逗号连接的多标签 MATCH(如 MATCH (f:Finding),(s) WHERE ...) —
     worker 简报不产生该形态。"""
     if not WORKER_READONLY_WHITELIST.match(cypher):
         return False, "/query is read-only for workers (MATCH/RETURN/WITH only); use /write/* for mutations"
     if WORKER_MUTATION_RE.search(cypher):
         return False, "/query is read-only for workers: mutation keywords forbidden (case-insensitive)"
+    if WORKER_UNLABELED_MATCH_RE.search(cypher):
+        return False, "unlabelled node pattern forbidden: MATCH (n) scans every node table — add a :Label"
     for m in WORKER_FULLSCAN_RE.finditer(cypher):
         tail = cypher[m.end():].lstrip()
-        if not tail.startswith(("WHERE", "{", "WHERE".lower(), "{".lower())):
+        var, label = m.group(1), m.group(2)
+        inline = m.group(3)
+        if inline is not None:
+            # 内联 {..} 属性锚(GW-2 v2 收口: 该形态 v1 前不进本检查): 严格表须含点查键,
+            # 一般表非空即可(空 {} 等价无谓词)。
+            if label in _WORKER_STRICT_TABLES:
+                if not re.search(r"\b(?:name|eng|eng_id|id|worker_id)\s*:", inline):
+                    return False, ("Engagement point access requires a {name:..}/{eng:..} anchor "
+                                   "(scope/target 为跨项目敏感面 — 拍板③)")
+            elif not re.search(r"\S\s*:", inline):
+                return False, "cross-engagement full scan forbidden: empty {..} anchor — add an {id:..}/{name:..} predicate"
+            continue
+        seg = _WORKER_CLAUSE_END_RE.split(tail, maxsplit=1)[0]
+        if not seg.lower().startswith("where"):
             return False, "cross-engagement full scan forbidden: add WHERE <v>.eng='<engagement>' or an {id:..} predicate"
+        if label in _WORKER_STRICT_TABLES:
+            anchor_re = re.compile(
+                re.escape(var) + r"\s*\.\s*(?:name|eng|eng_id|id|worker_id)\s*=\s*(?:\$[A-Za-z_]|'[^']*'|\"[^\"]*\")", re.I)
+            if not anchor_re.search(seg):
+                return False, ("Engagement read must be a point/narrowed query: add <v>.name=<字面量|$参数> "
+                               "or <v>.eng='<engagement>' (恒真式/阈值式不构成锚 — 拍板③)")
+        elif not _WORKER_QUALIFYING_PRED_RE.search(seg):
+            return False, ("cross-engagement full scan forbidden: WHERE needs a selective predicate "
+                           "(<v>.prop =/'…'/>=num/CONTAINS/'…' IN $list) — 恒真式/自引用/裸常量不构成锚")
     return True, ""
 
 
@@ -467,7 +523,10 @@ def prose_denylist_hit(text_lower: str, domains) -> str:
         return ""
     # GW-2 (gap #8): 全角点号归一 — `demo-src。com`(U+3002)与 ASCII 点对域名词法等价,
     # 词面变体曾确定性 miss(gatewarden 双证)。归一只用于匹配副本(不改动入参)。
-    text_lower = text_lower.replace("。", ".").replace("．", ".")
+    # GW-2 v2 (gap #20 两副本同改): NFKC 兼容分解归一 — 全角/数学字母等兼容字形确定性折叠
+    # (与 plugin sanitize.js 同批同改 — 红线⑤)。**边界: NFKC 不折叠跨脚本同形字**(ο↔o 为
+    # confusables 非 compatibility 映射, 探针实证) — 该残余需 TR39 skeleton, 登记。
+    text_lower = unicodedata.normalize("NFKC", text_lower).replace("。", ".").replace("．", ".")
     variants = [text_lower]
     try:
         from urllib.parse import unquote
@@ -523,6 +582,26 @@ def is_engagement_create(cypher: str) -> bool:
     created_at 属性名含 CREATE」的既有 fail-closed 误报 —— 那是松方向(只紧不松红线)。"""
     c = str(cypher or "")
     return "Engagement" in c and ("CREATE" in c.upper() or "MERGE" in c.upper())
+
+
+# GW-2 v2 (N2/拍板③): MERGE 命中已存在 ≠ 新建 — 容量门只应拦"新增"。提取 MERGE (g:Engagement
+# {name:$x|'x'}) 的点查键(参数名或字面量), 供 app.py 锁内先 MATCH 存在性再决定是否计容量;
+# 键不可提取(形态偏离)→ 返回 None → 调用方按需计容量(fail-closed)。
+_ENG_MERGE_KEY_RE = re.compile(
+    r"MERGE\s*\(\s*\w+\s*:\s*Engagement\s*\{\s*name\s*:\s*(\$[A-Za-z_]\w*|'[^']*'|\"[^\"]*\")", re.I)
+
+
+def engagement_merge_existing_key(cypher: str):
+    """提取 MERGE (…:Engagement {name:$k|'k'}) 的键 → {'param': '$k'} / {'value': 'k'};
+    非 MERGE/无 name 点查键/多 MERGE 形态不清 → None(调用方按需新建计容量, fail-closed)。"""
+    c = str(cypher or "")
+    if "MERGE" not in c.upper():
+        return None
+    ms = _ENG_MERGE_KEY_RE.findall(c)
+    if len(ms) != 1:
+        return None
+    k = ms[0]
+    return {"param": k[1:]} if k.startswith("$") else {"value": k[1:-1]}
 
 
 def engagement_cap_gate(n_active, cap=None) -> str:
