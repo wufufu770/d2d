@@ -168,8 +168,20 @@ standalone endsWith→pathToFileURL+match-site fileURLToPath 编码修复]；**�
 ARCHITECTURE 节点清单对齐 schema[Signal_ 无 host 列/Endpoint host/port 派生]；**吞错清点分级**
 [python 35=记因 17+模式性 11+有兜底 5+补记因 2, js 空 catch 146 归后续, docs/hyg1-swallowed-errors.md]；
 基线 pytest **406**/mocha 1948/panel 88）
-下一步建议（**当前唯一有效**·HYG-1 时点）：**T4-3-2 共识验证 v2 实施**（schema 草案
-t4-3-2-plan §五等用户确认后进）；js 空 catch 146 处逐文件补因与 #26 按行授权池归后续批
+下一步建议（历史·HYG-1 时点，已完成）：T4-3-2 共识验证 v2 实施（schema 已确认）/ js 空 catch
+146 处补因与 #26 按行授权池归后续批/
+T4-3-2 ✅（**8-1 共识验证 v2 实施**[推理路径字段入库, 授权链=拍板⑥+schema 确认]：Experience
+14→16 列三处同步[reasoning_path/consensus_status]+权威文档 docs/experience-consensus-schema.md
+[含 evidence_refs 口径说明=引用从宽/结论从严+do-not-touch :20-21 按行修订]；A 面 /write/experience
+可选 reasoning_path[redact→形态门→注入扫描源扩展, soft 不加前缀防破 JSON]；B 面 host-only
+/write/experience-consensus[枚举白名单+superseded 存在性校验=细化①+SET 单列]；consensus-apply.mjs
+[dry-run 缺省]+promote 前置信号 v2[v1 保留+读 consensus_status 报 superseded]；**生产迁移实证**：
+bak-20261003-1221 快照先行→在线 ALTER×2→**9 行 14 列逐行零破坏**→graphd 重启[init_schema
+幂等+16 列校验+新端点 403 红线②实证]→**回填 9 条=consistent×9/superseded 0**[与 v1 零分歧一致,
+reasoning_path 不伪造=非空 0 行]→归档 smoke[EXPORT copy.cypher **16 列**+IMPORT 往返行数 9]；
+增量核查=GW-2 v2 新面零影响；基线 pytest **412**/mocha 1948/panel 88）
+下一步建议（**当前唯一有效**·T4-3-2 时点）：阶段 8 收官候选[T4-3-3 双签 a+c 层（异构语义等
+用户拍板项见 t4-3-plan §五）/T4-3-4 调和+8-4 L1+收官]归用户排批；阻断语义留 v3
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
