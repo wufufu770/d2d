@@ -349,7 +349,9 @@ def finding_gates(cypher: str) -> tuple[bool, str]:
         # 垃圾洞清单门
         t = _re.search(r"title\s*:\s*[\"'](.*?)[\"']", cypher)
         if t:
-            tv = t.group(1).lower()
+            # GW-2 (gap #5): 空白归一 — 词表匹配此前为裸子串, 多空格/制表符变体
+            # (`no   rate   limit`)确定性逃逸(gatewarden 双证)。归一只用于匹配副本。
+            tv = _re.sub(r"\s+", " ", t.group(1).lower())
             if any(j in tv for j in JUNK_PATTERNS):
                 return False, f"garbage-listed finding rejected: {tv[:60]}"
         # 0917: 鉴权档位门(微博实证教训固化) — high/critical 必须注明档位, 防 worker 过度宣称
@@ -389,8 +391,12 @@ WORKER_MUTATION_RE = re.compile(
     r"\b(CREATE|MERGE|SET|DELETE|DETACH|DROP|REMOVE|COPY|EXPORT|IMPORT|ATTACH|CALL)\b", re.I)
 # 0913 C10: 跨 engagement 全表扫禁 — 共享黑板表的无谓词 MATCH 可横扫其他项目数据
 # (读隔离此前只靠 brief 里的 eng 约定, graphd 不拦)。带 WHERE 或 {prop:..} 锚(含按 id 点查)放行。
+# GW-2 (gap #1): 闭集扩 Frontier/Engagement/Plan/Handoff —— 无谓词跨项目全表读收口
+# (gatewarden 58 用例实证: worker 可横扫提案池/全项目 scope/交接摘要)。Experience/
+# ExperienceWeight 维持设计豁免不入集(gate-coverage-gaps.md call-site 决策 #7/#9/#10:
+# 跨项目共享为有意设计, callsite-eng-predicate.test.mjs:24-32 锁定 by-design)。
 WORKER_FULLSCAN_RE = re.compile(
-    r"MATCH\s*\(\s*\w+\s*:\s*(Finding|Signal_|Endpoint|Task|AgentIdentity|Hypothesis)\s*\)", re.I)
+    r"MATCH\s*\(\s*\w+\s*:\s*(Finding|Signal_|Endpoint|Task|AgentIdentity|Hypothesis|Frontier|Engagement|Plan|Handoff)\s*\)", re.I)
 
 
 def worker_query_allowed(cypher: str) -> tuple[bool, str]:
@@ -459,6 +465,9 @@ def prose_denylist_hit(text_lower: str, domains) -> str:
     unquote(percent-decode, 覆盖双重编码), 原文/解码文任一命中即返回该域名条目, 未命中返回 ''。"""
     if not text_lower or not domains:
         return ""
+    # GW-2 (gap #8): 全角点号归一 — `demo-src。com`(U+3002)与 ASCII 点对域名词法等价,
+    # 词面变体曾确定性 miss(gatewarden 双证)。归一只用于匹配副本(不改动入参)。
+    text_lower = text_lower.replace("。", ".").replace("．", ".")
     variants = [text_lower]
     try:
         from urllib.parse import unquote
@@ -469,6 +478,22 @@ def prose_denylist_hit(text_lower: str, domains) -> str:
                 break
             _dec = _n
             variants.append(_dec)
+    except Exception:
+        pass
+    # GW-2 (gap #8): 十进制整数 IP 还原副本 — `http://2130706433/` ≡ 127.0.0.1, 结构化扫描
+    # 的点分正则与域名条目都配不上(gatewarden 双证 miss)。7-10 位数字 run 生成点分还原副本。
+    try:
+        import re as _re_mod
+
+        def _dec_ip_sub(v: str) -> str:
+            def _cv(m: "_re_mod.Match") -> str:
+                n = int(m.group(0))
+                if n <= 0xFFFFFFFF:
+                    return f"{(n>>24)&255}.{(n>>16)&255}.{(n>>8)&255}.{n&255}"
+                return m.group(0)
+            return _re_mod.sub(r"(?<![\d.])\d{7,10}(?![\d.])", _cv, v)
+
+        variants.extend(_dec_ip_sub(v) for v in list(variants))
     except Exception:
         pass
     for _raw in domains:
@@ -491,10 +516,13 @@ def _max_active_cap() -> int:
 
 
 def is_engagement_create(cypher: str) -> bool:
-    """H12: 识别 Engagement CREATE 写入(纯函数供 pytest) — 与外层容量预检同一判定口径
-    (字符串包含而非正则, 与既有外层门一致: 注入面由 /query 只读门+host token 把守)。"""
+    """H12: 识别 Engagement CREATE/MERGE 写入(纯函数供 pytest) — 与外层容量预检同一判定口径
+    (字符串包含而非正则, 与既有外层门一致: 注入面由 /query 只读门+host token 把守)。
+    GW-2 (gap #3): 谓词扩 MERGE —— 原判定不含 MERGE 子串, `MERGE (g:Engagement ...)` 整体
+    绕过容量门(gatewarden 双证)。保留子串语义不加词边界: 词边界会消除「读 Engagement +
+    created_at 属性名含 CREATE」的既有 fail-closed 误报 —— 那是松方向(只紧不松红线)。"""
     c = str(cypher or "")
-    return "Engagement" in c and "CREATE" in c.upper()
+    return "Engagement" in c and ("CREATE" in c.upper() or "MERGE" in c.upper())
 
 
 def engagement_cap_gate(n_active, cap=None) -> str:
