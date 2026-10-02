@@ -44,6 +44,8 @@ function readToken() {
 }
 
 async function query(cypher, token) {
+  // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request — 本机 loopback 探针:
+  // 127.0.0.1:8766 为代码内固定常量(graphd 仅 HTTP 形态), 非外部请求, 不走 TLS 无泄露面(决策书附录 B 同口径)。
   const res = await fetch('http://127.0.0.1:8766/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Auth': token },
