@@ -64,11 +64,34 @@
 **关键约束（官方实锚）**：
 - hook 自身执行时间上限 10 秒，**但花在 `next` 与 `$` 调用上的时间不计入**。
 - `$.process.run` 超时默认 30 秒、**上限 10 分钟**；后台进程持续写入会一直挂到超时才 reject。
-- `$.process.spawn` 为流式 async generator —— 但**仅 ≥2.1.287 存在**（本仓 `claude-code.d.ts` 自述 2.1.277，缺此方法）。
+- `$.process.spawn` 为流式 async generator —— 沙箱 2.1.287 **已实测存在**（`claude plugin validate` 识别）。
 - **≥10 分钟的长任务不得走 process**：`$.agent.spawn` **恒后台**（起后即返，答案经 `turn.complete` 回收）才是长跑通道。
 - `$.fs` 单文件 4 MiB；`$.store` 总计 4 MiB。
+- **`$` 不得跨 import**：mods API 的 `$` 只能在 hooks 模块内「同一文件声明的函数」之间传递，且必须在调用点字面拼写（`claude plugin validate` 实证，M1）。纯逻辑可拆文件复用，但 `$` 调用一律留在 hooks 文件内。
+- **`hooks.json` 的 `modules` 每插件只允许一项**（第二项被拒，M2 实证）→ 不存在「多 hooks 文件」方案，一切 hook 收敛 `register.js`。
+- **hook 必须字面**：`on("event", hook)` 处不接受工厂函数/动态循环（M2 实证），否则报「not a function literal」或过滤器退化为 `tool=?`。
+- **注册参数有运行时校验**：`$.agent.register` 的 `name` 限「字母/数字/_/-，≤64」（M2 实证，`:` 被拒）。
+- **`$` 名词不得作值读写**（M3 实证）：`Object.keys($.agent)`、`const a = $.agent` 之类一律被 parser 拒
+  （「`$.agent` is used as a value」）→ 只能字面拼 `$.noun.event(...)`。
+- **`next.to(e, "<tier>")` 仅限 managed 插件**（`prependPlugins`/`appendPlugins`），用户插件用它直接
+  「hooks module did not load」（M3 实证）→ 用户插件只有 `next(e)` 一条续传路径。
 
-> 📌 以上经 Phase 2 前置审计修正，详见 `docs/mods-port-phase2-audit.md`。
+> **M3 追加实锚（agent.spawn / turn.complete 契约，2026-10 沙箱实测）**：
+> - `$.agent.spawn({ name, prompt, ... })` 的宿主封装（`Yp`）= `{ tool:"Agent", prompt, description,
+>   run_in_background:true(缺省), name }`；**恒后台**。
+> - **agent.spawn hook 的返回**：`{ model }` 或 `{ deny }`（`{value:…}` 形态非法，报「neither { model }
+>   nor { deny }」）。宿主再经 `{ model: result.resolvedModel ?? opt.model ?? "inherit",
+>   agentId: result.agentId }` 组最终结果 —— 即 **hook 要给 `{ model, result:{ agentId, resolvedModel } }`
+>   才会带出 `agentId`**；只给 `{model}` 则返回值无 `agentId`（编排追踪会失效）。
+> - **turn.complete 事件** = `{ agentId:<string>, answer:<string>, usage? }`（`checkArgument` 强制
+>   `answer` 为字符串且 `agentId` 与派发一致）。
+> - **turn.complete hook 必须返回结果对象**（镜像 core 缺省 `(e)=>({text:e.answer, ...(e.usage&&{usage})})`）；
+>   用户插件 `next(e)` 在无 core 实现时抛「no implementation for turn.complete」，`return e` 同抛。
+>   → 本插件 `turnPassthrough(e)` 即该等价返回。
+> - 测试 harness 里 `http.fetch`/`process.run` 等 hook 事件形如 `($, e)`：`e.fetch = { url, init }`、
+>   `e.run = { argv, init }`（**不是** `(url, init)`）——离线断言按此取值。
+
+> 📌 以上经 Phase 2 前置审计 + M1 实证修正，详见 `docs/mods-port-phase2-audit.md`。
 
 ---
 
@@ -98,27 +121,37 @@
 
 ---
 
-## 4. 目录骨架（新增）
+## 4. 目录骨架（新增；已按 M1/M2 实证修正）
 
 ```
 plugin/d2d-mods/
 ├── .claude-plugin/plugin.json
-├── hooks/hooks.json               { "modules": ["./register.js"] }
-├── hooks/register.js              入口
-├── hooks/tools.js                 session.start → $.tool.register ×10
-├── hooks/agents.js                session.start → $.agent.register ×24
-├── hooks/commands.js              session.start → $.command.register + command.run
-├── hooks/gates.js                 tool.call / tool.check / config.set
-├── hooks/sanitize.js              session.append → 改写 content
-├── hooks/context.js               session.compact / prompt.section / prompt.context
-├── hooks/supervise.js             $.agent.spawn + turn.complete 编排
-├── hooks/ui.js                    ui.render → 状态行
-├── core/domain/                   23 纯模块（只读镜像）
-├── core/graphd-client.js          $.http 封装（新写）
-└── types/index.d.ts
-
-scripts/ops/sync-core.mjs          vendor 同步 + 哈希校验
+├── hooks/hooks.json               { "modules": ["./register.js"] }  ← 只允许一项
+├── hooks/register.js              唯一 hooks 模块：门 · 注册 · 状态行（$ 调用全在此文件内）
+├── src/domain/*.mjs               纯净域模块只读镜像（22 个；node: 传染的 13 个不镜像）
+├── src/roles.generated.js         24 角色 → 纯数据（由 sync-core 生成）
+├── src/tools.generated.js         8 工具元数据 / JSON Schema（由 sync-core 生成）
+├── src/CORE_MANIFEST.json         镜像哈希清单 + 排除项（CI 校验漂移）
+├── src/graphd-client.js           纯辅助：拼 URL/init、解析响应（不含 $）
+├── scripts/sync-core.mjs          vendor 同步（镜像/派生）+ `--check` 漂移校验
+└── tests/*.test.ts                claude plugin test 用（离线 harness）
 ```
+
+> ⚠️ **两条硬约束（`claude plugin validate` 实证，M1/M2）**：
+> 1. **`hooks.json` 的 `modules` 每插件只允许一项**——第二项直接被拒（「a second entry is refused」）。
+>    故计划早期的「hooks/tools.js + agents.js + gates.js … 多文件」**不可行**：全部 hook 必须收敛在
+>    `register.js` 一个文件内。
+> 2. **hook 必须是函数字面量或同文件具名函数**：`on("event", hook)` 处不接受工厂函数/动态循环
+>    （会报「the hook is not a function literal」或退化成 `tool=?`）。
+> 3. **`$` 不跨 import**：纯逻辑放 `src/`，`$` 调用一律留在 `register.js` 字面拼写。
+
+> 📐 **镜像口径修正**：早期计划写「23 纯模块」，实测按「**node: 传染闭包**」筛（直接 import `node:`，
+> 或传递 import 了这类模块）→ 纯净 **22** 个、传染 **13** 个（含 `allocator` 经 `config/prompt-maxlens`
+> 间接引入 `node:fs`）。传染的 13 个不镜像，走 `$.process` 桥（M3）。
+
+> 🛠️ **工具口径修正**：早期计划写「10 工具」，按注册器实锚为 **8 个工具定义**
+> （`burp_http_log`/`burp_repeater`/`burp_intruder`/`burp_decoder`/`burp_comparer`/`burp_scan_status`/
+> `p2p_js_scan`/`propose_direction`）；`tools/{index,gate}.mjs` 是注册器/辅助，非工具。
 
 ---
 
@@ -162,15 +195,27 @@ mod 侧只需一个 `core/graphd-client.js` 封装 `fetch` + token 注入。
 
 ## 7. 批次计划（遵 d2d 纪律：前置审计 → 拍板 → 批次 → CI 绿 → 下一批）
 
-| 批次 | 内容 | 门禁 |
-|---|---|---|
-| Phase 2 前置审计 | 实测 §9 的 4 项技术假设 | 4 项有结论才开工 |
-| M1 最小可跑 | manifest + `register.js` + graphd-client + 1 命令 + 1 工具 + 1 门 + 状态行 | `claude plugin validate` 通过 + `claude plugin test` 绿 + 本机可 `/命令`、门可拦 |
-| M2 工具与角色面 | 10 工具 × 24 角色全注册；门族全接线 | domain 单测零改全绿 + hooks 新测绿 |
-| M3 编排与 UI | 三环并行（`$.agent.spawn`）、`turn.complete` 收答写 graphd；消毒/上下文接缝；状态行 → `Pane` | 端到端一次 engagement 全绿 |
-| M4 砍脚手架与换轨 | 执行 §3 砍除清单；CI 移除 dsh-compat 轨 | CI 绿 + `sync-core` 哈希校验通过 |
+| 批次 | 内容 | 门禁 | 状态 |
+|---|---|---|---|
+| Phase 2 前置审计 | 实测 §9 的 4 项技术假设 | 4 项有结论才开工 | ✅ 完成（E1/E3/E5 沙箱实测，见审计报告） |
+| M1 最小可跑 | manifest + `register.js` + graphd-client + 1 命令 + 1 工具 + 1 门 + 状态行 | validate 通过 + test 绿 | ✅ 完成（4 用例绿） |
+| M2 工具与角色面 | 8 工具 + 24 角色全注册；门族全接线（Bash→`checkBash`，CC 工具→`classifyToolGate`） | validate 通过 + test 绿 | ✅ **完成**（11 用例绿；工具**执行体**接线顺延 M3） |
+| M3 编排与 UI | 三环并行（`$.agent.spawn`）、`turn.complete` 收答写 graphd；工具执行体桥接（`$.process`）；消毒/上下文接缝；状态行 → `Pane` | 端到端一次 engagement 全绿 | ✅ **完成（编排/桥/回收面；15 用例绿）**——`Pane` 自绘面顺延 M3.5 |
+| M4 砍脚手架与换轨 | 执行 §3 砍除清单；CI 移除 dsh-compat 轨 | CI 绿 + `sync-core --check` 通过 | 待开工 |
+
+> **M3 已落地**：工具执行体桥（`scripts/tool-bridge.mjs`：8 工具 + `sanitize`/`turn-report` 两 op，
+> 逐字复用禁区执行体）、三环派生（`buildRingSpawns` → `$.agent.spawn` ×3，`agentRing` 追踪）、
+> `turn.complete` 回收（消毒 + provenance_hash → `/write/experience`）、`session.append` 消毒接缝。
+> **顺延**：`Pane` 富 UI（当前只有 `ui.render{component=Spinner}` 状态行）、环内并行/收敛判定（M4 分配器）、
+> 活的 `claude` 会话端到端（当前为离线 harness 全绿）。
 
 每批收尾：打 annotated tag + 回滚演练。
+
+> **M2 的门语义（host 会话，需在 M3 复核）**：d2d 的 `checkBash` 由 worker 调用，worker 恒在 engagement 内；
+> mod 的顶层 Claude Code 会话可能**没有**活跃 engagement。此时若照搬「无 eng 一律 fail-closed」会把
+> 顶层普通本地命令（`ls`/`git status`）全部误杀。故 `resolveEng` 的回落是**本机哨兵 scope=`127.0.0.1`**：
+> 保留 `checkBash` 全部硬规则（DESTRUCTIVE/OPTSEC/host-token/…），出网目标仍受 scope 门约束（本机以外一律拒）。
+> 该语义**逐字复用禁区 `checkBash`，未改其契约**；M3 接好「哪些 `tool.call` 来自 worker」后应改为按来源分流。
 
 ---
 

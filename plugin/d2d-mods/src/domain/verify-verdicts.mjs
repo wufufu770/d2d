@@ -1,0 +1,195 @@
+// verify 裁决词表域模块 — 纯函数(worker 写的 verdict 词 → 七态机目标态), 可独立单测。
+// 三态口径(借鉴 evidence-gate 判定学): confirmed / refuted 之外必须有第三态 —
+// 无法判定时先归因授权边界(缺低权限账号/身份租户边界不明/目标归属存疑),
+// 过去这类样本被硬判 refuted, 真洞被误杀且不可复查。needs_scope_or_auth → needs-scope 态,
+// 授权澄清后可重新入验证(candidate)或直通 verified(补证据重放)。
+export const VERDICT_ENUM = 'confirmed|refuted|needs_scope_or_auth'
+// L0/L1 分级验证(参照 dsh-hunter, issues #74/#66/#86): 裁决词表扩展三态 —
+//   l1-passed    L1 主动最小验证通过(只读重放背书) → verified(仍经 Gate-V 锚校验/双签)
+//   l0-confirmed L0 被动确认(首页存活+指纹一致)   → triaged(被动证据足以过 triage, 不越权直通 verified)
+//   l0-none      L0 无信号(不可达/指纹不一致)     → 不推动状态机(目标可能暂时不可达, 留待重验)
+// T2-2a-2 追加 suspected: 执行面参数可控但下游未知 = 落怀疑追下游, 不是排除 — 禁结案
+// (to='' noop 保留现态, 不转 verified 也不转 rejected; 消费侧落 suspected-downstream 信号追下游)。
+// 旧三态词表保持原映射, 向后兼容(VERDICT_ENUM 不变, 扩展词表单独导出)。
+export const VERDICT_ENUM_EXTENDED = `l1-passed|l0-confirmed|l0-none|suspected|${VERDICT_ENUM}`
+
+export function verdictToGateState(verdict) {
+  const v = String(verdict ?? '').trim().toLowerCase()
+  if (!v) return ''
+  // 分级三态(置于通用词表之前, 显式分支可单测锁定; 'l0-confirmed' 等扩展词不被旧规则吞掉)
+  if (/^l1[-_ ]?pass/.test(v)) return 'verified'
+  if (/^l0[-_ ]?confirm/.test(v)) return 'triaged'
+  if (/^l0[-_ ]?none/.test(v)) return ''
+  // T2-2a-2 Gate-V suspected(执行面参数可控但下游未知): 落怀疑追下游, 不是排除 — 禁结案。
+  // to='' noop 保留现态: 不转 verified(证据还不构成确定性锚背书)也不转 rejected(参数可控≠无洞),
+  // 缺证据时维持现态; 消费侧(gates.applyVerifyResults)照此落 suspected-downstream 信号追下游。
+  if (/^suspect/.test(v)) return ''
+  if (/^confirm/.test(v)) return 'verified'
+  // 0916: worker 惯用 "VERIFIED f-x" 自称 L1 结论(词表外同义词, 语义与 l1-passed 等价) —
+  // 原词表不含 'verified', 这类信号只能落「词不在词表」重试后被弃置。
+  if (/^verified/.test(v)) return 'verified'
+  if (/^refut/.test(v)) return 'rejected'
+  if (/^needs[-_ ]?(scope|auth)/.test(v) || /^scope[-_ ]?or[-_ ]?auth/.test(v)) return 'needs-scope'
+  return ''
+}
+
+// ── 0916 修复(实证 35 条裁决弃置): 旧实现只认规范式 「finding:<id> verdict:<词>」——
+// worker 实际写出的等价形态(verdict:confirmed … f-<id> / f-<id> confirmed / 裁决:confirmed … f-<id>)
+// 全部落「缺 structure」重试 3 拍后被弃置, 实际做过的验证白丢。
+// 判定强度不变: 仍需「同一串内同时具备 f-<id> 与词表内裁决词」, 仅放宽标签与顺序;
+// 紧邻式只取紧跟 id 的那个词(token 须以 confirmed/refuted/… 开头), 因此否定式
+// ("not confirmed"/"unconfirmed") 天然不命中, 不会把反驳误读成确认。
+const _FID_RE = /\b(f-[\w-]+)\b/
+const _LABELED_VERDICT_RE = /(?:verdict|裁决|结论|判定)[：:\s]*([a-z0-9_-]+)/gi
+const _ID_THEN_WORD_RE = /\b(f-[\w-]+)\s*[:：,\-—]?\s*([a-z][a-z0-9_-]*)/i
+
+// 假设裁决解析(0916): h-<id> + 词表内裁决词 → 假设状态。假设级结论此前没有任何消费路径,
+// 只能落进「finding 结构不匹配」重试后弃置 → 假设永远 open、深环反复重验同一假设。
+// 优先级: 标签式 > 紧跟 id 之后 > 紧跟 id 之前 > 串内首个词表词; 中英词表并存(worker 混写)。
+const HYPOTHESIS_STATUS_WORDS = [
+  [/^(confirmed|confirm|l1[-_ ]?passed|verified|verify|l0[-_ ]?confirmed)$/i, 'confirmed'],
+  [/^(refuted|refute|false|l0[-_ ]?none)$/i, 'refuted'],
+  [/^(partial|partial[-_ ]?confirm|suspected|refined|inconclusive)$/i, 'partial'],
+  [/^(确认|证实|坐实|成立)$/, 'confirmed'],
+  [/^(证伪|否定|不成立)$/, 'refuted'],
+  [/^(部分|待定|存疑)$/, 'partial'],
+]
+
+/** 裁决词 → 假设状态(confirmed|refuted|partial); 不认识返回 '' */
+export function verdictToHypothesisStatus(v) {
+  const w = String(v ?? '').trim().toLowerCase()
+  if (!w) return ''
+  for (const [re, st] of HYPOTHESIS_STATUS_WORDS) if (re.test(w)) return st
+  return ''
+}
+
+/**
+ * 假设裁决解析 — 命中返回 {ok:true, hid, status}, 否则 {ok:false, reason}。
+ * 只在证据串里出现 h-<id> 时启用(纯 finding 信号走 parseVerifyEvidence, 两条路径互不干扰)。
+ */
+export function parseHypothesisEvidence(ev) {
+  const s = String(ev ?? '')
+  const idm = s.match(/\b(h-[\w-]+)\b/)
+  if (!idm) return { ok: false, reason: 'evidence 无 h-<id> 假设引用' }
+  const hid = idm[1]
+  const idAt = idm.index ?? 0
+  // 取离假设 id 最近的词表词(worker 把结论写在 id 前后都常见; 最近者 = 对该假设的判定),
+  // 80 字符窗口外的词先不考虑; 窗口内无词表词再退化到全串首个词表词。
+  const within = []
+  const anywhere = []
+  for (const m of s.matchAll(/[a-z\u4e00-\u9fa5][a-z0-9_\u4e00-\u9fa5-]*/gi)) {
+    const st = verdictToHypothesisStatus(m[0])
+    if (!st) continue
+    anywhere.push({ word: m[0].toLowerCase(), status: st })
+    const d = Math.abs((m.index ?? 0) - idAt)
+    if (d <= 80) within.push({ word: m[0].toLowerCase(), status: st, d })
+  }
+  within.sort((a, b) => a.d - b.d)
+  const pick = within[0] ?? anywhere[0]
+  if (!pick) return { ok: false, reason: `假设 ${hid} 未给出词表内裁决词(confirmed|refuted|partial/suspected)` }
+  return { ok: true, hid, status: pick.status, word: pick.word }
+}
+
+// ── 中危审计修复(0910): verify-result 证据解析单点化 ──
+// 旧版 scheduler 消费处对「证据结构对不上」与「裁决词不在词表」的信号直接置 consumed ——
+// worker 补写/修正证据的机会都没有, 裁决永久丢失。现把「解析 + 词表映射」收敛为纯函数:
+// 不匹配返回 ok:false(retry:true), 由调用方保留信号待重试 + 计数告警。
+// l0-none 是词表内显式 no-op(目标可能暂时不可达, 留待重验), 不算不匹配 → ok:true/to:''(调用方照旧消费)。
+export function parseVerifyEvidence(ev) {
+  const s = String(ev ?? '')
+  // 裁决词捕获用 [a-z0-9_-]: VERDICT_ENUM_EXTENDED 含 needs_scope_or_auth(下划线)与
+  // l0-confirmed(连写) — 旧版 scheduler 的 ([a-z]+) 只捕到 'l'/'needs', 全部落入「不匹配」。
+  const m = s.match(/finding[：:\s]+(f-[\w-]+)\s+verdict[：:\s]*([a-z0-9_-]+)/i)
+  let fid = m?.[1] ?? ''
+  let verdict = (m?.[2] ?? '').toLowerCase()
+  if (!m) {
+    // 0916 兼容形态: 标签式(顺序不限) → 紧邻式(f-<id> 后紧跟裁决词)
+    const idm = s.match(_FID_RE)
+    if (idm) {
+      // 标签后跟的可能是 id 本身(结论：f-78 needs_scope_or_auth) → 跳过 id 形态的词再取裁决词
+      const lab = [...s.matchAll(_LABELED_VERDICT_RE)]
+        .map((x) => String(x[1]).toLowerCase())
+        .find((w) => !/^[fh]-/.test(w)) ?? ''
+      const adj = s.match(_ID_THEN_WORD_RE)
+      fid = idm[1]
+      verdict = lab || (adj ? adj[2].toLowerCase() : '')
+    }
+  }
+  if (!fid) return { ok: false, retry: true, reason: 'evidence 缺 finding:<id> verdict:<词> 结构' }
+  const to = verdictToGateState(verdict)
+  // 0914 双签署名: 第二签合同要求 evidence 带 sign:2 标记(净室复核员专属署名)。主模型的
+  // 重复 to=verified 不得充当第二签(实证 0914: hy3 六连 exit=1, pending finding 被主模型
+  // 复验结果假签成 signed — 信号无署名是根因之一)。
+  // 0915 B3: 左词界 \b 防 design:2/assign 2 类子串误命中; 签码 nonce 跟随 sign:2 提取,
+  // 消费端与派发时下发的 _dualExpect[fid] 比对(复核员 brief 专属, 主模型不可得)。
+  const ev2 = String(ev ?? '')
+  const sign2 = /\bsign[：:\s]*2\b/i.test(ev2)
+  const signNonce = (ev2.match(/\bsign[：:\s]*2\b[：:\s]*([a-z0-9]{4,32})/i)?.[1] ?? '').toLowerCase()
+  if (!to) {
+    // 词表内显式 no-op: l0-none(目标可能暂时不可达, 留待重验)与 suspected(T2-2a-2: 执行面参数
+    // 可控但下游未知 — 禁结案, 消费侧落 suspected-downstream 信号追下游, 不转态)都算词表内匹配,
+    // ok:true/to:'' 走调用方消费路径, 不落「词不在词表」重试弃置。
+    if (/^l0[-_ ]?none/.test(verdict) || /^suspect/.test(verdict)) return { ok: true, fid, verdict, to: '', noop: true, sign2, signNonce }
+    return { ok: false, retry: true, reason: `verdict 词 "${verdict}" 不在裁决词表(${VERDICT_ENUM_EXTENDED})` }
+  }
+  return { ok: true, fid, verdict, to, sign2, signNonce }
+}
+
+// ── 1.6-A Gate-V 验证门: confirmed 裁决必须有确定性信号锚背书(发现≠存在) ──
+// 锚表与 deep 简报硬规则 A-D 同源(SSRF=OOB 实收/穿越=root:x/竞态=状态差/越权=低权限身份证据),
+// 或 RTM 对照三件套(基线+差分+marker)齐备即过。severity low/info 豁免(config-advice 类
+// 在 graphd 写门已拒收)。模型不能自评门禁 — 锚是客观可复查的响应特征, 不是结论措辞。
+const V_ANCHORS = [
+  { name: 'SSRF-OOB 实收', cat: /ssrf|带外|oob|盲/i, re: /169\.254|metadata|ami-id|instance-id|dnslog|ceye|interact|带外回调|回连|gopher:/i },
+  { name: '穿越-root:x', cat: /穿越|路径遍历|lfi|traversal|任意文件/i, re: /root:x:0:0?[:\n ]|root:x:0:0$|\.\.%2f|\.\.\/\.\.\/|etc\/passwd|etc\/shadow|boot\.ini|win\.ini/i },
+  { name: '注入-报错或布尔', cat: /sql|注入|inject|sqli|模板|ssti/i, re: /sql syntax|mysql|postgres|sqlite|ora-\d{5}|union\s+select|sleep\(\d|benchmark\(|waitfor\s+delay|布尔|报错/i },
+  { name: 'XSS-执行形态', cat: /xss/i, re: /<script[^>]*>|onerror\s*=|alert\(\s*\d+\s*\)|javascript:\w+\(|执行形态/i },
+  { name: 'RCE-命令回显', cat: /rce|命令执行|command/i, re: /uid=\d+\(|www-data|命令回显|whoami/i },
+  { name: '越权-低权限身份', cat: /越权|access|authz|idor|bola|权限|水平|垂直/i, re: /低权限|未授权|普通用户|其他用户|横向|他人(数据|订单|账户)|无权(访问|调用).*成功/i },
+  { name: '竞态/逻辑-状态差', cat: /竞态|race|并发|业务逻辑|logic|支付|转账|兑换/i, re: /余额|负值|超限|次数.*(超|减|为负)|并发.*(差|多|超额)|重复(扣|提现|兑换|下单)/i },
+]
+
+/**
+ * Gate-V: 是否放行 → verified。
+ * @returns {ok, anchor, reason} ok=false 时 reason 说明缺哪种锚(供 gate-log 与重验简报引用)
+ * T1-4-3 结构化锚优先(docs/gate-anchor-schema.md §2/§3): anchorText(gate_anchor 列原文)非空 →
+ * 按 gate_v 五字段(category_anchor 六类枚举 + 基线/差分 req_id + marker_hit + evidence)完整性判定,
+ * 齐备即过(anchor 注明「结构化锚」, 不再散文解析, 不双读互斥); 非空但解析失败/字段缺 → FAIL
+ * (anchor-invalid, 残缺锚不得降级回散文, 防规避); 空/缺 → 既有三件套/类别锚表路径逐字保留。
+ */
+export function gateV({ severity = '', category = '', repro = '', verifyEvidence = '', anchorText = '' } = {}) {
+  const sev = String(severity ?? '').toLowerCase()
+  if (!['critical', 'high', 'medium'].includes(sev)) return { ok: true, anchor: 'severity-exempt' }
+  const anchorRaw = String(anchorText ?? '').trim()
+  if (anchorRaw) {
+    let a = null
+    try { a = JSON.parse(anchorRaw) } catch { a = null }
+    const gv = (a && typeof a === 'object' && !Array.isArray(a)) ? a.gate_v : null
+    if (!gv || typeof gv !== 'object' || Array.isArray(gv)) {
+      return { ok: false, anchor: null, reason: 'verify 锚无效(anchor-invalid): gate_anchor 非法 JSON/非对象或缺 gate_v 键 — 残缺锚不得降级回散文(防规避)' }
+    }
+    const lack = []
+    if (!/^(ssrf|traversal|xss|rce|auth_bypass|race)$/i.test(String(gv.category_anchor ?? ''))) lack.push('category_anchor(六类枚举)')
+    if (typeof gv.baseline_req_id !== 'string' || !gv.baseline_req_id.trim()) lack.push('baseline_req_id')
+    if (typeof gv.diff_req_id !== 'string' || !gv.diff_req_id.trim()) lack.push('diff_req_id')
+    if (typeof gv.marker_hit !== 'string' || !gv.marker_hit.trim()) lack.push('marker_hit')
+    if (!Array.isArray(gv.evidence) || gv.evidence.some((x) => typeof x !== 'string')) lack.push('evidence(string[])')
+    if (lack.length) {
+      return { ok: false, anchor: null, reason: `verify 锚无效(anchor-invalid): gate_v 缺字段 ${lack.join('、')} — 残缺锚不得降级回散文(防规避)` }
+    }
+    return { ok: true, anchor: `结构化锚(gate_v:${String(gv.category_anchor).toLowerCase()} 基线${gv.baseline_req_id}/差分${gv.diff_req_id}/marker ${gv.marker_hit})` }
+  }
+  const text = `${repro ?? ''}\n${verifyEvidence ?? ''}`
+  // 0916 修复(实证 83 次 Gate-V fail / 19 次 pass): 三件套判定原为中文硬编码 `/基线/ && /差分/`
+  // — worker 用英文标签写完整三件套(baseline/diff/marker)反被判缺锚, 真证据过不了门。
+  // 语义不变(仍需基线+差分+marker 三件齐备), 仅接受中英双语标签。
+  if (/(基线|baseline)/i.test(text) && /(差分|diff)/i.test(text) && /marker/i.test(text)) return { ok: true, anchor: '对照三件套(基线/差分/marker)' }
+  const cat = String(category ?? '')
+  // 0917 审查: 跨类关键词单命中不再放行(证据里出现 mysql/root:x 即可灌过门) — 收紧为
+  // 「类别锚命中」或「≥2 个不同类锚同时命中」; 单一跨类词只有佐证价值。
+  const catHit = V_ANCHORS.find((a) => a.cat.test(cat) && a.re.test(text))
+  if (catHit) return { ok: true, anchor: catHit.name }
+  const crossHits = [...new Set(V_ANCHORS.filter((a) => a.re.test(text)).map((a) => a.name))]
+  if (crossHits.length >= 2) return { ok: true, anchor: `${crossHits.join('+')}(跨类双锚)` }
+  return { ok: false, anchor: null, reason: 'verified 缺确定性信号锚: 需类别证据锚(如 SSRF=OOB 实收/穿越=root:x/越权=低权限身份证据/竞态=状态差)或对照三件套(基线+差分+marker)' }
+}

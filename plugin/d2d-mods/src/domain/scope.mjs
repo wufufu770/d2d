@@ -1,0 +1,186 @@
+// A-1 拆分: OPSEC scope 门控域模块 — 纯函数(输入命令+eng 声明, 输出拦截原因或 null), 可独立单测/变异测试。
+// 宿主(scheduler)只做转发: checkBash(cmd, eng) → _checkBash(cmd, eng, GRAPHD)
+// V-08: DESTRUCTIVE 补 -fr/-Rf/--recursive 组合形态、find / -delete、poweroff/halt/init 0
+export const DESTRUCTIVE = [
+  /rm\s+-rf?\s+\/(?!tmp)/,
+  /rm\s+-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*\s+\/(?!tmp)/,
+  /rm\s+-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*\s+\/(?!tmp)/,
+  /rm\s+--recursive\b[^|;&]*\s\/(?!tmp)/,
+  // 0913 审查 H8: 分离旗标(-r -f)与 -- 分隔(rm -rf -- /)变体 — 原模式要求旗标连写且紧邻 "/"
+  /\brm\s+(?:-[A-Za-z]+\s+)+\/(?!tmp)/,
+  /\brm\s+(?:-[A-Za-z]+\s+)*--\s+\/(?!tmp)/,
+  // 0913 审查 H9: find -exec rm(任意路径) — 原模式只覆盖 -delete
+  /\bfind\s+[^|;&]*\s-exec\s+[^|;&]*\brm\b/,
+  /\bfind\s+\/(?!tmp|home)[^|;&]*-delete/,
+  // 0915 B11: H6 规则的三个绕过变体 — `find ~ -delete`、`find -delete`(默认 cwd)、
+  // `find /home/... -delete`(H6 的负向环视把 /home 豁免了)、`-execdir rm`(\s-exec\s 不匹配)
+  /\bfind\s+(?:~|\$HOME)(?:\s|\/)[^|;&]*-delete\b/,
+  /\bfind\s+-delete\b/,
+  /\bfind\s+\/home\b[^|;&]*-delete\b/,
+  /\bfind\b[^|;&]*\s-execdir\b[^|;&]*\brm\b/,
+  // 0915 审查: 变量/引号/相对路径形态 — 旧规则只认字面 `/`(rm 规则)或裸 ~/$HOME(find 规则),
+  // `find "$HOME" -delete`、`find ${HOME} -delete`、`find . -delete`、`rm -rf $HOME`、`rm -rf ~`
+  // 实测全部放行, 其中前者可清空家目录(含仓库与作战数据)。
+  /\bfind\b[^|;&]*["']?(?:~|\$\{?HOME\}?)["']?[^|;&]*-delete\b/,
+  /\bfind\s+\.(?:\s|\/)[^|;&]*-delete\b/,
+  /\brm\s+(?:-[a-zA-Z]+\s+)*(?:["']?(?:~|\$\{?HOME\}?)["']?)(?:\s|\/|$)/,
+  /\bshred\b[^|;&]*(?<!\/tmp)\s\/(?!tmp)/, // H6(审计): 原版 \b 紧跟 "/" — "/" 与空格之间无词边界, `find / -delete` 恰好漏配; 去掉 \b 由 -delete 收尾
+  /\bmkfs(\.\w+)?\b/,
+  /\bdd\b[^|]*\bof=\/dev\//,
+  /\bshutdown\b|\breboot\b|\bpoweroff\b|\bhalt\b|\binit\s+0\b/,
+  /DROP\s+(TABLE|DATABASE)/i,
+]
+// H5(审计): 路径归一化副本 — `rm -rf /tmp/../etc` ≡ `rm -rf /etc`, `..` 段可绕过 `\/(?!tmp)` 负向环视。
+// 折叠 `dir/..` 段与 `/./` 后对归一化串再跑一遍 DESTRUCTIVE(双跑取并: 只收紧, 原命令的判定不受影响)。
+function _normalizePaths(s) {
+  let prev, n = String(s ?? '')
+  do { prev = n; n = n.replace(/\/[^/\s'"`|;&<>()]*\/\.\./g, '') } while (n !== prev)
+  return n.replace(/\/\.\//g, '/')
+}
+
+// 任务/目标 scope 归属判定(纯函数): host 是否落在 engagement 授权范围内(且未命中排除清单)。
+// engInput = scope 字符串(逗号分隔, `!` 前缀=排除) 或 {eng} 对象。0905 实证:
+// 验证任务未按 scope 过滤 → worker 被派去重放范围外目标的漏洞(必然失败, 白烧预算)。
+export function hostAllowed(host, engInput) {
+  if (!host) return false
+  const raw = typeof engInput === 'object' && engInput !== null && 'eng' in engInput ? engInput.eng : engInput
+  if (!raw) return true
+  const allowed = [], denied = []
+  for (const s of String(raw).split(',')) {
+    const t = s.trim()
+    if (!t) continue
+    if (t.startsWith('!')) { const d = t.slice(1); if (d) denied.push(d) } else allowed.push(t)
+  }
+  if (!allowed.length) return true
+  const h = String(host).toLowerCase().replace(/\.$/, '')
+  for (const d of denied) { if (h === d.toLowerCase() || h.endsWith(`.${d.toLowerCase()}`)) return false }
+  return allowed.some((a) => { const la = a.toLowerCase(); return h === la || h.endsWith(`.${la}`) })
+}
+// V-08: 补 file/ws/wss/gopher/data scheme(file:// 读的是本机文件, 永不在授权 scope)
+export const URL_RE = /(?:https?|ftp|smb|dns|file|ws|wss|gopher|data):\/\/[^\s"'`<>)]+/gi
+// V-10: curl/wget 目标值型 flag 集(裸目标判定需跳过 flag 及其值)
+const _CURL_VAL_FLAGS = new Set(['-H', '--header', '-d', '--data', '--data-raw', '--data-binary', '--data-urlencode', '-F', '--form', '-o', '--output', '-X', '--request', '-u', '--user', '-K', '--config', '-D', '--dump-header', '-c', '--cookie-jar', '-b', '--cookie', '-A', '--user-agent', '-e', '--referer', '-m', '--max-time', '--connect-timeout', '--retry', '-x', '--proxy', '--limit-rate', '-C', '--range', '-T', '--upload-file', '--url', '--resolve'])
+// URL → hostname 小写(裸 URL/文本提取; 解析失败返 '')。
+// 注意与 triage.mjs 的 hostOf(u|host|path 签名格式)同名不同义 — 对裸 URL/文本一律用本函数
+// (0913 实证: loop verifyPool 过滤器误用签名版 hostOf → 恒 null → hostAllowed fail-closed
+// 全灭 → verify 任务永不规划 → 双签断链整场)。
+export function hostOf(u) { try { return new URL(u).hostname.toLowerCase() } catch { return '' } }
+
+export function checkBash(cmd, engInput, graphdUrl = 'http://127.0.0.1:8766') {
+  // I-022: 解包 eng + healthy（区分 graphd 故障与确实无 engagement）
+  let eng = null, healthy = true
+  if (engInput && typeof engInput === 'object' && ('eng' in engInput || 'healthy' in engInput)) {
+    if ('eng' in engInput) { eng = engInput.eng; healthy = engInput.healthy !== false }
+    else { eng = engInput; healthy = true }
+  } else {
+    eng = engInput
+  }
+  for (const re of DESTRUCTIVE) if (re.test(cmd) || re.test(_normalizePaths(cmd))) return `危险命令被铁律拦截: ${re.source}`
+  // V-08: file:// 直接拒绝 —— 读本机文件与授权 scope 无关
+  if (/file:\/\//i.test(cmd)) return 'OPSEC: file:// 读取本机文件, 禁止写入证据链'
+  // V-08: curl/wget 目标必须显式带 scheme —— 裸主机名(curl intranet-host/x)曾完全绕过 scope 提取。
+  // ${VAR} 展开目标不可静态判定则放行(graphd 层 scope 纵深兜底); 字面裸主机名一律拒绝(fail-closed)。
+  if (/\b(?:curl|wget)\b/.test(cmd)) {
+    for (const seg of cmd.split(/\|\||&&|;|\|/)) {
+      const m = seg.match(/\b(?:curl|wget)\b(.*)$/)
+      if (!m) continue
+      const toks = m[1].match(/\S+/g) ?? []
+      let target = null
+      for (let i = 0; i < toks.length; i++) {
+        const t = toks[i]
+        if (t.startsWith('-')) {
+          // H7(审计): --url 的值就是请求目标(等价于位置参数), 旧版当普通取值 flag 跳过 →
+          // `curl --url intranet-host/x` 裸主机名既不撞 scheme 要求, URL_RE 又抽不到 → 完全绕过 scope。
+          const eq = t.indexOf('=')
+          if (eq > 0 && t.slice(0, eq) === '--url') { target = t.slice(eq + 1).replace(/^['"]+|['"]+$/g, ''); break }
+          if (t === '--url') { target = (toks[i + 1] ?? '').replace(/^['"]+|['"]+$/g, ''); break }
+          if (_CURL_VAL_FLAGS.has(t) && !t.includes('=')) i++
+          continue
+        }
+        target = t.replace(/^['"]+|['"]+$/g, '')
+        break
+      }
+      if (target && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(target) && !/[$<{]/.test(target))
+        return `OPSEC: curl/wget 目标必须显式写 scheme(如 http://): ${target.slice(0, 60)} — 裸主机名无法做 scope 校验`
+    }
+  }
+  // P1(审查): 连接级旁路面拉黑 -- --resolve 改写解析 / -x·--proxy 外部代理 / -L 跟随跳出 scope 的重定向
+  // R4a 抽取时修正: 原 \s(-x|--)proxy 只能匹配 "--proxy"(交替分支贴连), "-x <URL>" 漏拦 → \s(?:-x|--proxy)\b
+  if (/\s--resolve\b/.test(cmd)) return 'OPSEC: --resolve 可绕过 scope 校验, 禁用'
+  if (/\s(?:-x|--proxy)\b/.test(cmd)) return 'OPSEC: 外部代理可绕过出口治理, 禁用'
+  // 0915 A3: token 级归一检测 — 旧正则 `-[a-eg-zA-EG-Z]*L\b` 要求 L 位于簇末尾, `-Ls/-Li/-sL`
+  // 全部漏配(L 后跟字母即不匹配); 改为逐 token 判定短簇内含 L(任意位置) + --location 前缀全族
+  if (eng && /\bcurl\b/.test(cmd)) {
+    for (const seg of cmd.split(/\|\||&&|;|\|/)) {
+      const cm = seg.match(/\bcurl\b(.*)$/)
+      if (!cm) continue
+      for (const t of (cm[1].match(/\S+/g) ?? [])) {
+        const raw = t.replace(/^['"]+|['"]+$/g, '')
+        if (/^--location/.test(raw) || /^-[a-zA-Z0-9]*L[a-zA-Z0-9]*$/.test(raw))
+          return 'OPSEC: -L/--location 重定向可能跳出 scope(302 可跳内网/云元数据), 请手动逐跳验证'
+      }
+    }
+  }
+  // V-08: 状态保护补 REMOVE/DETACH(worker 曾可 REMOVE e.scope 篡改授权范围)
+  // 0915 A4: 扩到全部可信状态表 — 旧版只护 Engagement/AgentIdentity, worker 可 `cat` 读
+  // host-token 后直连 graphd 改 Finding.gate_status(伪造 verified)。大小写敏感匹配 Cypher
+  // 标签(大写), 不碰 /write/finding|signal|endpoint|hypothesis 小写结构化通道。
+  if (/Engagement|AgentIdentity|Finding|Signal_|Endpoint|Hypothesis/.test(cmd) && /\b(SET|DELETE|REMOVE|DETACH)\b/i.test(cmd))
+    return '状态保护: worker 无权直接修改图节点(Engagement/AgentIdentity/Finding/Signal_/Endpoint/Hypothesis) — 请走 /write/* 结构化通道'
+  // 0915 A4: host-token 是 host 身份凭据 — worker 读它即可绕开全部写门与 scope 门。
+  // 审查实证旧版纯字面匹配被 `grep -r . ~/.config/d2d/`(无字面 "host-token")与 glob
+  // (`cat .../d2d/*token*`)绕过; 现按"配置目录/凭据路径 + 读动词"组合判定, 大小写不敏感。
+  if (/(?:\.config\/d2d|d2d\/host[-_]?token|P2P_HOST_TOKEN|DSH_ENV_P2P_HOST_TOKEN|host[-_]?token)/i.test(cmd)
+    && /\b(cat|head|tail|less|more|strings|xxd|od|cp|scp|rsync|tar|zip|base64|grep|rg|awk|sed|read|source|env|printenv|find|ls|dd|tee|vim|nano|open|tr|sort|uniq|jq|python3?|node|perl)\b|[<>]|\*/.test(cmd))
+    return 'OPSEC: host-token 是宿主身份凭据(读之即可绕写门/scope 门), worker 不得读取 — 只用 $P2P_WORKER_TOKEN'
+  // 0915 审查(CRITICAL 补堵): ~/.curlrc 可被 worker 写入(location/resolve 指令), 即使白名单封了
+  // -L, host 侧重放仍会跟随重定向并把授权域名解析改到内网 — runCurl 已注入 -q 兜底, 此处再堵写入面。
+  if (/(?:\.curlrc|\/\.curlrc|\bCURL_HOME\b|\bCURLRC\b)/.test(cmd)
+    && /(?:>|>>|tee|cat\s*>|printf|echo|sed\s+-i|cp\s|mv\s|ln\s|install\s)/.test(cmd))
+    return 'OPSEC: 改写 ~/.curlrc 会篡改 host 侧重放的 curl 行为(自动跟随重定向/DNS 改写), 禁止'
+  // I-022: graphd 故障时 fail-closed 外网命令，无 URL 或仅 loopback 放行
+  if (!healthy) {
+    const urls = cmd.match(URL_RE) ?? []
+    const hasOuter = urls.some((u) => { const h = hostOf(u); return h && h !== '127.0.0.1' && h !== 'localhost' })
+    if (hasOuter) return 'graphd 不可达(fail-closed): 拒绝外网命令'
+  }
+  // C5(审计 0910): scope 判定必须有 engagement 上下文 — 旧版两条歧路:
+  //   ① eng=null 在此 fail-open 直接放行(连 nmap/nc 这类无 URL 的网络命令都不设防, 纯靠 DESTRUCTIVE 兜底);
+  //   ② eng 非空但 scope 缺失/非字符串 → eng.scope.split 直接 TypeError, 安全门禁以 crash 代 deny。
+  // 门控的语义是"无法判定授权 ⇒ 拒绝", 不是"无法判定 ⇒ 放行"也不是"抛异常" → 一律 fail-closed。
+  if (!eng || typeof eng.scope !== 'string' || !eng.scope.trim())
+    return 'OPSEC: 无 engagement 上下文(eng 缺失或 scope 为空) — scope 门 fail-closed, 请在活跃 engagement 内操作'
+  // R6: scope 语法扩展 —— 逗号分隔条目支持 `!` 前缀 = 排除清单(denylist)。
+  // 实证根因: 授权泛域(demo-src.com)的后缀白名单天然放行排除资产子域(mail.demo-src.com),
+  // 简报红线(提示层)拦不住自主 worker → 红线事件(9 findings 越权产生)。
+  // denylist 在两层硬拦截(bash 门控此处 + graphd 写门控同源解析), 触碰即拒绝。
+  // R6.1: 黑名单功能 —— eng.denylist(全局 denylist.json, scheduler 注入)与 scope `!` 条目合并生效
+  const allowed = []
+  const denied = []
+  for (const s of eng.scope.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)) {
+    if (s.startsWith('!')) { const d = s.slice(1); if (d) denied.push(d) } else { allowed.push(s) }
+  }
+  for (const d of (eng.denylist?.domains ?? []).map((x) => String(x).trim().toLowerCase()).filter(Boolean)) {
+    if (!denied.includes(d)) denied.push(d)
+  }
+  for (const c of (eng.denylist?.cidr_prefix ?? []).map((x) => String(x).trim()).filter(Boolean)) {
+    if (!denied.includes(c)) denied.push(c)
+  }
+  const deniedHit = (h) => denied.some((d) => h === d || h.endsWith(`.${d}`) || (d.endsWith('.') && h.startsWith(d)))
+  // I-016: loopback 不再无条件豁免 — 仅豁免 graphd 自身(worker 写图通道), 其余 loopback 须在 scope
+  const GRAPHD_HOSTPORT = (() => { try { return new URL(graphdUrl).host.toLowerCase() } catch { return '127.0.0.1:8766' } })()
+  for (const u of cmd.match(URL_RE) ?? []) {
+    const h = hostOf(u)
+    if (!h) continue
+    if ((h === '127.0.0.1' || h === 'localhost') && u.toLowerCase().includes(GRAPHD_HOSTPORT)) continue
+    if (deniedHit(h)) return `⛔ 排除资产红线(硬拦截): ${h} 在排除清单 [${denied.join(', ')}] — 授权范围明确禁测, 触碰即任务失败`
+    if (h === '127.0.0.1' || h === 'localhost') {
+      const ok = allowed.some((a) => h === a || h.endsWith(`.${a}`))
+      if (!ok) return `本机目标 ${u} 不在 scope [${allowed.join(', ')}] — 本机靶场请在 scope 显式声明 127.0.0.1`
+    } else {
+      const ok = allowed.some((a) => h === a || h.endsWith(`.${a}`))
+      if (!ok) return `越界目标被 scope 门控拦截: ${h} 不在授权范围 [${allowed.join(', ')}]`
+    }
+  }
+  return null
+}

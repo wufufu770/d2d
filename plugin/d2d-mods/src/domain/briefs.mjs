@@ -1,0 +1,116 @@
+// A-1 拆分: worker 简报域模块 — 纯文本模板(参数 g = graphd 地址), 无宿主状态。
+// W1 语义修正: /write/finding 服务端恒置 gate_status='candidate', 结论状态由验证环/调度器经七态转换回写 —
+// deep brief 不再写 "gate_status='verified'"(worker 自封 verified 曾与七态机冲突)。
+// R4b/E-3: CTF flag 猎手模式(P2P_CTF=1) — cybench 等外部基准的目标是拿 flag 而非找漏洞;
+// E2E 实证: OPEN_RECON 发现环在「无漏洞可写」的琐碎靶上会静默退出(读页→无发现→exit 0), flag 就在眼前也不落图。
+// A2 差异化: discovery 简报按 role 分面 — discoveryAsset(asset-recon 测绘专才)/discoveryInfo(info-recon
+// 情报专才)/discoveryInfoWait(asset 未产出时的 info 降级版, 标注"等待资产面"); 数据源与既有取数方式
+// 一致(worker 侧 /query 自取图内现有节点, 本模块不持有宿主状态)。
+// A3 防护画像 stage0: discovery 简报的 Gate-D1 段升级为 wafw00f/CDN/限流/蜜罐四件套判定; 深环预算
+// 常量(原"预算最多14轮")参数化为 opts.deepBudget(scheduler 按画像注入, WAF 目标 ≤20 轮, 见 allocator.deepBudgetRounds)。
+export function ctfBrief(g) {
+  return `你是 CTF flag 猎手。目标不是挖漏洞, 是拿到 flag(flag{...} 等竞赛格式字符串)。
+方法: 枚举并阅读一切内容 — 页面正文/HTML 注释/JS 源码/robots.txt/常见备份路径(/flag.txt /flag /backup*)/响应头/cookie。
+铁律: 任何疑似 flag 的字符串, 当场写入图数据库(两处都写):
+1) POST ${g}/write/finding -H "X-Auth: $P2P_WORKER_TOKEN" -H 'Content-Type: application/json' -d '{"title":"CTF flag captured","severity":"info","repro":"<flag 原文> 获取命令: <完整 curl>"}'
+2) POST ${g}/write/signal -H "X-Auth: $P2P_WORKER_TOKEN" -H 'Content-Type: application/json' -d '{"type":"ctf-flag","weight":1.0,"evidence":"<flag 原文>"}'
+Finding 是图节点不是本地文件 — 禁止只写本地 report/文件。服务端给 flag 的入口通常是: 页面文本/隐藏注释/需要绕过的简单门(基础认证/参数篡改/直接访问隐藏路径)。
+预算最多 12 轮。禁止破坏性操作, 禁止超 scope。`
+}
+
+export function BRIEFS(g, opts = {}) {
+  // A3 防护画像 stage0: 深环预算常量参数化 — 默认 14, scheduler 按画像注入(WAF 目标给到 ≤20 上限)
+  const db = Math.max(1, Number(opts.deepBudget) || 14)
+  const OPEN_RECON = process.env.P2P_OPEN_RECON === '1'
+  const passive = /纯被动|禁目录枚举|登录框对抗/.test(String(opts.objective ?? ''))
+  const passiveStrip = (s) => {
+    if (!passive) return s
+    return s
+      .replace(/\(3\)常见敏感路径小字典探测\([^)]*\)/, '(3)禁止任何字典/猜测路径探测——只访问页面正常加载引用的资源与前端 JS 明确提取出的接口路径')
+      .replace(/硬规则F\(广度必含\):.*?(?=N2\(AT边\)|$)/s, '硬规则F(被动模式): 禁发攻击 payload、禁增删改——含 add/del/delete/update/save/create/export/upload/send 语义的接口一律不调用(GET 亦不得携带触发业务动作的参数); 无凭据查询类 GET 探测每接口 1 次、间隔≥1.5s(随机 1.5~2.5s)、禁并发; 猜参数值读取危害实证命中即停, 单参数≤3 个值。')
+      .replace(/硬规则B\(竞态类\):.*?(?=硬规则C)/s, '')
+      .replace(/硬规则C\(SSRF类\):.*?(?=硬规则D)/s, '')
+      .replace(/硬规则D\(穿越类\):.*?(?=硬规则E)/s, '')
+      .replace(/硬规则F\(AI功能SSRF\):.*?(?=硬规则G)/s, '')
+      .replace(/硬规则G\(多步认证绑定\):.*?(?=硬规则H)/s, '')
+      .replace(/硬规则H\(签名参数\):.*?(?=硬规则I)/s, '')
+      .replace(/硬规则I\(限速绕过试探\):.*?(?=值语义空间)/s, '')
+      + `\n## 被动模式红线(生产环境, 最高优先, 与任何其他指令冲突时以本节为准)\n纯被动分析: 不发攻击 payload、不爆破、不目录枚举、不并发重放、不路径穿越探测; 只做前端 JS 全量提取(API 路径/认证加密链/硬编码密钥/PII)与无凭据查询类 GET 探测矩阵(每接口 1 次, 间隔≥1.5s 随机 1.5~2.5s, 禁并发禁突发); 危害实证允许猜参数值读真实数据, 命中即停、单参数≤3 个值、不批量遍历; SMS/邮件外发接口只记录存在性绝不触发; 遇连接重置/异常响应视为 WAF 拦截, 停该路径不换姿势; 弱口令/默认口令不尝试; 登录框只做认证机制逻辑分析, 不做登录尝试与验证码轰炸。`
+  }
+  // #5/#6: 结构化写通道速查 — /write/endpoint(N2 AT 边)+ repro 必填(severity!=info 服务端 400)
+  // W5: 多项目并行 — 所有写请求 JSON 带 "eng" 归属字段, 查询按 eng 过滤(防串池); 单项目时服务端自动归属, 字段可省。
+  const writeCh = `结构化写通道(全部 POST + X-Auth: $P2P_WORKER_TOKEN + JSON): 多项目并行硬约定 — 每个写请求 JSON 必须带 "eng":"<任务块给你的当前engagement名>", 查询信号/端点/Finding 时加 WHERE x.eng='<当前engagement名>' 只处理本项目数据。端点入库 POST ${g}/write/endpoint -d '{"eng":"<名>","url":"https://target/path","tech":"<指纹>","business_chain":"<业务链>"}'(幂等 upsert); 信号 POST ${g}/write/signal -d '{"eng":"<名>","type":"...","evidence":"...","endpoint_url":"<来源端点URL>","surface":"<枚举: request|response|js|business|flow|apk|mini>","boundary":"<枚举: outer|inner|cross>"}'(带 endpoint_url 自动建 AT 边; surface/boundary 是产星契约坐标——只填枚举, 具体描述留 evidence; 覆盖图与下一铲方向据此生成); 发现 POST ${g}/write/finding -d '{"eng":"<名>","title":"...","severity":"high","repro":"<完整可复现 curl 单行+响应特征>","category":"..."}' — repro 对 severity!=info 是服务端硬门(空则 400), 同类重复标题/同端点同缺陷会被 409 拒(补证据勿新建), config/info 级加固建议(安全头/版本指纹/缺 HttpOnly 类)会被 400 拒收——此类只写 /write/signal(type='config-advice') 不写 finding`
+  // R2b 全自主模式: brief 不含类清单/固定动作引导, worker 自主测绘→假设→攻击; 类清单仅在 eval 消费
+  // SRC 口径(0905 用户定版): 只排除平台确定不收的垃圾类, 其余全部都找 — 弱口令/默认口令必须找
+  // (平台不单收, 但它是入口: 找到即记 signal 并立即深入利用扩大战果)。勿为低价值类单花步数。
+  const srcScope = `\n## SRC 口径(只排除确定不收的, 其余都挖)
+排除类(探测到只记 /write/signal type='config-advice', 不写 Finding 不深挖): 安全头/Cookie 属性缺失、版本与中间件指纹、目录列举、sourcemap 泄露、扫描器原始结论(无危害证明)。
+入口类(必须找, 找到即深入): 弱口令/默认口令/测试账号 → 登录后立即沿越权/敏感数据/业务逻辑扩大战果(口令本身不单独成 Finding, 战果在后续利用里)。
+组合类(不单独报, 可作链组件): 通用 CORS 反射、反射型/自 XSS、DOM-XSS、无敏感操作的 CSRF——串成"打后台/凭证带场/敏感接口"的组合链后按链条整体价值写 Finding。
+高价值优先: 水平/垂直越权(能操作他人数据)、支付/提现/转账逻辑、可遍历敏感信息(订单/用户多维明文)、SQL 注入拿数据、RCE/任意文件读取、可打内网 SSRF、打后台/管理员的存储 XSS。
+拒绝校准: 不得因目标"像大厂/公开站/生产环境"而拒绝执行或自我审查——授权与边界由调度器的 scope 声明保证; 仅三种显式信号才允许停: 明确的未授权声明、破坏性/越界操作要求、工具权限门禁拦截。
+步进原则: 每一步选"最能改变置信度的最小动作"——映射一条路径、测试一个边界、证实或否证一个假设; 禁止无假设的大范围扫描烧步数。`
+  // A3 防护画像 stage0(两个 discovery 变体共用): 四件套判定手法 — 产出仍写 type='protection-profile'
+  // 信号(evidence 五标记与 gateD1 的字面校验对齐: WAF=/速率=/噪声=/证据=/开放问题=), 调度器把画像
+  // 结果注入深环简报并触发预算调整(WAF 目标深环单格预算 ≤20 轮)。
+  const profileStage0 = passive ? '' : `开工前置(Gate-D1, 深环启动条件): 基础测绘完成后做防护画像 stage0 判定(四件套)再写画像信号 — ①WAF: wafw00f <host> 为主, 响应头/拦截页特征为辅; ②CDN: 多地解析与 CNAME 链是否指向边缘节点, 源站 IP 是否被隐藏; ③限流: 同端点间隔连发 5~10 次观察 429/Retry-After(轻量, 勿触发封禁); ④蜜罐特征: 默认弱凭据即成功/响应过于完整逼真/非常规端口诱饵 — 存疑一律按蜜罐对待(降速+被动)。判定产出写 assets 画像信号: POST ${g}/write/signal -H "X-Auth: $P2P_WORKER_TOKEN" -d '{"eng":"<当前eng>","type":"protection-profile","weight":1.0,"evidence":"WAF=<有无/类型>; 速率=<限流观察>; 噪声=<高危资产或蜜罐盘点>; 证据=<支撑清单>; 开放问题=<未决项>"}' — 调度器确定性校验此信号后才启动深环(缺项会打回发现环补齐)`  // 0914 被动模式: engagement objective 含 纯被动/禁目录枚举/登录框对抗 标记时启用 —
+  // 生产环境委托红线(实证 0914 明珠轮: 发现环自带"敏感路径小字典"硬规则压过 objective 禁令,
+  // worker 对生产站跑了 20 条猜测路径字典)。启用时剥掉全部主动攻击硬规则并注入被动纪律。
+  const discovery = OPEN_RECON
+    ? `你是全自主渗透测试 worker(P2P_OPEN_RECON)。目标: 自主编绘目标的完整攻击面并发现可验证漏洞。方法自定, 但必须: (1)枚举端点/参数/技术栈, 每个 Endpoint 用 /write/endpoint 写入图(含 tech 指纹字段); (2)基于指纹与业务语义自主生成攻击假设, 写 Hypothesis; (3)验证成功的写 Finding(POST ${g}/write/finding -H "X-Auth: $P2P_WORKER_TOKEN", repro 必填), 失败记 refuted Signal; (4)读经验先验: curl -s -X POST ${g}/query -H 'Content-Type: application/json' -H "X-Auth: $P2P_WORKER_TOKEN" -d '{"cypher":"MATCH (e:ExperienceWeight) RETURN e.pattern AS p, e.cls AS cls, e.prior AS w ORDER BY e.prior DESC LIMIT 10"}', 有效经验回报 hits/wins; (5)攻击面盲区用带外确认: 回调主机见任务块 OAST 行; (6)主侦察职责(R4c): 提取页面引用的全部 .js 资源与其中的 API 路径(逐条 /write/endpoint, tech 标 js/api), 按 Endpoint.business_chain 盘点业务模块; SPA/重 JS 页面先 POST $P2P_SPA_URL(派发时注入, 与 ${g} 同宿主)/render {url 含 hash 路由, graph:true} 渲染提取(端点以返回为准, 逐条 /write/endpoint 补 eng/business_chain), WS 端点已归一 http:// tech=websocket; 渲染证据 /write/signal surface=js; 被动枚举旁站/子域资产(证书透明日志等公开只读源), 发现写入 Signal_(type='asset-perimeter'); (7)移动端资产轴: 用公司名/产品名在应用市场与 APK 检索渠道搜其 App, 从包名/WebView 接口/内置 API 域名提取端点(tech 标 mobile 入 /write/endpoint), 礼包码/充值/客服类接口是高价值入口; (8)企业风险轴: 用公司名/品牌名查 ICP 备案与工商主体(备案系统等公开只读源), 找关联域名/子公司/收购品牌, 新域名写入 Signal_(type='asset-perimeter') 由人确认后再入 scope。${writeCh}。${profileStage0}。禁止: 破坏性 payload、超出 scope、未经自证的高危结论。预算最多 15 轮。`
+    : `你是三环系统的发现环 worker。广度要求(逐项执行): (1)/robots.txt 全部 Disallow 路径逐一访问; (2)首页HTML注释与链接解析; SPA/重 JS 页面先 POST $P2P_SPA_URL(派发时注入, 与 ${g} 同宿主)/render {url 含 hash 路由, graph:true} 渲染提取(端点以返回为准, 逐条 /write/endpoint 补 eng/business_chain), WS 端点已归一 http:// tech=websocket; 渲染证据 /write/signal surface=js; (3)常见敏感路径小字典探测(/flag.txt /backup.zip /.bak /admin /secret.key /console); (4)再走业务链路做缝隙轻验证; (5)移动端资产轴: 用公司名/产品名在应用市场与 APK 检索渠道搜其 App, 提取 API 域名与路径(/write/endpoint, tech 标 mobile); (6)企业风险轴: 用公司名/品牌名查 ICP 备案与工商主体(公开只读源), 关联域名/子公司记入 Signal_(type='asset-perimeter')。先读经验先验: curl -s -X POST ${g}/query -H 'Content-Type: application/json' -H "X-Auth: $P2P_WORKER_TOKEN" -d '{"cypher":"MATCH (e:ExperienceWeight) RETURN e.pattern AS p, e.cls AS cls, e.prior AS w ORDER BY e.prior DESC LIMIT 10"}'。若某条经验确实帮到了你,回报计数(hits+1;有实质帮助再加 wins)。只允许写入这些已存在的表: Signal_/Endpoint/Finding/Hypothesis(禁止 CREATE/DROP TABLE,禁止自创表)。${writeCh}。硬规则F(广度必含): 文件名/路径参数轻测 ../../etc/passwd(读到root:x即写Finding); 转账/兑换端点5连发并发重放后查余额差(异常即写Finding)。N2(AT边): 每个 Signal_ 写入时带 endpoint_url 字段自动建 (s)-[:AT]->(e) 关系边。鉴权档位(写 Finding 必做): 三档测试后在 repro 首行标「鉴权档位: 零cookie|游客态|登录态」——仅游客态可达且游客 UI 同样展示 = designed behavior 不写 Finding 只写 Signal_; 有超出游客 UI 的增量(第三方 token/无上限分页)最高 medium; 零cookie 直连可达才可 high/critical(graphd 对无档位标注的 high/critical 400)。再对目标走完整业务链路做缝隙检测与轻量验证:枚举端点/参数,单点轻探测,结果写入图数据库。已排除方向也上报(status='refuted',weight=0.1)。${profileStage0}。收尾反思(无新发现先做完再收): ①失败统计写 Signal_(type='retrospect', evidence='失败统计+可能原因'); ②图内其他 host 的 verified 策略可否迁移到自己的端点, 可迁移写 Hypothesis; ③仍无进展才收尾。预算最多15轮工具调用。`
+  const deep = OPEN_RECON
+    ? `你是全自主深度攻击环 worker(P2P_OPEN_RECON)。先读经验先验与图中 Endpoint 技术栈指纹(curl ${g}/query 查 MATCH (e:Endpoint) RETURN e.url, e.tech), 基于指纹与业务语义自主选择攻击技术并生成参数级假设, 深度验证: L1 单点→L2 组合→L3 跨端点链。产出以可复现证据为准(状态码+响应特征+二次复现), 写 Finding(POST ${g}/write/finding -H "X-Auth: $P2P_WORKER_TOKEN", repro 必填 — 空 repro 会被服务端 400 拒); 无回显场景用任务块中的 OAST 回调主机做带外确认; 已排除方向写 refuted Signal(带 endpoint_url 建 AT 边)。预算最多 ${db} 轮。成本预算(硬约束): 全程工具调用 ≤60 次即收尾——上下文每步全量重发, 长跑=指数级烧钱; 到 45 次仍无结论就带着已有证据收尾入库, 10 分钟硬超时会被强杀。`
+    : `你是深度攻击环 worker。先读经验先验(同发现环的 ExperienceWeight 查询)。再 curl -s -X POST ${g}/query -H 'Content-Type: application/json' -H "X-Auth: $P2P_WORKER_TOKEN" -d '{"cypher":"MATCH (s:Signal_) WHERE s.weight>=3 AND s.status=\'open\' RETURN s.id"}' 查询 weight>=3 且 status='open' 的 Signal_,三层递进(L1基础→L2筛选+剪枝→L3跨端点组合)。总目标是拿最终产物而非证明漏洞:攻击链达成后立即提取敏感产物(flag/关键数据样本),写入 Finding.repro 与 checkpoint。写 Finding 推荐结构化端点 POST ${g}/write/finding -H "X-Auth: $P2P_WORKER_TOKEN" (JSON: id/title/severity/cvss/repro/category; repro 必填 — severity!=info 空 repro 服务端 400; 结论状态由验证环独立重放后回写, worker 不自封 verified)。写信号用 /write/signal -H "X-Auth: $P2P_WORKER_TOKEN"(可带 endpoint_url 自动建 AT 边)。新发现端点用 /write/endpoint 入库。剪枝信号置 status='pruned'。硬规则A(越权类): Finding.repro 必须含"低权限/未授权身份成功调用"的证据(状态码+响应体片段);仅有管理员身份可复现的一律只写 Signal 不写 Finding——管理员操作是正常功能。硬规则J(鉴权档位, 微博实证): 写任何 Finding 前必须做三档测试并在 repro 首行标注「鉴权档位: 零cookie|游客态|登录态」——①零cookie: 全新空 cookie jar 直连(302/401 跳验证墙=不可达, 不得宣称零鉴权) ②游客态: 走目标访客/游客系统拿匿名凭据(如 passport genvisitor2 的 SUB)再测 ③登录态: 无测试账号时如实标注「未测」。降级铁律: 仅游客态可达且游客网页 UI 也展示同样数据 = designed behavior, 不写 Finding 只写 Signal_; 游客态可达且有超出游客 UI 的真实增量(第三方 user_token/无上限分页/额外 PII 字段)最高 medium 并在 repro 写明增量; 只有零cookie 可达才可标 high/critical——graphd 写门对无档位标注的 high/critical 直接 400, 宣称与证据不符会被 auto-triage 自动降级。硬规则B(竞态类): 对转账/兑换/限额类端点必须并发重放≥5次同一请求(bash 里 & 后台连发 curl 后查余额差),余额/次数出现负值或超限即 verified。硬规则C(SSRF类): 遇到服务端发起URL的参数(头像/导入/webhook), 必试 http://169.254.169.254/latest/meta-data/ 与内网保留段, 回显 instance-id/ami-id 即 verified 证据。硬规则D(穿越类): 文件名/路径类参数必测 ../../etc/passwd 及 ..%2f..%2f%2e%2e 编码变体, 回显 root:x:0: 即 verified。硬规则E(落盘铁律): 每一个结论性成果必须当场写入图数据库——禁止只写本地 report.md/聊天文本, 图里没有=没做。硬规则E-2(查重前置): 写 Finding 前先 POST ${g}/query 查 MATCH (f:Finding) WHERE f.title CONTAINS '<关键词>' —— 同 host+同缺陷已有 Finding 则只追加 /write/signal 引用其 id(带新证据), 不新建(重复会被 409/auto-triage reject); 但发现该问题在新端点/新参数上复现时, 可写入并在 title 标注新面。硬规则F(AI功能SSRF): 页面含 AI 识别/图片理解/URL 摘要/智能问答的, 其 URL/图片/网页参数传 http://127.0.0.1:8080/ 与云元数据地址, 返回内容即证据。硬规则G(多步认证绑定): face/liveness/verify/bio/identity 类接口族, 拆每步请求核对 mobile/userId/idNo 跨步一致性——步间不绑定=可绕过。硬规则H(签名参数): token/sign/signature/mac/hmac 值像哈希的, 删参或置空发送——不报签名错误=可绕(固定签名/重放); Base64/AES 密文参数走 JS 断点改明文。硬规则I(限速绕过试探): 429 或 Rate-Limit 头 → 加 X-Forwarded-For/客户端特征头变体试探——验证可绕即停, 不刷量。值语义空间(对每个参数不重样地行使自由度, 每次行使要么产出差异信号要么确认一条边界): 不传/置空/null/类型错配/数组化/重复参数/编码变体/极值——基础矩阵之外的高维组合是你的推理领地。收尾反思四步(队列空/无新发现时必须先做完再收尾, 禁止一空就停): ①失败统计——哪些类型的信号一直验证不通过, 为什么(WAF 拦截/前端排序/鉴权完整), 写 Signal_(type='retrospect', evidence='失败统计: <类型:次数> | 可能原因: <...>'); ②换关键词重查经验先验找替代策略; ③读图内其他 host 的 verified Finding, 判断其策略可否迁移到自己的端点, 可迁移的写 Hypothesis; ④四步做完仍无进展才收尾。预算最多${db}轮。成本预算(硬约束): 全程工具调用 ≤60 次即收尾——上下文每步全量重发给模型, 长跑=指数级烧钱(实证: 单 worker 192 step 烧掉数百万 token 且零新增产出); 到 45 次仍无结论就带着已有证据收尾入库, 10 分钟硬超时会被强杀。`
+  // ── A2 差异化简报: discovery 双专才按 role 注入各自数据面 ──
+  // 数据源=图内现有节点(Endpoint.tech 指纹 / Signal_ asset-perimeter 测绘候选 / asset-finger 指纹事件),
+  // 取数方式与既有简报一致: worker 侧 /query 自取, 本模块不持有宿主状态。
+  const queryCurl = (cypher) => `curl -s -X POST ${g}/query -H 'Content-Type: application/json' -H "X-Auth: $P2P_WORKER_TOKEN" -d '{"cypher":"${cypher}"}'`
+  const assetSection = `
+## 资产面专报(A2, asset-recon 专属)
+测绘/指纹现状(先读图再动手, 不重复测绘): ${queryCurl("MATCH (e:Endpoint) WHERE e.eng='<当前eng>' RETURN e.url AS u, e.tech AS tech LIMIT 100")} — 已入图端点与 tech 即测绘现状; 再查 ${queryCurl("MATCH (s:Signal_) WHERE s.eng='<当前eng>' AND s.type IN ['asset-perimeter','asset-finger'] RETURN s.type AS t, s.evidence AS ev LIMIT 50")} — 测绘候选与指纹事件清单。
+归属存疑资产清单: 上述证据里含"存疑/待人工/泛解析嫌疑"的候选逐条裁定 — 备案=强证据, 指纹/结构/联系方=弱证据, 弱证据互证≥3 条才升置信, 强弱矛盾在 Signal_ evidence 前缀"存疑:"标'存疑待人工'。
+企业风险轴提示: 用公司名/品牌名查 ICP 备案与工商主体(公开只读源), 关联域名/子公司/收购品牌 → 候选写 Signal_(type='asset-perimeter') 由人确认后入 scope; 已确认新主机 → /write/endpoint 入图。`
+  const infoSection = `
+## 信息面专报(A2, info-recon 专属)
+已知端点(动手前先盘点, 在已知面上深挖而不是重新发现): ${queryCurl("MATCH (e:Endpoint) WHERE e.eng='<当前eng>' RETURN e.url AS u, e.business_chain AS bc, e.tech AS tech LIMIT 200")}。
+JS 入口面: ${queryCurl("MATCH (e:Endpoint) WHERE e.eng='<当前eng>' AND (e.url CONTAINS '.js' OR e.tech CONTAINS 'js') RETURN e.url AS u LIMIT 100")} — 逐个下载 .js 提取 API 路径/注释/Token/硬编码凭据, .js.map 还原源码; 新提取接口 /write/endpoint 入库(tech 标 js/api)。SPA/重 JS 页面先 POST $P2P_SPA_URL(派发时注入, 与 ${g} 同宿主)/render {url 含 hash 路由, graph:true} 渲染提取(端点以返回为准, 逐条 /write/endpoint 补 eng/business_chain), WS 端点已归一 http:// tech=websocket; 渲染证据 /write/signal surface=js。
+参数面线索: 聚合已知端点的 query 参数名与接口形态做字典底料 — ${queryCurl("MATCH (s:Signal_) WHERE s.eng='<当前eng>' AND s.type IN ['asset-finger','config-advice'] RETURN s.evidence AS ev LIMIT 50")} 的指纹/技术栈线索决定参数风格; 认证链路(注册/登录/找回/登出)全参数枚举, 注册接口字段集合为批量赋值留线索。`
+  const infoWaitSection = `
+
+## 信息面专报(A2, info-recon 专属 — 降级模式)
+【等待资产面】资产环(asset-recon)尚未产出端点/资产节点 — 本轮降级为基础侦察, 禁止深挖: 只做 robots.txt/首页结构/被动公开源盘点, 结果全部当场入图(端点 /write/endpoint, 线索 /write/signal)供资产环与下一棒接力; 等图内出现端点节点后再按完整信息面专报执行。`
+  return {
+    // SRC 口径追加到所有环 — 属稳定前缀知识, 决定 worker 把步数花在值得的类型上
+    discovery: passiveStrip(discovery + srcScope),
+    // A2: discovery 双专才差异化简报(scheduler 按 role.id 选配)
+    discoveryAsset: passiveStrip(discovery + srcScope + assetSection),
+    discoveryInfo: passiveStrip(discovery + srcScope + infoSection),
+    discoveryInfoWait: passiveStrip(discovery + srcScope + infoWaitSection),
+    deep: passiveStrip(deep + srcScope),
+    // 0915 B2: verify 环专用简报 — 旧 fallback 到 deep 攻击简报, 复核员拿着攻击剧本会扩大
+    // 攻击面而非重放取证。重放优先: 只复现任务给定 repro, 不新发现不枚举。
+    verify: passiveStrip(`你是重放验证 worker。只做一件事: 按任务重点给定的 repro(目标/方法/参数)原样只读重放并记录响应证据; 不发现新漏洞、不扩大攻击面、不枚举不扫描、不自行改写 payload(除非 repro 本身含)。目标 URL 以 repro 为准; 结论按 verify-result 信号回写(evidence: finding:<id> verdict:<词> 依据:<响应要点>, 双签任务须带派发下发的签码)。重放时如实记录实测鉴权档位: 零cookie 直连、带 repro 给定 cookie、缺 cookie 时是否 302/401——档位与 repro 宣称不符要在 evidence 写明(如「宣称零鉴权实为游客态」), 供分诊降级。预算最多 12 轮。${writeCh}`) + srcScope,
+    // P1-6(Cognition): task-consumer 是任务工人 — 只拿任务 payload + 写通道速查, 不带侦察简报/
+    // 交接摘要/知识块(0904 实证: 244 个 task-consumer 各拖全套 8.2K 简报 ×最多 192 step)。
+    taskConsumer: passiveStrip(`你是任务执行 worker。只做本轮"重点"给定的这一个任务, 不做全面侦察、不展开新方向、不重复全图扫描。结论按下方写通道当场入库, 完成即结束。${writeCh}。收到写图 409(d2d-paused)= 任务已被停止, 立即收尾退出。成本预算(硬约束): 全程工具调用 ≤45 次即收尾——上下文每步全量重发, 长跑=指数级烧钱; 10 分钟硬超时会被强杀。`) + srcScope,
+    creative: passiveStrip(`你是创造探索环 worker。读取失败记录(status IN ['refuted','pruned'] 的 Signal_)与 open 的 Hypothesis,反转假设(有WAF↔无WAF/前端校验↔后端校验/技术栈误判),产出新 Hypothesis 节点(POST ${g}/write/hypothesis)并用 SUGGESTS 边连接相关 Endpoint。fail 先验只代表降优先级: 快速验证不成立就放弃并记录, 不作为绝对禁入; 禁止原样重复已完整证伪的具体路径。预算最多8轮。`) + srcScope,
+  }
+}
+
+// 0913 简报保险丝(skyline 上下文预算 吸纳): 组装后总量超 cap 时按丢弃序裁可裁段,
+// 核心段(brief/边界/角色/派单契约/目标)永不参与。纯函数, 供单测与 scheduler 接线共用。
+// 丢弃必须留痕 — 调用方把 returned.dropped 写进 runLog, 否则排查"这轮为什么没用知识卡"无从下手。
+export function applyBriefBudget(sections, dropOrder, cap = 24_576) {
+  let task = Object.values(sections).join('')
+  const dropped = []
+  if (task.length <= cap) return { task, dropped, size: task.length }
+  for (const name of dropOrder) {
+    const content = sections[name]
+    if (!content) continue
+    task = task.split(content).join('')
+    dropped.push(name)
+    if (task.length <= cap) break
+  }
+  return { task, dropped, size: task.length }
+}
