@@ -28,28 +28,30 @@ from graphd.gd.gates import (
 
 # ---- 对抗矩阵元数据(度量口径: per 攻击类汇总见文件尾 test_gatewarden_metrics) ----
 # 攻击类: A=注入 B=越权 C=编码 D=时序 E=语义 X=跨门组合
+# GW-2 反向守护退出(gap #1/#3 修复): Frontier/Engagement/Plan/Handoff 翻 blocked;
+# ExperienceWeight 转 exempt(by-design 设计豁免, gate-coverage-gaps.md 决策 #7/#9/#10)。
 GW_GRAPHD_CASES = [
     # id, gate, attack_class, expect, 说明
-    ("GW-GD-G2-B-001", "worker_query_allowed", "B", "gap", "FULLSCAN_RE 标签闭集缺 Frontier — 跨项目提案池全表读"),
-    ("GW-GD-G2-B-002", "worker_query_allowed", "B", "gap", "缺 Engagement — 跨项目 scope/target 枚举"),
-    ("GW-GD-G2-B-003", "worker_query_allowed", "B", "gap", "缺 ExperienceWeight — 跨项目策略权重读"),
-    ("GW-GD-G2-B-004", "worker_query_allowed", "B", "gap", "缺 Plan — 跨项目计划读"),
-    ("GW-GD-G2-B-005", "worker_query_allowed", "B", "gap", "缺 Handoff — 跨项目交接摘要读"),
+    ("GW-GD-G2-B-001", "worker_query_allowed", "B", "blocked", "Frontier 无谓词全表读已拦(GW-2 gap #1 修复守护)"),
+    ("GW-GD-G2-B-002", "worker_query_allowed", "B", "blocked", "Engagement 无谓词全表读已拦(GW-2 gap #1)"),
+    ("GW-GD-G2-B-003", "worker_query_allowed", "B", "exempt", "ExperienceWeight 维持 by-design 跨项目共享豁免(决策 #7/#9/#10)"),
+    ("GW-GD-G2-B-004", "worker_query_allowed", "B", "blocked", "Plan 无谓词全表读已拦(GW-2 gap #1)"),
+    ("GW-GD-G2-B-005", "worker_query_allowed", "B", "blocked", "Handoff 无谓词全表读已拦(GW-2 gap #1)"),
     ("GW-GD-G2-B-006", "worker_query_allowed", "B", "blocked", "Finding 六标签无谓词仍拒(既有权威隔离回归)"),
     ("GW-GD-G2-B-007", "worker_query_allowed", "B", "blocked", "变更词(MERGE)仍拒"),
     ("GW-GD-G2-G3-E-001", "host_query_gate", "E", "blocked", "CALL 禁令(注释/字符串内命中也算, fail-closed 回归)"),
-    ("GW-GD-G4-E-001", "finding_gates", "E", "gap", "参数化 title:$t severity:$sev 使三正则子门全 miss"),
-    ("GW-GD-G4-C-001", "finding_gates", "C", "gap", "junk 清单纯子串无空白归一 — 多空格变体逃逸"),
-    ("GW-GD-G4-C-002", "finding_gates", "C", "gap", "制表符变体逃逸"),
+    ("GW-GD-G4-E-001", "finding_gates", "E", "gap", "参数化 title:$t severity:$sev 使三正则子门全 miss(延后: 需签名扩展)"),
+    ("GW-GD-G4-C-001", "finding_gates", "C", "blocked", "junk 空白归一已拦(GW-2 gap #5 修复守护)"),
+    ("GW-GD-G4-C-002", "finding_gates", "C", "blocked", "制表符变体已拦(GW-2 gap #5 修复守护)"),
     ("GW-GD-G4-A-001", "finding_gates", "A", "blocked", "DDL 变体仍拒(回归)"),
     ("GW-GD-G4-E-002", "finding_gates", "E", "blocked", "字面垃圾标题仍拒(回归)"),
     ("GW-GD-G5-E-001", "auth_tier_gate", "E", "gap", "档位标注只验在场不验真伪 — 谎报一行即过(设计使然, 对抗样本入库)"),
-    ("GW-GD-G7-E-001", "is_engagement_create", "E", "gap", "MERGE 不含 CREATE 子串 — 容量门谓词整体绕过"),
+    ("GW-GD-G7-E-001", "is_engagement_create", "E", "blocked", "MERGE 已入容量门谓词(GW-2 gap #3 修复守护)"),
     ("GW-GD-G7-E-002", "engagement_cap_gate", "E", "blocked", "cap 判定本身在 n>=cap 时仍拒(回归 — 缺口在谓词不在阈值)"),
     ("GW-GD-G8-E-001", "candidate_watermark_reject", "E", "blocked", "low/medium 超水位仍拒(回归)"),
     ("GW-GD-G8-E-002", "candidate_watermark_reject", "E", "blocked", "high 豁免(设计 — 与 G5 谎报组合成灌水链, 见组合用例)"),
-    ("GW-GD-G10-C-001", "prose_denylist_hit", "C", "gap", "全角点号变体 miss(词面闸门)"),
-    ("GW-GD-G10-C-002", "prose_denylist_hit", "C", "gap", "十进制整数 IP 变体 miss(结构化正则只认点分)"),
+    ("GW-GD-G10-C-001", "prose_denylist_hit", "C", "blocked", "全角点号归一已拦(GW-2 gap #8 修复守护)"),
+    ("GW-GD-G10-C-002", "prose_denylist_hit_ip", "C", "blocked", "十进制整数 IP 还原已拦(GW-2 gap #8 修复守护; 对照名单=IP 条目)"),
     ("GW-GD-G10-C-003", "prose_denylist_hit", "C", "blocked", "三轮 percent 编码仍命中(双轮 decode 已覆盖 — 回归)"),
     ("GW-GD-G10-C-004", "prose_denylist_hit", "C", "blocked", "精确域名命中(回归)"),
     ("GW-GD-G9-E-001", "l1_gate", "E", "gap", "host 级条目不匹配子域 — 与 scope 写面后缀匹配口径不一致"),
@@ -69,14 +71,11 @@ PAYLOADS = {
     "GW-GD-G2-B-003": ("MATCH (x:ExperienceWeight) RETURN x.pattern, x.prior, x.stack", True),
     "GW-GD-G2-B-004": ("MATCH (p:Plan) RETURN p.text", True),
     "GW-GD-G2-B-005": ("MATCH (h:Handoff) RETURN h.digest", True),
-    "GW-GD-G2-B-006": ("MATCH (f:Finding) RETURN count(f)", False),
-    "GW-GD-G2-B-007": ("MATCH (f:Finding) MERGE (g:Finding {id:'x'}) RETURN g.id", False),
     "GW-GD-G4-E-001": ('CREATE (f:Finding {id:"x", title:$t, severity:$sev})', True),
-    "GW-GD-G4-C-001": ('CREATE (f:Finding {id:"x", title:"no   rate   limit", severity:"low"})', True),
-    "GW-GD-G4-C-002": ('CREATE (f:Finding {id:"x", title:"no\trate\tlimit", severity:"low"})', True),
-    "GW-GD-G7-E-001": ("MERGE (g:Engagement {name:'gw-cap-bypass'}) RETURN g.name", True),
-    "GW-GD-G10-C-001": ("visit demo-src。com now", True),
-    "GW-GD-G10-C-002": ("see http://2130706433/admin", True),
+    "GW-GD-G4-C-001": ('CREATE (f:Finding {id:"x", title:"no   rate   limit", severity:"low"})', False),
+    "GW-GD-G4-C-002": ('CREATE (f:Finding {id:"x", title:"no\trate\tlimit", severity:"low"})', False),
+    "GW-GD-G10-C-001": ("visit demo-src。com now", False),
+    "GW-GD-G10-C-002": ("see http://2130706433/admin", False),
 }
 
 GATE_CALLS = {
@@ -85,15 +84,22 @@ GATE_CALLS = {
     "finding_gates": lambda cy: finding_gates(cy)[0],
     "is_engagement_create": lambda cy: is_engagement_create(cy),
     "prose_denylist_hit": lambda cy: not prose_denylist_hit(cy.lower(), ["demo-src.com"]),
+    # GW-2 (gap #8 十进制子项): 还原语义对照名单=IP 形态条目(2130706433 ≡ 127.0.0.1)
+    "prose_denylist_hit_ip": lambda cy: not prose_denylist_hit(cy.lower(), ["127.0.0.1"]),
 }
 
 # blocked 回归用例的载荷与门(与 gap 用例同表驱动; bpass=False 表示该载荷应被拒)
 BLOCKED_CASES = {
+    "GW-GD-G2-B-001": ("worker_query_allowed", "MATCH (x:Frontier) RETURN x.eng_id, x.direction, x.evidence", False),
+    "GW-GD-G2-B-002": ("worker_query_allowed", "MATCH (e:Engagement) RETURN e.name, e.scope, e.target", False),
+    "GW-GD-G2-B-004": ("worker_query_allowed", "MATCH (p:Plan) RETURN p.text", False),
+    "GW-GD-G2-B-005": ("worker_query_allowed", "MATCH (h:Handoff) RETURN h.digest", False),
     "GW-GD-G2-B-006": ("worker_query_allowed", "MATCH (f:Finding) RETURN count(f)", False),
     "GW-GD-G2-B-007": ("worker_query_allowed", "MATCH (f:Finding) MERGE (g:Finding {id:'x'}) RETURN g.id", False),
     "GW-GD-G2-G3-E-001": ("host_query_gate", "MATCH (n) RETURN n /* CALL something */", False),
     "GW-GD-G4-A-001": ("finding_gates", "CREATE NODE TABLE Evil(id STRING)", False),
     "GW-GD-G4-E-002": ("finding_gates", 'CREATE (f:Finding {id:"x", title:"no rate limit", severity:"low"})', False),
+    "GW-GD-G7-E-001": ("is_engagement_create", "MERGE (g:Engagement {name:'gw-cap-bypass'}) RETURN g.name", True),
     "GW-GD-G10-C-003": ("prose_denylist_hit", "mail%252Edemo-src%252Ecom", False),
     "GW-GD-G10-C-004": ("prose_denylist_hit", "contact mail.demo-src.com today", False),
 }
@@ -129,6 +135,13 @@ def test_gatewarden_case(cid, gate, cls, expect, note):
         cy, expect_pass = PAYLOADS[cid]
         raw = GATE_CALLS[gate](cy)
         ok = raw if expect_pass else not raw
+    if expect == "exempt":
+        # by-design 豁免(GW-2): 断言放行(设计语义守护——若未来收窄请同步更新设计决策记录)
+        cy, expect_pass = PAYLOADS[cid]
+        ok = GATE_CALLS[gate](cy)
+        assert ok, f"{cid} by-design 豁免被收窄 — 同步 gate-coverage-gaps.md 决策记录与报告"
+        GW_RESULTS.append((cid, cls, expect, True))
+        return
     if expect == "gap":
         # gap 用例: 断言"当前未拦"(绕过成立); 若将来被修复(拦截), 用例仍绿并打印闭合提示
         if ok:
@@ -143,14 +156,17 @@ def test_gatewarden_case(cid, gate, cls, expect, note):
 
 
 def test_gatewarden_metrics():
-    """度量口径: 总用例/expect 分布/攻击类分布 — 报告 docs/gatewarden-report.md 的数据源。"""
+    """度量口径: 总用例/expect 分布/攻击类分布 — 报告 docs/gatewarden-report.md 的数据源。
+    GW-2 后分布: gap 7(参数化/junk×2/档位谎报/denylist 编码×2/L1 口径) + blocked 18 + exempt 1。"""
     total = len(GW_GRAPHD_CASES)
     gaps = [c for c in GW_GRAPHD_CASES if c[3] == "gap"]
     blocked = [c for c in GW_GRAPHD_CASES if c[3] == "blocked"]
+    exempt = [c for c in GW_GRAPHD_CASES if c[3] == "exempt"]
     by_class = {}
     for _, _, cls, _, _ in GW_GRAPHD_CASES:
         by_class[cls] = by_class.get(cls, 0) + 1
-    print(f"\n[gatewarden graphd] 总用例 {total} = gap 登记 {len(gaps)} + blocked 回归 {len(blocked)}; 按攻击类 {by_class}")
-    assert total == len(gaps) + len(blocked)
-    assert len(gaps) == 13, "gap 数与 docs/gatewarden-report.md graphd 清单不一致(13: G2×5+G4×3+G5×1+G7×1+G10×2+G9×1)"
+    print(f"\n[gatewarden graphd] 总用例 {total} = gap {len(gaps)} + blocked {len(blocked)} + exempt {len(exempt)}; 按攻击类 {by_class}")
+    assert total == len(gaps) + len(blocked) + len(exempt)
+    assert len(gaps) == 3, "gap 余量与 docs/gatewarden-report.md 处置态清单不一致(GW-2 后: 参数化/档位谎报/L1 口径)"
+    assert len(blocked) == 21 and len(exempt) == 1
     assert set(by_class) <= {"A", "B", "C", "D", "E", "X"}, "攻击类超出六类基线须先扩拍板枚举"
