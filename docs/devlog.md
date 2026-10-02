@@ -215,3 +215,11 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 关键裁决：**逐条可追溯**（每修带 gap 编号+反向守护翻转=非删用例）；**fail-closed 红线两处落地**（MERGE 修保留子串误报不加词边界=只紧不松；L1 口径差豁免因改后缀=权限扩大）；**诚实延后模板**首次批量使用（#19 假锚/源码正则否决论证：无权威命名空间+伪造者零边际成本+0916 误杀学费——延后不是不做是有据不做）；P0 六组实修 5.5 组（#18 收窄+残余延后/#16 硬黑面+内网残余延后——签名零变更红线下的诚实边界）；#23 rebinding 延后（连接面架构改造+端到端靶场验证，EV-1 仿真用例保留守护）
 教训沉淀：**编辑通道纪律**——python 脚本写 tests/ 被 Mimosa post-write 恢复机制静默回滚（8 处修改消失），Edit/Write 工具写的存活——源码/测试修改一律工具通道（hook 保护的正确用法）；**反向守护的收益实证**——本批 14 例翻转全部由样本库自动触发提示（G8 三 sev/G12 零宽/combo 三链/graphd 六例），无一遗漏靠人记忆；**combo 静态断言是修复回归的最低成本守护**（FULLSCAN/redact 源码正则断言翻转=一条 assert 锁一个修复）
 开放项：Gate-V 架构批（#18 分行残余+#19 假锚对账）/端点编排批（#12 认证顺序+#13 暂停扩面）/部署授权面拍板（#16 内网残余+#21 L0+#24 CONNECT）——三大延后簇见 gatewarden-report 处置全景遗留跟踪
+
+## 2026-10-03 · T4-3-2-0 共识验证 v2 前置审计与 schema 草案（只读批；8-1）
+底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest 394 / mocha 1944 / panel 88（只读批零代码）
+产出：docs/t4-3-2-plan.md（DDL 能力结论卡/v1 全链对照实测/v2 字段设计卡/GW-2 门交互矩阵/禁区预比对+四族实施蓝图/**schema 草案 §五**）+ state/roadmap 终态
+关键裁决：**Kùzu 0.11.3 ALTER ADD 无 COLUMN 关键字**（带关键字 Parser exception"expected rule kU_AlterOptions"；仓内 schema.py 既有 ALTER 本就无 COLUMN——子 agent 实测纠偏+主 agent 独立临时库复证双过）；**DEFAULT 回填 '' 非 NULL**（既有行/ALTER 后新行双证，读侧零 NULL 风险）；**IMPORT 后 DEFAULT 元数据丢失**（schema.cypher 不携带 DEFAULT→导入库新行全列 NULL，kuzu 无 SET DEFAULT——恢复演练/B 预案新增设计输入，开放项登记零改 runbook）；EXPORT/IMPORT 往返含新列数据无损（copy.cypher 自动扩列）——归档规程零改动；v1 零回归基础（14 it 全绿+图内实锚 698/8/9 与 T3-1-0 时点零漂移，走运行中 graphd 只读 /query）；replay_matrix 消歧（列在 Finding 非 Signal_，runbook"五段矩阵"是 verify-result evidence 内容结构）；GW-2 门交互矩阵=新写点全量过门零豁免（A 面 reasoning_path 过 redact_pii+注入扫描扩展[soft 不加前缀防破坏 JSON]+配额；B 面 host-only 走共享门；专用读路由不走 FULLSCAN）；禁区预比对=**do-not-touch :20-21 命中**（Experience 表结构+读写端点在绝不碰清单）→实施批按行修订入蓝图（授权链=T4-3-0 拍板⑥+schema 草案确认，4-3a 先例形态）
+子 agent 协作（先例 11）：1 派（DDL 实测四项：ADD 可行性/DEFAULT 语义/EXPORT-IMPORT 往返/CTAS 探针）——**任务包给的 ALTER 参考语法自身是错的**，子 agent 以报错原文优先纠偏出正确语法完成实测；硬结论主 agent 独立临时库复证全过（ADD/回填/table_info 16 列/空串匹配）；生产库实锚姿势=运行中服务只读 /query 而非直接开库文件（graphd 常驻锁+只读保证双赢）
+教训沉淀：**给子 agent 的任务包里"参考语法"自身可能是错的**——实测型任务的结论必须锚在报错原文与可复跑路径上（子 agent 没有把任务包语法当权威，是本批复证链成立的前提）；schema 草案的确认位设计=数据结构决策值得一次轻确认（T4-3-0 拍板①留位兑现），草案与实施蓝图分节使确认粒度清晰
+开放项：IMPORT DEFAULT 丢失→恢复演练设计输入+B 预案首批验证项追加；illegal 枚举位预留（v3 拍板）；consensus-apply 存量 9 行回填=实施批可选项；**schema 草案 §五等用户确认后进 T4-3-2 实施批**；远端 dependabot 三分支（actions 升级 PR）归用户处置
