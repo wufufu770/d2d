@@ -350,3 +350,42 @@ def test_81_transition_log_endpoint_append_only_and_write_failure_500(tmp_path, 
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ── HYG-1: 写入侧日志轮转(50MB 上限+保留 5 份, env 可调) ──────────────────────────
+
+def test_hyg1_rotation_shifts_generations(tmp_path, monkeypatch):
+    """轮转位移: 超限→活跃改名 .1, 旧代顺移; keep 约束代数; 未超限零动作。"""
+    from graphd.gd.transition_log import _rotate_if_needed
+    monkeypatch.setenv("P2P_LOG_MAX_MB", "1")
+    monkeypatch.setenv("P2P_LOG_KEEP", "3")
+    p = tmp_path / "t.log"
+    # 未超限 → 不动
+    p.write_text("small")
+    _rotate_if_needed(str(p))
+    assert p.exists() and not (tmp_path / "t.log.1").exists()
+    # 超限 → 活跃→.1
+    p.write_text("x" * (1024 * 1024 + 7))
+    _rotate_if_needed(str(p))
+    assert not p.exists() and (tmp_path / "t.log.1").read_text() == "x" * (1024 * 1024 + 7)
+    # 代数位移: 灌满 .1/.2 → 再轮转 → .1 新、.2=旧.1、.3=旧.2; keep=3 无 .4
+    (tmp_path / "t.log.1").write_text("gen1")
+    (tmp_path / "t.log.2").write_text("gen2")
+    (tmp_path / "t.log.3").write_text("gen3-stale")
+    p.write_text("y" * (1024 * 1024 + 7))
+    _rotate_if_needed(str(p))
+    assert (tmp_path / "t.log.1").read_text() == "y" * (1024 * 1024 + 7)
+    assert (tmp_path / "t.log.2").read_text() == "gen1"
+    assert (tmp_path / "t.log.3").read_text() == "gen2"  # keep=3: 旧 .3 被 .2 顶替前已越界删除? 无——range(2,0,-1) 只移 .2→.3
+    assert not (tmp_path / "t.log.4").exists()
+
+
+def test_hyg1_rotation_in_both_writers():
+    """两写入侧同源在位(audit.py 与 gd/transition_log.py 均有 helper 且锁内调用)。"""
+    import re
+    audit_src = open("graphd/audit.py", encoding="utf-8").read()
+    tl_src = open("graphd/gd/transition_log.py", encoding="utf-8").read()
+    for src in (audit_src, tl_src):
+        assert "def _rotate_if_needed(path):" in src
+        assert re.search(r"with _lock:\s*\n\s*_rotate_if_needed\(path\)", src)
+    assert "P2P_LOG_MAX_MB" in audit_src and "P2P_LOG_KEEP" in tl_src
