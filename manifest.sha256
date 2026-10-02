@@ -38,7 +38,7 @@ aaeaad46d1439ecb6931f82b366f9e1172772893289800759606baa012bc9bf7  docs/approval-
 87c90e9e9cf9d8191cc7db3cd61ce14cdc888a1e3dec6ccbe20fb042444c581b  docs/browser-recon-runbook.md
 8790f5862ff98e20e7f7c2137be1bed7c825e9e81dadf2e97bd2df4eb890b59a  docs/business-gate-acceptance.md
 920bafd5f594c4d1b07032921387cd81e55c79fa8604d6517625de5a017f408c  docs/business-gate-design.md
-53018e55dce6d86fe9c6e278490194ad193601bf7b47043342f454b92717177a  docs/devlog.md
+b5ea3ac79f9f83236cae3ae8826602ed2e5505e04c7fd5ff2de8fdcd8d10b683  docs/devlog.md
 abdd5a24b8694cb203f216f8875eaf29cdd83393e696b7308597e18131a3ed11  docs/do-not-touch.md
 99954434d3540ce4bc41d90678a799c55fbb58bef832e8df286c60e80e848f2b  docs/dsh-sidebar-compat.md
 6cfd4f6d2e618cd73b4bf877470c56f6596e9925f66405e5968fc54bdb359762  docs/false-positive-schema.md
@@ -50,17 +50,18 @@ c92afae1501b34015eb33243bb6b9a955d1e1d05c3a68b040dae6ec1ab3d617d  docs/gate-cove
 aef0134f9116bb62e4230aad57a68503235886c0487d67af1da2d0091c47ec6a  docs/mitm-cert-runbook.md
 ebffd9ed60e9e0d2e9ca498f211c951ddce04a8984a7df4b29d5525d78ab0559  docs/multi-agent-failure-checklist.md
 a9005a2b92111f770d4ebb3f87c9dd1d2eb8562b0333059713aaebb0c96b2cb3  docs/osint-feed-and-mitm.md
-aff9e6f30b0df65ce4edc6dc9484dccf54ce63dfc1397530bc73bad2869fca23  docs/roadmap.md
+ae3b0e7705f3d35fcc9e356861d77a83b4658f9ca009e112c72ee96e0faf776d  docs/roadmap.md
 911a1ff47ae6d5958ba77f29c4285172bf472f54adc15d9a67db45962e169b84  docs/routing-integration-points.md
 eb28176b552b25945ed7642a87792fff6c5b74ded0fbc1478f10bbe265e906ad  docs/runbook-storage.md
 7802fcd65d52a92c208501118f4379f4c80c4fdf2d0e5c75e6d6aeb2dd9d7e05  docs/skill-design.md
 45d12c92a40df7c82746686a5e9b91b6611aca5db38255c5e544cef39b3a97a6  docs/stage6-batch-plan.md
 a567b8b017fd858a95a39ee3bbb2967aefc4fa2e8cbeca591b5fdd9b2f17881c  docs/stage6-finale.md
-690204787daae1242822b492cfa9b7d4ec2e24b1b92da37270646c961c1ebf21  docs/state.md
+400844b46e59c6e51ed5c36e6c9b4c397d5785828d1203af75d910759f349762  docs/state.md
 4ac5b40733bee523aebc5a4e06b4d59951d3ea22b32b13785b7c68c3bd8f824f  docs/t3-2-2b-acceptance.md
 0039cfb03b82b0e8f561baa93e7c77edd7b41139d8dbf37f45cd4ee093d39f28  docs/t3-3-finale.md
 ab0bf503a34c407a9135ae2bbf03e8dcda6da3e6e3028e20d1642539cbbb2b60  docs/t3-3-plan.md
 c6731720cdcf5c1532fb2f0d0022fea91914be9048ac2a7841d331a5817509d2  docs/t4-2-storage-decision.md
+a63e1a0337dcc75c819eb421d1830ccae679a8b0c576f59758158617e484e836  docs/t4-3-plan.md
 8d4fa88c5a66255872ed390d8008fc56e4cc5e4046782d7485c0552d78bb751f  docs/tier-depth-mapping.md
 4f30431afa7d8c6fa8523ddcca255d3546344803240d5a0b388b6c4fe65aa99d  docs/tool-risk-rating.md
 cb48ec0b1666d79ab8dbf09b5b2cb0ec517d0f4026dc86fa0e5c8c1d484a207e  docs/upstream-open-items.md
@@ -490,6 +491,8 @@ d17c5ef3fd6a3c99958e3f7a69ce7473d06717d5cf578a8733b92aa55fd4a290  阶段3-实战
 #555ab9189cc4baa7cd2b527099b932497310a6a609798a4d5cff30fa89349c5a  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/index.js
 #a9960e05e21716f82bd289a3a8954b000a6fee3c423dcfdc2c3552025704b696  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/types/index.d.ts
 # --- end node_modules ---
+
+
 
 
 
