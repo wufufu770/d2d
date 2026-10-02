@@ -9,12 +9,21 @@ d2d 是 Agent 的 Harness——以 dsh 插件形式运行，编排多个 dsh Age
 任务，在 Agent 层面实施上下文管理、工具接口、约束、验证、纠正和持续进化。
 架构与能力详见 README 与 ARCHITECTURE.md。
 
+> **上游关系**（据源码实锚，非推测）：本仓 `plugin/pentest-dsh/scheduler/` 下 9 个
+> 模块的头行统一标注 `p2p-core/scheduler/<name>.mjs — 纯代码搬移自 scheduler.js`，
+> 且 `plugin/pentest-dsh/index.js:2` 注明 adapter 由「p2p-core sync-out 分发」
+> —— 即**调度内核源自 p2p-core、经 sync-out 落入本仓**，本仓是分发侧。
+> 两仓的同步方向、分支策略、以及 p2p-core 是否仍在演进，**仓内无据**；
+> 涉及该边界的问题须另行取证，不得凭本条推断。
+
 ## 接手协议（新会话第一步，按序执行）
 1. `git fetch && git log --oneline -5`，对照 docs/state.md「当前底账」；
    不一致以仓库为准，并向用户报告差异
 2. 通读本文件 + docs/roadmap.md + docs/state.md + docs/do-not-touch.md
 3. 按 README "For Other Agents" 段确认测试基线可复现
 4. 向用户确认当前批次；无指示时按 docs/state.md「下一步建议」推进
+   （**取「梯队状态」节内唯一标注「当前唯一有效」的那条**；其余并存条目均已
+   标注「历史·…时点，已完成」，表示该批已完成、其建议已作废，不得取）
 5. 红线：未读完 docs/do-not-touch.md 前，不得实施任何变更
 
 ## 全局硬约束
@@ -124,6 +133,12 @@ Mimosa L3 处理 → push+CI → 回报固定格式 → 绝不碰清单 → 边�
   决策账）；docs/do-not-touch.md 仅在清单变化时更新（新增禁碰须注明来源批次）。
 - docs/roadmap.md 在梯队/批次状态变化时同步（已完成简记一行）。
 - 机制本体由本节承载，回报格式已内置（见上节）。
+- **单节原子更新**（文档校准批新增口径）：state.md「当前底账」是活文档里最易腐化的一节——曾出现
+  同节内 HEAD 停在 T3-2-5 而基线已标「T3-3-2 固化」的分节更新产物。**单节内多字段须同批一次更新**，
+  落库前按节自检一遍（HEAD / 分支 / CI / 基线 / 下一步五项同批对齐）。
+- **清单类文档全量校验**（同批新增口径）：state.md「关键文件/脚本速查」、do-not-touch.md 禁碰清单、
+  白名单类文档**不得抽样验证**——5 条抽查判「属实」会在全段 67 条时暴露漏项。须全量展开校验，
+  且注意三种形态：花括号展开（`{a,b}.mjs`）、跨行续接、通配（`*.md`）。
 
 ## 给用户的后续会话开场白模板
 「读仓库 AGENTS.md 接手 d2d，按 docs/state.md 当前状态继续，
