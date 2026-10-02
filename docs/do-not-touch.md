@@ -17,8 +17,9 @@
 | gates.py redact_pii 8 类 | 脱敏语义 |
 | report.mjs 三校验点 | 3E 已落地 |
 | graphd 八态机 / actor+reason / host-only 认证 | 4-8 已落地 |
-| Experience 表结构（14 列） | 3.5-1 已落地 |
-| /write/experience、/query/experience | 3.5-1 已落地 |
+| Experience 表结构（**16 列**——T4-3-2 按 4-3a 授权链[T4-3-0 拍板⑥+T4-3-2-0 审计+用户 schema 确认]新增 reasoning_path/consensus_status 两列；既有 14 列语义零改动，权威定义 docs/experience-consensus-schema.md） | 3.5-1 已落地+T4-3-2 增列 |
+| /write/experience（可选字段 reasoning_path 扩展——既有校验链零删改）、/query/experience（读侧回传 +2 列） | 3.5-1 已落地+T4-3-2 扩展 |
+| /write/experience-consensus（host-only 共识回写端点——枚举白名单+superseded 存在性校验+SET 单列） | T4-3-2 已落地 |
 | /write/experience-transition | 3.5-4 已落地 |
 | 离线蒸馏管道 | 3.5-2 已落地 |
 | 经验检索 + 注入 | 3.5-3 已落地 |
