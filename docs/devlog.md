@@ -208,3 +208,10 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 关键裁决：**检索层评测 only**——全链重放不可行三证（原始轨迹不入仓[0eb6454 自述+/tmp 已灭失]/蒸馏含 LLM 不可确定性重放/活卡库四快照零 run 衍生卡）；cards=数据集自身确定性构造（脱敏形态 canonical——活图原文精确匹配会确定性失配）；判定口径定稿=must_include all-of+主观字段（chain/verdict/跨场 severity）不自动判定进人工裁决清单（14 条待用户终裁）；CNSR 维持 T2-1 基线 5.73 引用（computeCnsr 复算回 5.73 无口径漂移——检索层评测不产 finding/token，不硬造分母）；立项卡"实弹全链路五指标跑测"=另一形态登记后续可选独立批
 教训沉淀：**fixture 陷阱第二次现身**（node:test import 在 mocha 下不可见——新测试文件 0 passing 但不报错，与 gatewarden 的 checkBash 对象形态同构：错误载体造虚假结果；两案合并口径=新测试文件先单跑确认 it 数再入全量）；world.run stdout 捕获对部分子进程不稳（npm/npx 空输出）——快速门统一纯 exit-code 口径+数字断言移交复核员实跑（与先例 13 同批沉淀）
 开放项：人工裁决清单 14 条待用户终裁（eval-run-1-adjudication.json）；检索面跨 run/链召回弱→embedding hook（R5 既有登记）重测；实弹全链路五指标跑测=可选独立批（立项卡口径）
+
+## 2026-10-02 · GW-2 门禁收紧批（与 T4-3-1 攻击批成对：P0 六组+黄条收编+蓝条处置）
+底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest 394 / mocha **1944**（+5 净增：防御变体+翻转改写）/ panel 88
+产出：graphd 三修（#1 FULLSCAN 闭集扩 4 标签[Experience/ExperienceWeight 维持 by-design 豁免]/#2 /query/frontier 升 host-only[消费方普查全 host]/#3 is_engagement_create 扩 MERGE[保留子串语义只紧不松]）+ plugin 五修（#14 候选副本集[引号/转义归一+cd 锚定+runs//tmp 豁免]/#15 重定向 sink 判定[SYSTEM_PREFIXES 同源 import+.ssh 段]/#16 共享模块 forbidden-target.mjs 抽取+web_fetch 硬黑面任意模式 deny/#18 跨类双锚分行判定[单行塞料拒]/#20 零宽剥离先于词表）+ graphd 黄条两修（#5 junk 空白归一/#8 denylist 全角点+十进制 IP 还原）+ replay redact（#11 收窄）+ cidr 形态（#28）+ **36 条处置态全景**（已修 12/豁免 7/延后 17，docs/gatewarden-report.md 处置全景节）+ 反向守护翻转 14 例+防御变体扩面
+关键裁决：**逐条可追溯**（每修带 gap 编号+反向守护翻转=非删用例）；**fail-closed 红线两处落地**（MERGE 修保留子串误报不加词边界=只紧不松；L1 口径差豁免因改后缀=权限扩大）；**诚实延后模板**首次批量使用（#19 假锚/源码正则否决论证：无权威命名空间+伪造者零边际成本+0916 误杀学费——延后不是不做是有据不做）；P0 六组实修 5.5 组（#18 收窄+残余延后/#16 硬黑面+内网残余延后——签名零变更红线下的诚实边界）；#23 rebinding 延后（连接面架构改造+端到端靶场验证，EV-1 仿真用例保留守护）
+教训沉淀：**编辑通道纪律**——python 脚本写 tests/ 被 Mimosa post-write 恢复机制静默回滚（8 处修改消失），Edit/Write 工具写的存活——源码/测试修改一律工具通道（hook 保护的正确用法）；**反向守护的收益实证**——本批 14 例翻转全部由样本库自动触发提示（G8 三 sev/G12 零宽/combo 三链/graphd 六例），无一遗漏靠人记忆；**combo 静态断言是修复回归的最低成本守护**（FULLSCAN/redact 源码正则断言翻转=一条 assert 锁一个修复）
+开放项：Gate-V 架构批（#18 分行残余+#19 假锚对账）/端点编排批（#12 认证顺序+#13 暂停扩面）/部署授权面拍板（#16 内网残余+#21 L0+#24 CONNECT）——三大延后簇见 gatewarden-report 处置全景遗留跟踪
