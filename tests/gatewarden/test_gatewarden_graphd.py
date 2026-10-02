@@ -57,6 +57,12 @@ GW_GRAPHD_CASES = [
     ("GW-GD-G9-E-001", "l1_gate", "E", "gap", "host 级条目不匹配子域 — 与 scope 写面后缀匹配口径不一致"),
     ("GW-GD-G9-C-001", "l1_gate", "C", "blocked", "punycode/IDN 不归一 → miss 方向=拒绝(fail-closed, 无载荷收益, 回归锁定现状)"),
     ("GW-GD-G6-E-001", "transition_gate", "E", "blocked", "非法迁移仍拒(回归)"),
+    # GW-2 v2 (子批 A/拍板③+N1): 闭集单一来源(Experience 入集)+谓词内容锚+无标签拒
+    ("GW-GD-G2-B-008", "worker_query_allowed", "B", "blocked", "Experience 无谓词全表读已拦(GW-2 v2 拍板③ 入集; v1 期豁免撤销)"),
+    ("GW-GD-G2-B-009", "worker_query_allowed", "B", "blocked", "恒真式 WHERE 自比较已拦(GW-2 v2 N1 内容锚 — kuzu 实跑 6/6 行跨项目泄漏钉死)"),
+    ("GW-GD-G2-B-010", "worker_query_allowed", "B", "blocked", "无标签 MATCH (n) 已拦(GW-2 v2 N1 — kuzu 实跑命中全图)"),
+    ("GW-GD-G2-B-011", "worker_query_allowed", "B", "blocked", "Engagement 阈值式谓词拒(拍板③ 严格锚 — 仅点查/eng 收窄放行)"),
+    ("GW-GD-G2-A-001", "worker_query_allowed", "A", "exempt", "briefs:64 活调用点零误伤: Signal_ 选择性谓词读放行(v2 一般表选择性规则)"),
 ]
 
 
@@ -76,6 +82,12 @@ PAYLOADS = {
     "GW-GD-G4-C-002": ('CREATE (f:Finding {id:"x", title:"no\trate\tlimit", severity:"low"})', False),
     "GW-GD-G10-C-001": ("visit demo-src。com now", False),
     "GW-GD-G10-C-002": ("see http://2130706433/admin", False),
+    # GW-2 v2 新面载荷(blocked 行 expect_pass=False = 绕过应不成立)
+    "GW-GD-G2-B-008": ("MATCH (x:Experience) RETURN x.title, x.content", False),
+    "GW-GD-G2-B-009": ("MATCH (e:Engagement) WHERE e.name = e.name RETURN e.name, e.scope", False),
+    "GW-GD-G2-B-010": ("MATCH (n) RETURN n LIMIT 5", False),
+    "GW-GD-G2-B-011": ("MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name, e.scope", False),
+    "GW-GD-G2-A-001": ("MATCH (s:Signal_) WHERE s.weight>=3 AND s.status='open' RETURN s.id", True),
 }
 
 GATE_CALLS = {
@@ -102,6 +114,11 @@ BLOCKED_CASES = {
     "GW-GD-G7-E-001": ("is_engagement_create", "MERGE (g:Engagement {name:'gw-cap-bypass'}) RETURN g.name", True),
     "GW-GD-G10-C-003": ("prose_denylist_hit", "mail%252Edemo-src%252Ecom", False),
     "GW-GD-G10-C-004": ("prose_denylist_hit", "contact mail.demo-src.com today", False),
+    # GW-2 v2 新面载荷(与 PAYLOADS 同源镜像, 双跑口径)
+    "GW-GD-G2-B-008": ("worker_query_allowed", "MATCH (x:Experience) RETURN x.title, x.content", False),
+    "GW-GD-G2-B-009": ("worker_query_allowed", "MATCH (e:Engagement) WHERE e.name = e.name RETURN e.name, e.scope", False),
+    "GW-GD-G2-B-010": ("worker_query_allowed", "MATCH (n) RETURN n LIMIT 5", False),
+    "GW-GD-G2-B-011": ("worker_query_allowed", "MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.name, e.scope", False),
 }
 
 GW_RESULTS = []  # (case_id, attack_class, expect, actual_pass) — 度量汇总消费
@@ -168,5 +185,5 @@ def test_gatewarden_metrics():
     print(f"\n[gatewarden graphd] 总用例 {total} = gap {len(gaps)} + blocked {len(blocked)} + exempt {len(exempt)}; 按攻击类 {by_class}")
     assert total == len(gaps) + len(blocked) + len(exempt)
     assert len(gaps) == 3, "gap 余量与 docs/gatewarden-report.md 处置态清单不一致(GW-2 后: 参数化/档位谎报/L1 口径)"
-    assert len(blocked) == 21 and len(exempt) == 1
+    assert len(blocked) == 25 and len(exempt) == 2, "v2 分布: blocked 21+4(拍板③/N1)/exempt 1+1(briefs 活调用点零误伤)"
     assert set(by_class) <= {"A", "B", "C", "D", "E", "X"}, "攻击类超出六类基线须先扩拍板枚举"

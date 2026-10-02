@@ -4805,3 +4805,80 @@ def test_write_finding_high_with_tier_marker_wires_candidate(tmp_path, monkeypat
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ── GW-2 v2 (子批 A/N2/拍板③ + 低成本池 #4): 闭集单一来源/内容锚/MERGE 命中≠新建/params 扫描 ──
+
+def test_gw2v2_node_tables_single_source():
+    """闭集单一来源: NODE_TABLES 12 表(拍板③ Experience 入集的基础清单)。"""
+    from graphd.gd.schema import NODE_TABLES
+    assert len(NODE_TABLES) == 12
+    assert "Experience" in NODE_TABLES and "ExperienceWeight" in NODE_TABLES
+
+
+def test_gw2v2_worker_gate_content_anchor_calibrated():
+    """N1 内容锚校准集: 恒真式/自引用/裸常量/无标签拒; eng 收窄/点查/选择性谓词(briefs 活
+    调用点形态)放行; Experience 入集无谓词拒; ExperienceWeight 豁免放行; Engagement 严格锚。"""
+    f = graphd_app.worker_query_allowed
+    ok = [f("MATCH (f:Finding) WHERE f.eng = $e RETURN f.title")[0],
+          f("MATCH (f:Finding {id:'f-1'}) RETURN f.title")[0],
+          f("MATCH (s:Signal_) WHERE s.weight>=3 AND s.status='open' RETURN s.id")[0],
+          f("MATCH (f:Finding) WHERE f.title CONTAINS 'login' RETURN f.id")[0],
+          f("MATCH (t:Task) WHERE t.id IN $ids RETURN t.kind")[0],
+          f("MATCH (x:ExperienceWeight) RETURN x.pattern LIMIT 10")[0],
+          f("MATCH (x:Experience) WHERE x.category='success' RETURN x.title")[0],
+          f("MATCH (e:Engagement) WHERE e.name = 'e1' RETURN e.scope")[0],
+          f("MATCH (e:Engagement {name:$n}) RETURN e.scope")[0]]
+    deny = [f("MATCH (e:Engagement) WHERE e.name = e.name RETURN e.name")[0],
+            f("MATCH (f:Finding) WHERE f.title = f.title2 RETURN f.title")[0],
+            f("MATCH (f:Finding) WHERE 1=1 RETURN f.title")[0],
+            f("MATCH (n) RETURN n LIMIT 5")[0],
+            f("MATCH (x:Experience) RETURN x.title")[0],
+            f("MATCH (e:Engagement) WHERE e.status = 'active' RETURN e.scope")[0],
+            f("MATCH (e:Engagement {status:'active'}) RETURN e.scope")[0],
+            f("MATCH (f:Finding {}) RETURN f.title")[0]]
+    assert all(ok), ok
+    assert not any(deny), deny
+
+
+def test_gw2v2_engagement_merge_existing_key():
+    """N2: MERGE 键提取纯函数 — $param/字面量两形态; 非 MERGE/非 name 键/不可提取 → None。"""
+    from graphd.gd.gates import engagement_merge_existing_key
+    assert engagement_merge_existing_key("MERGE (g:Engagement {name:$n}) RETURN g.name") == {"param": "n"}
+    assert engagement_merge_existing_key("MERGE (g:Engagement {name:'lit'}) RETURN g.name") == {"value": "lit"}
+    assert engagement_merge_existing_key("CREATE (g:Engagement {name:$n}) RETURN g.name") is None
+    assert engagement_merge_existing_key("MERGE (g:Engagement {status:'x'}) RETURN g.name") is None
+
+
+def test_gw2v2_merge_existing_skips_capacity_cap(tmp_path, monkeypatch):
+    """N2/拍板③: MERGE 命中已存在 ≠ 新建 — cap=1 时既有 engagement 的 MERGE 更新放行,
+    CREATE 新建 409, MERGE 新键(命中不存在=新建语义)409。"""
+    base_url, conn, srv, audit_log = _43c1_spawn_server(tmp_path, monkeypatch)
+    monkeypatch.setenv("P2P_MAX_ACTIVE", "1")
+    try:
+        conn.execute("CREATE (:Engagement {name:'busy', status:'active'})")
+        s1, o1 = _43c1_post(base_url, {"cypher": "MERGE (g:Engagement {name:'busy'}) SET g.status='active' RETURN g.name"}, "t-43c1-host")
+        assert s1 == 200, (s1, o1)
+        s2, o2 = _43c1_post(base_url, {"cypher": "CREATE (g:Engagement {name:'fresh', status:'requested'}) RETURN g.name"}, "t-43c1-host")
+        assert s2 == 409, (s2, o2)
+        s3, o3 = _43c1_post(base_url, {"cypher": "MERGE (g:Engagement {name:'brand-new'}) RETURN g.name"}, "t-43c1-host")
+        assert s3 == 409, (s3, o3)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_gw2v2_finding_params_alias_scan_gates_junk(tmp_path, monkeypatch):
+    """#4: 参数化 title:$t 不再使 junk 门失明 — 绑定值以 title:'…' 别名回注后既有提取正则
+    命中垃圾词 → 400 拒; 合法参数化 title 仍放行(误伤面对照)。"""
+    base_url, conn, srv, audit_log = _43c1_spawn_server(tmp_path, monkeypatch)
+    try:
+        s, o = _43c1_post(base_url, {"cypher": "CREATE (f:Finding {id:'x1', title:$t, severity:'low'}) RETURN f.title",
+                                     "params": {"t": "no rate limit ever"}}, "t-43c1-host")
+        assert s in (400, 403) and "garbage" in o.get("error", ""), (s, o)
+        s2, o2 = _43c1_post(base_url, {"cypher": "CREATE (f:Finding {id:'x2', title:$t, severity:'low'}) RETURN f.title",
+                                       "params": {"t": "idor on invoice export endpoint"}}, "t-43c1-host")
+        assert s2 == 200, (s2, o2)
+    finally:
+        srv.shutdown()
+        srv.server_close()
