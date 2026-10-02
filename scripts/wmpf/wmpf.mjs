@@ -85,6 +85,10 @@ async function main() {
   } finally { try { c.ws.close() } catch {} }
 }
 import fs from 'node:fs'
-if (process.argv[1]?.endsWith('wmpf.mjs')) {
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+// HYG-1: 主判规范化 — endsWith 基名匹配弱形态(任意路径下同名文件/符号链接误触发)改为
+// 真实入口判定(与 match-site.mjs:38 规范形同源); pathToFileURL 处理空格/中文等编码。
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   main().catch((e) => { console.error(`✗ ${e?.message}`); process.exit(1) })
 }

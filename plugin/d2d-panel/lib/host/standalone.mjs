@@ -3,6 +3,8 @@
 // /sidebar/api/* 同构防线); 全端点只读 GET + no-store; graphd 不可达 → 503 fail-closed。
 // 可独立运行: node lib/host/standalone.mjs (调试/未挂 dsh web 时)
 import http from 'node:http'
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { buildSnapshot, createGraphdQuery, readHostToken, readFleet } from './snapshot.mjs'
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1', '[::]'])
@@ -83,17 +85,20 @@ export function startStandalone({
     return send(404, { ok: false, error: 'not found' })
   })
 
-  return new Promise((resolve) => {
+  // HYG-1: 启动错误语义修复 — server 'error' 只 log 不 resolve/reject = 调用方 .then 挂住、
+  // 进程不退出(端口占用静默挂住实证形态)。改为 reject: 入口 .catch 已有退出非零路径。
+  return new Promise((resolve, reject) => {
     server.listen(port, '127.0.0.1', () => {
       log(`d2d-panel standalone: http://127.0.0.1:${port} (graphd ${graphdUrl})`)
       resolve({ port, close: () => new Promise((r) => server.close(() => r())) })
     })
-    server.on('error', (e) => log(`d2d-panel standalone error: ${e?.message ?? e}`))
+    server.on('error', (e) => reject(new Error(`standalone listen failed: ${e?.message ?? e}`)))
   })
 }
 
-// 独立运行入口(被 import 时不触发)
-if (process.argv[1] && process.argv[1].endsWith('standalone.mjs')) {
+// 独立运行入口(被 import 时不触发)。HYG-1: 主判规范化(endsWith 基名弱形态 →
+// pathToFileURL 真实入口判定, scripts/wmpf 同源批次)
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   startStandalone({ log: (...a) => console.log('[d2d-panel]', ...a) }).then(() => {
     for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0))
   }).catch((e) => { console.error('[d2d-panel] start failed:', e); process.exit(1) })
