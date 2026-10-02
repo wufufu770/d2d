@@ -34,7 +34,7 @@
 - 星图可视化：覆盖象限热力图 + 假设泳道 + 攻击链桑基图
   （**T3-3-1 ✅ 落地**：热力 21 格/假设泳道五列/星图含候选连线提示——host 四路由只读通道+自绘 SVG 零图表库+渲染护栏；**桑基归 T3-3-2**[transition-log 聚合]）
 - 授权契约数字化：结构化授权文件 + 验签收紧 scope
-  （**下一批 T3-3-3**：ed25519 零依赖实测通过；验签挂接=纯新增前置[lifecycle-ops 入口/p2p_start/组合层/egress]；授权与审批两体系正交；P2P_AUTH_CONTRACT 缺省 off[已拍板]+graphd 侧不参与验签[已拍板]）
+  （**T3-3-3 ✅ 落地**：ed25519 一体签名契约+seen-auth 防删除降级+四挂接点纯新增接线[startEngagement/p2p_start/registerGate 组合层/egress refreshScope]——零降级；验签失败不放行[invalid/expired 恒拒]；P2P_AUTH_CONTRACT 缺省 off + graphd 侧不参与验签[已拍板]；runbook docs/auth-contract-runbook.md）
 - 9 功能标签页：总览/审批/探索链路/漏洞资产/经验库/探索前沿/工具调用/审计/配置
   （d2d:viz 第 12 个 tab 已挂[T3-3-1]；逐页补全归 **T3-3-2**：净新增=工具调用明细+审计时间线+桑基+manifest 卡[✅ 看板卡已随 T3-3-1 落地]）
 - 侧边栏保留 + 开发台对等，实时同步（差距=PANEL-UI-SPEC §11 未实施部分，归 T3-3-2）
