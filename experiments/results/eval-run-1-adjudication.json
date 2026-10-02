@@ -1,0 +1,217 @@
+{
+  "aggregate": {
+    "byLayer": {
+      "L1": {
+        "total": 16,
+        "hitSum": 12,
+        "anchorSum": 16,
+        "rate": 75
+      },
+      "L2": {
+        "total": 6,
+        "hitSum": 9,
+        "anchorSum": 15,
+        "rate": 60
+      },
+      "L3": {
+        "total": 4,
+        "hitSum": 4,
+        "anchorSum": 14,
+        "rate": 28.6
+      }
+    },
+    "byScenario": {
+      "single-finding-retrieval": {
+        "total": 15,
+        "hitSum": 11,
+        "anchorSum": 15,
+        "rate": 73.3
+      },
+      "garbage-control": {
+        "total": 1,
+        "hitSum": 1,
+        "anchorSum": 1,
+        "rate": 100
+      },
+      "cross-run-same-class": {
+        "total": 6,
+        "hitSum": 9,
+        "anchorSum": 15,
+        "rate": 60
+      },
+      "cross-run-chain": {
+        "total": 4,
+        "hitSum": 4,
+        "anchorSum": 14,
+        "rate": 28.6
+      }
+    }
+  },
+  "cnsr": {
+    "baseline": {
+      "cnsr": 5.73,
+      "tokensTotal": 1569628,
+      "note": "verified=9 / 1569628 tokens × 1e6"
+    },
+    "note": "首跑为检索层评测(不产 finding/token), CNSR 维持 T2-1 基线引用; 实弹全链路跑测归评测集立项卡口径(五指标), 见 docs/eval-run-1.md §四"
+  },
+  "adjudication": [
+    {
+      "id": "L1-003",
+      "layer": "L1",
+      "status": "fail",
+      "hit": "0/1",
+      "missedAnchors": [
+        "DVWA Command Injection - RCE via ip parameter (security=low)"
+      ],
+      "reason": "锚未全命中——核对 fixture 语料覆盖或判定口径",
+      "evidence": "鉴权档位: 登录态([REDACTED:user]) curl -s -b /tmp/c.txt -X POST \"http://target.example/vulnerabilities/exec/\" --data \"ip=target.example;id&Submit=Submit\" 响应内出现 uid=33("
+    },
+    {
+      "id": "L1-008",
+      "layer": "L1",
+      "status": "fail",
+      "hit": "0/1",
+      "missedAnchors": [
+        "DVWA 默认凭证 [REDACTED:user]/[REDACTED:cred] 直接登录,setup.php 公开文档强化可利用性"
+      ],
+      "reason": "锚未全命中——核对 fixture 语料覆盖或判定口径",
+      "evidence": "鉴权档位: 零cookie 1) curl -s -c /tmp/c1 'http://target.example/login.php' -o /tmp/lp.html 2) TOKEN=$(grep -oP \"value='\\K[a-f0-9]+(?=')\" /tmp/lp.html) 3) curl -s -i "
+    },
+    {
+      "id": "L1-011",
+      "layer": "L1",
+      "status": "fail",
+      "hit": "0/1",
+      "missedAnchors": [
+        "finding-weak-creds-multi-[REDACTED:user]"
+      ],
+      "reason": "锚未全命中——核对 fixture 语料覆盖或判定口径",
+      "evidence": "[HIGH] Five user accounts on DVWA accept trivial/known passwords granting full [REDACTED:user]: [REDACTED:user]/[REDACTED:cred], [REDACTED:user]/[REDACTED:cred]"
+    },
+    {
+      "id": "L1-013",
+      "layer": "L1",
+      "status": "fail",
+      "hit": "0/1",
+      "missedAnchors": [
+        "finding-cross-chain-creds"
+      ],
+      "reason": "锚未全命中——核对 fixture 语料覆盖或判定口径",
+      "evidence": "[HIGH-candidate] DVWA sqli UNION reads users table at security=low from ANY authenticated session: [REDACTED:user]/[REDACTED:token], gordonb/[REDACTED:token], 1"
+    },
+    {
+      "id": "L2-001",
+      "layer": "L2",
+      "status": "partial",
+      "hit": "1/4",
+      "missedAnchors": [
+        "DVWA Setup - DB Reset Endpoint Exposes DB Credentials and [REDACTED:user] Reset",
+        "finding-setup-unauth-reset",
+        "finding-blocked"
+      ],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "鉴权档位: 零cookie 1) curl -s -c /tmp/c1 'http://target.example/login.php' -o /tmp/lp.html 2) TOKEN=$(grep -oP \"value='\\K[a-f0-9]+(?=')\" /tmp/lp.html) 3) curl -s -i "
+    },
+    {
+      "id": "L2-002",
+      "layer": "L2",
+      "status": "manual-pass",
+      "hit": "2/2",
+      "missedAnchors": [],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "鉴权档位: 登录态 curl -s -b /tmp/c.txt \"http://target.example/vulnerabilities/fi/?page=/etc/passwd\" | head -3 响应首行: root:x:0:0:root:/root:/bin/bash || 鉴权档位: 登录态 ([REDA"
+    },
+    {
+      "id": "L2-003",
+      "layer": "L2",
+      "status": "manual-pass",
+      "hit": "2/2",
+      "missedAnchors": [],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "鉴权档位: 登录态 curl -s -i -b 'PHPSESSID=[REDACTED:session];security=low' -X POST 'http://target.example/vulnerabilities/weak_id/' | grep -i 'Set-Cookie' 首次: Set-Cook"
+    },
+    {
+      "id": "L2-004",
+      "layer": "L2",
+      "status": "manual-pass",
+      "hit": "2/2",
+      "missedAnchors": [],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "鉴权档位: 登录态 curl -s -i -b 'PHPSESSID=[REDACTED:session];security=low' 'http://target.example/vulnerabilities/csrf/?password_new=[REDACTED:cred]&password_conf=[RED"
+    },
+    {
+      "id": "L2-005",
+      "layer": "L2",
+      "status": "partial",
+      "hit": "1/3",
+      "missedAnchors": [
+        "DVWA Blind SQL Injection - Boolean-Based Detection on id parameter",
+        "finding-cross-chain-creds"
+      ],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "鉴权档位: 登录态([REDACTED:user]) curl -s -b /tmp/c.txt \"http://target.example/vulnerabilities/sqli/?id=0%27+UNION+SELECT+user,password+FROM+users--+-&Submit=Submit\" 响"
+    },
+    {
+      "id": "L2-006",
+      "layer": "L2",
+      "status": "partial",
+      "hit": "1/2",
+      "missedAnchors": [
+        "finding-deferred"
+      ],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "鉴权档位: 零cookie curl -s -i http://target.example/config/ | head -30 ; curl -s http://target.example/config/config.inc.php.bak 响应特征: /config/ 返回 Apache autoindex H"
+    },
+    {
+      "id": "L3-001",
+      "layer": "L3",
+      "status": "partial",
+      "hit": "1/3",
+      "missedAnchors": [
+        "finding-cross-module-dataflow",
+        null
+      ],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "[LIVE re-verified 2026-09-28 by task-consumer y2oe, status=open] DVWA cross-module dataflow chain confirmed at security=low using fresh [REDACTED:user] PHPSESSI"
+    },
+    {
+      "id": "L3-002",
+      "layer": "L3",
+      "status": "partial",
+      "hit": "1/5",
+      "missedAnchors": [
+        "finding-blocked",
+        "finding-blocked",
+        "no-rate-limit",
+        "auth-default-credentials"
+      ],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "DVWA setup.php 无认证可访问泄露 [REDACTED:user]/[REDACTED:cred] 默认凭据,实测 zero-cookie 登录成功(POST /login.php -> 302 index.php, body: You have logged in as [REDACTED:user]);"
+    },
+    {
+      "id": "L3-003",
+      "layer": "L3",
+      "status": "partial",
+      "hit": "1/3",
+      "missedAnchors": [
+        "DVWA Setup - DB Reset Endpoint Exposes DB Credentials and [REDACTED:user] Reset",
+        "finding-deferred"
+      ],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "鉴权档位: 零cookie curl -s -i http://target.example/config/ | head -30 ; curl -s http://target.example/config/config.inc.php.bak 响应特征: /config/ 返回 Apache autoindex H"
+    },
+    {
+      "id": "L3-004",
+      "layer": "L3",
+      "status": "partial",
+      "hit": "1/3",
+      "missedAnchors": [
+        "finding-cross-chain-creds",
+        "finding-weak-creds-multi-[REDACTED:user]"
+      ],
+      "reason": "含主观字段(chain/verdict/跨场 severity)——检索命中已达, 语义正确性留人工终裁",
+      "evidence": "鉴权档位: 登录态([REDACTED:user]) curl -s -b /tmp/c.txt \"http://target.example/vulnerabilities/sqli/?id=0%27+UNION+SELECT+user,password+FROM+users--+-&Submit=Submit\" 响"
+    }
+  ]
+}
