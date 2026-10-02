@@ -38,7 +38,7 @@ aaeaad46d1439ecb6931f82b366f9e1172772893289800759606baa012bc9bf7  docs/approval-
 87c90e9e9cf9d8191cc7db3cd61ce14cdc888a1e3dec6ccbe20fb042444c581b  docs/browser-recon-runbook.md
 8790f5862ff98e20e7f7c2137be1bed7c825e9e81dadf2e97bd2df4eb890b59a  docs/business-gate-acceptance.md
 920bafd5f594c4d1b07032921387cd81e55c79fa8604d6517625de5a017f408c  docs/business-gate-design.md
-a7a0572d5c482b1d10b7af1f01fcaa693bda73faa0ecb27e7911525531c62af1  docs/devlog.md
+53018e55dce6d86fe9c6e278490194ad193601bf7b47043342f454b92717177a  docs/devlog.md
 abdd5a24b8694cb203f216f8875eaf29cdd83393e696b7308597e18131a3ed11  docs/do-not-touch.md
 99954434d3540ce4bc41d90678a799c55fbb58bef832e8df286c60e80e848f2b  docs/dsh-sidebar-compat.md
 6cfd4f6d2e618cd73b4bf877470c56f6596e9925f66405e5968fc54bdb359762  docs/false-positive-schema.md
@@ -396,7 +396,7 @@ b8b3d45b114f67bc063f8ba6b07dfb3432fa37bc6e849ff1c1d815e1a10ed520  scripts/ops/de
 a7ea8227655eb205f4be94adda7bb681eb41392e68167e0844ec3168e2766805  scripts/ops/dvwa-reset.sh
 2e9cd41e140649b2fb34143951a51f3c166b7cda70e5b45513d370851e917491  scripts/ops/env.sh
 16863c096298932f6c303657004df2ad7c2a26746cccd6b8faca109bcb34fedf  scripts/ops/gen-description-baselines.mjs
-e535c5135a48239478b4139f61056fc6d992a7b979cdf84dbd2134a562d22297  scripts/ops/graph-stats-probe.mjs
+8d0fa394c7ad1fa5e0ad721d092b3575aa5dffa0ef48d6458803098a4ea7213e  scripts/ops/graph-stats-probe.mjs
 382aa8a480b55bf50d8a88262b5069568bb73a99e48138db350f31af42344c93  scripts/ops/graphd-preflight.mjs
 2768083c5c88bbd734ea330477455282d8358e07311e76a134af83a58245d03e  scripts/ops/model-rotate.mjs
 ad26eee78cec8129e5ffd44abf0b42ea0dbbbaa219c60c756c58ac185035d6dc  scripts/ops/models.json
@@ -490,6 +490,7 @@ d17c5ef3fd6a3c99958e3f7a69ce7473d06717d5cf578a8733b92aa55fd4a290  阶段3-实战
 #555ab9189cc4baa7cd2b527099b932497310a6a609798a4d5cff30fa89349c5a  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/index.js
 #a9960e05e21716f82bd289a3a8954b000a6fee3c423dcfdc2c3552025704b696  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/types/index.d.ts
 # --- end node_modules ---
+
 
 
 
