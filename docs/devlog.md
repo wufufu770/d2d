@@ -182,3 +182,4 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 关键裁决：EXPORT 通道=读源库写导出目录（零源库写零 graphd 改动零停服——硬边界"源库零写"完整兑现）；CHECKPOINT 不做（写源库超边界；EXPORT 读已提交状态无需前置——首执行实证结构完整）；**决策书数字勘误**——决策批 §2.1"节点合计 14,146"系加总错误，探针逐表实锚 9,223（决策书四处随批修正+勘误注记；devlog 历史节不动以存轨迹）；8.8KB/节点密度重算后量级结论不变（3 年外推 <3GB，距痛点区 2 个数量级以上）；批前同步纪律首执行（pull 核对 a3c5eba/07fde3f0 在位+/tmp/d2d-survey 清理——先例 12 a 项落实）
 教训沉淀：**探针 smoke 抓住了决策书数字错误**——"先落探针再校数字"的顺序价值：只读探针把逐表计数机器化，加总错误无所遁形（人工合计的 14,146 vs 机器合计 9,223）；运维文档（runbook）的命令必须带"已实证"标注（本 runbook 每段命令都标注首执行实锚或审计锚——未实证的命令写"未验证"是 runbook 的诚实底线）
 开放项：**恢复演练单独立项**（IMPORT 临时库+只读重开物理快照——"包还在≠恢复计划"，runbook §五登记）；裁剪 >500MB 再议（拍板 ②）；B 迁移不排期（触发条件见 runbook §三）
+勘误补记（T4-2b 收官途中）：CI gates 首 red——semgrep p/security-audit 的 react-insecure-request 通用规则把探针 loopback fetch（http://127.0.0.1:8766，代码内常量）判 blocking（run 36986678189 实锚）；修复=行内 nosemgrep 精确规则 ID 豁免+理由注记（行为零变化，smoke 复跑绿）；教训——本机服务探针的 loopback HTTP 是 semgrep 通用安全规则的盲区误报面，新 ops 脚本触网前先过 semgrep 心智检查（本机无 CLI，以 CI 复扫为准）
