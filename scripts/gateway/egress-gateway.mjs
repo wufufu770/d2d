@@ -173,15 +173,17 @@ try { token = readFileSync(TOKEN_FILE, 'utf8').trim() } catch {}
 async function refreshScope() {
   const next = new Set()
   const nextPathDeny = new Set() // 4.5-1: 本轮 '!host/path' 条目解析出的 path deny 集(与 dynScope 同生命周期)
+  const activeEngs = [] // T3-3-3: active engagement 的 {name,target,scope}(授权契约整集校验用)
   for (const G of GRAPHS) {
     try {
       const res = await fetch(`${G}/query`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth': token },
-        body: JSON.stringify({ cypher: "MATCH (e:Engagement) WHERE e.status='active' RETURN e.scope AS s" }),
+        body: JSON.stringify({ cypher: "MATCH (e:Engagement) WHERE e.status='active' RETURN e.scope AS s, e.target AS t, e.name AS n" }),
         signal: AbortSignal.timeout(5000),
       })
       const data = await res.json()
       for (const r of data.rows ?? []) {
+        activeEngs.push({ name: String(r.n ?? ''), target: String(r.t ?? ''), scope: String(r.s ?? '') }) // T3-3-3
         for (const s of String(r.s ?? '').split(',')) {
           const v = s.trim().toLowerCase()
           if (!v) continue
@@ -197,6 +199,26 @@ async function refreshScope() {
         }
       }
     } catch { /* 单图抖动保留其余 */ }
+  }
+  // [T3-3-3 纯新增] 授权契约整集校验(挂接点 4; H14 同位数据组装区 — 判定原语 hostAllowed/三条
+  // 判定链/audit 拒绝形态零触碰)。矩阵: 任一 active eng 契约 deny(invalid/expired 或 missing+on)
+  // → 本轮 allow 集收窄为空(fail-closed, 与全图不可达同方向) + audit; vanished/missing+off → 放行
+  // + audit warn; 验签通道自身故障(import 失败等基础设施) → 放行 + audit warn(验签通道不可达不得
+  // scope 全灭 — t3-3-plan 审计定稿②)。
+  try {
+    const { authContractGate } = await import('../../plugin/pentest-dsh/domain/auth-contract.mjs')
+    for (const eng of activeEngs) {
+      const g = await authContractGate({ target: eng.target, scope: eng.scope })
+      if (g.decision === 'deny') {
+        audit({ event: 'scope-contract-rejected', eng: eng.name.slice(0, 40), state: g.state, reason: String(g.reason ?? '').slice(0, 100) })
+        next.clear()
+        nextPathDeny.clear()
+        break
+      }
+      if (g.decision === 'allow-warn') audit({ event: `scope-contract-${g.state}`, eng: eng.name.slice(0, 40), reason: String(g.reason ?? '').slice(0, 100) })
+    }
+  } catch (e) {
+    audit({ event: 'scope-contract-channel-error', reason: String(e?.message ?? e).slice(0, 100) }) // 放行 + warn
   }
   dynScope = next
   dynPathDeny = nextPathDeny // 4.5-1: 与 dynScope 同步生效(全图不可达 → 空集, path-deny 退回 P2P_PATH_DENY 静态集)
