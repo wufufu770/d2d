@@ -2,7 +2,7 @@
 // 路由: ctx.webServer.register({kind:'prefix', path:'/d2d/api'}) — 与 dsh /api 同一道
 // 浏览器信任栅栏(Host loopback/受信 + sec-fetch-site + Origin 同源), 同源零跨域,
 // token 全程留 host 侧。机制参照 dsh-sidebar-leap 宿主半(生态已验证模式)。
-import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, readModelUsage, transitionFinding, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement, buildStarmap, buildCoverage, buildHypLane, buildCapability } from './snapshot.mjs'
+import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, readModelUsage, transitionFinding, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement, buildStarmap, buildCoverage, buildHypLane, buildCapability, readTransitionFlows, readAuditTail, readToolCalls, buildChain, buildFrontierPool, frontierTransition, readConfigOverview, attachEngCosts } from './snapshot.mjs'
 import { validateStartRequest } from './start-policy.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -76,6 +76,8 @@ export function apply(ctx, config = {}) {
       // 阶段2: 性价比卡 — per-engagement token 账本(runs/<eng>/model-usage.jsonl, 全局账本按 worker 前缀回落)
       const modelUsage = eng ? readModelUsage({ engName: eng }) : null
       const val = await buildSnapshot(query, { fleet: readFleet(), runEvents, modelUsage, eng })
+      // T3-3-2 总览补全: 每 engagement 性价比(活跃优先 ≤8, 原地标注 — fs 尾读有成本不放大)
+      attachEngCosts(val.engagements)
       cache = { ts: Date.now(), val }
       return val
     })().finally(() => { inFlight = null })
@@ -244,6 +246,62 @@ export function apply(ctx, config = {}) {
           return send(200, await run)
         } catch (e) {
           return send(200, { ok: true, capability: { degraded: [`capability: ${String(e?.message ?? e).slice(0, 120)}`], manifest: null, baselines: null } })
+        }
+      }
+      // ---- T3-3-2 收官批: 9 标签页数据面 ----
+      // 桑基(transition-log host 侧聚合; 全局事件流无 eng 维度, 与 vizRoute 的 eng 解耦;
+      // 文件面 fail-soft — readTransitionFlows 内部永不抛, 缺文件回空态+degraded 记因)。
+      if (method === 'transition-flows') {
+        if (req.method !== 'GET') return send(405, { ok: false, error: { code: 'method-error', message: 'method not allowed (read-only)' } })
+        const sp = new URL(req.url ?? '/', 'http://dsh.internal').searchParams
+        const days = sp.get('days') ?? undefined
+        const family = sp.get('family') ?? 'all'
+        // 缓存键含参数: 500ms 微缓存窗口内不同 days/family 不互串(vizRoute 的 name 键对带参路由的已知收窄)
+        return send(200, { ok: true, flows: await microCache(`flows:${days}:${family}`, () => readTransitionFlows({ days, family }))() })
+      }
+      // 工具调用明细(run-log 全事件投影; eng 缺省=selected 文件, 纯本地不回退 graphd — fail-soft 语义一致)
+      if (method === 'toolcalls') {
+        if (req.method !== 'GET') return send(405, { ok: false, error: { code: 'method-error', message: 'method not allowed (read-only)' } })
+        const sp = new URL(req.url ?? '/', 'http://dsh.internal').searchParams
+        const eng = String(sp.get('eng') ?? '') || readSelectedEngagement() || ''
+        const limit = sp.get('limit') ?? undefined
+        const kind = sp.get('kind') ?? ''
+        return send(200, { ok: true, toolcalls: await microCache(`toolcalls:${eng}:${limit}:${kind}`, () => readToolCalls({ engName: eng, limit, kind }))() })
+      }
+      // 审计时间线(audit.log + transition-log 双源合并; 非法迁移只在 audit.log — 合流才完整)
+      if (method === 'audit') {
+        if (req.method !== 'GET') return send(405, { ok: false, error: { code: 'method-error', message: 'method not allowed (read-only)' } })
+        const sp = new URL(req.url ?? '/', 'http://dsh.internal').searchParams
+        const limit = sp.get('limit') ?? undefined
+        const kind = sp.get('kind') ?? ''
+        return send(200, { ok: true, audit: await microCache(`audit:${limit}:${kind}`, () => readAuditTail({ limit, kind }))() })
+      }
+      // 配置总览(通知通道脱敏形态 + 暂停清单; 只读 — notify 写面登记后续)
+      if (method === 'configx') {
+        if (req.method !== 'GET') return send(405, { ok: false, error: { code: 'method-error', message: 'method not allowed (read-only)' } })
+        return send(200, { ok: true, config: await microCache('configx', () => readConfigOverview())() })
+      }
+      // 探索链路/前沿提案池: 图依赖路由 — vizRoute 统一 fail-closed 503(graphd 不可达不下发空态)
+      if (method === 'chain') return vizRoute('chain', (eng) => buildChain(query, { eng }))
+      if (method === 'frontier') return vizRoute('frontier', (eng) => buildFrontierPool(query, { eng }))
+      // 前沿评审转态代理: reviewer 钉死 'panel'(graphd 迁移门+review_note 审计在服务端校验)
+      if (method === 'frontier-transition') {
+        if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST required' } })
+        let body
+        try { body = await readBody(req) } catch (e) {
+          return send(400, { ok: false, error: { code: 'bad-request', message: String(e?.message ?? e) } })
+        }
+        const fid = String(body?.frontier_id ?? '').trim()
+        const to = String(body?.target_status ?? '').trim().toLowerCase()
+        const note = String(body?.review_note ?? '').trim()
+        if (!fid) return send(400, { ok: false, error: { code: 'bad-request', message: 'frontier_id 必填' } })
+        if (!['accepted', 'rejected', 'explored'].includes(to)) return send(400, { ok: false, error: { code: 'bad-request', message: 'target_status 必须是 accepted|rejected|explored' } })
+        try {
+          const r = await frontierTransition({ graphdUrl, token: readHostToken(), frontierId: fid, targetStatus: to, reviewNote: note })
+          cache = null // 提案池已变, 快照立即失效
+          return send(200, { ok: true, transition: r })
+        } catch (e) {
+          return send(400, { ok: false, error: { code: 'frontier-transition-error', message: String(e?.message ?? e).slice(0, 160) } })
         }
       }
       // ---- 4-4 子批次 A: 通道①审批面 — GET 列 pending(+计数/模式), POST {id,decision,decided_by} 裁决。
