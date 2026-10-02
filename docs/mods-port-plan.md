@@ -52,7 +52,7 @@
 │   hooks/   ← 编排者：门 · 派活 · 消毒 · 状态行      │
 │   core/domain/  ← 23 个纯模块只读镜像              │
 └────────┬───────────────────────┬──────────────────┘
-   $.http.fetch              $.process.spawn
+   $.http.fetch         $.process.run / spawn
          ▼                        ▼
 ┌─ graphd（Python/Kuzu，常驻）┐  ┌─ 一次性 Node 进程 ──┐
 │  黑板 + 八态机 + 写通道认证  │  │ 11 个 node: 模块    │
@@ -63,9 +63,12 @@
 
 **关键约束（官方实锚）**：
 - hook 自身执行时间上限 10 秒，**但花在 `next` 与 `$` 调用上的时间不计入**。
-- `$.process.run` 超时默认 30 秒、**上限 10 分钟**；长任务用 `$.process.spawn`（流式）。
-- `$.agent.spawn` **恒后台**，其答案经 `turn.complete` 回收。
+- `$.process.run` 超时默认 30 秒、**上限 10 分钟**；后台进程持续写入会一直挂到超时才 reject。
+- `$.process.spawn` 为流式 async generator —— 但**仅 ≥2.1.287 存在**（本仓 `claude-code.d.ts` 自述 2.1.277，缺此方法）。
+- **≥10 分钟的长任务不得走 process**：`$.agent.spawn` **恒后台**（起后即返，答案经 `turn.complete` 回收）才是长跑通道。
 - `$.fs` 单文件 4 MiB；`$.store` 总计 4 MiB。
+
+> 📌 以上经 Phase 2 前置审计修正，详见 `docs/mods-port-phase2-audit.md`。
 
 ---
 
