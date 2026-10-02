@@ -5,20 +5,20 @@
 > HEAD 顺延，以 `git log -1` 实测为准。
 
 ## 当前底账
-- 远端 HEAD：T3-3-2 收官族末 commit `8aa8f60`（收官 tag `t3-3-stage65`；
-  落库后以 `git log -1` 实测为准）
-- 分支：main 唯一活跃（实测 1 个远端分支；T4-5 的老基线分支清理已提前执行，
-  回滚点改由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
+- 远端 HEAD：GW-2 v2 收官族末 commit（本批落库后以 `git log -1` 实测为准；
+  前底账=9425e1fb[T4-3-2-0]，v1 期底账曾停在 T3-3-2 8aa8f60——本节为本批
+  底账五字段对齐偿还点）
+- 分支：main 唯一活跃（远端另有 dependabot 三分支[actions 升级 PR]挂起，归用户处置；
+  回滚点由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
 - 工作树：0 改动
-- CI：三 workflow（ci/dsh-compat/gates）全绿（T3-3-2 收官 run 以 gh 实测为准；
-  HEAD 8 个 check-run 全 success）
-- 测试基线（T3-3-2 固化）：pytest **368**（口径 = `pytest tests/` 全目录 6 个
-  test_*.py 合计；单跑 test_graphd_gates.py 仅 298 例，差额 70 例来自
-  test_audit_alert / test_gate_anchor / test_injection_sampling / test_repairability /
-  test_transition_log——此前这 5 个文件不在 ci.yml 与 gates.yml 执行范围内，
-  本批起两处均改跑全目录 `tests/`）/ mocha **1896** / panel **88**
+- CI：三 workflow（ci/dsh-compat/gates）——GW-2 v1 首推时点 ci.yml 1 红
+  （豁免正例夹具硬编码 /home/kali 的 HOME 依赖，本批 v2 已热修）+ gates/dsh-compat 绿；
+  本批落库后以 gh 实测为准
+- 测试基线（GW-2 v2 固化）：pytest **404** / mocha **1948** / panel **88**
+  （口径 = `pytest tests/` 全目录 / `npx mocha test/` / panel `npm test`；
+  v1 期底账曾停 368/1896/88——同批原子对齐纪律偿还）
 - stack：graphd :8766 ✅ / egress :8888 ✅（MITM 启用）/ oast :8890 ✅ /
-  cdp-proxy :8893 ✅ 常驻 enable / dsh web :8899 按需（HD-1 审计时点未起）；
+  cdp-proxy :8893 ✅ 常驻 enable / dsh web :8899 按需；
   SPA/DVWA 靶场就绪
 - 模型：五角色统一 primary=MiniMax-M3 / backup=MiniMax-M2.7
   （`~/.d2d-data/config/model-policies.json`，DATA_DIR 外置配置；仓库内无此文件）；
@@ -138,8 +138,24 @@ COLUMN 关键字/DEFAULT 回填 ''非 NULL/EXPORT 往返含新列/**IMPORT 后 D
 演练开放项新输入]；v1 零回归基础[14 it 全绿+图内 698/8/9 零漂移]；GW-2 门交互矩阵=新写点零豁免；
 禁区预比对=do-not-touch :20-21 按行修订入蓝图；**schema 草案=plan §五等用户确认**[Experience +2 列
 reasoning_path/consensus_status，A 面 /write/experience 可选字段+B 面 host-only 回写端点]）
-下一步建议（**当前唯一有效**·T4-3-2-0 时点）：**等用户对 t4-3-2-plan §五 schema 草案确认** →
-T4-3-2 实施批（蓝图四族）；门禁延后簇三大批[Gate-V 架构/端点编排/部署授权面]+评测实弹跑测归用户排批
+下一步建议（历史·T4-3-2-0 时点，已完成）：等 schema 草案确认 → T4-3-2 实施批（用户改排
+GW-2 v2 优先）/ GW-2 v2 ✅（**门禁收紧批完整版**[外部三轮冷读采信落地]：v1 已修 12 之上
+**净翻 7**[#4 参数化别名回注/#9 params 恒扫/#18 残余闭合(同链要求)/**#19 假锚闭合**(lookup
+seam 存在性——签名零变更, scheduler 注册 run-log 索引)]+**深化 4**[#1 闭集单一来源+Experience
+入集+谓词内容锚+无标签拒(拍板③)/#3 MERGE 命中≠新建+双副本收敛/#16 STRICT 开关(off 高危档
+fail-closed+审计清单+横幅)/#20 NFKC 两副本(全角闭合)]；N1-N4 结构性缺口=N1/N2/N4 已修+
+N3 登记不修(合成 eng_id=合法形态)；kuzu 实跑钉死恒真式/无标签双逃逸；briefs:64 活调用点
+零误伤校准；**样本库反向守护核验=graphd 侧 gap 用例确系恒绿形态**→修复面全部升格 blocked
+断言；样本库 graphd 31(gap3/blocked25/exempt2)+plugin gap 余 4；OOB nonce/validator L0/
+write-gate realpath 三残余登记(授权面)；底账五字段对齐偿还；基线 pytest **404**/mocha **1948**/
+panel **88**）
+**verified 运营纪律（拍板 6 落档）**：C 子批（#19 seam+#18 同链）落地后，verified 结论仍保留
+人工复核——撤除条件=样本库 31+33 it 双绿持续一个收官批且无误伤回滚记录；届时由收官批在
+本决策账撤条。
+下一步建议（**当前唯一有效**·GW-2 v2 时点）：**HYG-1 工程卫生批**（workflow 依赖漂移
+[checkout@v4/setup-node@v4/setup-python@v5/codeql@v3 vs dependabot 三分支]+按行授权池
+[#26 write-gate realpath]+GW-2 v1 CI 热修遗留核查）；T4-3-2 共识 v2 实施（schema 草案确认后）
+归用户排批
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
