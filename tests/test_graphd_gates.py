@@ -3301,7 +3301,11 @@ def test_361_query_frontier_filters_limit_order(tmp_path, monkeypatch):
         _direct("fr-old", "eng-361", "2026-09-21 09:00:00", st="rejected")
         _direct("fr-other", "eng-b", "2026-09-21 11:00:00")
         # 缺省: 全态(3 态齐回) — Experience 相反语义的专锁
-        code, out = _361_post(base_url, "/query/frontier", {})
+        # GW-2 (gap #2): 路由升 host-only — worker token 401 负例先行锁定
+        code, out = _361_post(base_url, "/query/frontier", {}, token="t-361-worker")
+        assert code == 401 and "host" in out.get("error", ""), out
+        # GW-2 (gap #2): 读用例翻 host token(路由已升 host-only); 下方全部调用同批
+        code, out = _361_post(base_url, "/query/frontier", {}, token="t-361-host")
         assert code == 200 and out["ok"] is True and out["count"] == 4 and out["truncated"] is False, out
         assert [r["id"] for r in out["frontiers"]] == ["fr-new", "fr-other", "fr-mid", "fr-old"], \
             "created_at DESC 全态"
@@ -3309,22 +3313,22 @@ def test_361_query_frontier_filters_limit_order(tmp_path, monkeypatch):
         assert set(row.keys()) == set(_361_COLUMNS), "返回行必须含全 9 列键"
         assert row["status"] == "proposed" and row["direction"] == "dir-fr-mid", "proposed 缺省不被过滤掉"
         # eng_id 精确过滤
-        code, out = _361_post(base_url, "/query/frontier", {"eng_id": "eng-361"})
+        code, out = _361_post(base_url, "/query/frontier", {"eng_id": "eng-361"}, token="t-361-host")
         assert code == 200 and [r["id"] for r in out["frontiers"]] == ["fr-new", "fr-mid", "fr-old"], out
-        code, out = _361_post(base_url, "/query/frontier", {"eng_id": "eng-nope"})
+        code, out = _361_post(base_url, "/query/frontier", {"eng_id": "eng-nope"}, token="t-361-host")
         assert code == 200 and out["count"] == 0, out
         # status 显式精确过滤(fr-mid 与 fr-other 均为 proposed, 按 created_at DESC 回两条)
-        code, out = _361_post(base_url, "/query/frontier", {"status": "proposed"})
+        code, out = _361_post(base_url, "/query/frontier", {"status": "proposed"}, token="t-361-host")
         assert code == 200 and [r["id"] for r in out["frontiers"]] == ["fr-other", "fr-mid"], out
-        code, out = _361_post(base_url, "/query/frontier", {"status": "accepted", "eng_id": "eng-361"})
+        code, out = _361_post(base_url, "/query/frontier", {"status": "accepted", "eng_id": "eng-361"}, token="t-361-host")
         assert code == 200 and [r["id"] for r in out["frontiers"]] == ["fr-new"], out
         # limit: 显式生效 / 非法回退缺省 20 / 超上限钳位仍可用(结果不足不炸)
-        code, out = _361_post(base_url, "/query/frontier", {"limit": 2})
+        code, out = _361_post(base_url, "/query/frontier", {"limit": 2}, token="t-361-host")
         assert code == 200 and [r["id"] for r in out["frontiers"]] == ["fr-new", "fr-other"], out
-        code, out = _361_post(base_url, "/query/frontier", {"limit": "garbage"})
+        code, out = _361_post(base_url, "/query/frontier", {"limit": "garbage"}, token="t-361-host")
         assert code == 200 and out["count"] == 4, "非法 limit 回退缺省 20"
         from graphd.app import MAX_QUERY_ROWS as _mqr
-        code, out = _361_post(base_url, "/query/frontier", {"limit": _mqr + 500})
+        code, out = _361_post(base_url, "/query/frontier", {"limit": _mqr + 500}, token="t-361-host")
         assert code == 200 and out["count"] == 4, "超上限钳位"
     finally:
         srv.shutdown()

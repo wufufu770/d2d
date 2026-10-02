@@ -1393,7 +1393,10 @@ class Handler(BaseHTTPRequestHandler):
                     traj_s = json.dumps(traj, ensure_ascii=False)
                     # 0913 星图层: verified 时可附 replay 矩阵(scheduler 从结论信号原样透传) →
                     # 落 replay_matrix 列, 报告/复核可直接读五段矩阵。
-                    _matrix = str(req.get("replay_matrix") or "").strip()[:2000]
+                    # GW-2 (gap #11 收窄): 落列前 redact_pii(32/64 位裸 token 类) —— 此前只截断
+                    # 不脱敏, PII/凭据可经转态附件落图(报告/复核面直接读)。报告状态列同批。
+                    _matrix, _pii_hits = redact_pii(str(req.get("replay_matrix") or "").strip())
+                    _matrix = _matrix[:2000]
                     if to == "verified":
                         conn.execute(
                             "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.verified_at=$ts, f.last_transition=$traj, f.replay_matrix=$mx",
@@ -1616,8 +1619,13 @@ class Handler(BaseHTTPRequestHandler):
         # 是主控评审的输入本体, 缺省过滤会把待评审提案整池藏掉(评审管道静默空转), 故缺省全态
         # 返回, 评审侧按 status='proposed' 精确取用, 面板可看全貌。
         if self.path == "/query/frontier":
-            if not self._auth("worker"):
-                return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
+            # GW-2 (gap #2): 路由升 host-only —— worker 级挂载下 eng_id 可选+缺省全态
+            # = worker token 可拉全项目提案池(direction/evidence/review_note 跨项目明文)。
+            # 生产消费方普查(gatewarden 方案卡 #2): frontier-review/closure 与面板 raw cypher
+            # 全部持 host token; worker 侧生产调用方零——worker 读本 eng 提案走 raw /query +
+            # WHERE(FULLSCAN 闭集已含 Frontier, GW-2 gap #1 同批收口)。
+            if not self._auth("host"):
+                return self._send(401, {"ok": False, "error": "unauthorized: X-Auth host token required (/query/frontier is host-only since GW-2)"})
             # status: 缺省 ''(不过滤 — 全态返回, 理由见上方拍板留痕); 显式传值则精确过滤。
             _st = str(req.get("status") or "").strip().lower()
             # eng_id: 精确匹配(空值=不过滤, ($eng='' OR ...) 同 /query/experience scope 过滤的
