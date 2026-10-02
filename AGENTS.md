@@ -87,6 +87,11 @@ mocha 通道瞬断（-1）按先例手动实锚 + CI 全量最终裁决。
    ENOENT 三连红）。T3-2-3 教训固化为固定纪律（scripts/mcp/d2d-mcp-server.mjs 等
    同款）；mocha 调用通道 = `cd plugin/pentest-dsh && npx mocha "test/*.test.mjs"`
    （插件本地 node_modules，仓库根 npx 会拉错版本）。
+   【T3-3-3 扩充口径】凡新面与 CI/异构环境共享，随守卫一并带两件：①环境依赖读取
+   带 seam（token/dir/路径类读取支持 env 或参数注入，缺省回落真实文件——本机文件
+   掩盖 CI 缺文件的失败已四现：graphQuery token seam/vizEng 吞错等，写新面时先想
+   「CI 没有这个文件会怎样」）；②吞错必须记因（catch 不得静默空串——降级语义的
+   原因进返回值/审计/日志，供排障与 fail-closed 分流）。
 11. 宿主侧子 agent 协作（T3-3-0 常设授权）：授权场景白名单六类——前置审计并行化/
    独立复核/禁区比对交叉验证/回报冷读/信息检索（CI 日志等只读提取）/CI 失败根因调查，
    越界须回报说明理由；任务包四要素（目标/边界[只读或可写面，绝不碰清单同样生效]/

@@ -138,3 +138,11 @@
 关键裁决：路由形态照拍板 4 条（审计曾建议聚合为 1 条——故障隔离理由成立但范围决策归拍板，4 条各自微缓存实现同等隔离）；capability 零 graphd 依赖 fail-soft 恒 200（与 graphd 依赖路由 503 fail-closed 语义区分）；client 工厂无 useRef→星图用 id 哈希确定性极角布局（无状态天然稳定）；桑基图出批（transition-log 归 T3-3-2）
 教训沉淀：loadFragment 探针的 makeH 不展开子组件——组件内部渲染断言要下沉到子组件级测试或断言 vnode props（'数据不可用' 文本在子组件内，父层只断 vnode）；client.test.mjs tab 断言是精确 deepEqual——加 tab 必须同步改（审计预警兑现，CI 免红）
 开放项：#24 两项顺手销账（manifest 注释勘误+路由测试盲区补齐）；余不变。下一批 T3-3-3 授权契约数字化
+
+## 2026-10-02 · T3-3-3 授权契约数字化（6.5 第二批，安全敏感度最高批）
+底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest 368 / mocha 1896 / panel 69
+产出：domain/auth-contract.mjs 套件模块（契约 schema v1 一体签名[对规范化载荷防字段剥离]+ed25519 one-shot 签验+六失败面归并三态[missing/invalid/expired]+seen-auth 双维记忆[kid+contract, trust/seen-auth.json 原子写]+authContractGate 消费口[灰度矩阵合并]）· scripts/ops/authctl.mjs CLI（keygen/keys/issue/verify; 主流程守卫+白名单校验对齐 graphd _safe_token_path+O_EXCL 防覆盖+0700/0600）· 四挂接点纯新增接线（startEngagement 顶部[覆盖 adopt 全路径, 图变更前 throw]/p2p_start 预检[字符串回执规避 stopping 闸副作用]/registerGate 组合层[checkBash 之后 T0-C 同位]/egress refreshScope 整集校验[H14 同位数据组装区, deny 收窄 allow 集 fail-closed, 通道故障放行+warn]）· 启动横幅（enforcing/warning-only 与实际判定一致）· 测试 +14（全矩阵/失败面归并/挂接点源码断言/hostAllowed 锁定）· docs/auth-contract-runbook.md
+关键裁决：**验签失败≠放行**（invalid/expired 两开关下恒拒——灰度 off 只豁免 missing）；授权与审批正交维持（approvals 零触碰）；四挂接点全部纯新增零降级（egress 经审计边界划定可挂接[H14 同构先例]）；seen 后契约消失不自动锁死（放行+持续警告, 拍板 3 自用纪律）；hostAllowed 空 scope 不补收紧（启动链回退填 scope+checkBash 兜底, 测试锁定现状）
+教训沉淀：**T3-3-1 两教训补记**——①viz 路由 fire-and-forget send 与测试驱动时序竞态（await 化修复：异步 send 必须在 handler promise 内完成）；②vizEng 把 graphd 不可达静默吞成空 eng 返回 200 空态（吞错必须上抛给 fail-closed 分流——本批起并入先例 10 扩充口径[环境 seam+吞错记因]）；本批新踩：ed25519 是 one-shot 签名（createSign 流式 API 不支持, 须 crypto.sign(null,data,key)）；loadFragment 探针 makeH 不展开子组件（组件内渲染断言下沉子组件级）
+变异观察：StrykerJS 限 domain/auth-contract.mjs **未跑成**——实测 @stryker-mutator/mocha-runner 插件与本地 mocha 版本冲突（run-helpers 内部路径不存在, PluginLoader 加载失败；T3-3-0「脚手架 100% 就位」定级偏差如实纠正：依赖在但不可用）。364 mutant 已 instrument, 卡在 runner。记开放项（修 mocha-runner 兼容后再观察跑, 不阻塞本批）
+开放项：graphd.json 混入运行时状态（~/.config/d2d 卫生, 随 T4-5）；**变异工具链兼容**（mocha-runner 插件与 mocha 12 冲突, 修复后补观察跑）；下一批 T3-3-2 收官批（桑基+9 标签页+侧边栏收口）
