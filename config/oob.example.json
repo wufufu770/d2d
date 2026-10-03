@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "type": "oob",
+  "enabled": false,
+  "adapters": [
+    {
+      "kind": "collaborator",
+      "name": "burp-collab",
+      "mcpServer": "burp-collab",
+      "tools": ["get_dns_records", "get_http_requests"]
+    },
+    {
+      "kind": "webhook",
+      "name": "self-hosted",
+      "endpoint": "https://oob.example-public-host.invalid",
+      "listenKey": "REPLACE_ME"
+    }
+  ],
+  "ttlSeconds": 900,
+  "maxPerEngagement": 200
+}

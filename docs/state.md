@@ -11,11 +11,14 @@
   codeql-action-4——actions 大版本升级，与 HYG-1 同文件改动有 rebase 冲突风险]+mods
   [ahead 6=d2d-mods 插件移植，非 dependabot]——处置归用户，T4-3-3-0 核查报告在案；
   回滚点由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
-- 工作树：0 改动
+- 工作树：burp 侧增量批（本地未提交）—— 新增 `config/oob.example.json`、
+  `plugin/pentest-dsh/{domain/oob.mjs,tools/{oob,jwt-audit,cred-matrix}.mjs,test/{oob,jwt-audit,cred-matrix}.test.mjs}`；
+  修改 `tools/index.mjs`（纯追加 3 处 reg，既有六件套 def 零删除行）、`config/description-baselines.json`
+  （经 `scripts/ops/gen-description-baselines.mjs` regen 62→73 键）、两份测试的计数断言、
+  `docs/tool-risk-rating.md`（41→46 工具）、本文件
 - CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-2 收官 run=ci 37097982772/
   gates 37097982773/dsh-compat 37097982782 实测；本行曾停 GW-2 v1 时点，PLAN-1 偿还）
-- 测试基线（EV-2 固化）：pytest **412** / mocha **1955**（+4 采集单测；+3 symlink 用例随
-  T4-3-3-0 在库——PLAN-1 底账曾写 1948 并注"1951 随批固化"，实测修正=1955）/ panel **88**
+- 测试基线（EV-2 固化）：pytest **412** / mocha **1984**（burp 增量批：+29 = oob 9 + jwt-audit 12 + cred-matrix 8；基线 1955）· panel **88**
   （口径 = `pytest tests/` 全目录 / `npx mocha test/` / panel `npm test`）
 - CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
   来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
