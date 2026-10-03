@@ -66,6 +66,13 @@
 | graphd worker /query 门三面（WORKER_FULLSCAN_RE 闭集自 schema.NODE_TABLES 单一来源生成+_WORKER_FULLSCAN_EXEMPT 仅 ExperienceWeight[briefs 活调用点锁定]+谓词内容锚 Engagement 严格锚/一般表选择性规则+无标签拒；**改动须同步 callsite 样本库 31 用例与 briefs 误伤面对照**） | GW-2 v2 已落地 |
 | Gate-V 锚存在性 seam（setGateVAnchorLookup 注册契约：req_id×2+marker 须命中本 run 记录；high/critical 未注册即拒——**签名零变更红线产物，gateV 形参恒不变**）+ 跨类双锚同链要求 | GW-2 v2 已落地 |
 | 工具门 STRICT 面（P2P_TOOL_GATE_STRICT 语义=off 高危档 fail-closed 拒；缺省 off=allow 维持 4-4 拍板；STRICT_HIGH_RISK_TOOLS 集合关系=进门集全 7 名） | GW-2 v2 已落地 |
+| Finding.dual_sign 状态机（DUAL_SIGN_TRANSITIONS 迁移表+dual_sign_transition_gate 纯函数+/write/dual-sign-transition host-only 端点=11 处直写收编后**唯一写通道**——新增写面禁止绕过端点直写；signed/disputed 真终态不可迁，blocked 可解冻挂起态；改动须同步迁移表全表 pytest 与 scheduler 逐字回归用例） | T4-3-3 已落地 |
+| scheduler/gates.mjs heteroGuardedBackup（P2P_HETERO_ENFORCE 三档：warn 缺省/strict 拒配 fail-closed 落既有单签留痕/off 静默；domain/gates.mjs needsDualSign/canSpawnDualSign 档位边界零触碰） | T4-3-3 已落地 |
+| scheduler/gates.mjs dualExpBrief（P2P_DUAL_BRIEF_EXP 背景参考段——缺省 off=材料逐字节等价；截断定值 gatesDualBriefExp 800/Row 200/Title 100 锚 prompt-maxlens 单表） | T4-3-3 已落地 |
+
+T4-3-3 新增：dual_sign 簿记唯一写通道=graphd /write/dual-sign-transition（scheduler 11 处
+直写已收编，任何新增 dual_sign 写面必须走端点状态机，绕过直写=违禁）；P2P_HETERO_ENFORCE
+未知档位值按 warn 处理（fail-safe=缺省档）。
 
 T4-2b 新增运维边界：存储归档/钉扎产物一律仓库外（DATA_DIR/backups/storage-archive/，
 含 3 份滚动物理快照与 wheel pin——见 docs/runbook-storage.md）；**"源库零写"为存储

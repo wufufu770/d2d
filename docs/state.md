@@ -200,14 +200,25 @@ eng-0928=用户会话期所跑——前置链断裂点]；DVWA 就绪交付[容�
 [用户会话辅助执行步骤]；缩批裁决=宿主缺口按止损精神不硬凑不工程化；**实弹执行二选一归用户**
 [①会话辅助 ②宿主工程化立项]；报告 docs/eval-run-2-e2e.md；基线 pytest **412**/mocha
 **1955**/panel 88）
-下一步建议（**当前唯一有效**·EV-2 时点，PLAN-1 单值化承接）：**实弹执行二选一归用户**——①dsh
-web 会话辅助执行（docs/eval-run-2-e2e.md §5 runbook，DVWA 已就绪+采集脚本已备）②attended
-宿主工程化立项（4-3a 形态）；执行后后续批承接报告数据回填与裁决清单；**T4-3-3 实施待异构
-方案确认**（用户已确认方案=t4-3-3-plan §二组合，实施排 EV-2 后）
-下一步建议（**当前唯一有效**·EV-2 时点，PLAN-1 单值化承接）：**实弹执行二选一归用户**——①dsh
-web 会话辅助执行（docs/eval-run-2-e2e.md §5 runbook，DVWA 已就绪+采集脚本已备）②attended
-宿主工程化立项（4-3a 形态）；执行后后续批承接报告数据回填与裁决清单；**T4-3-3 实施待异构
-方案确认**（用户已确认方案=t4-3-3-plan §二组合，实施排 EV-2 后）
+T4-3-3 ✅（**8-2 双签升级实施**[方案=t4-3-3-plan §二组合用户已确认]：族①异构强制三档
+[模型 id 级不强制 vendor；P2P_HETERO_ENFORCE=warn 缺省[主备同模型启动响亮告警 notify+gate-log+
+runLog 同键去重]/strict[拒配 fail-closed——primary 不可解析或同 id 均按拒配，backup 视同不可用
+返 ''，critical/high 落既有单签留痕路径不死锁不静默丢+notify]/off 静默；resolveBackup 读取处
+heteroGuardedBackup 接线两处+启动检查；domain/gates.mjs 零触碰]；族②材料增强[dualFocus 背景
+参考段——图内读本 eng Experience consensus_status 非空行+reasoning_path 行级截断，标注「经验池
+先验，非任何先前结论」；P2P_DUAL_BRIEF_EXP=1 启用缺省 off=材料逐字节等价；截断定值 800/200/
+100+行数 5 依据记 devlog；两处 dualFocus 接线]；族③graphd /write/dual-sign-transition
+host-only 端点[迁移表白名单=**11 处实测全边集**——与方案卡「终态不可迁」草图的偏离：实测
+blocked→pending 解冻边(0915 B1)+''→blocked/single 直达+pending/blocked→single 降级共 6 条真实
+边必须入表守住零语义变更红线，**signed/disputed 才是真终态，blocked=可解冻挂起态**；to=pending
+CAS 条件写移植端点锁内[零命中=200+claimed:false 与旧条件写等价]；认证照 host 先例；审计事件
+dual-sign-transition]；族④scheduler 11 处 SET f.dual_sign 直写收编端点[话术/runLog/审计逐字
+保留——逐字回归用例 3 例：signed 盖章链/pending 派发链/409 拒收不炸环；auth-contract.mjs 与
+domain 层零触碰]；迁移表全表 pytest+端点 B 面九态 pytest；新用例 14=[mocha 12+pytest 2]；
+基线 pytest **414**/mocha **1967**/panel 88）
+下一步建议（**当前唯一有效**·T4-3-3 时点）：**EV-2 实弹执行二选一仍悬置归用户**[①会话辅助
+runbook ②attended 宿主工程化立项]；下一批候选=T4-3-4（d 调和+8-4 L1+第四轮冷读+收官 tag
+t4-3-stage8）/密钥异构独立小批/js catch 146 补因/门禁候选二批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
