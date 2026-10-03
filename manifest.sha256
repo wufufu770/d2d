@@ -1,8 +1,8 @@
 a4afc73721e1bbd4796932f4ff250a2a7ba68db7d866f49b250d38660ef87dcc  .github/CODEOWNERS
 54a5e00b82d34bf0daf3dec45a0279ce15d518d14fa65f42660780cbb3bfe041  .github/dependabot.yml
-8fc45533c248ff92e1e6ccc9f8766119acd6d3a7fdf88768fc1190bb8e8de3d7  .github/workflows/ci.yml
-d43e61dfb86e467a4219559dfe2fe034b5e73658ac2b32d8cd203208fa27d203  .github/workflows/dsh-compat.yml
-1037879e2a1d761ffe5b39a553ed49c22ec173e7f39bf834b07977d452dd650d  .github/workflows/gates.yml
+85f37b5e4306785f059ed4ec07f52e0a5b96919d6c550a8b79f1218120e43db1  .github/workflows/ci.yml
+61c09472b6cd326396ebe61c020b513932123d7563c52fa65a9a36dc61f50d2b  .github/workflows/dsh-compat.yml
+978d9b7060fdefd6e92b01862c38ad230f907490d8fc6453b00e9fad373df024  .github/workflows/gates.yml
 a62d7a2b61f9b78ec2347c65b29d01b89f4bf70d44171a6d9381eee2e8f8c106  .gitignore
 bd3732802e54ba9c0f4bd4550a30e55ee466b6ffc9bf36d0b3cabe19faa94f75  AGENTS.md
 9ea85fc4f888d11df2939d800c7746169184ffc6f5965695cc5d14ea23aaa649  ARCHITECTURE.md
@@ -516,6 +516,7 @@ d17c5ef3fd6a3c99958e3f7a69ce7473d06717d5cf578a8733b92aa55fd4a290  阶段3-实战
 #555ab9189cc4baa7cd2b527099b932497310a6a609798a4d5cff30fa89349c5a  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/index.js
 #a9960e05e21716f82bd289a3a8954b000a6fee3c423dcfdc2c3552025704b696  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/types/index.d.ts
 # --- end node_modules ---
+
 
 
 
