@@ -88,7 +88,16 @@ VERSION = "1.6.0"  # 0924: Hypothesis value_score 列(3.6-4 段 C: CREATE+ALTER+
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 PORT = int(os.environ.get("P2P_GRAPH_PORT", "8766"))
 
-import kuzu
+# LBD-1(拍板 1): 图引擎开关(临时性——切换观察周期后随 WRAP-4 卫生尾批删除; 不引入永久
+# 双引擎抽象)。缺省 kuzu(生产态零变化); P2P_GRAPH_ENGINE=ladybug 走预演/LBD-2 切换实例。
+# ladybug=PyPI ladybug 包(LadybugDB, MIT, kuzu 社区延续)——API 同形(RECOV-1 实证: Database/
+# Connection/execute/get_next/has_next/table_info 全兼容; 异常捕获全为宽泛 Exception 不依赖
+# kuzu 类型)。kuzu 依赖过渡期保留(bak 恢复需要), 移除时机=WRAP-4。
+GRAPH_ENGINE = os.environ.get("P2P_GRAPH_ENGINE", "kuzu").strip().lower()
+if GRAPH_ENGINE == "ladybug":
+    import ladybug as kuzu  # noqa: N813 — 同形 API 直接顶替, 下游 kuzu.Database/Connection 零改动
+else:
+    import kuzu
 
 # 巨型文件拆分(纯代码搬移, 逻辑零改动): 纯函数/表定义/门控逻辑移入 gd 子包, 此处统一 re-export
 # —— `from graphd.app import X` 的既有导入路径(tests/外部调用方)零改动。两种形态都接住:

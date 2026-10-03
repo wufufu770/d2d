@@ -1,2 +1,5 @@
 kuzu==0.11.3
 pytest==9.1.1
+# LBD-1: B 预案引擎(PyPI 官方 index 直连——镜像源无此包; 认准 metadata Summary=embeddable
+# graph database/Home=ladybugdb.com, MIT; RECOV-1 已辨真伪)。kuzu 保留=过渡期 bak 恢复需要。
+ladybug==0.21.2
