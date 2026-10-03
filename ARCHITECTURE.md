@@ -43,7 +43,7 @@ frozen(存量待迁移) / rejected(红线越权永久隔离)
 
 ## 4. graphd schema（Kuzu，127.0.0.1:8766）
 
-节点：Engagement(name/target/scope/auth/status/cancel/leased_by/instances/objective/created_at)、Finding(id/severity/title/repro/evidence_dir/gate_status/eng…)、Signal_(type/weight/host/eng)、Endpoint(url/host/port/authorized/eng)、Hypothesis、ExperienceWeight(id=card:<id>/wins/hits)、Task(kind/eng/status)。
+节点（HYG-1 对齐 gd/schema.py 权威定义；省略号为非穷举）：Engagement(name/target/scope/auth/status/cancel/leased_by/instances/objective/created_at)、Finding(id/severity/title/repro/evidence_dir/gate_status/eng…)、Signal_(type/weight/status/eng/gate_anchor…)——**无 host 列**（host 形态存于 evidence 散文/端点关联）、Endpoint(url/tech/business_chain/authorized/eng…)——**host/port 为 url 派生量非列**、Hypothesis、ExperienceWeight(id=card:<id>/wins/hits)、Task(kind/eng/status)。
 
 **唯一写通道 = /write/***（host/worker token 分级）：denylist fail-closed、CONFIG_ADVICE_RE+low/info 源头拒收、签名去重、authorized 只升不降且 host token 专属。读走 /query（Engagement 的 CREATE/MERGE 也经 /query）。
 
