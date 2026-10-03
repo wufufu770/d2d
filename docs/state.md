@@ -248,7 +248,7 @@ CI 链+零 revert+flaky 非误伤——stage8-closeout §三]；**收官盘点**
 workflows on: 配置]；新用例 mocha +4[stability-view]；world.run 脚本归属定性=宿主引擎
 自管理产物[.zcode 自 ignore 不入库——引擎加固注记登记，跨机复现靠脚本重生成]；基线
 pytest **414**/mocha **1971**/panel 88）
-下一步建议（**当前唯一有效**·T4-3-4 时点）：**EV-2 实弹执行二选一仍悬置归用户**[①会话
+下一步建议（历史·T4-3-4 时点，已被后续批单值化取代）：**EV-2 实弹执行二选一仍悬置归用户**[①会话
 辅助 runbook ②attended 宿主工程化立项]；阶段 8 已收官（tag t4-3-stage8）——下一梯队
 排批归用户：T4-3-4 后续候选=密钥异构独立小批/人工裁决回灌批（面板假阳性×#18 合并）/js
 catch 146 补因/门禁候选二批/T4-4（OTel 挂触发条件）/T4-5（公开脱敏归用户拍板时点）；
@@ -264,7 +264,7 @@ RECOV-1 ✅（**存储恢复演练+LadybugDB DDL 冒烟**[roadmap #5 触发=阶�
 全量 18 DDL 零报错**+init_schema 零抛出+DEFAULT 语义保真+**kuzu 导出包直接 IMPORT 成功**
 8.97s 六主表全等——B 预案从"未验证"升级"导出包级可导"；docs/ladybug-ddl-smoke.md]；
 runbook-storage §六恢复规程+§七 B 预案数据点回填；零生产代码改动[基线 414/1971/88 不变]）
-下一步建议（**当前唯一有效**·RECOV-1 时点）：**EV-2 实弹执行二选一仍悬置归用户**[①会话
+下一步建议（历史·RECOV-1 时点，已被后续批单值化取代）：**EV-2 实弹执行二选一仍悬置归用户**[①会话
 辅助 runbook ②attended 宿主工程化立项]；第四轮冷读评审归用户；写入方显式带
 consensus_status=拆批候选归用户排批；B 预案启动批仍为触发条件驱动（本轮数据点已就绪）；
 其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批归用户
@@ -297,7 +297,7 @@ R5-0 ✅（**embedding 检索增强前置审计**[只读批；合并收口 #15/#
 onnxruntime-node（写入端 distill/promote+查询端 retrieveKnowledge 同语言，零跨进程零
 API 费）+存储=卡内嵌 embedding 字段暴力余弦（120 卡级，图引擎无关=LBD-2 切换零影响，
 模型缺失降级链回退 trigram 逐字节等价）+合并公式 L1(0.25)+L2 词面(0.25)+L3 语义(0.5)+
-评估=EV-1 12 查询精确口径 recall@3/MRR 基线固化+P2P_EMBED off/on 双跑对照+四 fail 锚
+评估=EV-1 评估集（26 条查询/45 锚）精确口径 recall@3/MRR 基线固化+P2P_EMBED off/on 双跑对照+四 fail 锚
 ≥2 进 topK+garbage-control 防退化+三门（quota/denylist/注入扫描）零交互]；**按行授权
 申请两项**[scheduler.js:398 邻域 misses 两档放宽（#16 收口）+注入点 trace 采集（#15
 完整方案，brain-audit §6.1 设计照实施）]；预估 R5 实施批 M（3-4 族）；零代码批零改动）
