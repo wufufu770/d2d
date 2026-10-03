@@ -9,6 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 
 // 已知微信小程序包缓存目录(平台差异大, WMPF_CACHE_DIR 可覆盖/追加, 分号分隔)
 export function cacheDirs(home = os.homedir(), env = process.env) {
@@ -70,7 +71,8 @@ export function decompile(pkg, outDir) {
   return { ok: true, out: outDir, tool: bin }
 }
 
-if (process.argv[1]?.endsWith('wxapkg.mjs')) {
+// HYG-1: 主判规范化(endsWith 基名弱形态 → pathToFileURL 真实入口判定, wmpf.mjs 同源)
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const argv = process.argv.slice(2)
   const cmd = argv[0]
   const argOf = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined }

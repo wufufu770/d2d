@@ -9,8 +9,11 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+// HYG-1: fileURLToPath/pathToFileURL — URL pathname 直读对空格/中文/## 等字符不解码(路径
+// 含这些字符时 DIR 解析错位、入口判定失配); file URL 手拼 `file://` 同病。规范形修复。
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const DIR = path.join(path.dirname(new URL(import.meta.url).pathname), 'site-patterns')
+const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'site-patterns')
 // 本地经验库(D2D_SITE_PATTERNS, 不进 git 的真实目标经验)优先, 仓库自带样例次之。
 // env 在每次调用时读取(测试可注入, 不做模块加载期缓存)。
 const dirs = () => [process.env.D2D_SITE_PATTERNS, DIR].filter(Boolean)
@@ -34,8 +37,9 @@ export function matchSite(query) {
   return ''
 }
 
-// CLI 直查: node match-site.mjs <host>
-if (process.argv[1] && import.meta.url === new URL(`file://${path.resolve(process.argv[1])}`).href) {
+// CLI 直查: node match-site.mjs <host>(HYG-1: 入口判定改 pathToFileURL 规范形 — 手拼 file://
+// 对路径特殊字符不编码, 与 DIR 修复同批)
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const hit = matchSite(process.argv[2] ?? '')
   process.stdout.write(hit || '')
 }

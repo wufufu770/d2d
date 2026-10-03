@@ -8,6 +8,7 @@ import zlib from 'node:zlib'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import crypto from 'node:crypto'
 
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..')
@@ -142,7 +143,8 @@ export function verifyManifest({ dir = WORDLISTS_DIR } = {}) {
 }
 
 // ---- CLI ----
-if (process.argv[1] && process.argv[1].endsWith('wordlists.mjs')) {
+// HYG-1: 主判规范化(endsWith 基名弱形态 → pathToFileURL 真实入口判定, wmpf.mjs 同源)
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const cmd = process.argv[2] ?? 'list'
   if (cmd === 'list') {
     const m = JSON.parse(fs.readFileSync(path.join(WORDLISTS_DIR, 'manifest.json'), 'utf8'))
