@@ -5,9 +5,11 @@
 > HEAD 顺延，以 `git log -1` 实测为准。
 
 ## 当前底账
-- 远端 HEAD：tag `t4-3-stage8` 所指 commit（T4-3-4 收官族末——**自相对化锚**：以
-  `git rev-parse t4-3-stage8` / `git log -1` 实测为准，本节不再写死哈希避免收官批
-  二次顺延；历史漂移：曾停 e63ffb61 被 T4-3-3 B 层抓出当场偿还，PLAN-1 偿还过更早两批）
+- 远端 HEAD：`git ls-remote origin main` 实测为准（RECOV-1 时点=本批收官 commit）；
+  阶段 8 收官锚=tag `t4-3-stage8`（6e75d5d4，T4-3-4 批）。**自相对化纪律**：本行不写死
+  演进批哈希，锚点事件（tag/里程碑）落点值+其余以实测为准（历史漂移：曾停 e63ffb61
+  被 T4-3-3 B 层抓出偿还、PLAN-1 偿还过更早两批；T4-3-4 曾以 tag 名自锚，本行随本批
+  演进改为 ls-remote 口径+锚点值并存）
 - 分支：main 唯一活跃（远端挂起：dependabot 四分支[checkout-7/setup-node-7/setup-python-7/
   codeql-action-4——actions 大版本升级，与 HYG-1 同文件改动有 rebase 冲突风险]+mods
   [ahead 6=d2d-mods 插件移植，非 dependabot]——处置归用户，T4-3-3-0 核查报告在案；
@@ -250,6 +252,21 @@ pytest **414**/mocha **1971**/panel 88）
 排批归用户：T4-3-4 后续候选=密钥异构独立小批/人工裁决回灌批（面板假阳性×#18 合并）/js
 catch 146 补因/门禁候选二批/T4-4（OTel 挂触发条件）/T4-5（公开脱敏归用户拍板时点）；
 第四轮冷读评审结果待用户执行 coldread-4-briefing 后回填
+RECOV-1 ✅（**存储恢复演练+LadybugDB DDL 冒烟**[roadmap #5 触发=阶段 8 收官 tag；"包还在
+≠恢复计划"升级为实测规程]：**三段演练**[①EXPORT 4.27s/4.2MB→IMPORT 7.06s→12 节点+6 边
+表逐表行数全等+Experience 16 列序齐+存量保真；②DEFAULT 丢失复现（IMPORT 库新行=NULL）
++三候选定谳——a) ALTER 重放无效（already has property 拒绝）c) init_schema 全吞幂等但
+不修复 b) **运维回填两条 UPDATE=标准处置**（0.157s 实测；写入方显式带 consensus_status=
+拆批候选登记）+读侧三值逻辑等价论证；③独立实例 :8799 重开秒级+**SCHEMA_DEGRADED 空**
++三条代表查询全通]；生产零写[EXPORT=读库写目录/端口·路径·token 三独立/T4-3-2 bak 零
+触碰]；**LadybugDB 0.21.2 首实测**[PyPI ladybug 官方源（镜像无）MIT+cp314 匹配；**schema
+全量 18 DDL 零报错**+init_schema 零抛出+DEFAULT 语义保真+**kuzu 导出包直接 IMPORT 成功**
+8.97s 六主表全等——B 预案从"未验证"升级"导出包级可导"；docs/ladybug-ddl-smoke.md]；
+runbook-storage §六恢复规程+§七 B 预案数据点回填；零生产代码改动[基线 414/1971/88 不变]）
+下一步建议（**当前唯一有效**·RECOV-1 时点）：**EV-2 实弹执行二选一仍悬置归用户**[①会话
+辅助 runbook ②attended 宿主工程化立项]；第四轮冷读评审归用户；写入方显式带
+consensus_status=拆批候选归用户排批；B 预案启动批仍为触发条件驱动（本轮数据点已就绪）；
+其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
