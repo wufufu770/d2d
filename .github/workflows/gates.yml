@@ -65,7 +65,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # HYG-1: node 20→24 — 仓库 engines(node>=22.5) 下 20 违宪; 24=ci 测试轨同版。
+          # dsh-compat 的 22 为最低支持轨(有意, 见其文件头注释)。
+          node-version: "24"
       - name: Generate lockfile if absent
         run: npm install --package-lock-only --ignore-scripts
       - name: npm audit (high+ blocks)

@@ -11,12 +11,14 @@ jobs:
           node-version: 24
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          # HYG-1: python 3.11→3.12 对齐 gates.yml 轨(单一来源); 依赖改 -r requirements.txt
+          # (kuzu==0.11.3+pytest==9.1.1 钉版 — 弃"pip install kuzu pytest"未钉形态)
+          python-version: '3.12'
       - name: 插件测试(pentest-dsh)
         run: cd plugin/pentest-dsh && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npx mocha "test/*.test.mjs"
       - name: 面板测试(d2d-panel)
         run: cd plugin/d2d-panel && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && node scripts/build-client.mjs && npm test
-      - name: graphd 门禁测试(全目录 tests/ 6 个 test_*.py, 基线 368 例)
-        run: pip install kuzu pytest && python -m pytest tests/ -q
+      - name: graphd 门禁测试(全目录 tests/ 含 gatewarden/, 基线 406 例)
+        run: pip install -r requirements.txt && python -m pytest tests/ -q
       - name: lint
         run: node scripts/lint.mjs

@@ -4,7 +4,8 @@ name: dsh-compat
 # dsh 是 developer preview(每周 breaking), 六个 @deepseek-ai/dsh-* 包精确 pin 为
 # 0.1.1-rc.2; 本 workflow 在上游发新版时第一时间暴露兼容性差异。
 # 步骤风格沿用 ci.yml/gates.yml 惯例(checkout@v4 → setup-node@v4 → 容错安装);
-# node 统一 22(与仓库 engines>=22.5 对齐; gates.yml npm-audit 的 node 20 为既有不一致, 此处不跟随不改)。
+# node 统一 22 = 最低支持轨(与仓库 engines>=22.5 对齐; ci/gates 轨的 24 为测试轨选择 —
+# gates npm-audit 的旧 20 已在 HYG-1 对齐 24)。
 
 on:
   push:
