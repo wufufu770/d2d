@@ -62,6 +62,12 @@
 - 新 host-only 端点 `/write/dual-sign-transition`：状态机白名单
   （''/single→pending；pending→signed|disputed|blocked；signed/blocked/disputed 终态不可迁——
   迁移表收敛 gates 纯函数供 pytest）；CAS 语义保留（WHERE dual_sign 条件写移植端点内）。
+  **【T4-3-4 勘误】上行三段式为设计稿草图，与实现有出入**：实施时以 11 处直写实测全边集
+  为准（graphd/gd/gates.py DUAL_SIGN_TRANSITIONS，10 边）——草图漏 6 条真实边：''→blocked
+  （:282 派发时模型已死亡）/''→single 与 pending→single、blocked→single（:335/:339/:467/:484
+  降级留痕）/**blocked→pending（:514 解冻边，0915 B1 先例——backup 恢复存活自动重派）**；
+  **blocked 非终态（可解冻挂起态），真终态仅 signed/disputed**。未来读者以
+  graphd/gd/gates.py 迁移表及其 pytest 全表用例为权威，勿信本草图。
 - scheduler 11 处 `q(SET f.dual_sign…)` 改调端点（每次簿记语义逐字保留：话术/runLog/审计不变）。
 - 收编收益：dual_sign 迁移获得服务端状态机校验（现状 scheduler 直写无图侧防线，伪造 host
   通道可任意置态——与 experience-transition 拍板⑧同族风险收口）。
