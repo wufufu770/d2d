@@ -32,7 +32,7 @@ SCHEMA = [
     # DEFAULT epoch('1970-01-01 00:00:00' — kuzu 0.11 DDL 无当前时刻函数默认, 现场实证));
     # 写入通道 /write/experience, 读取通道 /query/experience(蒸馏 3.5-2/注入 3.5-3 后续批次接线)。
     # 与 ExperienceWeight 同名族不同表: 那是模式权重卡(cls/win_day 计胜), 本表是条目级经验回流。
-    "CREATE NODE TABLE IF NOT EXISTS Experience(id STRING, eng_id STRING DEFAULT '', category STRING DEFAULT '', scope STRING DEFAULT '', title STRING DEFAULT '', content STRING DEFAULT '', evidence_ref STRING DEFAULT '', utility_score FLOAT DEFAULT 0.5, retrieval_count INT64 DEFAULT 0, success_count INT64 DEFAULT 0, created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), status STRING DEFAULT 'quarantined', provenance_hash STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Experience(id STRING, eng_id STRING DEFAULT '', category STRING DEFAULT '', scope STRING DEFAULT '', title STRING DEFAULT '', content STRING DEFAULT '', evidence_ref STRING DEFAULT '', utility_score FLOAT DEFAULT 0.5, retrieval_count INT64 DEFAULT 0, success_count INT64 DEFAULT 0, created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), status STRING DEFAULT 'quarantined', provenance_hash STRING DEFAULT '', reasoning_path STRING DEFAULT '', consensus_status STRING DEFAULT '', PRIMARY KEY(id))",
     # 3.6-1(前沿子系统 C 数据层): Frontier 探索方向提案表(9 列 — worker 提案 direction,
     # 主控评审转态 proposed→accepted|rejected、accepted→explored)。时间列 DEFAULT epoch
     # ('1970-01-01 00:00:00' — kuzu 0.11 DDL 无当前时刻函数默认, 沿 Experience 3.5-1 现场实证
@@ -243,7 +243,12 @@ def init_schema(conn):
                  "ALTER TABLE Experience ADD created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
                  "ALTER TABLE Experience ADD last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
                  "ALTER TABLE Experience ADD status STRING DEFAULT 'quarantined'",
-                 "ALTER TABLE Experience ADD provenance_hash STRING DEFAULT ''"):
+                 "ALTER TABLE Experience ADD provenance_hash STRING DEFAULT ''",
+                 # T4-3-2(8-1 共识验证 v2): 推理路径/共识结论两列 —— 与 SCHEMA CREATE(:35) 逐字
+                 # 同源(三处同步之二); 语法无 COLUMN 关键字(0.11.3 实测, t4-3-2-plan §1.1);
+                 # DEFAULT 回填 '' 非 NULL(双份实测)。权威定义 docs/experience-consensus-schema.md。
+                 "ALTER TABLE Experience ADD reasoning_path STRING DEFAULT ''",
+                 "ALTER TABLE Experience ADD consensus_status STRING DEFAULT ''"):
         try:
             conn.execute(_ddl)
         except Exception:
@@ -309,7 +314,10 @@ _CRITICAL_COLUMNS = {
     # 历史存量需要区分"主功能列/迁移列"。全列校验成本同量级(table_info 单次调用), 不放子集。
     "Experience": ("id", "eng_id", "category", "scope", "title", "content", "evidence_ref",
                    "utility_score", "retrieval_count", "success_count", "created_at",
-                   "last_used_at", "status", "provenance_hash"),
+                   "last_used_at", "status", "provenance_hash",
+                   # T4-3-2: +reasoning_path/consensus_status(三处同步之三; 缺列时写入/消费点
+                   # 被 .catch 静默吞, 共识断链)
+                   "reasoning_path", "consensus_status"),
     # 3.6-1(前沿子系统 C): Frontier 纳入全部列(含 id 主键) —— 同 Experience 全列拍板:
     # 全新表整表即前沿提案数据层的全部载体, 任一列缺失都属 schema 损坏(status 缺→评审状态机
     # 失效, created_at/reviewed_at 缺→排序/时效失效, direction/evidence 缺→提案内容断链,
