@@ -704,8 +704,51 @@ def experience_evidence_ref_rejected(ref) -> bool:
 # 独立短语全漏。本词表: 高置信集=独立短语(命中即 400 拒绝); 软命中集=复合形态
 # (五条正则语义移植 + 中文缺口补齐, 命中照写但 content 加 '[SUSPECT] ' 前缀 + 审计,
 # 经验池评审进程天然先见隔离行 → 置顶复核)。
-EXPERIENCE_INJECTION_HIGH = (
-    "忽略之前指令",
+# ── T4-3-2(8-1 共识验证 v2): Experience 两新列校验纯函数(单测真源) ────────────────
+# 权威定义 docs/experience-consensus-schema.md; 语法/长度依据 t4-3-2-plan §1.1 实测。
+
+_EXPERIENCE_RP_KEYS = {"premises", "evidence_refs", "counter_signals", "decision"}
+
+
+def experience_reasoning_path_rejected(payload) -> bool:
+    """reasoning_path 结构化校验(纯函数供 pytest, experience_evidence_ref_rejected 同款真源):
+    非空须可 JSON 解析+恰四键(premises/evidence_refs/counter_signals 数组元素为非空字符串、
+    各 ≤16 项+decision 字符串)+总长 ≤4096; 空串放行(缺省占位)。返回 True=拒收。
+    注意: 调用方应对「redact_pii 后的落库终值」校验(顺序拍板留痕见 app.py A 面接线)。"""
+    s = str(payload or "")
+    if not s:
+        return False
+    if len(s) > 4096:
+        return True
+    try:
+        obj = json.loads(s)
+    except Exception:
+        return True
+    if not isinstance(obj, dict) or set(obj.keys()) != _EXPERIENCE_RP_KEYS:
+        return True
+    for k in ("premises", "evidence_refs", "counter_signals"):
+        v = obj[k]
+        if not isinstance(v, list) or len(v) > 16:
+            return True
+        if any(not isinstance(x, str) or not x.strip() for x in v):
+            return True
+    return not isinstance(obj["decision"], str)
+
+
+_EXPERIENCE_CS_RE = re.compile(r"^(consistent|illegal|superseded:[A-Za-z0-9-]+)$")
+
+
+def experience_consensus_status_rejected(status) -> bool:
+    """consensus_status 枚举校验(纯函数): 空串放行(''=未评估, host 可清标);
+    非空须命中 ^(consistent|illegal|superseded:<id>)$。superseded 的 <id> 存在性校验
+    在端点锁内做(参数绑定, 细化意见①)——本函数只管形态。返回 True=拒收。"""
+    s = str(status or "").strip()
+    if not s:
+        return False
+    return not bool(_EXPERIENCE_CS_RE.match(s))
+
+
+EXPERIENCE_INJECTION_HIGH = (    "忽略之前指令",
     "ignore all previous instructions",
 )
 # system prompt 系(无空格/多空格变体, 与 sanitize.js 第 5 条 system\s*prompt 同形; re.I)
