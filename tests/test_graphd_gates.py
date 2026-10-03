@@ -5017,3 +5017,121 @@ def test_t432_consensus_endpoint_states(tmp_path, monkeypatch):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ── T4-3-3(8-2): dual_sign 转态迁移表 + 收编端点 /write/dual-sign-transition ──────────
+
+def test_t433_dual_sign_transition_gate_full_table():
+    """迁移表全路径: 实测全边集放行(合法迁移全表)+非法迁移拒+真终态不可迁+NULL 归一+
+    to 越枚举 400 语义。表注释(迁移表逐边来源行号)与断言一一对应。"""
+    from graphd.gd.gates import DUAL_SIGN_STATES, DUAL_SIGN_TRANSITIONS, dual_sign_transition_gate as gate
+    # 全枚举 × 全枚举 对账: 恰好表内边放行, 表外一律拒
+    for cur in DUAL_SIGN_STATES:
+        for to in DUAL_SIGN_STATES:
+            ok, _r = gate(cur, to)
+            assert ok == (to in DUAL_SIGN_TRANSITIONS.get(cur, ())), (cur, to, ok)
+    # 合法迁移全表逐边(11 处直写实测边集)
+    legal = {
+        "": {"pending", "single", "blocked"},
+        "pending": {"signed", "disputed", "blocked", "single"},
+        "blocked": {"pending", "single"},
+        "single": {"pending"},
+        "signed": set(),
+        "disputed": set(),
+    }
+    assert {k: set(v) for k, v in DUAL_SIGN_TRANSITIONS.items()} == legal, "迁移表与实测边集逐边一致"
+    for cur, targets in legal.items():
+        for to in targets:
+            assert gate(cur, to) == (True, ""), (cur, to)
+    # 真终态不可迁: signed/disputed 无任何出边含同态(0914 仲裁锁定); blocked 是可解冻挂起态非终态
+    for to in DUAL_SIGN_STATES:
+        assert gate("signed", to)[0] is False
+        assert gate("disputed", to)[0] is False
+    assert gate("blocked", "pending") == (True, ""), "0915 B1 解冻边必须合法"
+    assert gate("blocked", "single") == (True, "")
+    # NULL 归一 ''(列 DEFAULT ''): cur=None 等价 ''
+    assert gate(None, "pending") == (True, "")
+    assert gate(None, "signed")[0] is False
+    # to 越枚举(端点 400 语义)与 cur 未知串(fail-closed)
+    assert gate("", "weird")[0] is False and "to must be one of" in gate("", "weird")[1]
+    assert gate("mystery", "pending")[0] is False
+    assert gate("", "")[0] is False, "无任何边指向 ''(空态只可作源)"
+
+
+def _t433_post(base_url, path, payload, token):
+    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(),
+                                  headers={"Content-Type": "application/json", "X-Auth": token})
+    try:
+        with _urllib_request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.load(resp)
+    except _urllib_request.HTTPError as e:
+        return e.code, json.load(e)
+
+
+def _t433_mkfinding(base_url, fid, title):
+    # 标题须 trigram 远离(去重门 Jaccard>0.9 判重 — 仅尾号数字不同会被 409)
+    s, o = _3c_post(base_url, "/write/finding",
+                    {"id": fid, "title": title, "severity": "low",
+                     "category": "vuln", "repro": f"curl -s https://probe.example.com/x?probe={fid}",
+                     "evidence_dir": "/ev/ds"})
+    assert s == 200, o
+
+
+def test_t433_dual_sign_transition_endpoint_states(tmp_path, monkeypatch):
+    """B 面端点态: worker 403(host-only)/id 缺失 400/to 越枚举 400/finding 缺失 404/
+    ''→pending CAS 200+claimed:true/重复 pending claimed:false(0917 H7 零命中等价)/
+    pending→signed 200/signed→pending 409(真终态)/''→blocked 200(:282 先例)/
+    blocked→pending 200(0915 B1 解冻边)/pending→disputed 200/disputed→single 409/
+    ''→single 200/图内读回一致。"""
+    base_url, conn, srv = _3c_spawn_server(tmp_path, monkeypatch)
+    monkeypatch.setenv("P2P_HOST_TOKEN", "t-3c-host")
+    try:
+        _t433_mkfinding(base_url, "f-ds1", "unauth admin console exposure")
+        sw, _ow = _t433_post(base_url, "/write/dual-sign-transition",
+                             {"id": "f-ds1", "to": "pending"}, token="t-3c-worker")
+        assert sw == 403, "host-only 红线: worker token 必须被拒"
+        sn, _on = _t433_post(base_url, "/write/dual-sign-transition",
+                             {"id": "", "to": "pending"}, token="t-3c-host")
+        assert sn == 400 and "id" in _on["error"]
+        sb, ob = _t433_post(base_url, "/write/dual-sign-transition",
+                            {"id": "f-ds1", "to": "weird"}, token="t-3c-host")
+        assert sb == 400 and "invalid dual_sign target" in ob["error"]
+        s404, _o404 = _t433_post(base_url, "/write/dual-sign-transition",
+                                 {"id": "f-missing", "to": "pending"}, token="t-3c-host")
+        assert s404 == 404
+        s1, o1 = _t433_post(base_url, "/write/dual-sign-transition",
+                            {"id": "f-ds1", "to": "pending"}, token="t-3c-host")
+        assert s1 == 200 and o1["ok"] is True and o1["claimed"] is True, "''→pending CAS 命中"
+        s2, o2 = _t433_post(base_url, "/write/dual-sign-transition",
+                            {"id": "f-ds1", "to": "pending"}, token="t-3c-host")
+        assert s2 == 200 and o2["claimed"] is False, "重复 pending=CAS 零命中等价(并发入口已占, 不算错误)"
+        s3, _o3 = _t433_post(base_url, "/write/dual-sign-transition",
+                             {"id": "f-ds1", "to": "signed"}, token="t-3c-host")
+        assert s3 == 200, "pending→signed(双签一致)"
+        s9, o9 = _t433_post(base_url, "/write/dual-sign-transition",
+                            {"id": "f-ds1", "to": "pending"}, token="t-3c-host")
+        assert s9 == 409 and "illegal transition" in o9["error"], "真终态 signed 不可迁"
+        _t433_mkfinding(base_url, "f-ds2", "second marker charlie zulu")
+        s4, _o4 = _t433_post(base_url, "/write/dual-sign-transition",
+                             {"id": "f-ds2", "to": "blocked"}, token="t-3c-host")
+        assert s4 == 200, "''→blocked 直达(:282 派发时模型已死亡先例)"
+        s5, _o5 = _t433_post(base_url, "/write/dual-sign-transition",
+                             {"id": "f-ds2", "to": "pending"}, token="t-3c-host")
+        assert s5 == 200 and _o5["claimed"] is True, "blocked→pending(0915 B1 解冻边合法)"
+        s6, _o6 = _t433_post(base_url, "/write/dual-sign-transition",
+                             {"id": "f-ds2", "to": "disputed"}, token="t-3c-host")
+        assert s6 == 200, "pending→disputed(第二签否决)"
+        s7, _o7 = _t433_post(base_url, "/write/dual-sign-transition",
+                             {"id": "f-ds2", "to": "single"}, token="t-3c-host")
+        assert s7 == 409, "真终态 disputed 不可迁(0914 仲裁锁定)"
+        _t433_mkfinding(base_url, "f-ds3", "third probe kilo november")
+        s8, _o8 = _t433_post(base_url, "/write/dual-sign-transition",
+                             {"id": "f-ds3", "to": "single"}, token="t-3c-host")
+        assert s8 == 200, "''→single(未配置降级/容量跳过留痕)"
+        row = conn.execute("MATCH (f:Finding {id:'f-ds3'}) RETURN f.dual_sign").get_next()
+        assert str(row[0]) == "single", "图内读回与写入一致"
+        row1 = conn.execute("MATCH (f:Finding {id:'f-ds1'}) RETURN f.dual_sign").get_next()
+        assert str(row1[0]) == "signed"
+    finally:
+        srv.shutdown()
+        srv.server_close()

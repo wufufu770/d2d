@@ -5,21 +5,24 @@
 > HEAD 顺延，以 `git log -1` 实测为准。
 
 ## 当前底账
-- 远端 HEAD：`e63ffb61`（T4-3-2 收官族末；PLAN-1 盘点批实测——本行曾在 GW-2 v2 时点
-  停更两批[T4-3-2/T4-3-3-0]，PLAN-1 偿还；前漂移史：v1 期曾停 T3-3-2 8aa8f60）
+- 远端 HEAD：`69ceaaed`（T4-3-3 收官 manifest 族末；**T4-3-3 时点顺延**——本行曾停 e63ffb61
+  [EV-2 批只更了梯队条目未顺延本节]，随 B 层复核抓出当场偿还；前漂移史：PLAN-1 偿还过
+  GW-2 v2 期两批停更）
 - 分支：main 唯一活跃（远端挂起：dependabot 四分支[checkout-7/setup-node-7/setup-python-7/
   codeql-action-4——actions 大版本升级，与 HYG-1 同文件改动有 rebase 冲突风险]+mods
   [ahead 6=d2d-mods 插件移植，非 dependabot]——处置归用户，T4-3-3-0 核查报告在案；
   回滚点由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
-- 工作树：burp 侧增量批（本地未提交）—— 新增 `config/oob.example.json`、
-  `plugin/pentest-dsh/{domain/oob.mjs,tools/{oob,jwt-audit,cred-matrix}.mjs,test/{oob,jwt-audit,cred-matrix}.test.mjs}`；
+- 工作树：burp 侧增量批（分支 `improve/burp-oob-jwt-cred-matrix`，PR #97，未合 main）—— 新增
+  `config/oob.example.json`、`plugin/pentest-dsh/{domain/oob.mjs,tools/{oob,jwt-audit,cred-matrix}.mjs,test/{oob,jwt-audit,cred-matrix}.test.mjs}`；
   修改 `tools/index.mjs`（纯追加 3 处 reg，既有六件套 def 零删除行）、`config/description-baselines.json`
   （经 `scripts/ops/gen-description-baselines.mjs` regen 62→73 键）、两份测试的计数断言、
-  `docs/tool-risk-rating.md`（41→46 工具）、本文件
-- CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-2 收官 run=ci 37097982772/
-  gates 37097982773/dsh-compat 37097982782 实测；本行曾停 GW-2 v1 时点，PLAN-1 偿还）
-- 测试基线（EV-2 固化）：pytest **412** / mocha **1984**（burp 增量批：+29 = oob 9 + jwt-audit 12 + cred-matrix 8；基线 1955）· panel **88**
-  （口径 = `pytest tests/` 全目录 / `npx mocha test/` / panel `npm test`）
+  `docs/tool-risk-rating.md`（41→46 工具）、本文件、`manifest.sha256`（同批重生成）
+- CI：三 workflow（ci/dsh-compat/gates）main 侧**全绿**（T4-3-3 收官 run=ci 37127595759/
+  gates 37127595793/dsh-compat 37127595782 实测，HEAD 69ceaaed；前值=T4-3-2 时点三 run）；
+  burp 批分支侧 CI 见 PR #97
+- 测试基线（T4-3-3 固化 414/1967/88，burp 批 +29）：pytest **414**（burp 批未动 graphd，零变化）/
+  mocha **1996**（+29 = oob 9 + jwt-audit 12 + cred-matrix 8，前值 1967=T4-3-3 固化时点）· panel **88**
+  （口径 = `pytest tests/` 全目录 / `node node_modules/mocha/bin/mocha.js test/` / panel `npm test`）
 - CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
   来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
   （npm ci 确定性安装）
@@ -203,14 +206,25 @@ eng-0928=用户会话期所跑——前置链断裂点]；DVWA 就绪交付[容�
 [用户会话辅助执行步骤]；缩批裁决=宿主缺口按止损精神不硬凑不工程化；**实弹执行二选一归用户**
 [①会话辅助 ②宿主工程化立项]；报告 docs/eval-run-2-e2e.md；基线 pytest **412**/mocha
 **1955**/panel 88）
-下一步建议（**当前唯一有效**·EV-2 时点，PLAN-1 单值化承接）：**实弹执行二选一归用户**——①dsh
-web 会话辅助执行（docs/eval-run-2-e2e.md §5 runbook，DVWA 已就绪+采集脚本已备）②attended
-宿主工程化立项（4-3a 形态）；执行后后续批承接报告数据回填与裁决清单；**T4-3-3 实施待异构
-方案确认**（用户已确认方案=t4-3-3-plan §二组合，实施排 EV-2 后）
-下一步建议（**当前唯一有效**·EV-2 时点，PLAN-1 单值化承接）：**实弹执行二选一归用户**——①dsh
-web 会话辅助执行（docs/eval-run-2-e2e.md §5 runbook，DVWA 已就绪+采集脚本已备）②attended
-宿主工程化立项（4-3a 形态）；执行后后续批承接报告数据回填与裁决清单；**T4-3-3 实施待异构
-方案确认**（用户已确认方案=t4-3-3-plan §二组合，实施排 EV-2 后）
+T4-3-3 ✅（**8-2 双签升级实施**[方案=t4-3-3-plan §二组合用户已确认]：族①异构强制三档
+[模型 id 级不强制 vendor；P2P_HETERO_ENFORCE=warn 缺省[主备同模型启动响亮告警 notify+gate-log+
+runLog 同键去重]/strict[拒配 fail-closed——primary 不可解析或同 id 均按拒配，backup 视同不可用
+返 ''，critical/high 落既有单签留痕路径不死锁不静默丢+notify]/off 静默；resolveBackup 读取处
+heteroGuardedBackup 接线两处+启动检查；domain/gates.mjs 零触碰]；族②材料增强[dualFocus 背景
+参考段——图内读本 eng Experience consensus_status 非空行+reasoning_path 行级截断，标注「经验池
+先验，非任何先前结论」；P2P_DUAL_BRIEF_EXP=1 启用缺省 off=材料逐字节等价；截断定值 800/200/
+100+行数 5 依据记 devlog；两处 dualFocus 接线]；族③graphd /write/dual-sign-transition
+host-only 端点[迁移表白名单=**11 处实测全边集**——与方案卡「终态不可迁」草图的偏离：实测
+blocked→pending 解冻边(0915 B1)+''→blocked/single 直达+pending/blocked→single 降级共 6 条真实
+边必须入表守住零语义变更红线，**signed/disputed 才是真终态，blocked=可解冻挂起态**；to=pending
+CAS 条件写移植端点锁内[零命中=200+claimed:false 与旧条件写等价]；认证照 host 先例；审计事件
+dual-sign-transition]；族④scheduler 11 处 SET f.dual_sign 直写收编端点[话术/runLog/审计逐字
+保留——逐字回归用例 3 例：signed 盖章链/pending 派发链/409 拒收不炸环；auth-contract.mjs 与
+domain 层零触碰]；迁移表全表 pytest+端点 B 面九态 pytest；新用例 14=[mocha 12+pytest 2]；
+基线 pytest **414**/mocha **1967**/panel 88）
+下一步建议（**当前唯一有效**·T4-3-3 时点）：**EV-2 实弹执行二选一仍悬置归用户**[①会话辅助
+runbook ②attended 宿主工程化立项]；下一批候选=T4-3-4（d 调和+8-4 L1+第四轮冷读+收官 tag
+t4-3-stage8）/密钥异构独立小批/js catch 146 补因/门禁候选二批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
