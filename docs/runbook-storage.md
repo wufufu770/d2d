@@ -154,3 +154,40 @@ curl -H "X-Auth: recov1-drill" http://127.0.0.1:8799/health   # 无 schema_degra
   IN $list 参数绑定两形态均支持（生产用字面量形态，参数绑定形态为未来余量）。
 - 残余登记：LadybugDB 侧 /health·SCHEMA_DEGRADED·init_schema 等宿主集成面未测（迁移
   启动批范畴）；CDN/轮转等长稳行为未测。
+  【LBD-1 更新】宿主集成面已测（预演实例 /health 正常+SCHEMA_DEGRADED 空+六查询全通）；
+  **新增阻断级发现：进程内多 Database 实例反复建销 → Segfault（pytest 形态）**——详见
+  docs/lbd1-rehearsal-report.md §一§二。
+
+## 八、LBD-2 切换 runbook 与回滚预案（LBD-1 成稿；执行归 LBD-2，前置=决策报告结论）
+
+> 形态：单实例切换（引擎开关 P2P_GRAPH_ENGINE=ladybug+新库路径），生产 kuzu 实例
+> 停写保留即回滚资产。
+
+### 8.1 前置条件（决策报告六节）
+- 用户裁决通过引擎分轨方案（pytest 维持 kuzu 轨；kuzu 依赖保留至上游修复多实例问题——
+  移除时机由 WRAP-4 顺延为"上游修复+一个观察周期"）。
+- soak 结论达标（docs/lbd1-rehearsal-report.md §四）。
+
+### 8.2 切换步骤（停写窗口内，预计 <10 分钟）
+1. **停写窗口**：停止调度环认领（panel 或宿主暂停 engagement）——图写入面停。
+2. **最新导出**：`POST /query EXPORT DATABASE '<staging>/export'`（生产实例，读库写目录）。
+3. **新库导入**：ladybug 新库 `IMPORT DATABASE '<staging>/export'`（RECOV-1/本批已证）。
+4. **DEFAULT 回填两条**（runbook §6.2 标准处置——kuzu 导出在 LadybugDB 上虽语义保真，
+   但存量 NULL 面（若有）仍须清零）：UPDATE consensus_status/reasoning_path IS NULL → ''。
+5. **配置翻转**：生产 graphd 停止 → 以 `P2P_GRAPH_ENGINE=ladybug P2P_GRAPH=<new_db>`
+   重启（原 kuzu_db 目录**零写零删除**保留）。
+6. **验证清单**：/health（无 schema_degraded 键）→ 逐表行数比对（对 8.2.2 导出包计数）
+   → RECOV-1 三查询 → L1 stability-view 冒烟 → 双签端点只读探针（/write/dual-sign-transition
+   对测试 finding 走一转态并审计核对）。
+
+### 8.3 回滚（任一验证红即触发）
+- 停 ladybug 实例 → 以原配置（无 P2P_GRAPH_ENGINE/原 P2P_GRAPH）重启 kuzu 实例 →
+  /health+行数抽查 → 回写窗口期丢失的写入面（停写窗口内的 finding/signal 由调度环
+  幂等重放）——**原库零写保留=回滚资产**，无数据丢失面。
+- 回滚后登记差距，B 预案回触发条件驱动状态。
+
+### 8.4 观察期与退役
+- 观察期=切换后一个完整评测/实战周期（≥2 周）：盯 RSS（soak 基线 ~150MB）、查询
+  延迟（§三表基线）、错误日志。
+- kuzu 依赖移除时机：**上游修复多实例问题且 pytest 切回 ladybug 轨后**（原 WRAP-4
+  计划顺延）；bak 物理快照保留周期照 §一滚动纪律。
