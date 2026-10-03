@@ -5,18 +5,19 @@
 > HEAD 顺延，以 `git log -1` 实测为准。
 
 ## 当前底账
-- 远端 HEAD：`e63ffb61`（T4-3-2 收官族末；PLAN-1 盘点批实测——本行曾在 GW-2 v2 时点
-  停更两批[T4-3-2/T4-3-3-0]，PLAN-1 偿还；前漂移史：v1 期曾停 T3-3-2 8aa8f60）
+- 远端 HEAD：`69ceaaed`（T4-3-3 收官 manifest 族末；**T4-3-3 时点顺延**——本行曾停 e63ffb61
+  [EV-2 批只更了梯队条目未顺延本节]，随 B 层复核抓出当场偿还；前漂移史：PLAN-1 偿还过
+  GW-2 v2 期两批停更）
 - 分支：main 唯一活跃（远端挂起：dependabot 四分支[checkout-7/setup-node-7/setup-python-7/
   codeql-action-4——actions 大版本升级，与 HYG-1 同文件改动有 rebase 冲突风险]+mods
   [ahead 6=d2d-mods 插件移植，非 dependabot]——处置归用户，T4-3-3-0 核查报告在案；
   回滚点由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
 - 工作树：0 改动
-- CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-2 收官 run=ci 37097982772/
-  gates 37097982773/dsh-compat 37097982782 实测；本行曾停 GW-2 v1 时点，PLAN-1 偿还）
-- 测试基线（EV-2 固化）：pytest **412** / mocha **1955**（+4 采集单测；+3 symlink 用例随
-  T4-3-3-0 在库——PLAN-1 底账曾写 1948 并注"1951 随批固化"，实测修正=1955）/ panel **88**
-  （口径 = `pytest tests/` 全目录 / `npx mocha test/` / panel `npm test`）
+- CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-3 收官 run=ci 37127595759/
+  gates 37127595793/dsh-compat 37127595782 实测，HEAD 69ceaaed；前值=T4-3-2 时点三 run）
+- 测试基线（T4-3-3 固化）：pytest **414**（+2 迁移表全表+端点 B 面）/ mocha **1967**（+12=
+  异构三档 4+背景段双态 5+收编逐字回归 3）/ panel **88**（前值 412/1955=EV-2 固化时点；
+  口径 = `pytest tests/` 全目录 / `node node_modules/mocha/bin/mocha.js test/` / panel `npm test`）
 - CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
   来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
   （npm ci 确定性安装）

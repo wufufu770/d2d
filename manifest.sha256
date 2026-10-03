@@ -61,7 +61,7 @@ eb28176b552b25945ed7642a87792fff6c5b74ded0fbc1478f10bbe265e906ad  docs/runbook-s
 7802fcd65d52a92c208501118f4379f4c80c4fdf2d0e5c75e6d6aeb2dd9d7e05  docs/skill-design.md
 45d12c92a40df7c82746686a5e9b91b6611aca5db38255c5e544cef39b3a97a6  docs/stage6-batch-plan.md
 a567b8b017fd858a95a39ee3bbb2967aefc4fa2e8cbeca591b5fdd9b2f17881c  docs/stage6-finale.md
-01be6af10e4ab247fc3d12deee6ed63c5f1565a62fed4e0a074e8a4b48a8c996  docs/state.md
+03e559b7c93c11816de4fd847cc18ed1d700bb48d0d356d1afb1549863bb51e3  docs/state.md
 4ac5b40733bee523aebc5a4e06b4d59951d3ea22b32b13785b7c68c3bd8f824f  docs/t3-2-2b-acceptance.md
 0039cfb03b82b0e8f561baa93e7c77edd7b41139d8dbf37f45cd4ee093d39f28  docs/t3-3-finale.md
 ab0bf503a34c407a9135ae2bbf03e8dcda6da3e6e3028e20d1642539cbbb2b60  docs/t3-3-plan.md
@@ -511,6 +511,7 @@ d17c5ef3fd6a3c99958e3f7a69ce7473d06717d5cf578a8733b92aa55fd4a290  阶段3-实战
 #555ab9189cc4baa7cd2b527099b932497310a6a609798a4d5cff30fa89349c5a  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/index.js
 #a9960e05e21716f82bd289a3a8954b000a6fee3c423dcfdc2c3552025704b696  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/types/index.d.ts
 # --- end node_modules ---
+
 
 
 
