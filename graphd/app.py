@@ -185,6 +185,14 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import (experience_reasoning_path_rejected,
                           experience_consensus_status_rejected)
 
+# T4-3-3(8-2): Finding.dual_sign 转态迁移门(纯函数, gates.py T4-3-3 区块) — scheduler 11 处
+# SET f.dual_sign 直写簿记收编端点 /write/dual-sign-transition 的白名单真源。同 3C 哲学:
+# 两种运行形态都接住。
+try:
+    from graphd.gd.gates import dual_sign_transition_gate, DUAL_SIGN_STATES
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import dual_sign_transition_gate, DUAL_SIGN_STATES
+
 # 3.6-4 段 C(C-1 反馈闭环): 转态端点带参回填的格式门与 utility 键合并(纯函数, gates.py
 # 3.6-4 段 C 区块)。同 3C 哲学: 直接从子模块导入, 两种运行形态都接住。
 try:
@@ -1105,6 +1113,51 @@ class Handler(BaseHTTPRequestHandler):
                          {"id": xid, "status": cs,
                           "reviewer": str(req.get("reviewer") or "host")[:80]})
             return self._send(200, {"ok": True, "id": xid, "consensus_status": cs})
+
+        # ---- T4-3-3(8-2): /write/dual-sign-transition —— Finding.dual_sign 状态机收编端点
+        # (host-only)。scheduler 11 处 SET f.dual_sign 直写簿记收编至此(机制变更非语义变更:
+        # 迁移表白名单=11 处实测全边集, dual_sign_transition_gate 纯函数为真源, :382/:390 等
+        # 调用点话术/runLog/审计逐字保留)。独立早退路由(experience-consensus 先例同款, 既有
+        # 路由零改写); 认证照 host 端点先例(_auth("host"), worker token 403); 共享门自动生效
+        # (Content-Length 门/legacy token/R6 denylist 红线扫描 — 本 path 以 /write/ 开头)。
+        # 载荷 {id, to}: to=pending 走 0917 H7 CAS 语义(锁内读 cur, 仅 ''/NULL 可写; cur 已是
+        # pending=并发入口已占 → 200+claimed:false 不算错误, 与旧条件写零命中等价);
+        # 其余 to 表判定, 非法迁移 409(signed/disputed 真终态不可迁; blocked→pending 解冻边
+        # 0915 B1 先例合法); finding 缺失 404(对齐旧簿记: MATCH 不命中=无写入, scheduler 侧
+        # 落既有 catch 留痕形态)。
+        if self.path == "/write/dual-sign-transition":
+            if not self._auth("host"):
+                return self._send(403, {"ok": False, "error": "dual sign transition requires host token"})
+            fid = str(req.get("id") or "").strip()
+            to = str(req.get("to") or "").strip()
+            if not fid:
+                return self._send(400, {"ok": False, "error": "id required"})
+            if to not in DUAL_SIGN_STATES:  # to 形态预检: 越枚举 400(表外状态名)
+                return self._send(400, {"ok": False,
+                                        "error": f"invalid dual_sign target: to must be one of {list(DUAL_SIGN_STATES)}"})
+            with _locked():  # V-11: 锁带 5s deadline(读 cur→门判定→SET 与转态端点同一锁窗口口径)
+                try:
+                    conn = kuzu.Connection(db())
+                    r = conn.execute("MATCH (f:Finding {id:$id}) RETURN f.dual_sign", parameters={"id": fid})
+                    if not r.has_next():
+                        return self._send(404, {"ok": False, "error": "finding not found"})
+                    cur = r.get_next()[0]
+                    cur = "" if cur is None else str(cur)
+                    ok, reason = dual_sign_transition_gate(cur, to)
+                    if not ok:
+                        if to == "pending" and cur == "pending":
+                            # 0917 H7 CAS 零命中等价: 已被并发入口占走 — 不算错误, claimed=false
+                            return self._send(200, {"ok": True, "id": fid, "to": to, "claimed": False})
+                        return self._send(409, {"ok": False, "error": f"dual-sign transition rejected: {reason}",
+                                                "from": cur})
+                    conn.execute("MATCH (f:Finding {id:$id}) SET f.dual_sign=$to",
+                                 parameters={"id": fid, "to": to})
+                except TimeoutError as _te:
+                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
+                except Exception as e:
+                    return self._send(500, {"ok": False, "error": str(e)[:200]})
+            _audit_event("dual-sign-transition", {"id": fid, "from": cur, "to": to})
+            return self._send(200, {"ok": True, "id": fid, "to": to, "claimed": True})
 
         # ---- 3.6-1-2(前沿子系统 C 数据层): /write/frontier —— Frontier 探索方向提案写入通道。
         # 独立挂载(不并入结构化写分支, 该分支既有语句零改动); 认证/共享 _locked()/错误骨架与
