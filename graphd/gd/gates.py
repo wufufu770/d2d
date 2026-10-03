@@ -748,6 +748,42 @@ def experience_consensus_status_rejected(status) -> bool:
     return not bool(_EXPERIENCE_CS_RE.match(s))
 
 
+# ── T4-3-3(8-2): Finding.dual_sign 转态合法迁移表 + 纯函数门 ─────────────────────────
+# 迁移表 = scheduler 簿记 11 处直写实测全边集(scheduler/gates.mjs :251/:282/:304/:335/:339/
+# :382/:390/:467/:484/:494/:514 逐处对账, 收编端点 /write/dual-sign-transition 的白名单真源):
+#   ''        → pending(:304 派发 CAS) / single(:335 容量跳过,:339 未配置降级,:467,:484 清扫降级)
+#               / blocked(:282 派发时模型已死亡)
+#   pending   → signed(:382,:390 双签一致) / disputed(:251 第二签否决) / blocked(:494 respin
+#               模型死亡) / single(:467,:484 未配置降级/终态残留清扫)
+#   blocked   → pending(:514 0915 B1 解冻边 — backup 恢复存活自动重派) / single(:467,:484)
+#   single    → pending(8-2 方案卡白名单预留; 现无写侧)
+#   signed / disputed = 真终态(无出边, 自动结果不得翻转 — 0914 仲裁锁定先例);
+#   blocked 非终态(可解冻挂起态)。NULL 归一 ''(列 DEFAULT ''+T4-3-2 回填全量)。
+DUAL_SIGN_STATES = ("", "pending", "signed", "disputed", "blocked", "single")
+DUAL_SIGN_TRANSITIONS = {
+    "": ("pending", "single", "blocked"),
+    "pending": ("signed", "disputed", "blocked", "single"),
+    "blocked": ("pending", "single"),
+    "single": ("pending",),
+    "signed": (),
+    "disputed": (),
+}
+
+
+def dual_sign_transition_gate(cur, to):
+    """T4-3-3(8-2): dual_sign 转态门 — 纯函数单测真源(experience_transition_gate 同形态:
+    合法迁移表)。返回 (ok, reason): ok=False 时 reason 为拒绝话术(调用方 409/400 + 审计)。
+    与 experience/frontier 门的两点偏离(簿记直调特性): ①无 reviewer_note 校验 — scheduler
+    簿记是机制直调, 无人工评审输入; ②cur=NULL 归一 ''(Finding.dual_sign 列 DEFAULT '')。
+    cur 不在表(含未知串)与 to 越枚举一律拒绝(fail-closed)。"""
+    cur = "" if cur is None else str(cur)
+    if to not in DUAL_SIGN_STATES:
+        return False, f"to must be one of {list(DUAL_SIGN_STATES)}"
+    if to not in DUAL_SIGN_TRANSITIONS.get(cur, ()):
+        return False, f"illegal transition {cur!r} -> {to}"
+    return True, ""
+
+
 EXPERIENCE_INJECTION_HIGH = (    "忽略之前指令",
     "ignore all previous instructions",
 )
