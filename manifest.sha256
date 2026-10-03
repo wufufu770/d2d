@@ -38,7 +38,7 @@ aaeaad46d1439ecb6931f82b366f9e1172772893289800759606baa012bc9bf7  docs/approval-
 87c90e9e9cf9d8191cc7db3cd61ce14cdc888a1e3dec6ccbe20fb042444c581b  docs/browser-recon-runbook.md
 8790f5862ff98e20e7f7c2137be1bed7c825e9e81dadf2e97bd2df4eb890b59a  docs/business-gate-acceptance.md
 920bafd5f594c4d1b07032921387cd81e55c79fa8604d6517625de5a017f408c  docs/business-gate-design.md
-19db7ad26165f9a750d94dc720c47e028f501af8a0b1963e7ba22875db391a65  docs/coldread-4-briefing.md
+440b15f11b5cec11d03871bb9c5ea20671ade1ee8c9fcb4f6f8397cba7ae771f  docs/coldread-4-briefing.md
 dd797485ac157b1eba4333a60dfb5a71e12cb473e3e1334f301483e8eacb3bb4  docs/devlog.md
 cb5b79cdf9cda830fb3b4e77f1bc4a9fe4511664335f2b24dcc9a5d7b5ace0df  docs/do-not-touch.md
 99954434d3540ce4bc41d90678a799c55fbb58bef832e8df286c60e80e848f2b  docs/dsh-sidebar-compat.md
@@ -62,7 +62,7 @@ eb28176b552b25945ed7642a87792fff6c5b74ded0fbc1478f10bbe265e906ad  docs/runbook-s
 7802fcd65d52a92c208501118f4379f4c80c4fdf2d0e5c75e6d6aeb2dd9d7e05  docs/skill-design.md
 45d12c92a40df7c82746686a5e9b91b6611aca5db38255c5e544cef39b3a97a6  docs/stage6-batch-plan.md
 a567b8b017fd858a95a39ee3bbb2967aefc4fa2e8cbeca591b5fdd9b2f17881c  docs/stage6-finale.md
-ea4c176b6de3357ca17fcbdab49d080bb839f0703a665ea9943c792e955db52b  docs/stage8-closeout.md
+191298386eebd8cb6bdf9028e8f24808aee20d8b7363ef3510d56f8d1be4acdf  docs/stage8-closeout.md
 b42fbb438480b5d2da91e941d2b5b85ff3b0e6a4b0cdc494fe41cfc76551ceaa  docs/state.md
 4ac5b40733bee523aebc5a4e06b4d59951d3ea22b32b13785b7c68c3bd8f824f  docs/t3-2-2b-acceptance.md
 0039cfb03b82b0e8f561baa93e7c77edd7b41139d8dbf37f45cd4ee093d39f28  docs/t3-3-finale.md
@@ -515,6 +515,7 @@ d17c5ef3fd6a3c99958e3f7a69ce7473d06717d5cf578a8733b92aa55fd4a290  阶段3-实战
 #555ab9189cc4baa7cd2b527099b932497310a6a609798a4d5cff30fa89349c5a  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/index.js
 #a9960e05e21716f82bd289a3a8954b000a6fee3c423dcfdc2c3552025704b696  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/types/index.d.ts
 # --- end node_modules ---
+
 
 
 
