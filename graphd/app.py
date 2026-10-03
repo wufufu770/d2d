@@ -177,6 +177,14 @@ try:
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import engagement_merge_existing_key
 
+# T4-3-2(8-1 v2): Experience 两新列校验纯函数(A 面形态门+B 面枚举门)。同 3C 哲学。
+try:
+    from graphd.gd.gates import (experience_reasoning_path_rejected,
+                                 experience_consensus_status_rejected)
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import (experience_reasoning_path_rejected,
+                          experience_consensus_status_rejected)
+
 # 3.6-4 段 C(C-1 反馈闭环): 转态端点带参回填的格式门与 utility 键合并(纯函数, gates.py
 # 3.6-4 段 C 区块)。同 3C 哲学: 直接从子模块导入, 两种运行形态都接住。
 try:
@@ -917,6 +925,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"ok": False, "error": f"invalid category: {_cat or '(empty)'} (must be one of success|failure|pitfall)"})
             if experience_evidence_ref_rejected(_eref):
                 return self._send(400, {"ok": False, "error": "invalid evidence_ref: 非空时须为 'ev/<eng>/<id>.txt' 指针且无路径穿越(允许空)"})
+            # T4-3-2(8-1 v2): reasoning_path 可选字段 —— 结构化 JSON 推理路径(权威定义
+            # docs/experience-consensus-schema.md)。顺序(拍板留痕, 与下方"先脱敏后注入检测"
+            # 同哲学): redact_pii(落库终值口径) → 形态/长度校验(对象=脱敏终值, redact 可能
+            # 加长故 4096 对终值判) → 注入扫描源拼接(soft 不加 [SUSPECT] 前缀——前缀会破坏
+            # JSON 结构, 与 content 的差异在 schema 文档注明)。空串放行=缺省占位。
+            _rp = str(req.get("reasoning_path") or "").strip()
+            if _rp:
+                _rp, _k = redact_pii(_rp)
+                _pii_hits_rp = _k
+                if experience_reasoning_path_rejected(_rp):
+                    return self._send(400, {"ok": False, "error": "invalid reasoning_path: 非空时须为 JSON 对象且恰四键 premises/evidence_refs/counter_signals/decision(数组元素非空字符串、各≤16 项)+总长≤4096+无多余键(允许空)"})
+            else:
+                _pii_hits_rp = 0
             # 3.5-4(写端增强)①redact_pii 脱敏: title/content/evidence_ref 三字段(3D 八模式;
             # P2P_EVIDENCE_REDACT 开关在 gates.redact_pii 内部生效 — 与 :516-518/:627-628/
             # :685/:754-755 四处先例同形态无条件调用), 消除「四类写端点唯一未脱敏」缺口。
@@ -929,8 +950,12 @@ class Handler(BaseHTTPRequestHandler):
             # ②指令性文本检测(title+content 拼接扫描, \n 隔断跨字段误拼): 'high' → 400 拒绝
             # (注入话术不入池); 'soft' → 照写但 content 加 '[SUSPECT] ' 前缀(总长钳 512 保持
             # 既有硬门不变式) — 写入即 quarantined 在池, 评审进程拉隔离行复核时天然先见。
-            _inj = experience_injection_scan(f"{_title}\n{_content}")
-            _inj_sample_src = f"{_title}\n{_content}"  # 4-3b 段3: 采样原文快照(redact_pii 后、[SUSPECT] 前缀前)
+            # T4-3-2: 扫描源拼 reasoning_path —— **非空才拼**(空 rp 也会改源文本, 翻动 clean
+            # 0.1% 确定性采样选择=既有行为变化; 拼接后 rp-less 写路径源逐字不变)。soft 命中仅
+            # 对 content 加前缀, reasoning_path 照写(前缀破坏 JSON) + 审计 suspect 标注承载。
+            _inj_src = f"{_title}\n{_content}" + (f"\n{_rp}" if _rp else "")
+            _inj = experience_injection_scan(_inj_src)
+            _inj_sample_src = _inj_src  # 4-3b 段3: 采样原文快照(redact_pii 后、[SUSPECT] 前缀前)
             if _inj == "high":
                 _inj_sample("experience", _inj_sample_src, _inj_sample_src, _inj)  # 400 拒绝态: 原文即终态
                 _audit_event("experience-injection-block",
@@ -964,10 +989,11 @@ class Handler(BaseHTTPRequestHandler):
                         "CREATE (x:Experience {id:$id, eng_id:$eng, category:$cat, scope:$scope, title:$title, "
                         "content:$content, evidence_ref:$eref, utility_score:$util, retrieval_count:$rc, "
                         "success_count:$sc, created_at:timestamp($ca), last_used_at:timestamp($lu), "
-                        "status:'quarantined', provenance_hash:$ph})",
+                        "status:'quarantined', provenance_hash:$ph, reasoning_path:$rp})",
                         parameters={"id": _exp_id, "eng": _eng_id, "cat": _cat, "scope": _scope,
                                     "title": _title, "content": _content, "eref": _eref,
-                                    "util": 0.5, "rc": 0, "sc": 0, "ca": _now, "lu": _now, "ph": _ph})
+                                    "util": 0.5, "rc": 0, "sc": 0, "ca": _now, "lu": _now, "ph": _ph,
+                                    "rp": _rp})
                 except TimeoutError as _te:
                     return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
                 except Exception as e:
@@ -980,7 +1006,8 @@ class Handler(BaseHTTPRequestHandler):
             # 审计覆盖 — 两者均既有机制, 本段零改动)。
             _audit_event("experience-write",
                          {"id": _exp_id, "eng_id": _eng_id, "category": _cat,
-                          "suspect": _inj == "soft", "pii_hits": _pii_hits})
+                          "suspect": _inj == "soft", "pii_hits": _pii_hits,
+                          "reasoning": bool(_rp)})
             return self._send(200, {"ok": True, "id": _exp_id, "status": "quarantined"})
 
         # ---- 3.5-4-2(转态机制): /write/experience-transition —— Experience 状态转态通道。
@@ -1037,6 +1064,47 @@ class Handler(BaseHTTPRequestHandler):
                              "reason": str(req.get("reviewer_note") or ""),
                              "source_batch": str(req.get("source_batch") or "")})
             return self._send(200, {"ok": True, "id": xid, "from": cur, "to": to})
+
+        # ---- T4-3-2(8-1 v2): /write/experience-consensus —— 共识结论回写通道(host-only)。
+        # 独立早退路由(transition 先例同款, 既有路由零改写); 认证照 host 端点先例(_auth("host")
+        # 恒等比较, worker token 403, 失败由 _auth 包装器既有审计覆盖); 共享门自动生效
+        # (Content-Length 门/legacy token/R6 denylist 红线扫描 — 本 path 以 /write/ 开头)。
+        # 载荷 {experience_id, consensus_status}: 枚举白名单(gates 纯函数, ''/consistent/
+        # superseded:<id>/illegal——illegal 本批不产出仅可识别); **superseded 的 <id> 存在性
+        # 校验**(细化意见①——锁内参数绑定 MATCH, 不存在 400); 写入=SET 单列, 不动其他任何列。
+        if self.path == "/write/experience-consensus":
+            if not self._auth("host"):
+                return self._send(403, {"ok": False, "error": "experience consensus requires host token"})
+            xid = str(req.get("experience_id") or "").strip()
+            cs = str(req.get("consensus_status") or "").strip()
+            if not xid:
+                return self._send(400, {"ok": False, "error": "experience_id required"})
+            if experience_consensus_status_rejected(cs):
+                return self._send(400, {"ok": False, "error": "invalid consensus_status: 须为 ''|consistent|superseded:<exp-id>|illegal(空串=清标为未评估)"})
+            with _locked():  # V-11: 锁带 5s deadline(存在性→门判定→SET 与转态端点同一锁窗口口径)
+                try:
+                    conn = kuzu.Connection(db())
+                    r = conn.execute("MATCH (x:Experience {id:$id}) RETURN x.status", parameters={"id": xid})
+                    if not r.has_next():
+                        return self._send(404, {"ok": False, "error": "experience not found"})
+                    if cs.startswith("superseded:"):
+                        _k = cs.split(":", 1)[1]
+                        _rk = conn.execute("MATCH (x:Experience {id:$k}) RETURN count(x)",
+                                           parameters={"k": _k})
+                        _cnt = int(list(_rk.get_next())[0]) if _rk.has_next() else 0
+                        if not _cnt:
+                            return self._send(400, {"ok": False,
+                                                    "error": f"superseded target not found: 对手 id '{_k}' 不在经验池(细化意见① 存在性校验)"})
+                    conn.execute("MATCH (x:Experience {id:$id}) SET x.consensus_status=$cs",
+                                 parameters={"id": xid, "cs": cs})
+                except TimeoutError as _te:
+                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
+                except Exception as e:
+                    return self._send(500, {"ok": False, "error": str(e)[:200]})
+            _audit_event("experience-consensus",
+                         {"id": xid, "status": cs,
+                          "reviewer": str(req.get("reviewer") or "host")[:80]})
+            return self._send(200, {"ok": True, "id": xid, "consensus_status": cs})
 
         # ---- 3.6-1-2(前沿子系统 C 数据层): /write/frontier —— Frontier 探索方向提案写入通道。
         # 独立挂载(不并入结构化写分支, 该分支既有语句零改动); 认证/共享 _locked()/错误骨架与
@@ -1624,7 +1692,9 @@ class Handler(BaseHTTPRequestHandler):
                    "x.title AS title, x.content AS content, x.evidence_ref AS evidence_ref, "
                    "x.utility_score AS utility_score, x.retrieval_count AS retrieval_count, "
                    "x.success_count AS success_count, x.created_at AS created_at, "
-                   "x.last_used_at AS last_used_at, x.status AS status, x.provenance_hash AS provenance_hash "
+                   "x.last_used_at AS last_used_at, x.status AS status, x.provenance_hash AS provenance_hash, "
+                   # T4-3-2: 读侧回传 +2 列(漏列=静默旧形态, 测试锁定 —— 细化: 共识消费方经此通道取值)
+                   "x.reasoning_path AS reasoning_path, x.consensus_status AS consensus_status "
                    "ORDER BY x.utility_score DESC, x.created_at DESC LIMIT $lim")
             _params = {"st": _st, "minu": _minu, "scope": _scope, "lim": _lim}
             with _locked():  # V-11: 锁带 5s deadline
