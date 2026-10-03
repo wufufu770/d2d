@@ -246,3 +246,10 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 子 agent 协作（先例 11）：主 agent 自做（生产运维序列为硬结论密集面, 实锚纪律要求亲证）
 教训沉淀：**Edit 工具的尾部换行锚点会吞下一行首行**（本批两度: def 行吞 docstring/EXPERIENCE_INJECTION_HIGH 首元素并入元括号行——后者语法合法但丑, ast.parse 均过; 教训=锚点永远不含尾随 \n, 改后 grep+ast 双复查）；kuzu 0.11.3 SUM 不收 BOOL/GROUP BY 别名不支持（核对查询两次才对——roundtrip 核心证据=行数与列数, 分布以生产库直查为准）
 开放项：阻断语义留 v3（promote superseded 行仅报告）；illegal 枚举位 v3 产出；panel 消费/评测集耦合维持不做；阶段 8 收官候选（T4-3-3/4）归用户排批
+
+## 2026-10-03 · T4-3-3-0 双签升级前置审计（8-2 只读批+#26 承前+夹具纪律）
+底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest 412 / mocha **1951**（+3 symlink 升级用例）/ panel 88
+产出：docs/t4-3-3-plan.md（v1 双签链增量实锚[11 处直写收编目标——plan 记 6 处=HEAD 漂移对账]/T4-3-2 交互结论/**异构语义方案卡**[模型异构主选+8-2a 背景段开关 off+P2P_HETERO_ENFORCE 三档+11 处端点化收编]/禁区比对+按行授权申请三条/拆批方案）+ #26 write-gate symlink realpath 落地（升级判定+3 用例+双头注修订）+ AGENTS 先例 14（夹具纪律）+ dependabot/mods 核查
+关键裁决：**experience-consensus 不入双签面**（host-only 数据治理回写无"单一模型自评"风险面——双签保护对象=Finding verdict 裁决信号）；**reasoning_path=8-2a 天然接点但受净室约束**（经验先验≠第一签结论，开关缺省 off 对冲锚定效应）；异构=模型 id 维度最小还原（vendor 强制会把 M3/M2.7 现状判违）；**/bin/sh 真身 symlink 实证**（Ubuntu 下为 dash 链接——#26 升级判定改判 matched=system-path-symlink，deny 语义不变断言收双形态）
+教训沉淀：**cat >> 写 tests/ 被 hook 吞且本次无报错回显**（GW-2 教训的静默变体——追加后必须 grep 复核落盘）；**链式 cd 命令的失败伪象**（cd 失败后 grep 吃旧输出报"3 failing"——单命令单目录重跑才是权威计数）
+开放项：异构方案等用户确认→T4-3-3 实施（按行授权三条随批申请）；密钥异构独立小批候选；mods 分支（ahead 6=d2d-mods 插件移植，非 dependabot）与 dependabot 四分支（actions 大版本升级，与 HYG-1 改动有 rebase 冲突风险）处置归用户
