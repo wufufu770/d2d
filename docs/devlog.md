@@ -238,3 +238,11 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 关键裁决：**任务包行号与本仓 HEAD 漂移以实测为准**（ci.yml python 实为 3.11 非"未对齐"叙述之直接形态；match-site 在 scripts/browser/ 但不在禁区四文件列举内——禁区按列举语义执行）；"build-client 先于测试致防漂移断言 CI 恒真"面按拍板登记不改（本地有效/CI 无害）；轮转放写入侧锁内（读侧零改动=兼容性设计而非补丁）
 教训沉淀：**探针自身先核对 env 名再下结论**（首探端口占用行为"挂住"实为探针用了默认端口空转——P2P_PANEL_PORT 核对后实证 exit=1）；窄窗口注释判定会把 2+ 行上的模式注释误判为裸吞（清点方法两档口径并列如实给数）
 开放项：js 空 catch 146 处逐文件补因（egress/mitm→snapshot→spa-render 优先级）；#26 write-gate realpath 按行授权池；dependabot/mods 远端分支处置（归用户）
+
+## 2026-10-03 · T4-3-2 共识验证 v2 实施批（8-1 推理路径字段入库；schema 已确认+授权链闭合）
+底账：HEAD 本批收官（落库后以 git log -1 实测）· 基线 pytest **412**（+6: 校验×2/ALTER 零破坏/A 面往返/注入 high/B 面五态）/ mocha 1948 / panel 88（零回归；v1 14 it 复跑在位）
+产出：族 1 schema 三处同步（CREATE 16 列+段尾 ALTER 2 条+_CRITICAL_COLUMNS 扩 2）+docs/experience-consensus-schema.md 权威文档[**evidence_refs 口径定稿=引用从宽/结论从严**——元素为仓内 id/指针形态不做存在性校验, 结论真实性由 consensus_status 与人工复核承接（细化②）]+do-not-touch :20-21 按行修订；族 2 gates 两校验纯函数（rp 四键形态+≤4096/cs 枚举）+A 面 /write/experience reasoning_path 接线[redact→校验(终值口径)→注入扫描源扩展, soft 不加前缀防破 JSON]；族 3 B 面 host-only /write/experience-consensus[枚举+**superseded 存在性校验**=细化①+SET 单列]+consensus-apply.mjs[dry-run 缺省]+promote 前置信号 v2；族 4 测试 6 例+生产运维序列
+关键裁决：**生产迁移走真实路径**（graphd 重启加载新代码=init_schema 幂等+SCHEMA_DEGRADED 16 列校验+新端点生效——在线 ALTER 经 host /query 先行[运行进程内 DDL], 重启承担代码面）；红线①实证=**9 行 14 列逐行比对零破坏**[bak-20261003-1221 快照先行 sha256 双证]；**回填分布=consistent×9/superseded 0**（consensus-apply --apply ok 9/fail 0, 与 v1 审计零分歧一致; reasoning_path 非空 0 行=不伪造历史）；归档 smoke=EXPORT copy.cypher **16 列**+IMPORT 往返行数 9（红线③）；增量核查=GW-2 v2 新面零影响（ALTER 不触 mutation 门/写端点走 /write 分支/verify 链不涉经验写入/CLI host 通道不受 worker 闭集约束）
+子 agent 协作（先例 11）：主 agent 自做（生产运维序列为硬结论密集面, 实锚纪律要求亲证）
+教训沉淀：**Edit 工具的尾部换行锚点会吞下一行首行**（本批两度: def 行吞 docstring/EXPERIENCE_INJECTION_HIGH 首元素并入元括号行——后者语法合法但丑, ast.parse 均过; 教训=锚点永远不含尾随 \n, 改后 grep+ast 双复查）；kuzu 0.11.3 SUM 不收 BOOL/GROUP BY 别名不支持（核对查询两次才对——roundtrip 核心证据=行数与列数, 分布以生产库直查为准）
+开放项：阻断语义留 v3（promote superseded 行仅报告）；illegal 枚举位 v3 产出；panel 消费/评测集耦合维持不做；阶段 8 收官候选（T4-3-3/4）归用户排批
