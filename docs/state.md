@@ -5,18 +5,19 @@
 > HEAD 顺延，以 `git log -1` 实测为准。
 
 ## 当前底账
-- 远端 HEAD：GW-2 v2 收官族末 commit（本批落库后以 `git log -1` 实测为准；
-  前底账=9425e1fb[T4-3-2-0]，v1 期底账曾停在 T3-3-2 8aa8f60——本节为本批
-  底账五字段对齐偿还点）
-- 分支：main 唯一活跃（远端另有 dependabot 三分支[actions 升级 PR]挂起，归用户处置；
+- 远端 HEAD：`e63ffb61`（T4-3-2 收官族末；PLAN-1 盘点批实测——本行曾在 GW-2 v2 时点
+  停更两批[T4-3-2/T4-3-3-0]，PLAN-1 偿还；前漂移史：v1 期曾停 T3-3-2 8aa8f60）
+- 分支：main 唯一活跃（远端挂起：dependabot 四分支[checkout-7/setup-node-7/setup-python-7/
+  codeql-action-4——actions 大版本升级，与 HYG-1 同文件改动有 rebase 冲突风险]+mods
+  [ahead 6=d2d-mods 插件移植，非 dependabot]——处置归用户，T4-3-3-0 核查报告在案；
   回滚点由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
 - 工作树：0 改动
-- CI：三 workflow（ci/dsh-compat/gates）——GW-2 v1 首推时点 ci.yml 1 红
-  （豁免正例夹具硬编码 /home/kali 的 HOME 依赖，本批 v2 已热修）+ gates/dsh-compat 绿；
-  本批落库后以 gh 实测为准
-- 测试基线（HYG-1 固化）：pytest **406**（+2 日志轮转）/ mocha **1948** / panel **88**
+- CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-2 收官 run=ci 37097982772/
+  gates 37097982773/dsh-compat 37097982782 实测；本行曾停 GW-2 v1 时点，PLAN-1 偿还）
+- 测试基线（T4-3-2 固化）：pytest **412**（+6 共识 v2）/ mocha **1948** / panel **88**
   （口径 = `pytest tests/` 全目录 / `npx mocha test/` / panel `npm test`；
-  GW-2 v2 期 404/1948/88 → 本批 +2）
+  HYG-1 期 406/1948/88——本行曾漏更，PLAN-1 偿还；T4-3-3-0 期 mocha 1951=+3 symlink
+  用例，随 T4-3-3 实施批一并固化入底账）
 - CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
   来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
   （npm ci 确定性安装）
@@ -192,8 +193,9 @@ P2P_HETERO_ENFORCE warn 缺省/strict 拒配；dual_sign 转态门收编=11 处�
 #26 write-gate symlink realpath 落地[升级判定+3 用例, /bin/sh 真身 symlink 改判 matched
 双形态]+夹具纪律先例 14（AGENTS）+/home/ 扫描=现存字面量均测试注入向量零需改+dependabot/
 mods 分支核查报告；基线 pytest 412/mocha **1951**/panel 88）
-下一步建议（**当前唯一有效**·T4-3-3-0 时点）：**等用户对异构语义方案卡（t4-3-3-plan §二）
-确认** → T4-3-3 实施批（a+c+收编三件）；T4-3-4 调和+8-4 L1+收官衔接既定
+下一步建议（**当前唯一有效**·T4-3-3-0 时点，PLAN-1 单值化校准）：**等用户对异构语义方案卡（t4-3-3-plan §二）
+确认** → T4-3-3 实施批（a+c+收编三件）；**EV-2 端到端评测换挡期已到**（方案确认等待期可插入，
+roadmap 待执行批次规划 #4）；T4-3-4 调和+8-4 L1+收官衔接既定
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
@@ -237,6 +239,12 @@ mods 分支核查报告；基线 pytest 412/mocha **1951**/panel 88）
 
 ## 决策账
 N-of-M 多签确认放弃（T4-3-1 拍板②闭环：8-2 双签以 v1 2-of-2 为终态，异构化+分歧调和定义留 T4-3-3 前置审计回报确认）。
+**consensus_status 区分度观察项（T4-3-2 补记，PLAN-1 登记）**：存量回填 9/9 全 consistent、
+superseded 路径未经真实分歧数据检验——**首个真实分歧对出现时回看判据**（重叠阈值 0.15/时间
+衰减权重是否产出可信 superseded 指向），必要时 v3 调参。
+**v3 阻断语义挂观察条件（T4-3-2 补记，PLAN-1 登记）**：promote superseded 行转阻断的前提=
+①区分度观察项通过（至少一个真实分歧对正确指向）②promote 误杀零记录持续一个晋级周期；
+两条件满足前维持只报告。
 已拍板：五术语清理（ACON/ATLAS/MaTTS/SAGE 删，CNSR 留名；T3-1 执行：仓内前四者
 零命中/ATLAS 三处已收口为「本仓自有存储唯一」）；Embedding 后移（域评测集未建不度量
 换模型收益；开源商品化晚买更便宜）；零侵入优先（度量/审计优先离线聚合，改禁区须显式
