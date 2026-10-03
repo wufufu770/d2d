@@ -1496,6 +1496,8 @@ class Handler(BaseHTTPRequestHandler):
                         _blob += f" {_m.group(0).split(':')[0].strip()}: '{_v}'"
                 _fg_text += " " + _blob
             except Exception:
+                # 已记因(HYG-1 吞错清点): 别名回注失败时降级为仅 cypher 文本扫描(原有门面) —
+                # params json blob 若也已失败则维持 v1 前形态; 门判定不受日志/增强失败阻断。
                 pass
         ok, err = finding_gates(_fg_text)
         if not ok:

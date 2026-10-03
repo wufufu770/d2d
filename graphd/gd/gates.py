@@ -554,7 +554,7 @@ def prose_denylist_hit(text_lower: str, domains) -> str:
 
         variants.extend(_dec_ip_sub(v) for v in list(variants))
     except Exception:
-        pass
+        pass  # 已记因(HYG-1 吞错清点/A 层复核补): 解码失败保留原文 variants(原文恒在候选集), 低险
     for _raw in domains:
         d = str(_raw or "").strip().lower()
         if not d or "." not in d or d.endswith("."):
@@ -747,7 +747,7 @@ def _active_wordlists():
             if wl is not None:
                 return wl
         except Exception:
-            pass
+            pass  # 已记因(HYG-1 吞错清点): 活表加载失败回退内置词表(_ACTIVE_WORDLISTS) — 扫描面不空, 低险
     return _ACTIVE_WORDLISTS
 
 
