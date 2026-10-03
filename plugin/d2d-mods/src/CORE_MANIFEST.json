@@ -1,0 +1,121 @@
+{
+  "generatedBy": "plugin/d2d-mods/scripts/sync-core.mjs",
+  "sources": [
+    "plugin/pentest-dsh/domain",
+    "plugin/pentest-dsh/roles/*.json",
+    "plugin/pentest-dsh/tools"
+  ],
+  "mirrored": [
+    {
+      "path": "domain/bias-detector.mjs",
+      "sha256": "746429f0af46dd6e7c2164cbae07d25339fccebc071120793f127fc23b0bd0ef"
+    },
+    {
+      "path": "domain/briefs.mjs",
+      "sha256": "bd71406c6117c3e650e5d59a1997d62df64b90a9b948a767ea5ebd276c4d229e"
+    },
+    {
+      "path": "domain/business-card.mjs",
+      "sha256": "fb460670799d6ddbb9f65af577189ce030748258390a717c0742df240da1df67"
+    },
+    {
+      "path": "domain/business-gate-samples.mjs",
+      "sha256": "9ef4f0bde62a4bb8fab883954837683712ed9f3bd9e14aff1fe43a2a60f62d00"
+    },
+    {
+      "path": "domain/caps.mjs",
+      "sha256": "4ebb376dcb62ef80894b6006bcfcd012b57bb853d700154d5644693e0a3032d0"
+    },
+    {
+      "path": "domain/card-schema.mjs",
+      "sha256": "18e054c4a24b39835ed2ec77b438ffb549e5b7674be373c268f27a75c5fee255"
+    },
+    {
+      "path": "domain/experience-consensus.mjs",
+      "sha256": "73326ac8b1ecd4c35d66681ace908a212a92a298a1b816e660a9f0cf1151fdbb"
+    },
+    {
+      "path": "domain/failover.mjs",
+      "sha256": "bbfaaaa7127d277ad40e4b220a0678fbae91df7ca260ae3c06950ac0d5deacc6"
+    },
+    {
+      "path": "domain/gates.mjs",
+      "sha256": "61ccfe14e115510e580080c4014d9606c01a37261524c6c2e96d08112b67d976"
+    },
+    {
+      "path": "domain/knowledge-gaps.mjs",
+      "sha256": "8ae65ebc29b6b70b23268319ddc302d70a9802823995d44b1b81bfc9ab395563"
+    },
+    {
+      "path": "domain/lifecycle.mjs",
+      "sha256": "fd52423cecdf6fa5f1055734da1c8514f83d982ed982e9f156412ebf3f390319"
+    },
+    {
+      "path": "domain/mcp-discovery.mjs",
+      "sha256": "71eb5f838efe9b2d204a2a2192faf98c0f1f74b15adb9f1b401c7577a182bd67"
+    },
+    {
+      "path": "domain/pivot.mjs",
+      "sha256": "fcbef409fc5d0895fc67b0b873b1bcf8cec51a548d6530d630e57c2ed767bbaa"
+    },
+    {
+      "path": "domain/role-card-filter.mjs",
+      "sha256": "49864a4809a22d22b39b59d3c229f141703154210a56d817315da8136d8a2b51"
+    },
+    {
+      "path": "domain/safe-url.mjs",
+      "sha256": "ad8af8e724a4fd5951363f2b615f99646f4def13af8013ef3e01dbccb7ea7540"
+    },
+    {
+      "path": "domain/sanitize-ingest.mjs",
+      "sha256": "fa46a76c33bc7079ff9fb718909b6e4af0c3972a2b7019c16f1358f939da60e6"
+    },
+    {
+      "path": "domain/scope.mjs",
+      "sha256": "04bd9a00bdae9682821cde8e4665f33c6e572ab09891b4c422ec0391a9f6d521"
+    },
+    {
+      "path": "domain/skill-schema.mjs",
+      "sha256": "0cb15f70f6a40ea509f136b58c4cb4e220ded3d16fdc1233fb299aabc9295ec1"
+    },
+    {
+      "path": "domain/strategy-card.mjs",
+      "sha256": "655847698559e34dd3d9c271d24d9239a63214c5cb178dda3f53d20d5c43d5ba"
+    },
+    {
+      "path": "domain/tool-gate.mjs",
+      "sha256": "cd4a15d8dd7a2b778ed6824ceef87a3e89898ab62e165ff2cffc56aa9c9cdd6f"
+    },
+    {
+      "path": "domain/triage.mjs",
+      "sha256": "7ebda49c98add117f62604319d6703a56230f3b103751f3a66373d3705e0ede5"
+    },
+    {
+      "path": "domain/verify-verdicts.mjs",
+      "sha256": "5440844afc1941f71044865556ab899eae2aa65fa11278302c058d0047cf0d27"
+    },
+    {
+      "path": "roles.generated.js",
+      "sha256": "55458f361c3983dceaf62945ad79ab4078abd85f0d42728e6ccd6ee2cb02fde6"
+    },
+    {
+      "path": "tools.generated.js",
+      "sha256": "4cf5e7720de3294e5d0a67e6a452afaf2083b281207b47c496f64d53dc726b4d"
+    }
+  ],
+  "excludedTainted": [
+    "domain/allocator.mjs",
+    "domain/auth-contract.mjs",
+    "domain/digest.mjs",
+    "domain/experience-metrics.mjs",
+    "domain/experience.mjs",
+    "domain/gate-failure-capture.mjs",
+    "domain/hypothesis-aging.mjs",
+    "domain/knowledge-retrieval.mjs",
+    "domain/memory-store.mjs",
+    "domain/strategy-evolution.mjs",
+    "domain/strategy-map.mjs",
+    "domain/tool-policy.mjs",
+    "domain/write-gate.mjs"
+  ]
+}

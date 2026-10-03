@@ -1,0 +1,132 @@
+// gates.mjs — 1.6-A 纪律性: 四道阶段门的纯函数判定域模块(可独立单测, IO 编排留在 scheduler)。
+// 哲学(吸纳 dsh-redteam-model stage-gate/sec-enforce): 模型不能自评门禁 — 每道门都是
+// 调度器侧的确定性结构校验, 判定落 gate-log.md 审计; 提示词只负责让 worker 产出校验物,
+// 不负责自证。开关: P2P_GATE_<NAME>=off 时对应门直通(回退旧行为), 缺省全启。
+
+/** 门开关: P2P_GATE_D1/V/R/P = 'off' 关闭对应门, 其余值或缺省 = 启用 */
+export function gateEnabled(name) {
+  return String(process.env[`P2P_GATE_${name}`] ?? '').toLowerCase() !== 'off'
+}
+
+/**
+ * Gate-D1 侦察基线门: discovery 产出转深环前的结构校验。
+ * 基线七项归并为三查(RTM assets.md 字面标记法):
+ *   ① scope 已登记(eng.scope 非空) ② 资产端点 ≥ minEndpoints ③ 速率预算(caps 非空)
+ *   ④~⑦ 防护画像信号(type='protection-profile')的 evidence 必含五个字面标记:
+ *      WAF= / 速率= / 噪声= / 证据= / 开放问题=
+ * T1-4-3 结构化锚优先(docs/gate-anchor-schema.md §2/§3): anchorText(gate_anchor 列原文)
+ * 非空 → 只按 gate_d1 七字段完整性判定画像项(以锚为准, 不再读散文五标记, 不双读互斥);
+ * 非空但解析失败/字段缺 → missing 注明 anchor-invalid 并 FAIL(残缺锚不得降级回散文, 防规避);
+ * 空/缺 → 既有字面五标记路径逐字保留(向后兼容: 新参可选, 旧调用零变化)。
+ */
+export function gateD1({ scopeCount = 0, endpointCount = 0, minEndpoints = 5, profileText = '', hasRateBudget = true, anchorText = '' } = {}) {
+  const missing = []
+  if (!(Number(scopeCount) > 0)) missing.push('scope 未登记')
+  if (!(Number(endpointCount) >= Number(minEndpoints))) missing.push(`资产端点不足(${endpointCount}<${minEndpoints})`)
+  if (!hasRateBudget) missing.push('速率预算未配置(caps)')
+  const anchorRaw = String(anchorText ?? '').trim()
+  if (anchorRaw) {
+    // schema(docs/gate-anchor-schema.md §2 gate_d1 表): 七字段全部必填 — string 三态(基线/差分/速率
+    // 预算观察/WAF 指纹/噪声盘点)非空串, string[](证据/开放问题)须为数组(空数组=已盘点, 齐备)。
+    const D1_ANCHOR_FIELDS = [
+      ['baseline_req_id', 'string', '基线请求 id'],
+      ['baseline_diff_req_id', 'string', '差分对照请求 id'],
+      ['rate_budget', 'string', '速率预算观察'],
+      ['waf_marker', 'string', 'WAF 指纹'],
+      ['noise_marker', 'string', '噪声盘点'],
+      ['evidence', 'array', '证据清单'],
+      ['open_questions', 'array', '开放问题'],
+    ]
+    let a = null
+    try { a = JSON.parse(anchorRaw) } catch { a = null }
+    const ga = (a && typeof a === 'object' && !Array.isArray(a)) ? a.gate_d1 : null
+    if (!ga || typeof ga !== 'object' || Array.isArray(ga)) {
+      missing.push('防护画像锚无效(anchor-invalid): gate_anchor 非法 JSON/非对象或缺 gate_d1 键')
+    } else {
+      const lack = D1_ANCHOR_FIELDS.filter(([k, ty]) => ty === 'string'
+        ? (typeof ga[k] !== 'string' || !ga[k].trim())
+        : (!Array.isArray(ga[k]) || ga[k].some((x) => typeof x !== 'string')),
+      ).map(([, , label]) => label)
+      if (lack.length) missing.push(`防护画像锚无效(anchor-invalid): gate_d1 缺字段 ${lack.join('、')}`)
+    }
+  } else {
+    const text = String(profileText ?? '')
+    const PROFILE_MARKS = [
+      ['WAF=', '防护画像-WAF 判定'],
+      ['速率=', '速率观察'],
+      ['噪声=', '噪声盘点'],
+      ['证据=', '证据清单'],
+      ['开放问题=', '开放问题'],
+    ]
+    for (const [mark, label] of PROFILE_MARKS) {
+      if (!text.includes(mark)) missing.push(`防护画像缺 ${label}(${mark}…)`)
+    }
+  }
+  return { ok: missing.length === 0, missing }
+}
+
+/**
+ * Gate-R 报告门: 报告必须含「覆盖：M/N」声明行且与台账实测一致(部分覆盖照实声明可过,
+ * 虚报/漏报拦); 存在未收口假设(open Hypothesis)时拒绝终版 — 防"挖一半就写报告"。
+ */
+export function gateR({ reportText = '', tested = 0, total = 0, openIntents = 0 } = {}) {
+  const missing = []
+  if (Number(openIntents) > 0) missing.push(`存在 ${openIntents} 个未收口假设(open Hypothesis) — 终版报告拒绝; 先收口或用 --draft`)
+  const m = String(reportText ?? '').match(/覆盖[：:]\s*(\d+)\s*\/\s*(\d+)/)
+  if (!m) missing.push('报告缺「覆盖：M/N」声明行')
+  else {
+    if (Number(m[2]) !== Number(total)) missing.push(`覆盖分母 N=${m[2]} 与台账 total=${total} 不符`)
+    if (Number(m[1]) !== Number(tested)) missing.push(`覆盖分子 M=${m[1]} 与台账 tested=${tested} 不符`)
+  }
+  return { ok: missing.length === 0, missing, coverageLine: `覆盖：${tested}/${total}` }
+}
+
+// ── 1.6-A Gate-P 派单完整性门 ──
+// 参照 RTM「派单完整性门四字段」: 任务标识/授权边界/唯一子目标/成功标准, 缺一退单不派发;
+// 任务书必带「依据」锚点行(图内 node id 或 chain), 实现派发可溯源。
+export const RING_SUCCESS = {
+  discovery: '端点/信号/发现/refuted 全部按写通道入图(图内零写入=任务失败)',
+  deep: 'Finding(repro 完整)或 refuted 信号入图; 结论带确定性证据锚',
+  creative: 'Hypothesis 新增或现有假设收口(confirmed/refuted)',
+  verify: 'verify-result 结论信号入图(verdict 三态词表)',
+  'task-consumer': '本轮任务产物按写通道入图',
+}
+
+export function buildDispatchHeader({ eng = '', ring = 'discovery', chain = '', scope = '', focus = '', anchor = '' } = {}) {
+  const id = `${eng || '-'} / ${ring} / ${chain || '-'}`
+  const boundary = String(scope ?? '').trim() ? String(scope).trim().slice(0, 200) : '以任务块「边界(铁律)」章节为准'
+  const objective = String(focus ?? '').trim().replace(/\s+/g, ' ').slice(0, 160) || '(以任务块为准)'
+  const success = RING_SUCCESS[chain] ?? RING_SUCCESS[ring] ?? '结论按写通道入图'
+  const anchorLine = String(anchor ?? '').trim() || `chain:${chain || ring}`
+  return `【任务标识】${id}\n【授权边界】${boundary}\n【唯一子目标】${objective}\n【成功标准】${success}\n【依据】${anchorLine}`
+}
+
+/** Gate-P: 校验派单任务书五要素齐备且非空(四字段+依据锚点) */
+export function gateP(taskText = '') {
+  const missing = []
+  const t = String(taskText ?? '')
+  for (const f of ['【任务标识】', '【授权边界】', '【唯一子目标】', '【成功标准】', '【依据】']) {
+    const i = t.indexOf(f)
+    if (i === -1 || !t.slice(i + f.length, i + f.length + 4).trim()) missing.push(f)
+  }
+  return { ok: missing.length === 0, missing }
+}
+
+// ── 1.6-A 双签复核判定 ──
+// critical/high 的 LLM verify 裁决需第二模型独立复核(只给原始材料不给第一签结论), 双签一致才
+// verified; 不一致置 disputed 留人工仲裁。建议项制: 备用模型未配置时调用方跳过(不阻塞管线);
+// P2P_DUAL_SIGN=off 关闭。
+export function needsDualSign(severity = '') {
+  if (String(process.env.P2P_DUAL_SIGN ?? '').toLowerCase() === 'off') return false
+  return ['critical', 'high'].includes(String(severity ?? '').toLowerCase())
+}
+
+// 0914 双签容量判定: 复核员占独立 verify 预留(verifyLive < capVerify), 不被基础环饿死 —
+// 旧条件 workers.size+dispatching < maxAgents+capVerify 让基础环把预留吃光(实证: 快手轮常驻
+// 5 worker, 2+3 顶满 → critical/high 全部静默单签)。总量硬顶 workers+dispatching <
+// maxAgents+capVerify+2 只防失控。ok=false 时调用方必须 runLog 留痕(单签放行可见)。
+export function canSpawnDualSign({ verifyLive = 0, workers = 0, dispatching = 0, capVerify = 3, maxAgents = 2 } = {}) {
+  if (Number(verifyLive) >= Number(capVerify)) return { ok: false, reason: `verify 预留满 ${verifyLive}/${capVerify}` }
+  if (Number(workers) + Number(dispatching) >= Number(maxAgents) + Number(capVerify) + 2) return { ok: false, reason: `总量硬顶 ${workers}+${dispatching}` }
+  return { ok: true, reason: '' }
+}

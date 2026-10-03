@@ -1,0 +1,4 @@
+{
+  "description": "d2d-mods hooks module",
+  "modules": ["./register.js"]
+}

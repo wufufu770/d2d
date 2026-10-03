@@ -1,0 +1,156 @@
+// W2 自动分诊域模块 — 纯函数(输入 finding 与参照集, 输出转换决策), 图 IO 留在 scheduler 编排层。
+// 设计: candidate → triaged 规则推进(免人工), 近重复 → rejected(带 actor/reason 审计, 不物理删除 —
+// 与 experience.dedupFindings 的 DETACH DELETE 互补: 那里只清标题词集完全一致的硬重复)。
+// 保守阈值: 同 host 才判近重复, 无 host(无 URL 证据)时要求更高相似度 — 宁可漏去重, 不误杀真发现。
+
+const HOST_RE = /https?:\/\/[A-Za-z0-9.\-]+(?:\/[A-Za-z0-9._~\-/?%=&]*)?/
+
+/** 空间签名: title+repro 中首个 URL 的 host+path(去参数/尾斜杠) → 'u|host|path'; 无 URL/本地地址返回 null */
+export function findingSig(title, repro) {
+  const m = `${title ?? ''} ${repro ?? ''}`.match(HOST_RE)
+  if (!m) return null
+  try {
+    const u = new URL(m[0])
+    if (u.host === '127.0.0.1' || u.host === 'localhost') return null
+    return `u|${u.host.toLowerCase()}|${u.pathname.replace(/\/+$/, '').toLowerCase()}`
+  } catch { return null }
+}
+
+export function hostOf(sig) {
+  const m = String(sig ?? '').match(/^u\|([^|]+)\|/)
+  return m ? m[1] : null
+}
+
+/** 签名里的 path 部分(无 → null) — 跨 host 同缺陷判据用(三网关 CORS 归并场景) */
+export function pathOf(sig) {
+  const m = String(sig ?? '').match(/^u\|[^|]+\|(.*)$/)
+  return m ? m[1] : null
+}
+
+/** 标题词集(长度≥2 的中英文词元, 小写) */
+export function titleTokens(title) {
+  return new Set(String(title ?? '').toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/).filter((w) => w.length >= 2))
+}
+
+export function jaccard(a, b) {
+  if (!a?.size || !b?.size) return 0
+  let inter = 0
+  for (const w of a) if (b.has(w)) inter++
+  return inter / (a.size + b.size - inter)
+}
+
+// ---- issue #89: 语义相似(trigram 余弦)与链签名 ----
+
+/** 字符 trigram 集合(标题语料, 与 knowledge-retrieval 同口径) */
+export function trigrams(s) {
+  const t = String(s ?? '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '')
+  const out = new Set()
+  for (let i = 0; i < t.length - 2; i++) out.add(t.slice(i, i + 3))
+  return out
+}
+
+/** 二值向量余弦: |A∩B| / sqrt(|A|·|B|) — 对词形/组合变体的召回优于词集 Jaccard */
+export function trigramCosine(a, b) {
+  if (!a?.size || !b?.size) return 0
+  let inter = 0
+  for (const g of a) if (b.has(g)) inter++
+  return inter / Math.sqrt(a.size * b.size)
+}
+
+/** title+repro 中全部 URL 的 host+path 列表(去重) — 链签名原料 */
+export function allUrls(title, repro) {
+  const out = []
+  const re = /https?:\/\/[A-Za-z0-9.\-]+(?:\/[A-Za-z0-9._~\-/?%=&]*)?/g
+  const s = `${title ?? ''} ${repro ?? ''}`
+  let m
+  while ((m = re.exec(s))) {
+    try {
+      const u = new URL(m[0])
+      if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') continue
+      out.push(`${u.hostname.toLowerCase()}${(u.pathname || '/').replace(/\/+$/, '').toLowerCase()}`)
+    } catch {}
+  }
+  return [...new Set(out)]
+}
+
+/** 链签名: 链类 finding(涉及 ≥2 个端点)的端点集合指纹(排序 → 顺序无关); 不足两端点返回 null */
+export function chainSig(title, repro) {
+  const ps = allUrls(title, repro)
+  return ps.length >= 2 ? [...ps].sort().join('|') : null
+}
+
+/**
+ * 分诊决策: f = {id, sig, toks, cat?, tri?, chainSig?}, seen 同构(verified/triaged 参照 + 批内已决)
+ * → { to: 'triaged'|'rejected', reason } — 无噪音出口(噪声在写入门已拒收: config/info 级 400)。
+ * 近重复判据: 同 host 且 (J≥nearDup 或 同 path 签名且 J≥pathDup);
+ * 双方均无 URL 证据时退化为纯标题 J≥noHostDup(更保守)。
+ * 问题签名第二判据(cat 传入时启用):
+ *   同 host + 同缺陷类别 + J≥catDup → rejected(类别对齐提高相似置信, 阈值低于全局 nearDup);
+ *   跨 host + 同 path + 同缺陷类别 + J≥catRelated → triaged 但 reason 标 related_to(三网关同缺陷归并, 不误杀)。
+ * 语义通道(#89, tri 传入时启用): 词集 J 低但 trigram 余弦 ≥semDup → 语义近重复 rejected
+ *   (仅同 host 或同类别时启用 — 跨 host 语义相似可能是巧合共现)。
+ * 链归并(#89, chainSig 传入时启用): 链类 finding 端点集合指纹一致 → rejected 链归并(证据应追加到既有链)。
+ */
+export function triageDecide(f, seen, { nearDup = 0.65, pathDup = 0.30, noHostDup = 0.75, catDup = 0.45, catRelated = 0.45, semDup = 0.85, chainDup = 0.0 } = {}) {
+  let relatedTo = null
+  for (const s of seen) {
+    const j = jaccard(f.toks, s.toks)
+    const fHost = hostOf(f.sig)
+    const sHost = hostOf(s.sig)
+    const sem = (f.tri && s.tri) ? trigramCosine(f.tri, s.tri) : 0
+    if (fHost && sHost && fHost === sHost) {
+      if (j >= nearDup || (f.sig === s.sig && j >= pathDup))
+        return { to: 'rejected', reason: `auto-triage: 近重复 ${s.id}(J=${j.toFixed(2)})` }
+      // 语义通道优先于词集判据(cosine 0.85 是比词集 J 0.45 更强的近似信号)
+      if (f.cat && f.cat === s.cat && sem >= semDup)
+        return { to: 'rejected', reason: `auto-triage: 同host同缺陷(${f.cat}) 语义近重复 ${s.id}(cos=${sem.toFixed(2)})` }
+      if (f.cat && f.cat === s.cat && j >= catDup)
+        return { to: 'rejected', reason: `auto-triage: 同host同缺陷(${f.cat}) 近重复 ${s.id}(J=${j.toFixed(2)})` }
+    } else if (fHost && sHost && fHost !== sHost && f.cat && f.cat === s.cat
+      && pathOf(f.sig) && pathOf(f.sig) === pathOf(s.sig) && j >= catRelated) {
+      if (!relatedTo) relatedTo = s.id // 跨 host 同缺陷: 不拒, triaged 并在审计 reason 标 related_to
+    } else if (!fHost && !sHost && j >= noHostDup) {
+      return { to: 'rejected', reason: `auto-triage: 近重复(无URL证据) ${s.id}(J=${j.toFixed(2)})` }
+    }
+    if (chainDup >= 0 && f.chainSig && f.chainSig === s.chainSig)
+      return { to: 'rejected', reason: `auto-triage: 链归并 ${s.id}(chainSig 一致)` }
+  }
+  if (relatedTo) return { to: 'triaged', reason: `auto-triage: related_to ${relatedTo} (跨host同缺陷 ${f.cat}, J≥${catRelated})` }
+  return { to: 'triaged', reason: 'auto-triage: 规则合格(非重复/非噪声)' }
+}
+
+// ── 0917: 鉴权档位一致性(微博实证教训固化) —「零鉴权」头条实为游客态可达(零 cookie 302),
+// worker 过度宣称档位。0917 审计 C4 重写: 简报现强制结构化宣称「鉴权档位: X」, 解析结构化
+// 字段而非关键词对撞 — 诚实三档记录(三档全写且零cookie 有成功证据)绝不降; 旧格式(无结构化
+// 标注)保留关键词对撞但要求「无零cookie 成功证据」才降。
+const TIER_STRUCT_RE = /鉴权档位\s*[:：]\s*(零\s*cookie|游客态|登录态)/i
+const TIER_ZERO_CLAIM_RE = /(零\s*cookie|无\s*cookie|零\s*鉴权|无\s*鉴权|未鉴权|no[- ]?cookie|unauthenticated|without\s+any\s+cookie)/i
+const TIER_GUEST_EVIDENCE_RE = /(游客态|游客系统|访客|visitor|genvisitor|guest[\s_-]?(cookie|sub)|\bSUB\s*[=:])/i
+const TIER_ZERO_SUCCESS_RE = /(零\s*cookie|无\s*cookie|零\s*鉴权)[^;\n]{0,120}(HTTP\s*200|ok\s*[:=]\s*1|成功返回|返回\s*200|→\s*200)/i
+
+/**
+ * 鉴权档位矛盾/超额检测 — f = {title, repro}。返回 {mismatch, claim, actual, clampTo}。
+ * 语义(与简报硬规则 J 对齐): 游客态可达 = designed behavior 上限 medium; 零cookie 才可 high/critical。
+ *   ①结构化宣称「游客态」→ 机械钳 medium(政策上限, 与诚实与否无关);
+ *   ②结构化宣称「零cookie」→ 仅当证据链只有游客流程且无零cookie 成功证据才判矛盾;
+ *   ③无结构化标注(旧格式)→ 零鉴权宣称 + 游客证据 + 无零cookie 成功证据 → 钳;
+ *   ④结构化「登录态」/「零cookie 且有成功证据」→ 绝不降。
+ */
+export function authTierMismatch({ title = '', repro = '' } = {}) {
+  const text = `${title ?? ''}\n${repro ?? ''}`
+  const structured = text.match(TIER_STRUCT_RE)
+  if (structured) {
+    const claim = structured[1].replace(/\s+/g, '')
+    if (claim === '游客态') return { mismatch: true, claim: '游客态(结构化)', actual: 'designed-behavior 上限', clampTo: 'medium' }
+    if (claim === '零cookie') {
+      if (TIER_ZERO_SUCCESS_RE.test(text)) return { mismatch: false }
+      if (TIER_GUEST_EVIDENCE_RE.test(String(repro ?? ''))) return { mismatch: true, claim: '零cookie(结构化)', actual: '游客态', clampTo: 'medium' }
+      return { mismatch: false }
+    }
+    return { mismatch: false }
+  }
+  if (TIER_ZERO_CLAIM_RE.test(text) && TIER_GUEST_EVIDENCE_RE.test(String(repro ?? '')) && !TIER_ZERO_SUCCESS_RE.test(text)) {
+    return { mismatch: true, claim: '零cookie/零鉴权(未标注档位)', actual: '游客态', clampTo: 'medium' }
+  }
+  return { mismatch: false }
+}

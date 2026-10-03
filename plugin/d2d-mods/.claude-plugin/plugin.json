@@ -1,0 +1,6 @@
+{
+  "name": "d2d-mods",
+  "version": "0.3.1",
+  "description": "d2d 三环渗透 harness 的 Claude Code Mods 移植（M3：工具执行体桥 + 三环派生 + turn.complete 回收 + session.append 消毒接缝；M3.5：Pane 自绘状态面板）",
+  "author": { "name": "d2d" }
+}
