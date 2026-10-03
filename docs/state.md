@@ -14,9 +14,12 @@
 - CI：三 workflow（ci/dsh-compat/gates）——GW-2 v1 首推时点 ci.yml 1 红
   （豁免正例夹具硬编码 /home/kali 的 HOME 依赖，本批 v2 已热修）+ gates/dsh-compat 绿；
   本批落库后以 gh 实测为准
-- 测试基线（GW-2 v2 固化）：pytest **404** / mocha **1948** / panel **88**
+- 测试基线（HYG-1 固化）：pytest **406**（+2 日志轮转）/ mocha **1948** / panel **88**
   （口径 = `pytest tests/` 全目录 / `npx mocha test/` / panel `npm test`；
-  v1 期底账曾停 368/1896/88——同批原子对齐纪律偿还）
+  GW-2 v2 期 404/1948/88 → 本批 +2）
+- CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
+  来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
+  （npm ci 确定性安装）
 - stack：graphd :8766 ✅ / egress :8888 ✅（MITM 启用）/ oast :8890 ✅ /
   cdp-proxy :8893 ✅ 常驻 enable / dsh web :8899 按需；
   SPA/DVWA 靶场就绪
@@ -152,10 +155,21 @@ panel **88**）
 **verified 运营纪律（拍板 6 落档）**：C 子批（#19 seam+#18 同链）落地后，verified 结论仍保留
 人工复核——撤除条件=样本库 31+33 it 双绿持续一个收官批且无误伤回滚记录；届时由收官批在
 本决策账撤条。
-下一步建议（**当前唯一有效**·GW-2 v2 时点）：**HYG-1 工程卫生批**（workflow 依赖漂移
-[checkout@v4/setup-node@v4/setup-python@v5/codeql@v3 vs dependabot 三分支]+按行授权池
-[#26 write-gate realpath]+GW-2 v1 CI 热修遗留核查）；T4-3-2 共识 v2 实施（schema 草案确认后）
-归用户排批
+下一步建议（历史·GW-2 v2 时点，已完成）：**HYG-1 工程卫生批**（workflow 依赖漂移+按行授权
+池[#26 write-gate realpath]+GW-2 v1 CI 热修遗留核查）；T4-3-2 共识 v2 实施（schema 草案确认后）
+归用户排批/
+HYG-1 ✅（**工程卫生批**[外部复审采信落地, 全小项非门禁面]：CI 依赖统一[ci.yml python 3.11→
+3.12+`-r requirements.txt` 钉版(kuzu==0.11.3+pytest==9.1.1 单一来源); gates npm-audit node
+20→24(engines 对齐), dsh-compat 22=最低支持轨注释]；panel lockfile 入库+npm ci 口径；
+**基线数字三处对齐**[ci.yml 步骤名 368→406/README 角色 25→24/底账节]；standalone 启动错误
+reject+非零退出[端口占用 EADDRINUSE 实证 exit=1]；守卫 5 处主判规范形[wmpf/wxapkg/wordlists/
+standalone endsWith→pathToFileURL+match-site fileURLToPath 编码修复]；**审计/转态日志轮转**
+[50MB+保留 5 份, P2P_LOG_MAX_MB/KEEP 可调, 双写入侧同源 helper+锁内调用, 读侧尾读兼容]；
+ARCHITECTURE 节点清单对齐 schema[Signal_ 无 host 列/Endpoint host/port 派生]；**吞错清点分级**
+[python 35=记因 17+模式性 11+有兜底 5+补记因 2, js 空 catch 146 归后续, docs/hyg1-swallowed-errors.md]；
+基线 pytest **406**/mocha 1948/panel 88）
+下一步建议（**当前唯一有效**·HYG-1 时点）：**T4-3-2 共识验证 v2 实施**（schema 草案
+t4-3-2-plan §五等用户确认后进）；js 空 catch 146 处逐文件补因与 #26 按行授权池归后续批
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
