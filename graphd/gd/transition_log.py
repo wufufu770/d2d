@@ -50,6 +50,25 @@ def _transition_log_path():
         os.path.join(os.path.expanduser("~"), ".d2d-data", "logs", "transition-log.jsonl"))
 
 
+def _rotate_if_needed(path):
+    """HYG-1: 写入侧日志轮转 — 上限默认 50MB、保留 5 份(P2P_LOG_MAX_MB/P2P_LOG_KEEP 可调);
+    audit.py _rotate_if_needed 同源镜像(两写入侧同批同改)。调用于锁内追加前; 轮转失败
+    静默跳过(不阻断转态日志写入, 与本模块"日志故障不阻断转态"同义, 下次写入重试)。
+    读侧兼容: 面板 sankey 尾读活跃路径(snapshot.mjs sankeyLines 20000 上限按文件语义
+    不变), 轮转=活跃文件换新, 尾读语义不变。"""
+    try:
+        max_bytes = int(os.environ.get("P2P_LOG_MAX_MB", "50")) * 1024 * 1024
+        keep = max(1, int(os.environ.get("P2P_LOG_KEEP", "5")))
+        if os.path.getsize(path) < max_bytes:
+            return
+        for i in range(keep - 1, 0, -1):
+            if os.path.exists(f"{path}.{i}"):
+                os.replace(f"{path}.{i}", f"{path}.{i + 1}")
+        os.replace(path, f"{path}.1")
+    except Exception:
+        pass  # 已记因: 轮转失败不阻断转态日志写入(下次写重试); 静默与本模块失败语义一致
+
+
 def log_transition(entry) -> bool:
     """追加一条转态日志(JSONL 单行)。返回 True=落盘成功 / False=静默失败(已计数)。
     本函数永不抛异常 —— 调用点(三转态端点成功路径)不允许被日志故障阻断。
@@ -77,6 +96,7 @@ def log_transition(entry) -> bool:
             os.makedirs(parent, 0o700, exist_ok=True)
         line = json.dumps(rec, ensure_ascii=False) + "\n"
         with _lock:
+            _rotate_if_needed(path)  # HYG-1: 上限轮转(失败静默, 见 helper 注释)
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
             try:
                 os.fchmod(fd, 0o600)  # 既有文件被外部放宽时, 每次写前收窄回 0600(audit.py:47 同款)
