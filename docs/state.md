@@ -285,11 +285,26 @@ runbook-storage §八[停写窗口/导出导入/回填/翻转/六步验证/回�
 接受引擎分轨（pytest kuzu 轨+生产 ladybug）LBD-2 可执行——runbook 已备]；mods 定性=
 研究资产挂起+token 采集销账归 mods 移植；预演报告 docs/lbd1-rehearsal-report.md；
 基线 pytest **414**/mocha **1971**/panel 88 不变）
-下一步建议（**当前唯一有效**·LBD-1 时点）：**LBD-2 切换与否归用户裁决**[HOLD 建议+
+下一步建议（历史·LBD-1 时点）：**LBD-2 切换与否归用户裁决**[HOLD 建议+
 引擎分轨方案的接受度——裁决后超短批执行 runbook §八]；上游多实例 Segfault 跟踪
 （LadybugDB 0.21.x 后续版本修复则 pytest 切回 ladybug 轨+kuzu 退役重启）；写入方显式
 带 consensus_status 拆批候选；EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选
 =密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批归用户
+R5-0 ✅（**embedding 检索增强前置审计**[只读批；合并收口 #15/#16 方案面]：**misses 归因
+分布**[EV-1 fail 四条+L3 场景——词面不匹配 2（后缀/脱敏）+索引口径限制 2（type 锚低权重
+字段+topK=3）+语义漂移=主场景（跨 run 链）+数据面缺口 0——embedding 直击 3/4 类]；
+**方案卡 docs/r5-embedding-plan.md**[主选 bge-small-zh-v1.5 ONNX 384 维+全 Node 侧
+onnxruntime-node（写入端 distill/promote+查询端 retrieveKnowledge 同语言，零跨进程零
+API 费）+存储=卡内嵌 embedding 字段暴力余弦（120 卡级，图引擎无关=LBD-2 切换零影响，
+模型缺失降级链回退 trigram 逐字节等价）+合并公式 L1(0.25)+L2 词面(0.25)+L3 语义(0.5)+
+评估=EV-1 12 查询精确口径 recall@3/MRR 基线固化+P2P_EMBED off/on 双跑对照+四 fail 锚
+≥2 进 topK+garbage-control 防退化+三门（quota/denylist/注入扫描）零交互]；**按行授权
+申请两项**[scheduler.js:398 邻域 misses 两档放宽（#16 收口）+注入点 trace 采集（#15
+完整方案，brain-audit §6.1 设计照实施）]；预估 R5 实施批 M（3-4 族）；零代码批零改动）
+下一步建议（**当前唯一有效**·R5-0 时点）：**R5 方案卡归用户确认**（确认后进 R5 实施批
+——按行授权两项随批申请）；LBD-2 切换裁决仍悬置归用户（HOLD 建议+引擎分轨方案）；
+EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/
+js catch 146/门禁候选二批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
