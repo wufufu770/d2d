@@ -12,12 +12,17 @@
   codeql-action-4——actions 大版本升级，与 HYG-1 同文件改动有 rebase 冲突风险]+mods
   [ahead 6=d2d-mods 插件移植，非 dependabot]——处置归用户，T4-3-3-0 核查报告在案；
   回滚点由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
-- 工作树：0 改动
-- CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-3 收官 run=ci 37127595759/
-  gates 37127595793/dsh-compat 37127595782 实测，HEAD 69ceaaed；前值=T4-3-2 时点三 run）
-- 测试基线（T4-3-3 固化）：pytest **414**（+2 迁移表全表+端点 B 面）/ mocha **1967**（+12=
-  异构三档 4+背景段双态 5+收编逐字回归 3）/ panel **88**（前值 412/1955=EV-2 固化时点；
-  口径 = `pytest tests/` 全目录 / `node node_modules/mocha/bin/mocha.js test/` / panel `npm test`）
+- 工作树：burp 侧增量批（分支 `improve/burp-oob-jwt-cred-matrix`，PR #97，未合 main）—— 新增
+  `config/oob.example.json`、`plugin/pentest-dsh/{domain/oob.mjs,tools/{oob,jwt-audit,cred-matrix}.mjs,test/{oob,jwt-audit,cred-matrix}.test.mjs}`；
+  修改 `tools/index.mjs`（纯追加 3 处 reg，既有六件套 def 零删除行）、`config/description-baselines.json`
+  （经 `scripts/ops/gen-description-baselines.mjs` regen 62→73 键）、两份测试的计数断言、
+  `docs/tool-risk-rating.md`（41→46 工具）、本文件、`manifest.sha256`（同批重生成）
+- CI：三 workflow（ci/dsh-compat/gates）main 侧**全绿**（T4-3-3 收官 run=ci 37127595759/
+  gates 37127595793/dsh-compat 37127595782 实测，HEAD 69ceaaed；前值=T4-3-2 时点三 run）；
+  burp 批分支侧 CI 见 PR #97
+- 测试基线（T4-3-3 固化 414/1967/88，burp 批 +29）：pytest **414**（burp 批未动 graphd，零变化）/
+  mocha **1996**（+29 = oob 9 + jwt-audit 12 + cred-matrix 8，前值 1967=T4-3-3 固化时点）· panel **88**
+  （口径 = `pytest tests/` 全目录 / `node node_modules/mocha/bin/mocha.js test/` / panel `npm test`）
 - CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
   来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
   （npm ci 确定性安装）

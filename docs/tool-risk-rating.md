@@ -1,4 +1,4 @@
-# 工具风险评级表（41 工具 × 风险等级 × 门覆盖现状 × 出网通道）
+# 工具风险评级表（46 工具 × 风险等级 × 门覆盖现状 × 出网通道）
 
 > 来源：4-2-0 前置审计（dwfrun-d838b762）· 静态核验口径
 
@@ -11,7 +11,7 @@
 - **门覆盖现状**：该工具当前实际经过的运行时门（checkBash 链 / d2d 门链（pre-execute 三态门：write/edit=gateWriteEdit，T0-C-2；本批 7 高危工具=classifyToolGate，T1-3-1）/ gateEgress 工具体内组合门 / 个体级软约束 / 无门）。headless 下宿主兜底已被置空（`~/.dsh/profiles/headless/cordis.patch.yml:58-64`：sandbox=danger-full-access 与 approval=never 成对钉死），故本列即各工具当前**唯一**的运行时约束面。
 - **出网通道**：`curl 类`（走 env 代理 + checkBash）/ `gateEgress 组合门`（体内 synthCurl 再注入 checkBash）/ `Node 原生`（进程内 fetch 直连，绕过 env 代理）/ `无公网出网` / `不适用（未挂载）`（未挂载工具无出网面可言）。两类结论见文末「出网通道两类」。
 
-## 评级表（41 行，工具名逐个可 grep）
+## 评级表（46 行，工具名逐个可 grep）
 
 | # | 工具 | 风险等级 | 门覆盖现状 | 出网通道 | 依据（4-2-0 审计锚点） |
 |---|---|---|---|---|---|
@@ -57,11 +57,17 @@
 | 40 | ask_user_question | 特殊档（不挂载，无评级） | 包存在但无挂载行 | 不适用（未挂载） | dsh-tool-ask-user 包存在，但 dsh-base / dsh-headless patch 均无挂载行（dsh-base/cordis.patch.yml 仅提示语提及，非注册行） |
 | 41 | run_code | 高（特殊档：默认不挂载） | 仅 DSH_TOOLS_MODE=ptc/both 挂载；默认 native 不挂载 | 不适用（未挂载） | 旋钮锚在 dsh-headless 包实装补丁：`@deepseek-ai/dsh-headless/cordis.patch.yml:16`（`mode: !!js process.env.DSH_TOOLS_MODE`）+ `:18-21`（按需 insert code-runtime）。注意：宿主部署稿 `~/.dsh/profiles/headless/cordis.patch.yml`（70 行）**不含**此旋钮——两个 cordis.patch.yml 勿混 |
 
-档位小计：高档 7（bash、web_fetch、web_search、subagent、subagent_fork、workflow、ralph）· 中档 9（write、edit、burp_repeater、burp_intruder、job_kill、send_message、interrupt_agent、skill、propose_direction）· 低档 19（read、read_image、glob、grep、job_output、job_list、p2p_status、p2p_graph、burp_http_log、burp_decoder、burp_comparer、burp_scan_status、todo_write、get_goal、create_goal、update_goal、exit_plan_mode、list_agents、list_subagent_models）· 特殊档 6（p2p_start、p2p_stop、p2p_eng 评级标高但『不在 worker 面』；pwsh、ask_user_question、run_code 本机/默认不挂载）。7+9+19+6 = 41。
+| 42 | burp_jwt_audit | 低 | 无门（纯变换/本地验签） | 无公网出网 | 零出网：`tools/jwt-audit.mjs` 只 `import crypto from 'node:crypto'`，不过 `gateEgress`、无 `fetch`（`test/jwt-audit.test.mjs` 源码级零出网断言钉死）。被动验签只报信号不下判定 |
+| 43 | burp_cred_matrix | 中 | gateEgress 工具体内组合门 | gateEgress 组合门（synthCurl 注入 checkBash） | 每次重放各过一次 `gateEgress`（N 角色 ⇒ N 次门）；限速器按 tool 名 `cred_matrix` 独立成键，**不与 burp_repeater/burp_intruder 共享配额**；角色数硬上限 4；审计只记 role+host+status，**不落凭据明文** |
+| 44 | oob_register | 特殊档（配置驱动，缺省不挂载） | 缺省 `oob.json enabled:false` → 零注册 | 无公网出网 | `tools/oob.mjs` `buildOobDefs` 在 config 未 ready 时返回 `[]`（照「配置即边界; 缺省=零注册」先例）。登记 nonce 并拼注入串，**自身零出网**——注入由 burp_repeater 承担 |
+| 45 | oob_status | 特殊档（配置驱动，缺省不挂载） | 同上 | 无公网出网 | 纯本地读 `runs/<eng>/oob/` 登记状态，顺带把过 TTL 的 pending 收敛为 expired（终态不可复活） |
+| 46 | oob_collect | 特殊档（配置驱动，缺省不挂载） | 同上 | 拉取侧按 adapter：collaborator 经 `mcp-discovery`（Node 原生）；webhook 经配置 endpoint（Node 原生 fetch） | 回连内容是**外部数据**，强制过 `sanitizeIngestExternal` 全链（`domain/oob.mjs` `sanitizeHit` 必经点，源码级断言钉死）才可消费/入图；归因键 `eng::req_id::nonce`，消费闸幂等防重复入图 |
+
+档位小计：高档 7（bash、web_fetch、web_search、subagent、subagent_fork、workflow、ralph）· 中档 10（write、edit、burp_repeater、burp_intruder、burp_cred_matrix、job_kill、send_message、interrupt_agent、skill、propose_direction）· 低档 20（read、read_image、glob、grep、job_output、job_list、p2p_status、p2p_graph、burp_http_log、burp_decoder、burp_comparer、burp_scan_status、burp_jwt_audit、todo_write、get_goal、create_goal、update_goal、exit_plan_mode、list_agents、list_subagent_models）· 特殊档 9（p2p_start、p2p_stop、p2p_eng 评级标高但『不在 worker 面』；pwsh、ask_user_question、run_code 本机/默认不挂载；oob_register、oob_status、oob_collect 配置驱动、缺省不挂载）。7+10+20+9 = 46。
 
 ## 出网通道两类（表尾结论）
 
-1. **curl 类**：走 env 代理 + checkBash。bash 内的 curl/网络命令属此类；burp_repeater / burp_intruder 经 gateEgress 把请求合成 synthCurl 再注入同一条 checkBash 链（`tools/gate.mjs:59-86`），叠加熔断、20 req/min 滑窗与 burp-audit.jsonl 审计。egress-gateway 的 env 注入路径（V-08）对这类**有效**。
+1. **curl 类**：走 env 代理 + checkBash。bash 内的 curl/网络命令属此类；burp_repeater / burp_intruder / burp_cred_matrix 经 gateEgress 把请求合成 synthCurl 再注入同一条 checkBash 链（`tools/gate.mjs:59-86`），叠加熔断、20 req/min 滑窗与 burp-audit.jsonl 审计。egress-gateway 的 env 注入路径（V-08）对这类**有效**。
 2. **Node 原生类**：web_fetch（`dsh-tool-web/lib/index.js:737`）、web_search（注册 `dsh-tool-web/lib/index.js:262`；API key env 处理 `dsh-web-search-deepseek/lib/index.js:243`）、propose_direction 的 fetch（graphd 写）。进程内直连，**不吃 http_proxy env，绕过 egress-gateway 注入路径**——需单独策略（缺口登记见 docs/gate-coverage-gaps.md 主缺口②）。
 
 （其余工具无公网出网；subagent / workflow / ralph 自身不直接出网，经继承/编排/循环放大下游工具面。）
