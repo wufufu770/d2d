@@ -47,7 +47,7 @@ aa946c9f711a50eb02c4456fff8614cc7f01ec94d2e2088d41c8cd5d946da98b  docs/do-not-to
 c92afae1501b34015eb33243bb6b9a955d1e1d05c3a68b040dae6ec1ab3d617d  docs/gate-coverage-gaps.md
 cb27265dc2ce4d9de85223d7c2d91f135ac7ca6cc6dc74e0cd1072ba30201a96  docs/gatewarden-report.md
 27043b0e6865bc64cd62f33a36c3abf322bf154be63dfd9e6ff5ec137e41ce00  docs/hook-design.md
-6cca35c5eaa75d717668952736f432f86a5b2da7f8d41c1fbe2c9a3082379d55  docs/hyg1-swallowed-errors.md
+1196c830c09977a499d40cb6eb1d767161cea2e3d799fdfe14e811b8486db74f  docs/hyg1-swallowed-errors.md
 6721821ece39ec6bd0491014e76bb8280820159b07f5413688a24feccaaa8d81  docs/mcp-security-design.md
 0a65d4379487b28f90bbdbc8e34fea1d481e34759781b3a118a342fd3f4def40  docs/merge-plan-approval-trust.md
 aef0134f9116bb62e4230aad57a68503235886c0487d67af1da2d0091c47ec6a  docs/mitm-cert-runbook.md
@@ -87,7 +87,7 @@ c38f6a12793a49c1ec2f894043905dee49ebb7be51f4a6b47c3f9aa41c09f7d0  graphd/app.py
 4fd9d7c22d7b9bb13a920c3d1f53e39bc771d6ca2f25fada407fe41a61553af6  graphd/audit.py
 2bd7a45dbef68fc1d9ee362586924219886930d34f98cfad931db62981110e90  graphd/gd/__init__.py
 462381319b576c100b62507fd2ff3a074025a6b1d3298bb537a4cb27f40f77d5  graphd/gd/auth.py
-3248ce3d28487884c21cb439ea242509fcc9318534144ae7ed41bf311779fe9e  graphd/gd/gates.py
+24b2626ef72989eaa07e9672aba31e598890f88338481f9fa7d4b8bd2e23b886  graphd/gd/gates.py
 a26a2e277abe87bc99a637da37d122ff091599cd79e2be400c266807b0f7bab3  graphd/gd/injection_patterns.py
 2cd3c27890c775cef0eb212b80bd4d383b43bb7ec16c747485997e2543896908  graphd/gd/injection_sampling.py
 a8af0f0fd2e37d0119536e01565985307879bde698bf3dd489867062ad75674a  graphd/gd/queries.py
@@ -505,6 +505,7 @@ d17c5ef3fd6a3c99958e3f7a69ce7473d06717d5cf578a8733b92aa55fd4a290  阶段3-实战
 #555ab9189cc4baa7cd2b527099b932497310a6a609798a4d5cff30fa89349c5a  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/index.js
 #a9960e05e21716f82bd289a3a8954b000a6fee3c423dcfdc2c3552025704b696  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/types/index.d.ts
 # --- end node_modules ---
+
 
 
 
