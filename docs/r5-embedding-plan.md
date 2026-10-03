@@ -28,8 +28,8 @@
 | 手写 hash/embedding | 零依赖但语义质量不足，否 |
 
 **全 Node 侧定案依据**：写入端（distill/promote=distill-experience.mjs，Node）与查询端
-（retrieveKnowledge，Node）同语言——`onnxruntime-node` 进程内推理（query 嵌入 ~10ms 级），
-零跨进程、零 API 费。依赖成本：onnxruntime-node（node_modules +~200MB native，开发机
+（retrieveKnowledge，Node）同语言——`onnxruntime-node` 进程内推理（量值待实施批实测
+校准），零跨进程、零 API 费。依赖成本：onnxruntime-node（node_modules +~200MB native，开发机
 安装一次）+模型文件 ~90MB 外置 `DATA_DIR/models/`（运行时下载/手动放置，不入仓不入 CI
 ——CI 单测以纯函数+注入向量 mock，模型不存在时**检索器回退 trigram 通道**（feature
 flag `P2P_EMBED=off` 缺省，渐进启用））。
@@ -60,9 +60,10 @@ flag `P2P_EMBED=off` 缺省，渐进启用））。
 
 ## 五、评估计划（EV-1 26 条重测基线固化+接入后对照）
 
-1. **基线固化**：EV-1 12 条固定评估查询+26 锚卡重跑，精确口径 recall@3/MRR（EV-1 的
-   55.6% 为粗口径锚命中——重测建立精确基线；数字落 docs/eval-run-1.md 附节）。
-2. **对照计划**：R5 实施后同查询集重跑（P2P_EMBED=off/on 双跑）——验收=recall@3 与
+1. **基线固化**：EV-1 评估集（experiments/dataset/eval-dataset.jsonl，**26 条查询/45 锚**）
+   重跑，精确口径 recall@3/MRR（EV-1 的 55.6% 为粗口径锚命中——重测建立精确基线；数字
+   落 docs/eval-run-1.md 附节）。
+2. **对照计划**：R5 实施后同评估集（26 条/45 锚）重跑（P2P_EMBED=off/on 双跑）——验收=recall@3 与
    MRR 提升+四条 fail 锚（L1-003/008/011/013）至少 2 条进 topK+garbage-control 三层
    判定保持全过（防退化锚）。
 3. **防灌水/防污染与既有门交互**：嵌入是检索面非写入面——experience_quota_reject/
