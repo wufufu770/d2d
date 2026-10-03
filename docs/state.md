@@ -10,9 +10,10 @@
   演进批哈希，锚点事件（tag/里程碑）落点值+其余以实测为准（历史漂移：曾停 e63ffb61
   被 T4-3-3 B 层抓出偿还、PLAN-1 偿还过更早两批；T4-3-4 曾以 tag 名自锚，本行随本批
   演进改为 ls-remote 口径+锚点值并存）
-- 分支：main 唯一活跃（远端挂起：dependabot 四分支[checkout-7/setup-node-7/setup-python-7/
-  codeql-action-4——actions 大版本升级，与 HYG-1 同文件改动有 rebase 冲突风险]+mods
-  [ahead 6=d2d-mods 插件移植，非 dependabot]——处置归用户，T4-3-3-0 核查报告在案；
+- 分支：main 唯一活跃（远端挂起：~~dependabot 四分支~~**LBD-1 第 0 族已收编**[checkout/
+  setup-node/setup-python v7+codeql v4——三 yml 冲突手解，HYG-1 钉版行保留]+mods
+  [ahead 6=d2d-mods 插件移植，非 dependabot]——**LBD-1 定性=研究资产挂起**（移植面
+  归 dsh 生态，不合入 main；token 采集工程销账方向=归 mods 移植随其批次承接）；
   回滚点由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
 - 工作树：0 改动
 - CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-3 时点 run=ci 37127595759/
@@ -267,6 +268,28 @@ runbook-storage §六恢复规程+§七 B 预案数据点回填；零生产代�
 辅助 runbook ②attended 宿主工程化立项]；第四轮冷读评审归用户；写入方显式带
 consensus_status=拆批候选归用户排批；B 预案启动批仍为触发条件驱动（本轮数据点已就绪）；
 其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批归用户
+LBD-1 ✅（**存储迁移预演+dependabot 收编**[B 预案从"可行性已验证"到"切换就绪"评估]：
+**第 0 族 dependabot 四分支收编**[checkout v4→v7×6/setup-node v4→v7×4/setup-python
+v5→v7×2/codeql v3→v4×2——三 yml 双 v7 冲突手解，HYG-1 钉版行 node24/python3.12 保留，
+三轨全过]+**引擎开关**[P2P_GRAPH_ENGINE 缺省 kuzu=生产态零变化；import 层条件化一处，
+下游 Database/Connection 零改动；ladybug==0.21.2 入 requirements+供应链真伪注记；kuzu
+依赖保留=过渡期 bak 恢复+测试轨]；**兼容差异清单**[阻断级 1=进程内多 Database 建销
+Segfault（pytest 形态——隔离单测全绿同进程累积崩，h18 reset 同根）；无影响=其余全
+API 面（execute/get_next/table_info/绑定/IN/异常宽泛捕获）]；**预演三轨诚实记录**
+[pytest 缺省态 414 全绿=开关零回归/ladybug 进程内不可达（引擎缺陷非业务代码）/
+mocha 1971+panel 88 引擎无关全绿/预演实例单实例功能面全绿]；**性能六项 0.82~1.22x
+无红线项**[gates_pending_scan ladybug 反快 18%]；**soak 60min 达标**[709 轮×4 查询
+2836 成功 0 错误/RSS 150.4→157.4MB 趋平/线程句柄恒定]；**切换 runbook+回滚预案成稿**
+runbook-storage §八[停写窗口/导出导入/回填/翻转/六步验证/回滚=原库零写保留]；
+**决策建议=暂缓切换（HOLD）**[两条硬证据：测试基建断裂+上游多实例稳定性未决；若用户
+接受引擎分轨（pytest kuzu 轨+生产 ladybug）LBD-2 可执行——runbook 已备]；mods 定性=
+研究资产挂起+token 采集销账归 mods 移植；预演报告 docs/lbd1-rehearsal-report.md；
+基线 pytest **414**/mocha **1971**/panel 88 不变）
+下一步建议（**当前唯一有效**·LBD-1 时点）：**LBD-2 切换与否归用户裁决**[HOLD 建议+
+引擎分轨方案的接受度——裁决后超短批执行 runbook §八]；上游多实例 Segfault 跟踪
+（LadybugDB 0.21.x 后续版本修复则 pytest 切回 ladybug 轨+kuzu 退役重启）；写入方显式
+带 consensus_status 拆批候选；EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选
+=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
