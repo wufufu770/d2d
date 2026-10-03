@@ -5,19 +5,21 @@
 > HEAD 顺延，以 `git log -1` 实测为准。
 
 ## 当前底账
-- 远端 HEAD：`69ceaaed`（T4-3-3 收官 manifest 族末；**T4-3-3 时点顺延**——本行曾停 e63ffb61
-  [EV-2 批只更了梯队条目未顺延本节]，随 B 层复核抓出当场偿还；前漂移史：PLAN-1 偿还过
-  GW-2 v2 期两批停更）
+- 远端 HEAD：tag `t4-3-stage8` 所指 commit（T4-3-4 收官族末——**自相对化锚**：以
+  `git rev-parse t4-3-stage8` / `git log -1` 实测为准，本节不再写死哈希避免收官批
+  二次顺延；历史漂移：曾停 e63ffb61 被 T4-3-3 B 层抓出当场偿还，PLAN-1 偿还过更早两批）
 - 分支：main 唯一活跃（远端挂起：dependabot 四分支[checkout-7/setup-node-7/setup-python-7/
   codeql-action-4——actions 大版本升级，与 HYG-1 同文件改动有 rebase 冲突风险]+mods
   [ahead 6=d2d-mods 插件移植，非 dependabot]——处置归用户，T4-3-3-0 核查报告在案；
   回滚点由 tag 保留：control-v1~v3 / honest-baseline / pre-team-arch / archive/*）
 - 工作树：0 改动
-- CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-3 收官 run=ci 37127595759/
-  gates 37127595793/dsh-compat 37127595782 实测，HEAD 69ceaaed；前值=T4-3-2 时点三 run）
-- 测试基线（T4-3-3 固化）：pytest **414**（+2 迁移表全表+端点 B 面）/ mocha **1967**（+12=
-  异构三档 4+背景段双态 5+收编逐字回归 3）/ panel **88**（前值 412/1955=EV-2 固化时点；
-  口径 = `pytest tests/` 全目录 / `node node_modules/mocha/bin/mocha.js test/` / panel `npm test`）
+- CI：三 workflow（ci/dsh-compat/gates）**全绿**（T4-3-3 时点 run=ci 37127595759/
+  gates 37127595793/dsh-compat 37127595782+底账顺延笔 f9f1148c 三绿；本批收官 run 以
+  `gh run list` 实测为准——CI 绿以**分支 push** 为准，tag push 仅触发 ci.yml
+  [gates/dsh-compat 的 push.branches 过滤不含 tag refs，.github/workflows on: 实测]）
+- 测试基线（T4-3-4 固化）：pytest **414** / mocha **1971**（+4 stability-view 聚合与入口
+  守卫；T4-3-3 时点 414/1967+EV-2 前值链见各批 ✅ 段）/ panel **88**
+  （口径 = `pytest tests/` 全目录 / `node node_modules/mocha/bin/mocha.js test/` / panel `npm test`）
 - CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
   来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
   （npm ci 确定性安装）
@@ -153,9 +155,14 @@ N3 登记不修(合成 eng_id=合法形态)；kuzu 实跑钉死恒真式/无标�
 断言；样本库 graphd 31(gap3/blocked25/exempt2)+plugin gap 余 4；OOB nonce/validator L0/
 write-gate realpath 三残余登记(授权面)；底账五字段对齐偿还；基线 pytest **404**/mocha **1948**/
 panel **88**）
-**verified 运营纪律（拍板 6 落档）**：C 子批（#19 seam+#18 同链）落地后，verified 结论仍保留
-人工复核——撤除条件=样本库 31+33 it 双绿持续一个收官批且无误伤回滚记录；届时由收官批在
-本决策账撤条。
+**verified 运营纪律（拍板 6 落档；T4-3-4 撤条）**：C 子批（#19 seam+#18 同链）落地后，verified
+结论曾保留人工复核。**撤除（T4-3-4 收官批，证据链见 docs/stage8-closeout.md §三）**：
+撤除条件=样本库双绿持续一个收官批且无误伤回滚——实测 pytest gatewarden 31 collected+本批
+mocha gatewarden 面 41 passing 双绿（拍板口径 33 为 GW-2 时点静态计数，时点漂移 +8 如实
+记录，条件精神=双族全绿满足）；GW-2 以来逐批 CI 三绿（run ID 链在案）；`git log --all`
+零 revert（唯一"回滚"词面命中=阶段 7 租约回滚功能 commit）；CI 红仅 lease-cas-watchdog
+timing flaky 两度（rerun --failed 转绿，先例 8，非误伤非回滚）。撤除的是「结论必须人工
+复核」的运营纪律；Gate-V 对 high/critical 的确定性锚要求等门禁本体零变化。
 下一步建议（历史·GW-2 v2 时点，已完成）：**HYG-1 工程卫生批**（workflow 依赖漂移+按行授权
 池[#26 write-gate realpath]+GW-2 v1 CI 热修遗留核查）；T4-3-2 共识 v2 实施（schema 草案确认后）
 归用户排批/
@@ -217,9 +224,32 @@ dual-sign-transition]；族④scheduler 11 处 SET f.dual_sign 直写收编端�
 保留——逐字回归用例 3 例：signed 盖章链/pending 派发链/409 拒收不炸环；auth-contract.mjs 与
 domain 层零触碰]；迁移表全表 pytest+端点 B 面九态 pytest；新用例 14=[mocha 12+pytest 2]；
 基线 pytest **414**/mocha **1967**/panel 88）
-下一步建议（**当前唯一有效**·T4-3-3 时点）：**EV-2 实弹执行二选一仍悬置归用户**[①会话辅助
+下一步建议（历史·T4-3-3 时点，已完成）：**EV-2 实弹执行二选一仍悬置归用户**[①会话辅助
 runbook ②attended 宿主工程化立项]；下一批候选=T4-3-4（d 调和+8-4 L1+第四轮冷读+收官 tag
 t4-3-stage8）/密钥异构独立小批/js catch 146 补因/门禁候选二批——排批归用户
+T4-3-4 ✅（**阶段 8 收官批**[8-2d 缩编+8-4 L1+verified 处置+盘点+tag+冷读包]：**8-2d 调和
+缩编登记**[合法结局——roadmap:56 全仓唯一表述零形态定义+t4-3-plan:43 原设想撞 approvals
+禁区+N-of-M 放弃决策账冲突+disputed 机器消费面实测为零（v1 语义 disputed 出口=人工仲裁
+留痕已有定义）；机器化调和登记 L2/未来批，触发=真实 disputed 积压]；**8-4 L1 只读稳定
+视图** scripts/ops/stability-view.mjs[严格只读聚合：runLog 尾窗（≤20 eng×2000 行）+图内
+AgentIdentity exit_class/status=error+Finding dual_sign 挂起面——信号源四面全既有留痕
+零补埋点；graph 不可达降级 runLog 单源；**L2 控制器维持预降级**（2C 禁区），任何写/控制
+冲动登记不动手]+单测 4；**verified 运营纪律撤除**[决策账撤条，证据链=31+41 双绿+逐批
+CI 链+零 revert+flaky 非误伤——stage8-closeout §三]；**收官盘点** docs/stage8-closeout.md
+[全项对账表 8-1/8-2abcd/8-3/评测/8-4+指标汇总 70+ commit/基线 394→414/1944→1967+8-2d
+缩编登记+面板假阳性裁决闭环评估卡（只评估不实施——与 #18 合并建议）]；**第四轮冷读
+材料包** docs/coldread-4-briefing.md[orientation 性质——系统一页纸+欠账全景+三轮已抓
+清单+新落地面六项+老面复检四项，行话首现即解释；评审归用户]；**t4-3-3-plan §二 c 层
+草图勘误**[blocked 非终态——防未来读者信旧草图]；tag `t4-3-stage8` 随批打+推[CI 三绿以
+分支 push 为准——gates/dsh-compat 的 push.branches 过滤不含 tag refs，实测 .github/
+workflows on: 配置]；新用例 mocha +4[stability-view]；world.run 脚本归属定性=宿主引擎
+自管理产物[.zcode 自 ignore 不入库——引擎加固注记登记，跨机复现靠脚本重生成]；基线
+pytest **414**/mocha **1971**/panel 88）
+下一步建议（**当前唯一有效**·T4-3-4 时点）：**EV-2 实弹执行二选一仍悬置归用户**[①会话
+辅助 runbook ②attended 宿主工程化立项]；阶段 8 已收官（tag t4-3-stage8）——下一梯队
+排批归用户：T4-3-4 后续候选=密钥异构独立小批/人工裁决回灌批（面板假阳性×#18 合并）/js
+catch 146 补因/门禁候选二批/T4-4（OTel 挂触发条件）/T4-5（公开脱敏归用户拍板时点）；
+第四轮冷读评审结果待用户执行 coldread-4-briefing 后回填
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
