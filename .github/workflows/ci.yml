@@ -9,7 +9,7 @@ jobs:
         with:
           # node 24：ci 测试轨选择；dsh-compat.yml 保持 node 22 为有意（engines 对齐，见其文件头注释）
           node-version: 24
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           # HYG-1: python 3.11→3.12 对齐 gates.yml 轨(单一来源); 依赖改 -r requirements.txt
           # (kuzu==0.11.3+pytest==9.1.1 钉版 — 弃"pip install kuzu pytest"未钉形态)
