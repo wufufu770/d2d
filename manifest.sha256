@@ -38,10 +38,11 @@ aaeaad46d1439ecb6931f82b366f9e1172772893289800759606baa012bc9bf7  docs/approval-
 87c90e9e9cf9d8191cc7db3cd61ce14cdc888a1e3dec6ccbe20fb042444c581b  docs/browser-recon-runbook.md
 8790f5862ff98e20e7f7c2137be1bed7c825e9e81dadf2e97bd2df4eb890b59a  docs/business-gate-acceptance.md
 920bafd5f594c4d1b07032921387cd81e55c79fa8604d6517625de5a017f408c  docs/business-gate-design.md
-10d07b8293f7a9bd4264286dfac3d3bf3187eb0a5e9c4e4f0d682bc13f8df6e3  docs/devlog.md
+205b3da935bbb3159d1c61dbf69c4b120ff1225c7c0ec366a87a2cd74d818c4a  docs/devlog.md
 cc9d57c523b51593b7456f448cf2758419472f93ea3935b8b94eb61d22c320e2  docs/do-not-touch.md
 99954434d3540ce4bc41d90678a799c55fbb58bef832e8df286c60e80e848f2b  docs/dsh-sidebar-compat.md
 18669dc88d5154746c29c81c8f437910eb080bc5e0525103eb47d3d752d02de2  docs/eval-run-1.md
+b9273cbb68d4ab1265e14eb2002bae7650a88030f302bb71fbac93e4b6bb6a15  docs/eval-run-2-e2e.md
 6d1574db3d59bf1fe6ab48b382da1fe8a1518bfaa9e43c4ed6d28dbf4c02ee80  docs/experience-consensus-schema.md
 6cfd4f6d2e618cd73b4bf877470c56f6596e9925f66405e5968fc54bdb359762  docs/false-positive-schema.md
 62156c576ff355192473aee4429a23087ba7c676855be7b9352cd7f7aa325ce1  docs/gate-anchor-schema.md
@@ -60,7 +61,7 @@ eb28176b552b25945ed7642a87792fff6c5b74ded0fbc1478f10bbe265e906ad  docs/runbook-s
 7802fcd65d52a92c208501118f4379f4c80c4fdf2d0e5c75e6d6aeb2dd9d7e05  docs/skill-design.md
 45d12c92a40df7c82746686a5e9b91b6611aca5db38255c5e544cef39b3a97a6  docs/stage6-batch-plan.md
 a567b8b017fd858a95a39ee3bbb2967aefc4fa2e8cbeca591b5fdd9b2f17881c  docs/stage6-finale.md
-6354cf016b19ca834013700ab6bb66fec6353b14e9013c83a024fe7c5e1e7a5a  docs/state.md
+f2ad96d1f2dae7eb83843cdf697e28f85d9254372af381d02b9c2408490a36f5  docs/state.md
 4ac5b40733bee523aebc5a4e06b4d59951d3ea22b32b13785b7c68c3bd8f824f  docs/t3-2-2b-acceptance.md
 0039cfb03b82b0e8f561baa93e7c77edd7b41139d8dbf37f45cd4ee093d39f28  docs/t3-3-finale.md
 ab0bf503a34c407a9135ae2bbf03e8dcda6da3e6e3028e20d1642539cbbb2b60  docs/t3-3-plan.md
@@ -77,6 +78,7 @@ d0b3063869380c10cea7f4519f13baefc243c2615d3da9ae13368c69a824db32  experiments/ab
 fc813e42fb19f7f0955df19076789f6b89d585f0262055a617fd1400ac44c53f  experiments/collect-results.mjs
 e91af163ffebb96884a65730bea2eca91f5d343ca599cafd73a2d1b4c824db7d  experiments/config.example.json
 2e105d5c9c063317ec397a795531c84c0794b2d974dd0b6210b66b647a04eb1e  experiments/dataset/eval-dataset.jsonl
+11f3cbd741d6485693366ac501211e72b467e819d1777b9a73e814d60f10c003  experiments/eval-e2e-collect.mjs
 a09f3db87b2b019c62ac0017bc80030cdd63659996795c3181297d9ac2648ab0  experiments/eval-harness.mjs
 4572982835ec8c82aec38cd1cd5371adb63c08dee7e4fd5e4d749696ee3fac5a  experiments/eval-scorer.mjs
 07396dba3b61bd44369ba6ff9d7fd4254139c7b8dc75580beb6a858881783656  experiments/historical-ab.mjs
@@ -269,6 +271,7 @@ dee30c53e368f317f1029332b94df2b83406e09e308e60b4d433dd3ee8217f9e  plugin/pentest
 9fa51e76244f6e67bea05b7a3a4966c7d545b353d8eb31d93c6a69a3fff83366  plugin/pentest-dsh/test/egress-rebinding-window.test.mjs
 f20bd97f7408c8ec6704cd65d4874f936495caa8fbd88ef8ab22914a9699459f  plugin/pentest-dsh/test/engagement-converge.test.mjs
 2db7ee592d0d48bfa6020cfd6e9da90e84d96dab9117b25b212a67204ff4fef0  plugin/pentest-dsh/test/eval-dataset.test.mjs
+7b4e847749a4f433c6d228113c9295ea83514a5e37cd4a1607f24aa766c42617  plugin/pentest-dsh/test/eval-e2e-collect.test.mjs
 1bfb64ff81712bd3df17ef47a4f4659603ee2841090b448cb58c23690f008282  plugin/pentest-dsh/test/eval-harness.test.mjs
 26b65fd60264587a749364e2c511f73a2f25065e3b4fa15305087621490da114  plugin/pentest-dsh/test/evidence-crypto.test.mjs
 38d058915e266b30c3a84eee8ff754cca089e5b0e3d4253175b0c4a690e77fdb  plugin/pentest-dsh/test/experience-class.test.mjs
@@ -508,6 +511,7 @@ d17c5ef3fd6a3c99958e3f7a69ce7473d06717d5cf578a8733b92aa55fd4a290  阶段3-实战
 #555ab9189cc4baa7cd2b527099b932497310a6a609798a4d5cff30fa89349c5a  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/index.js
 #a9960e05e21716f82bd289a3a8954b000a6fee3c423dcfdc2c3552025704b696  plugin/pentest-dsh/node_modules/@deepseek-ai/dsh-subagent/lib/types/index.d.ts
 # --- end node_modules ---
+
 
 
 
