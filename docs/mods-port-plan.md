@@ -250,5 +250,14 @@ mod 侧只需一个 `core/graphd-client.js` 封装 `fetch` + token 注入。
 3. `$.process.spawn` 流式长跑（≥20 min）实测。
 4. `$.session.send/receive` 跨会话协作实测。
 
+**滚动开放项（批次推进中新增）**
+1. **CodeQL 门（PR #96，2026-10-03 实证）**：gates.yml 的 `codeql` 作业在 PR 变更代码报 1 条 high 注解 ——
+   `plugin/d2d-mods/src/domain/knowledge-gaps.mjs:55`「This does not escape backslash characters in the
+   input.」（Markdown 表格转义未先处理反斜杠）。该文件是主线源 `plugin/pentest-dsh/domain/knowledge-gaps.mjs`
+   的**逐字镜像**（`diff -q` 实证 identical）→ 按 mods 线约定（不含主线改动）与镜像哈希纪律**不可单边修改**。
+   处置待拍板：GitHub 侧 dismiss / M4 评估给 codeql 作业配 paths-ignore（镜像属生成物；源路径仍照常被扫）/
+   维持记录不动。注：非 CodeQL 的其余 PR 检查与 push 三 workflow 均绿。
+2. d2d-mods 的 `claude plugin test`（22 用例）尚未接入 CI 三轨（现为本地门禁；可随 M4 换轨批评估）。
+
 **待办（本文件之外的记录）**
 - 在 `docs/state.md` 增加一行指向本文件的指针，使接手协议能感知 `mods` 这条并行线与本纪律例外。
