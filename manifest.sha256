@@ -266,7 +266,7 @@ d9dd0e53c3f0724220c050826dcc696840bc2d137c9a884211d23eb7794afe95  plugin/pentest
 9f50c2f0fbf739edc5e78ef11c65cc145b02d111f4943e8b4a8a7053d0c59070  plugin/pentest-dsh/test/card-schema.test.mjs
 15d94cb3a4567c53fc2d5f194cc9573ec0242460e4c162bcf116e5ff2a013b67  plugin/pentest-dsh/test/cdp-scope.test.mjs
 50015605e0e1cbdd25c197f614a66207d94e0f0bd1019eb00e24236021323e3b  plugin/pentest-dsh/test/cnsr.test.mjs
-380544adf1bb67697521232646296175f0d4744d7f35962499ad01b0c1033cb0  plugin/pentest-dsh/test/cred-matrix.test.mjs
+7d188249dfca6f951c7e4414d19dc410ee9808b894db1db5a733a7b3c4f2f06b  plugin/pentest-dsh/test/cred-matrix.test.mjs
 8a0f21606ef0162713ad6a85aee9fdc5f0703a5526b8e64ec4f5a5a55b720d47  plugin/pentest-dsh/test/cross-eng-isolation.test.mjs
 73af6eb25187786e9db3386d83d7799c28bdc01655fa16ab374e71fe3edf4075  plugin/pentest-dsh/test/description-audit.test.mjs
 dee30c53e368f317f1029332b94df2b83406e09e308e60b4d433dd3ee8217f9e  plugin/pentest-dsh/test/distill-experience.test.mjs
