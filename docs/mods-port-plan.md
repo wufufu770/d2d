@@ -93,6 +93,14 @@
 
 > 📌 以上经 Phase 2 前置审计 + M1 实证修正，详见 `docs/mods-port-phase2-audit.md`。
 
+> **M3.5 追加实锚（Pane / ui.* 契约，2026-10 沙箱实测）**：
+> - `ui.render` 过滤器 `{ component:'Pane', requestId }` 与 `$.ui.open({ id, title })` 的 `id` 须三处字面一致；
+>   返回元素树即自绘。`$.ui.resolve(e)` 按表面给元素工厂（Box/Text 等；各表面表不同，取值须携 `e`）。
+> - 测试面：`$.ui.mount({ plugin, surface, component, requestId, props, viewport })` → drawing 句柄，
+>   `.drawn()` 交回**引擎校验后**的树（`{type, props, children}`；树被打回时画 `{refused}`），`.unmount()` 释放。
+> - 宿主/测试无 pane 实现时 `$.ui.open` 会抛（「no implementation for ui.open」）→ 须吞而记因（纪律 10），
+>   不得污染命令文本契约。
+
 ---
 
 ## 3. 模块去留清单
@@ -200,14 +208,15 @@ mod 侧只需一个 `core/graphd-client.js` 封装 `fetch` + token 注入。
 | Phase 2 前置审计 | 实测 §9 的 4 项技术假设 | 4 项有结论才开工 | ✅ 完成（E1/E3/E5 沙箱实测，见审计报告） |
 | M1 最小可跑 | manifest + `register.js` + graphd-client + 1 命令 + 1 工具 + 1 门 + 状态行 | validate 通过 + test 绿 | ✅ 完成（4 用例绿） |
 | M2 工具与角色面 | 8 工具 + 24 角色全注册；门族全接线（Bash→`checkBash`，CC 工具→`classifyToolGate`） | validate 通过 + test 绿 | ✅ **完成**（11 用例绿；工具**执行体**接线顺延 M3） |
-| M3 编排与 UI | 三环并行（`$.agent.spawn`）、`turn.complete` 收答写 graphd；工具执行体桥接（`$.process`）；消毒/上下文接缝；状态行 → `Pane` | 端到端一次 engagement 全绿 | ✅ **完成（编排/桥/回收面；15 用例绿）**——`Pane` 自绘面顺延 M3.5 |
+| M3 编排与 UI | 三环并行（`$.agent.spawn`）、`turn.complete` 收答写 graphd；工具执行体桥接（`$.process`）；消毒/上下文接缝；状态行 → `Pane` | 端到端一次 engagement 全绿 | ✅ **完成（编排/桥/回收/消毒面 + M3.5 `Pane` 自绘；22 用例绿）** |
 | M4 砍脚手架与换轨 | 执行 §3 砍除清单；CI 移除 dsh-compat 轨 | CI 绿 + `sync-core --check` 通过 | 待开工 |
 
 > **M3 已落地**：工具执行体桥（`scripts/tool-bridge.mjs`：8 工具 + `sanitize`/`turn-report` 两 op，
 > 逐字复用禁区执行体）、三环派生（`buildRingSpawns` → `$.agent.spawn` ×3，`agentRing` 追踪）、
 > `turn.complete` 回收（消毒 + provenance_hash → `/write/experience`）、`session.append` 消毒接缝。
-> **顺延**：`Pane` 富 UI（当前只有 `ui.render{component=Spinner}` 状态行）、环内并行/收敛判定（M4 分配器）、
-> 活的 `claude` 会话端到端（当前为离线 harness 全绿）。
+> **M3.5 已落地**：`Pane` 自绘状态面板（`/d2d` → `$.ui.open`；`ui.render{component=Pane, requestId}` →
+> `src/pane.js` 纯函数拼树；terminal/desktop 双表面经引擎校验画出）。
+> **顺延**：环内并行/收敛判定（M4 分配器）、活的 `claude` 会话端到端（当前为离线 harness 全绿）。
 
 每批收尾：打 annotated tag + 回滚演练。
 
