@@ -1,4 +1,4 @@
-// hooks/register.js — d2d-mods 的唯一 hooks 模块（M3：编排 · 工具桥 · 消毒 · 状态行）
+// hooks/register.js — d2d-mods 的唯一 hooks 模块（M3：编排 · 工具桥 · 消毒 · 状态行；M3.5：Pane 状态面板）
 // 形状：export function register(on)；每个 hook 为 async ($, e, next) => …
 //
 // ⚠️ 硬约束（claude plugin validate 实证）：
@@ -42,6 +42,10 @@ let rings = { discovery: 'idle', deep: 'idle', creative: 'idle' }
 let ringsDone = 0      // turn.complete 收到且写库成功的轮数
 let ringsFailed = 0    // 失败/拒答的轮数
 let lastError = ''     // 最近一次错误（进 Pane 与状态行）
+
+// Pane 实例 id（M3 顺延项）：/d2d 打开 → ui.render{Pane, requestId} 自绘状态树。
+// 常量须与 $.ui.open 的 id、ui.render 过滤器的 requestId 三处字面一致（mods 要求字面 hook）。
+const PANE_ID = 'd2d-status'
 
 // 取当前 active engagement（与 d2d scheduler/state.mjs resolveEngagement 同款查询，60s 缓存）。
 const ENG_QUERY = "MATCH (e:Engagement) WHERE e.status='active' RETURN e.scope AS s, e.name AS n ORDER BY coalesce(e.created_at, '') DESC LIMIT 1"
@@ -141,11 +145,12 @@ async function runD2dTool($, tool, e) {
 }
 
 // 状态快照（Pane 与状态行共用；纯数据，交 src/pane.js 渲染）。
+// 空串兜底（|| 而非 ??）：engCache 未解析时展示哨兵而非空行，Pane 首帧不出现「在线 · 」空值。
 function snapshot() {
   return {
     graphdHealthy: engCache.healthy,
-    engName: engCache.eng?.name ?? '',
-    scope: engCache.eng?.scope ?? '',
+    engName: engCache.eng?.name || '(no-engagement)',
+    scope: engCache.eng?.scope || '-',
     rings, toolCalls, gateDenies, bridged, lastError,
   }
 }
@@ -209,14 +214,23 @@ export function register(on) {
     return next(e)
   })
 
-  // ── /d2d —— 探 graphd 连通性 + 当前 engagement ─────────────────
+  // ── /d2d —— 探 graphd 连通性 + 当前 engagement + 打开状态 Pane ────
+  // Pane 由「人敲的命令」打开（官方口径：人触发的 pane 任意宽度可座位；无人触发的才需 ≥144 列）。
+  // 打开失败只记因不影响状态文本（吞错必须记因，纪律 10）。
   on('command.run', { command: 'd2d' }, async ($) => {
     const r = await graphd($, '/health')
+    // 无论在线离线都刷缓存：紧随其后的 Pane 首帧要画真实 engagement（离线时回落后端探针的哨兵值）。
+    const { eng } = await resolveEng($)
     if (!r.ok) {
       statusText = 'd2d: graphd 离线 (' + r.status + ')'
     } else {
-      const { eng } = await resolveEng($)
       statusText = `d2d: graphd 在线 · engagement=${eng.name} scope=${eng.scope}`
+    }
+    try {
+      await $.ui.open({ id: PANE_ID, title: 'd2d 状态' })
+    } catch (err) {
+      // 打开失败只记因（Discipline 10），不改状态文本契约：测试/无 pane 的宿主下 ui.open 无核。
+      lastError = 'Pane 打开失败: ' + (err?.message ?? String(err))
     }
     $.ui.invalidate('ui.render')
     return { text: statusText }
@@ -379,5 +393,14 @@ export function register(on) {
   // ── 状态行：spinner 后缀挂 d2d 计数 ────────────────────────────
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     return next({ ...e, props: { ...e.props, suffix: ` · d2d: ${toolCalls} 调用 / ${gateDenies} 拦截` } })
+  })
+
+  // ── 状态 Pane（M3 顺延项）：自绘 d2d 状态树 ─────────────────────
+  // 元素工厂表由 `$.ui.resolve(e)` 按表面给出（terminal/desktop/vscode/mobile 各表不同）；
+  // 树由 src/pane.js 纯函数拼（无 JSX——hooks 模块是 .js 不转译，直接调用工厂）。
+  // 官方口径：返回树即自绘；树不校验时引擎画自己的并在 debug 日志记因，故此处不吞错。
+  on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    return buildPaneTree(snapshot(), { Box, Text })
   })
 }

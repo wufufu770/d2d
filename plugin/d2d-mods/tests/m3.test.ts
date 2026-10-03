@@ -202,3 +202,55 @@ test('session.append fail-closed：注入高危 → 占位替换，原文不下�
   expect(kept.message.content[0].text).toContain('已拦截')
   expect(kept.message.content[0].text).not.toContain(EVIL)
 })
+
+// ── Pane 自绘（M3 顺延项）：ui.render{component=Pane, requestId=d2d-status} 状态树 ──
+// 测试面口径（2.1.287 沙箱实锚）：$.ui.mount({ plugin, surface, component, requestId, props, viewport })
+// 返回 drawing 句柄（.drawn/.find/.press/.../.unmount），`.drawn()` 交回**引擎校验后**的树
+// （{type, props, children}；树不校验时引擎画自己的，句柄画出 {refused}）。两表面各画一遍，
+// 证明插件不依赖单一表面（Box/Text 在 terminal/desktop 两表均有）。
+const PANE_MOUNT = { plugin: 'd2d-mods', component: 'Pane', requestId: 'd2d-status', props: {} } as const
+
+test('Pane 自绘：/d2d 打开 + 状态树经引擎校验画出（terminal/desktop）', async ($, on) => {
+  prime(on)
+  const opens: any[] = []
+  on('ui.open', ((...a: any[]) => { opens.push(a[1] ?? a[0]); return { value: undefined } }) as any)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+
+  // /d2d 先跑一次：① 刷 engagement 缓存（pane 首帧要真实值）② 触发 $.ui.open（Pane 的唯一打开路径）
+  await $.command.run({ command: 'd2d', args: '' })
+  expect(opens.length).toBe(1)
+  expect(JSON.stringify(opens[0])).toContain('d2d-status')
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const d: any = await ($ as any).ui.mount({ ...PANE_MOUNT, surface, viewport: { columns: 100, rows: 30 } })
+    const tree: any = await d.drawn()
+    expect(tree.refused).toBeUndefined()             // 树未被打回（打回=引擎画自己的）
+    expect(tree.type).toBe('Box')
+    expect(tree.props.flexDirection).toBe('column')
+    const rows = (tree.children ?? []).map((c: any) => (c.children ?? []).join(''))
+    expect(rows[0]).toBe('d2d')
+    expect(rows[1]).toContain('graphd 在线')
+    expect(rows[1]).toContain('(env)')               // D2D_ENG_SCOPE 注入的 env engagement
+    expect(rows[2]).toContain('example.com')
+    expect(rows[3]).toContain('· discovery')
+    expect(rows[3]).toContain('· creative')
+    expect(rows[4]).toContain('调用 0 · 拦截 0 · 桥 0')
+    await d.unmount()
+  }
+})
+
+test('Pane 反应：三环派发后环标记转为 running（…）', async ($, on) => {
+  prime(on)
+  on('agent.spawn', spawnMock())
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  await $.command.run({ command: 'd2d-run', args: '目标 A' })
+
+  const d: any = await ($ as any).ui.mount({ ...PANE_MOUNT, surface: 'terminal', viewport: { columns: 100, rows: 30 } })
+  const tree: any = await d.drawn()
+  expect(tree.refused).toBeUndefined()
+  const rows = (tree.children ?? []).map((c: any) => (c.children ?? []).join(''))
+  expect(rows[3]).toContain('… discovery')
+  expect(rows[3]).toContain('… deep')
+  expect(rows[3]).toContain('… creative')
+  await d.unmount()
+})
