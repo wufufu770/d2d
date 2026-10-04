@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xring/repro_paths.json",
+  "title": "X-Ring A 级产出：可复现漏洞路径（回流须 verify 双签）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "generated_at", "findings"],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "findings": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "severity", "target", "steps", "expected", "observed"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^F-[0-9]{1,4}$" },
+          "title": { "type": "string", "minLength": 8, "maxLength": 200 },
+          "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+          "target": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "steps": {
+            "type": "array", "minItems": 1, "maxItems": 100,
+            "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+          },
+          "expected": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "observed": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "repro_artifacts": {
+            "type": "array", "maxItems": 20,
+            "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+          }
+        }
+      }
+    }
+  }
+}
