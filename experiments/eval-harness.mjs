@@ -40,15 +40,32 @@ export function buildCardsFixture(entries) {
   return cards
 }
 
-/** 单条评测: 真实签名直调检索面, 返回结构化判定（可 JSONL 落盘可复跑）。 */
-export function evalEntry(entry, cards, { topK = TOP_K } = {}) {
-  const r = retrieveKnowledge(cards, [], { topK, queryText: entry.input ?? '' })
+/** 单条评测: 真实签名直调检索面, 返回结构化判定（可 JSONL 落盘可复跑）。
+ *  R5: retrieveFn 可注入(缺省同步原函数=off 形态; async 包装=on 形态), recall@k/MRR 按排名计算。 */
+export function evalEntry(entry, cards, { topK = TOP_K, retrieveFn = retrieveKnowledge } = {}) {
+  const r = retrieveFn(cards, [], { topK, queryText: entry.input ?? '' })
+  if (r && typeof r.then === 'function') throw new Error('evalEntry 同步形: on 态请用 evalEntryAsync')
+  evalEntryShape(entry, r, topK)
+  return finishEval(entry, r, topK)
+}
+
+/** on 形态(async): 与 evalEntry 同判定, 检索经 retrieveKnowledgeWithEmbed。 */
+export async function evalEntryAsync(entry, cards, { topK = TOP_K } = {}) {
+  const { retrieveKnowledgeWithEmbed } = await import('../plugin/pentest-dsh/domain/knowledge-retrieval.mjs')
+  const r = await retrieveKnowledgeWithEmbed(cards, [], { topK, queryText: entry.input ?? '' })
+  return finishEval(entry, r, topK)
+}
+
+function evalEntryShape(entry, r, topK) { /* 保留扩展点(现无形状前置校验) */ }
+
+function finishEval(entry, r, topK) {
   const hitTitles = r.map((x) => x.c?.title ?? '')
+  // R5 评估口径(#15 精确化): per-anchor 记录排名 → MRR 与 recall@k 可从 ranks 重算
   const anchors = entry.expected?.must_include ?? []
   const perAnchor = anchors.map((a) => {
     const want = a.title ?? a.type ?? ''
-    const hit = hitTitles.some((t) => t === want || (a.type && t.includes(a.type)))
-    return { want, hit }
+    const rank = hitTitles.findIndex((t) => t === want || (a.type && t.includes(a.type))) + 1 // 0=未中
+    return { want, hit: rank > 0, rank }
   })
   const hitCount = perAnchor.filter((a) => a.hit).length
   // L1-006 garbage-control 三层: 命中 + verdict 语义在场 + real_vuln_class=false 排除自检
@@ -69,6 +86,7 @@ export function evalEntry(entry, cards, { topK = TOP_K } = {}) {
   return {
     id: entry.id, layer: entry.layer, scenario: entry.scenario, status,
     hit: `${hitCount}/${anchors.length}`, hitTitles, verdictOk,
+    ranks: perAnchor.map((a) => a.rank), // R5 #15: 锚排名序列(0=未中) → recall@k/MRR 可重算
     realVulnClass: entry.real_vuln_class ?? null,
   }
 }
