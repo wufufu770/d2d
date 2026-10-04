@@ -507,7 +507,7 @@ def test_not_dup_empty():
     assert not titles_duplicate("x", "")
 
 # ---- #5: /write/endpoint upsert(真实 kuzu) ----
-kuzu = pytest.importorskip("kuzu")
+from graphd.app import kuzu  # noqa: E402 — LBD-1b 探路: 引擎单一化(同进程双引擎共存=符号拦截 Segfault, 见 docs/lbd1b-blockers.md)
 from graphd.app import upsert_endpoint, SCHEMA
 
 def _endpoint_conn(tmp_path):
