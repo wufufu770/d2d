@@ -348,11 +348,33 @@ push 与 commit 同纪律走工作流通道即可，不构成 LBD-2 前置批阻
 T4-3-3 同文件交互 push 成功前例 vs 本批拦截]；keep 形态 16 实例量级 buffer manager mmap 约束[kuzu/ladybug 共同]登记
 长稳观察项[生产单实例与 pytest 实际形态均不触发]；报告 docs/lbd1b-blockers.md；
 基线 pytest **414**/mocha **1981**/panel 88[零代码批——main 零改动，改动全在探路分支]）
-下一步建议（**当前唯一有效**·LBD-1b 时点）：**LBD-2 前置批**（测试侧引擎单一化收编
+下一步建议（历史·LBD-1b 时点，已被后续批单值化取代）：**LBD-2 前置批**（测试侧引擎单一化收编
 从探路分支 lbd1b-probe 合并入库——rebase+manifest regen+双轨全量验证；无阻断项，
 push 走工作流通道）；模型窗口三步仍悬置[归用户窗口]；EV-2 实弹二选一/第四轮冷读评审
 仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批
 归用户
+LBD-2-pre ✅（**探路分支合并批**[LBD-2 生产切换前置；零生产面]：**merge --no-ff 零
+冲突自动合**[预期 manifest 冲突未发生——两侧改 manifest 不同行（probe 动 tests 行/main
+动 docs 行），git 自动合并后恰为正确终态；regen 校验无 diff 故 manifest 族自然免落；
+merge commit f7db4b7 双 parent[49d9b6b+9ed0b0f]保探路分支原 hash 留痕]；**合并 diff
+干净度**=49d9b6b..f7db4b7 恰 6 tests 文件 7+/6-+manifest[零额外漂移]；**双轨全量验证
+[合并后 main 实测]**=缺省态 kuzu **414 passed 101.20s**/ladybug 轨
+`P2P_GRAPH_ENGINE=ladybug+LBUG_C_API_LIB_PATH` **414 passed 90.31s**[反快 10.7%]/
+mocha **1981**/panel **88**——LBD-2 go 最终证据；**runbook-storage §八补 liblbug 供给
+前置**[wheel 不带 C API 本体→release 资产下载 sha256 锚定+落位 <staging>/lib/ladybug/
++8.2.5 配置翻转 env 前缀注入 LBUG_C_API_LIB_PATH——注入点按生产启动形态
+`python3 graphd/app.py`+env 前缀定稿]；**docs/lbd2-readiness-checklist.md 就绪检查单**
+[A 就绪态 7 项/B 切换 5 步/C 六步验证/D 回滚 5 步/E 观察期 4 项——逐项可勾选，用户 go
+后另批执行]；**机会项 R5 模型窗口=仍关登记**[embed-model-fetch --mirror 双源 6 尝试
+全败[model.onnx 卡住]，本轮时间戳 2026-10-04 ~23:05；on 真值持续悬置不硬凑；backfill
+目标=techniques.json 卡库文件[非图库]已勘明，窗口开后 apply 前备份零风险化]；kuzu 退役
+条件随 LBD-1b 定性收敛[bak 需求消失+观察周期]；探路分支远端保留[研究留痕，清理归卫生批]；
+基线 pytest **414**/mocha **1981**/panel **88**）
+下一步建议（**当前唯一有效**·LBD-2-pre 时点）：**LBD-2 生产切换归用户 go**[runbook §八
++lbd2-readiness-checklist.md 全件就绪——A 段 7 项就绪态核验为切换批第一步；本批零生产
+面红线保持：切换动作全部归 go 后另批]；R5 模型窗口三步仍悬置[窗口关登记 2026-10-04
+~23:05，窗口开即补]；EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构
+小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
