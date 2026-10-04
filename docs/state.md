@@ -370,11 +370,36 @@ mocha **1981**/panel **88**——LBD-2 go 最终证据；**runbook-storage §八
 目标=techniques.json 卡库文件[非图库]已勘明，窗口开后 apply 前备份零风险化]；kuzu 退役
 条件随 LBD-1b 定性收敛[bak 需求消失+观察周期]；探路分支远端保留[研究留痕，清理归卫生批]；
 基线 pytest **414**/mocha **1981**/panel **88**）
-下一步建议（**当前唯一有效**·LBD-2-pre 时点）：**LBD-2 生产切换归用户 go**[runbook §八
+下一步建议（历史·LBD-2-pre 时点，已被后续批单值化取代）：**LBD-2 生产切换归用户 go**[runbook §八
 +lbd2-readiness-checklist.md 全件就绪——A 段 7 项就绪态核验为切换批第一步；本批零生产
 面红线保持：切换动作全部归 go 后另批]；R5 模型窗口三步仍悬置[窗口关登记 2026-10-04
 ~23:05，窗口开即补]；EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构
 小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+LBD-2 ✅（**生产切换批**[kuzu→LadybugDB；go 授权=批提示词；2026-10-04 23:43–23:52 CST]：
+**切换宣告成功**——C 段六步全绿。**LBD-2-0 核查**=活跃 engagement 0+磁盘足+原实例全缺省
+形态实锚[PID 1690591 零 P2P_* env]+**新发现 systemd --user unit 托管**[d2d-graphd.service
+Restart=on-failure——配置翻转正确形态=改 unit Environment 三件而非手动进程]；**B 五步
+计时**=停写确认[active_eng=0]→EXPORT 3.13s[21 文件 4.2MB]→IMPORT 6.51s→DEFAULT 回填
+两条各 0 行[保真复现]→翻转[**插曲：首次翻转失败即回滚**[系统 python3 无 ladybug 模块
+崩溃循环 6 次→stop+删三行 9s 恢复 kuzu 在线]→窗口外 pip user 层装 ladybug==0.21.2
+[与 kuzu 同构先例]→二次翻转 1s health OK+environ 三件实锚]；**C 六步**=health 无
+schema_degraded+**18 表行数逐表全等 MISMATCH=0**[Task 1381/Finding 777/Signal_ 5108/
+DERIVED_FROM 6648…]+三代表查询[272/聚合/9]+stability-view 20 eng+双签探针[not found
+零写入]+性能抽测 5 轮中位 13.3/20.5/16.2ms[vs LBD-1 基线 20.5/22.0/16.5 全同带或更优]；
+**原库零写证明链**=db 本体三态哈希一致[f1dd0d6d…]+wal 变化定格回滚窗口[23:47:31 引擎
+checkpoint 生命周期行为，期间零外部写请求]+全程写请求审计零图写入；**观察期基线**
+[RSS 166.9MB/9 线程/库 26MB/错误计数 0/性能三值]落 docs/lbd2-cutover-record.md §五；
+**AGENTS.md 第 15 条观察期纪律两条**[①每批 A 层加快照对比项②graphd 查询面变更批
+push 前双轨全量]；ladybug 运行时=user 层 pip 包+liblbug.so.0.21.2[%h/lib/ladybug/，
+so 哈希 7784b103… 新锚]；检查单 A2 修正双哈希锚形态+顶部执行注记；**缺省引擎翻转+kuzu
+退役复评=观察期满 clean 后另批本批未做**；基线 pytest **414**/mocha **1981**/panel
+**88**[零代码批——main 零代码 diff，切换=运维动作+docs]）
+下一步建议（**当前唯一有效**·LBD-2 时点）：**观察期 ≥2 周**[AGENTS.md 15 两条纪律生效：
+每批 A 层 L1 快照对比+graphd 查询面变更批双轨全量；期满 clean→缺省引擎翻转+kuzu 退役
+复评另批[WRAP-4 或 micro-batch]；异常越带即回滚[unit 删三行 Environment+daemon-reload
++restart]]；R5 模型窗口三步仍悬置[窗口关登记 2026-10-04 ~23:05]；EV-2 实弹二选一/
+第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁
+候选二批/探路分支远端清理卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），

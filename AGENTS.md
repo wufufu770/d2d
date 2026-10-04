@@ -130,6 +130,16 @@ mocha 通道瞬断（-1）按先例手动实锚 + CI 全量最终裁决。
    HOME 不同必翻红。判别口径：**被实现的环境相关逻辑读取比对的值=违规**；测试注入向量
    （osHome 显式参数/mock 虚拟路径，实现不读真实环境）=合法。落库时以
    `grep -rn "/home/" tests plugin/*/test` 扫描并逐条按口径审查。
+15. **存储引擎观察期纪律（LBD-2 切换批设立，2026-10-04 生效，观察期 ≥2 周）**：
+   生产 graphd 已翻转为 LadybugDB（unit 三件 Environment，原 kuzu_db 零写保留=回滚资产，
+   见 docs/lbd2-cutover-record.md）。观察期内两条常设：
+   ① **每批 agent 批开工 A 层新增"L1 快照 vs 切换基线"对比项**——stability-view 产出与
+   docs/lbd2-cutover-record.md §观察期基线（RSS ~167MB/9 线程/错误计数 0）对表，越带即
+   停批回报；
+   ② **观察期内 graphd 查询面代码变更批，push 前本地双轨全量**（缺省 kuzu+ladybug 各
+   pytest 414，合计约 3 分钟；ladybug 轨要件=系统 python user 层 `ladybug==0.21.2`+
+   `LBUG_C_API_LIB_PATH=$HOME/lib/ladybug/liblbug.so.0.21.2`）。
+   缺省引擎翻转+kuzu 退役复评=观察期满 clean 后另批（WRAP-4 或 micro-batch）。
 
 ## 提示词生成规范（给生成批次提示词的一方，人或 AI）
 固定结构：进入[阶段号] → 背景 → 拍板决定（已授权决策直接执行）→
