@@ -11,6 +11,12 @@
     "deep": { "primary": "<provider>/<model>", "backup": "" },
     "creative": { "primary": "<provider>/<model>", "backup": "" },
     "verify": { "primary": "<provider>/<model>", "backup": "" },
-    "study": { "primary": "<provider>/<model>", "backup": "" }
+    "study": { "primary": "<provider>/<model>", "backup": "" },
+    "xring": {
+      "primary": "<provider>/<model>",
+      "backup": "",
+      "allowlist": ["<provider>/<frontier-model>"],
+      "_xring": "X-Ring 专用(U3): allowlist=启动准入白名单(--model 必须命中, 内容归用户维护——前沿模型准入); 其余键与五角色同构; 占位含'<'=未配置回退 default"
+    }
   }
 }
