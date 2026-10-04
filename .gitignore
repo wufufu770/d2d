@@ -6,6 +6,7 @@ home/.dsh/profiles/
 # 会话与运行时产物
 home/.dsh/sessions/
 graphd/kuzu_db*
+graphd/ladybug_db*
 graphd/graphd.log
 *.log
 *.jsonl
