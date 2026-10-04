@@ -320,10 +320,37 @@ MRR=0.4741（45 锚，与 EV-1 粗口径互证）+garbage-control 全过**；**o
 native 内嵌验证可用）；红线核验=off 态零回归（mocha +10=**1981**）/三门零改动/嵌入分不
 放行结论/调度环核心零 diff/garbage-control 全过；授权两处使用=misses 两档+trace 各一处
 在拍板①②面内；基线 pytest **414**/mocha **1981**/panel 88）
-下一步建议（**当前唯一有效**·R5 时点）：**模型窗口三步**（embed-model-fetch → backfill
+下一步建议（历史·R5 时点，已被后续批单值化取代）：**模型窗口三步**（embed-model-fetch → backfill
 --apply → eval-r5 补 on 真值+扫频回填——四 fail 锚改善≥2 判嵌入质量，不达标=嵌入分降级
 为报告面）；LBD-2 切换裁决悬置归用户；EV-2 实弹二选一/第四轮冷读评审悬置归用户；其余
 候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批归用户
+LBD-1b ✅（**切换阻断项探路**[LBD-2 HOLD 两条硬证据解锁调查；三探针+隔离 venv 复跑；
+零生产面——探路分支 lbd1b-probe 不合并主分支]：**两条硬证据全部改写**——①"多实例建销
+Segfault"根因实为**同进程双引擎共存符号拦截**（graphd.app ladybug 顶替×测试文件
+importorskip 真 kuzu；ladybug C API 以 RTLD_GLOBAL dlopen liblbug.so，同源符号拦截
+_kuzu 扩展；实证=收编前全量 pytest ladybug 轨 SIGSEGV exit 139[GPF in _lbug 扩展，崩点
+h15 真 kuzu Connection.execute]+E4 双引擎交错建销 teardown GPF+纯单引擎 40 轮三形态
+[close/noclose/keep]零崩+E2 最小共存单对实例不崩[需累积态]）②"h18 reset RuntimeError
+同根生命周期"实为 **liblbug.so 获取缺失（环境件）**——wheel 只带 Python 绑定不带 lib，
+release 资产 liblbug-linux-x86_64.tar.gz[sha256 f3de0f9b…c94c4]+LBUG_C_API_LIB_PATH
+即解；lib 修复后 h18 reset 全链[close→rmtree→重建→init_schema]走通，残余失败=测试侧
+kuzu.Connection 混包 ladybug Database[随收编消解]；**三路径判定**=等上游[作废——0.21.2
+已是 PyPI 最新，387 issues 无此缺陷，根因在仓内测试侧]/fixture 单实例化[不必要——不治
+共存根因]/分轨兜底[不再需要]/**④测试侧引擎单一化收编[解锁 LBD-2：6 文件 6 处 import
+（3×import kuzu+3×importorskip→from graphd.app import kuzu，diff 7+/6-），收编后
+ladybug 轨全量 414 绿 85.18s[反快于 kuzu 轨 89.58s]+缺省态 414 绿 89.58s 零回归]**；
+探路分支 2 commit[2b81c3f tests 收编+9ed0b0f manifest]留本地未合并未推远端——**推送被
+Mimosa L3 拦截[运营面新发现]**：30 高危全落 tests/test_graphd_gates.py 既有对抗载荷行
+[非本批新增]，T4-3-3 同文件 push 成功前例与此番拦截并存=扫描窗口/规则疑似批次间变化
+[文件级全量取代 diff 级]，LBD-2 前置批合并推送前须解决[豁免面/窗口 diff 化/人工裁决
+留痕三候选]；keep 形态 16 实例量级 buffer manager mmap 约束[kuzu/ladybug 共同]登记
+长稳观察项[生产单实例与 pytest 实际形态均不触发]；报告 docs/lbd1b-blockers.md；
+基线 pytest **414**/mocha **1981**/panel 88[零代码批——main 零改动，改动全在探路分支]）
+下一步建议（**当前唯一有效**·LBD-1b 时点）：**LBD-2 前置批**（测试侧引擎单一化收编
+从探路分支 lbd1b-probe 合并入库——rebase+manifest regen+双轨全量验证；**前置阻塞=
+Mimosa L3 对 tests/test_graphd_gates.py 既有对抗载荷行的推送拦截须先解决**[三候选归
+用户裁决]）；模型窗口三步仍悬置[归用户窗口]；EV-2 实弹二选一/第四轮冷读评审仍悬置归
+用户；其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
