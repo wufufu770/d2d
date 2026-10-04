@@ -15,7 +15,9 @@ jobs:
           # (kuzu==0.11.3+pytest==9.1.1 钉版 — 弃"pip install kuzu pytest"未钉形态)
           python-version: '3.12'
       - name: 插件测试(pentest-dsh)
-        run: cd plugin/pentest-dsh && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npx mocha "test/*.test.mjs"
+        # XR-P0: 前置根依赖安装 —— xring 测试三级上跳 import scripts/xring/validate.mjs,
+        # 其 ajv/ajv-formats 在根 package.json(CI 须先 npm ci 根, 否则 ERR_MODULE_NOT_FOUND)
+        run: npm ci --no-audit --no-fund && cd plugin/pentest-dsh && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npx mocha "test/*.test.mjs"
       - name: 面板测试(d2d-panel)
         run: cd plugin/d2d-panel && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && node scripts/build-client.mjs && npm test
       - name: graphd 门禁测试(全目录 tests/ 含 gatewarden/, 基线 406 例)
