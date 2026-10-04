@@ -421,12 +421,40 @@ scripts/browser/ 零交集；model-policies=五角色结构+xring 增量一节[U
 可承载零源码改动**；**修订路线五 Phase**[P0 骨架+spawn 通道/P1 写面接线/P2 面板 tab/
 P3 循环编排/P4 受控靶验收]，存储域触碰预期=0；基线 pytest **414**/mocha **1981**/
 panel **88**[docs-only 零代码]）
-下一步建议（**当前唯一有效**·XR-0 时点）：**X-Ring 方案全文补齐**[用户提供 v1.1 全文
+下一步建议（历史·XR-0 时点，已被后续批单值化取代）：**X-Ring 方案全文补齐**[用户提供 v1.1 全文
 [M1-M7]→docs/xring-plan.md §五补位+§三/§四对齐复核——XR-P0 开工前置]；XR-P0 排批
 [全文到位后启动：记录面+spawn 通道+roles.xring 增量实测+启动确认面]；LBD-2 观察期
 进行中[AGENTS.md 15]；R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；
 其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理
 卫生批——排批归用户
+XR-P0 ✅（**X-Ring 契约批**[方案全文补齐+三 Schema+prompt 模板+roles.xring+监控
+skeleton+命令面骨架]：**族 0 全文入库**[docs/xring-plan.md §五原样+对齐出入清单五条
+——quarantine 按现状收敛/端点映射精确化/B 包尾注"原始调研归用户层"/"下一步"不入库/
+与拍板记录一致确认]；**族 1 三 Schema**[ajv strict 8.17.1+ajv-formats（根依赖，仓内
+首引）+validate.mjs 模块级预编译校验器——hypotheses/repro_paths/lessons 三契约
+additionalProperties:false 封闭面]；**族 2 prompt.md**[运行前提声明+产出契约+渲染占位
+{{RUN_ID}}/{{WORKSPACE}}——**零流程指令 grep 断言锁定**[10 模式禁词零命中]；流程注入
+全在 scheduler taskFull 拼装链=X XR-0 定谳三落地]；**族 3 roles.xring**[数据目录实文件
+授权例外落位+example 模板入库——allowlist 白名单初始占位+注记"内容归用户维护"；
+**五环零扰动实测**[resolveModel 五角色加键前后同值+xring 占位回退 null+loadPolicies
+六键]]；**族 4 monitor.mjs skeleton**[计数器外置双外置红线：budgetCheck/parseUsageLine/
+accumulateUsage/collectTranscriptUsage[通道① unzstd 注入点]/appendEvent 纯函数+轮询
+骨架——不接真 worker[P1]；超限五步=SIGTERM→SIGKILL→读 workspace→回流→stop 事件]；
+**族 5 cli.mjs**[start --model 必填∈allowlist 拒绝路径/--max-hours 3·cap6/--max-tokens
+100 万·cap200 万超限拒绝不 clamp/成本上界单价无源原值显示；status 只读投影/stop 唯一
+干预例外]；**契约测试面 26 例**[plugin test/xring.test.mjs 三级上跳 import]；**CI 适配
+两轮**[①插件测试前置根 npm ci[ajv 根 lock 供给]②测试环境依赖断言双态修正[五环结构性
+一致性断言+allowlist 仓态(example 模板)必含+部署态条件核——AGENTS.md 14 同族教训自纠
+两连]]；A 层开工 L1 快照 PASS[RSS 174MB/线程 9/新错误 0]；**网络窗口裁决定谳**[push
+exit 128=connect 失败非 Mimosa——工作流通道豁免结论保持；双探测通过才推定式]；
+零 spawn 真 worker[红线]；基线 pytest **414**/mocha **2006**[+25→26 xring 契约测试]/
+panel **88**）
+下一步建议（**当前唯一有效**·XR-P0 时点）：**XR-P1 排批归用户**[spawn 接线（adapter
+直调 ring='xring'+真 worker+监控进程接核）+三级产出六写端点通道实测+verify 独立重放
+骨架；前置=allowlist 白名单内容归用户维护（当前占位——cli start 会拒绝直至用户填入
+前沿模型 id）]；LBD-2 观察期进行中[AGENTS.md 15]；R5 模型窗口三步/EV-2 实弹二选一/
+第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁
+候选二批/探路分支远端清理卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
