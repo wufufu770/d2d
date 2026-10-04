@@ -394,12 +394,39 @@ push 前双轨全量]；ladybug 运行时=user 层 pip 包+liblbug.so.0.21.2[%h/
 so 哈希 7784b103… 新锚]；检查单 A2 修正双哈希锚形态+顶部执行注记；**缺省引擎翻转+kuzu
 退役复评=观察期满 clean 后另批本批未做**；基线 pytest **414**/mocha **1981**/panel
 **88**[零代码批——main 零代码 diff，切换=运维动作+docs]）
-下一步建议（**当前唯一有效**·LBD-2 时点）：**观察期 ≥2 周**[AGENTS.md 15 两条纪律生效：
+下一步建议（历史·LBD-2 时点，已被后续批单值化取代）：**观察期 ≥2 周**[AGENTS.md 15 两条纪律生效：
 每批 A 层 L1 快照对比+graphd 查询面变更批双轨全量；期满 clean→缺省引擎翻转+kuzu 退役
 复评另批[WRAP-4 或 micro-batch]；异常越带即回滚[unit 删三行 Environment+daemon-reload
 +restart]]；R5 模型窗口三步仍悬置[窗口关登记 2026-10-04 ~23:05]；EV-2 实弹二选一/
 第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁
 候选二批/探路分支远端清理卫生批——排批归用户
+XR-0 ✅（**X-Ring 旁路通道方案入库+衔接面审计批**[docs-only 零代码；审计只读]：**材料
+缺口如实登记**——方案 v1.1 全文[M1-M7]未随批提示词到达且仓内无先存材料[全仓 grep 零
+命中]，docs/xring-plan.md 以骨架形态入库[拍板记录 U1/U2/U3+四补强+设计红线五条+七项
+边界实锚重构+路线修订]，全文节留位待材料=**唯一阻断级悬置[XR-P0 开工前应完成]**；
+**六项审计定谳全过**[docs/xr0-audit.md，证据 path:line 可复核]——①token 通道=**通道①
+dsh 会话转录 usage 精确可得**[session.v3.jsonl.zstd 四字段 input/output/total/
+cacheRead+按 cwd 分桶+unzstd 只读累计先例 adapter:101]，mitm 计量不启用[字节≠token]，
+降级③备而不用②无租约 worker=**七项边界全兼容零红线命中**[eng/leaseId 均 spawnWorker
+可选参:244/:264+worker-token 写权不依赖租约:241-243+egress 动态 scope 无 engagement
+回落白名单:3+本地受控靶 NO_PROXY 直连不过 scope 面]③**A2 前提成立**[headless profile
+cordis.yml 空[]+patch 70 行零 prompt/kind/gate/环 命中=流程注入全在 scheduler taskFull
+拼装链:659——旁路直调 adapter 零流程注入缺省成立；MAX_STEPS 预算段:186-189 属成本
+约束非流程]④quarantine 链=**写入即隔离强于方案 1 tick 语义复用**[:1009]+六写端点精确
+映射[/write/finding+transition/hypothesis+signal/experience[quarantined→出池 host
+评审面:1035]/dual-sign/frontier]+差距=verify 独立重放编排[XR-P1/P3 承接]⑤面板=纯
+增量 view.xring+host snapshot 只读投影[standalone 只读 GET fail-closed 先例:3]与
+scripts/browser/ 零交集；model-policies=五角色结构+xring 增量一节[U3]⑥scheduler 保障
+面代价清单[租约 120s/停滞 90s 静默窗先例/killAllWorkers]→**R10=监控进程等价接管全部
+可承载零源码改动**；**修订路线五 Phase**[P0 骨架+spawn 通道/P1 写面接线/P2 面板 tab/
+P3 循环编排/P4 受控靶验收]，存储域触碰预期=0；基线 pytest **414**/mocha **1981**/
+panel **88**[docs-only 零代码]）
+下一步建议（**当前唯一有效**·XR-0 时点）：**X-Ring 方案全文补齐**[用户提供 v1.1 全文
+[M1-M7]→docs/xring-plan.md §五补位+§三/§四对齐复核——XR-P0 开工前置]；XR-P0 排批
+[全文到位后启动：记录面+spawn 通道+roles.xring 增量实测+启动确认面]；LBD-2 观察期
+进行中[AGENTS.md 15]；R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；
+其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理
+卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
