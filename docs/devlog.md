@@ -310,3 +310,10 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 关键裁决：**探针 3 的原方案（conftest 单实例化）判定为"不必要且不治本"而非实施**——单实例化只减实例数不消双引擎共存，原方案即使做完 Segfault 仍在（提示词止损条款"如实判定不可行不硬改"的正例）；**收编优于单实例化**（6 行 vs 40+ 处内联建库改造，且每测试独立建库的隔离语义原样保留）；**推送拦截的通道归因**（先误判为全通道拦截作探路分支留本地处置，W4 复推实锚工作流通道免疫后回改文档——事实先行，文档随终态修正）
 教训沉淀：**"引擎级崩溃"归因要先把环境件剥离**（LBD-1 的两条"硬证据"一条是 lib 缺失、一条是仓内混用——复现矩阵先把单引擎形态跑干净才暴露真根因；隔离 venv 重建是探路批第一功臣）；**faulthandler 栈与 dmesg 崩点要交叉读**（栈在 kuzu/connection.py、GPF 落 _lbug.so 的跨界组合才是定性关键，单看任一侧都会误归因）
 开放项：LBD-2 前置批（收编合并+Mimosa 拦截解决三候选归用户）；模型窗口三步/EV-2 实弹/冷读评审仍悬置归用户；/tmp 实验产物（venv+lib+复现脚本×5）复盘后清理
+
+## 2026-10-04 · LBD-2-pre 探路分支合并批（LBD-2 生产切换前置；零生产面——切换动作全部归 go 后另批）
+底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **414** / mocha **1981** / panel **88**
+产出：**merge --no-ff 零冲突自动合**（merge commit f7db4b7 双 parent[49d9b6b+9ed0b0f]——预期 manifest 冲突未发生：两侧改 manifest 不同行，git 自动合并后恰为正确终态，regen 校验无 diff 故 manifest 族免落）+**合并 diff 干净度**（49d9b6b..f7db4b7 恰 6 tests 文件 7+/6-+manifest，零额外漂移）+**双轨全量验证[合并后 main 实测]**（缺省 kuzu 414/101.20s + ladybug 轨 414/90.31s 反快 10.7% + mocha 1981 + panel 88——LBD-2 go 最终证据）+**runbook-storage §八补 liblbug 供给前置**（wheel 不带 C API 本体→release 资产下载 sha256 锚定+落位+8.2.5 env 前缀注入 LBUG_C_API_LIB_PATH，注入点按生产启动形态 `python3 graphd/app.py` 定稿）+**docs/lbd2-readiness-checklist.md 就绪检查单**（A 就绪 7 项/B 切换 5 步/C 六步验证/D 回滚 5 步/E 观察期 4 项）+**机会项 R5 模型窗口=仍关登记**（--mirror 双源 6 尝试全败，时间戳 2026-10-04 ~23:05；backfill 目标=techniques.json 卡库文件已勘明非图库）
+关键裁决：**merge 形态选 --no-ff 而非 rebase+ff**（仓库有 dependabot merge commit 惯例；保探路分支原 hash[2b81c3f/9ed0b0f]与远端分支留痕一致——边界条款"合并后远端分支保留"的反向约束）；**预期 manifest 冲突不发生的机理归档**（合并的自动合并按 hunk 进行——probe 只动 tests 行、main 只动 docs 行，无重叠 hunk；教训=LBD-1b 报告里"合并前须 regen（分叉已知）"的担心被 git 三方合并自然化解，regen 保留为验证步而非必需步）；**机会项失败按边界条款登记不硬凑**（窗口关=合法登记，时间戳入 state 单值化段）
+教训沉淀：**自动合并的 hunk 级语义要先算再防**（W1 脚本内嵌的止损分支[冲突文件集≠{manifest}→停]没有白设——它验证了"零冲突"结论本身，防的就是预期外漂移）；**机会项的执行面要预先勘明**（backfill 写的是 techniques.json 卡库文件而非图数据库——不碰零写清单，apply 前备份零风险化的处置才成立；不勘明就会误套"零生产面"拒执行或误放行）
+开放项：**LBD-2 生产切换归用户 go**（runbook §八+就绪检查单全件就绪）；R5 模型窗口[窗口关登记 2026-10-04 ~23:05]；EV-2 实弹/冷读评审/密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户

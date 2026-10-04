@@ -167,6 +167,13 @@ curl -H "X-Auth: recov1-drill" http://127.0.0.1:8799/health   # 无 schema_degra
 - 用户裁决通过引擎分轨方案（pytest 维持 kuzu 轨；kuzu 依赖保留至上游修复多实例问题——
   移除时机由 WRAP-4 顺延为"上游修复+一个观察周期"）。
 - soak 结论达标（docs/lbd1-rehearsal-report.md §四）。
+- **liblbug 供给就位（LBD-2-pre 补，LBD-1b 新发现依赖）**：PyPI wheel 只带 Python 绑定
+  不带 C API 本体——切换前置须①下载 GitHub release v0.21.2 资产
+  `liblbug-linux-x86_64.tar.gz`（sha256 `f3de0f9be86fffd0919bc7a7f65699d1b099d0a1df7115142fa1606ba83c94c4`
+  锚定，不符即弃）②解包得 `liblbug.so.0.21.2` 落位 `<staging>/lib/ladybug/`（常驻路径，
+  与 staging 导出包同盘）③校验 `sha256sum <staging>/lib/ladybug/liblbug.so.0.21.2` 与
+  解包清单一致。缺 lib 时 ladybug 轨任何建库动作抛 RuntimeError（`_lbug_capi.py:186`
+  "Could not find lbug C API shared library"——LBD-1b §三实锚）。
 
 ### 8.2 切换步骤（停写窗口内，预计 <10 分钟）
 1. **停写窗口**：停止调度环认领（panel 或宿主暂停 engagement）——图写入面停。
@@ -174,8 +181,10 @@ curl -H "X-Auth: recov1-drill" http://127.0.0.1:8799/health   # 无 schema_degra
 3. **新库导入**：ladybug 新库 `IMPORT DATABASE '<staging>/export'`（RECOV-1/本批已证）。
 4. **DEFAULT 回填两条**（runbook §6.2 标准处置——kuzu 导出在 LadybugDB 上虽语义保真，
    但存量 NULL 面（若有）仍须清零）：UPDATE consensus_status/reasoning_path IS NULL → ''。
-5. **配置翻转**：生产 graphd 停止 → 以 `P2P_GRAPH_ENGINE=ladybug P2P_GRAPH=<new_db>`
-   重启（原 kuzu_db 目录**零写零删除**保留）。
+5. **配置翻转**：生产 graphd 停止 → 以 `P2P_GRAPH_ENGINE=ladybug P2P_GRAPH=<new_db>
+   LBUG_C_API_LIB_PATH=<staging>/lib/ladybug/liblbug.so.0.21.2` 重启（生产启动形态=
+   `python3 graphd/app.py` env 前缀注入，env.sh alias 同口径；原 kuzu_db 目录**零写零删除**
+   保留）。
 6. **验证清单**：/health（无 schema_degraded 键）→ 逐表行数比对（对 8.2.2 导出包计数）
    → RECOV-1 三查询 → L1 stability-view 冒烟 → 双签端点只读探针（/write/dual-sign-transition
    对测试 finding 走一转态并审计核对）。
