@@ -331,3 +331,10 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 关键裁决：**材料缺口的处置形态**（全文未到=不虚构"全文"入库，以批提示词拍板子集为方案侧依据出骨架+定谳报告——六项审计对象全是仓内现状不受影响，唯一被缺口阻断的是 xring-plan §五占位与 XR-P0 开工，如实单值化为下一步首项）；**审计判定全部锚 path:line**（六写端点 11 条/adapter env 块行段/lease 可选语义——硬结论主 agent 亲证，定谳报告可复核形态交付）
 教训沉淀：**新通道审计先锚"注入面在谁手里"**（X-Ring 零流程注入的可行性一句话定谳=profile 层空骨架+流程全在 scheduler taskFull 拼装链——grep patch 文件零命中比通读 adapter 335 行更快锁定）；**spawnWorker 可选参语义要读到 if 守卫行**（:244 `if (leaseId)`/:264 eng 三元回落——签名含字段≠依赖字段，兼容性判定以守卫行为准）
 开放项：**方案 v1.1 全文补齐+对齐复核（XR-P0 前置）**；XR-P0 排批归用户；LBD-2 观察期进行中；R5 模型窗口/EV-2 实弹/冷读评审/密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+
+## 2026-10-05 · XR-P0 X-Ring 契约批（全文补齐+三 Schema+prompt+roles.xring+监控/命令骨架）
+底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **414** / mocha **2006**（+26: xring 契约测试面）/ panel **88**
+产出：族 0 全文入库（xring-plan §五原样+出入清单五条——quarantine 现状收敛/B 包尾注/与拍板一致确认）+族 1 三 Schema（ajv strict+模块级预编译校验器+ajv/ajv-formats 根依赖首引）+族 2 prompt.md（零流程 grep 断言 10 模式锁定+渲染占位）+族 3 roles.xring（数据目录授权例外+example 模板入库+allowlist 占位；**五环零扰动实测**）+族 4 monitor.mjs（预算判定/usage 累计/事件写入纯函数+超限五步骨架——双外置红线，不接真 worker）+族 5 cli.mjs（--model 白名单拒绝/上限拒绝不 clamp/成本原值显示/status/stop）+契约测试 26 例+CI 适配两轮（根 npm ci 前置+断言双态修正）
+关键裁决：**CI 连红两轮的同一根因=测试环境依赖**（本地过=本机数据目录有实配 policies；CI=回退链尽头空 policies——AGENTS.md 14 的广义形态：环境相关值不只路径字面量，**部署态数据的有无也是环境依赖**；修正=断言改"仓态可测量[example 模板]+部署态条件核+运行语义结构性断言[一致性而非具体值]"）；**push 128 网络裁决**（三轮 200/超时交替的抖动窗——exit 128=connect 失败非 Mimosa 拦截，工作流通道豁免结论保持；新定式=连续双探测通过才推）
+教训沉淀：**引根依赖前先看 CI 装到哪一层**（npm ci 在 plugin/ 内跑——根 node_modules 在 CI 不存在，本地存在=本地过 CI 挂的经典分层差异；根依赖引入必须同步改 workflow 安装面）；**断言"值"不如断言"路径一致"**（五环 resolveModel 具体值随部署态漂移，五环彼此一致+xring 恒 null 才是跨环境成立的语义）
+开放项：**XR-P1 排批归用户**（spawn 接线+写面实测+verify 重放骨架；前置=allowlist 白名单内容归用户填入）；LBD-2 观察期；R5 模型窗口/EV-2 实弹/冷读评审/密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
