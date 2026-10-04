@@ -21,7 +21,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-import kuzu
+from graphd.app import kuzu  # LBD-1b 探路: 引擎单一化(与 graphd.app 同引擎, 禁双引擎同进程共存)
 
 import graphd.app as graphd_app
 from graphd.app import SCHEMA, init_schema
