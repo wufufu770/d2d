@@ -301,10 +301,29 @@ API 费）+存储=卡内嵌 embedding 字段暴力余弦（120 卡级，图引�
 ≥2 进 topK+garbage-control 防退化+三门（quota/denylist/注入扫描）零交互]；**按行授权
 申请两项**[scheduler.js:398 邻域 misses 两档放宽（#16 收口）+注入点 trace 采集（#15
 完整方案，brain-audit §6.1 设计照实施）]；预估 R5 实施批 M（3-4 族）；零代码批零改动）
-下一步建议（**当前唯一有效**·R5-0 时点）：**R5 方案卡归用户确认**（确认后进 R5 实施批
+下一步建议（历史·R5-0 时点）：**R5 方案卡归用户确认**（确认后进 R5 实施批
 ——按行授权两项随批申请）；LBD-2 切换裁决仍悬置归用户（HOLD 建议+引擎分轨方案）；
 EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/
 js catch 146/门禁候选二批——排批归用户
+R5 ✅（**embedding 检索增强实施**[方案卡已确认；五族+按行授权两项]：族 1 embed 模块
+[domain/embed.mjs 懒加载单例+BGE 查询前缀+mean pooling+降级链 warn-once；config/
+retrieval-weights.mjs 三权重单表 0.25/0.25/0.5+白名单覆盖]；族 2 写入端[scripts/brain/
+embed-backfill.mjs dry-run 缺省/--apply 幂等 skip——模型缺 exit 3 已实测；promote/study
+钩点=backfill 全量兜底最小化散布]；族 3 查询端[knowledge-retrieval.mjs 双路径 off 原公式
+逐字节保留/on 三权重+retrieveKnowledgeWithEmbed async 入口；scheduler.js :391 换入口]；
+族 4 #15/#16[misses 两档=检索零收但指纹兜底有卡语义缺口档+knowledge-trace append-only
+五键+3 测含 trace 块零赋值静态断言]；族 5 评估[**off 基线精确口径固化 recall@3=0.5556/
+MRR=0.4741（45 锚，与 EV-1 粗口径互证）+garbage-control 全过**；**on 对照与扫频降级登记**
+——模型下载双源全败（HF+镜像网络窗口），降级链实测 on-without-model=off 逐字节同分，
+脚本就绪待窗口补跑 docs/r5-eval-report.md §五四步]；供应链 embed-model-fetch.mjs 钉 URL
++sha256 表+失败即删；依赖 @huggingface/transformers+onnxruntime-node（--ignore-scripts
+native 内嵌验证可用）；红线核验=off 态零回归（mocha +10=**1981**）/三门零改动/嵌入分不
+放行结论/调度环核心零 diff/garbage-control 全过；授权两处使用=misses 两档+trace 各一处
+在拍板①②面内；基线 pytest **414**/mocha **1981**/panel 88）
+下一步建议（**当前唯一有效**·R5 时点）：**模型窗口三步**（embed-model-fetch → backfill
+--apply → eval-r5 补 on 真值+扫频回填——四 fail 锚改善≥2 判嵌入质量，不达标=嵌入分降级
+为报告面）；LBD-2 切换裁决悬置归用户；EV-2 实弹二选一/第四轮冷读评审悬置归用户；其余
+候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
