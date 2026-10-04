@@ -23,7 +23,7 @@ import pytest
 os.environ.setdefault("P2P_GRAPH", os.path.join(tempfile.gettempdir(), "gate-anchor-pytest", "kuzu_db"))
 os.environ.setdefault("D2D_DATA_DIR", os.path.join(tempfile.gettempdir(), "gate-anchor-pytest"))
 
-kuzu = pytest.importorskip("kuzu")
+from graphd.app import kuzu  # noqa: E402 — LBD-1b 探路: 引擎单一化(在上方环境钉定之后导入 graphd.app)
 
 from graphd.gd.schema import (  # noqa: E402 — 环境先钉后导入
     SCHEMA, _CRITICAL_COLUMNS, _verify_critical_columns, init_schema,
