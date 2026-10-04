@@ -447,7 +447,7 @@ accumulateUsage/collectTranscriptUsage[通道① unzstd 注入点]/appendEvent �
 一致性断言+allowlist 仓态(example 模板)必含+部署态条件核——AGENTS.md 14 同族教训自纠
 两连]]；A 层开工 L1 快照 PASS[RSS 174MB/线程 9/新错误 0]；**网络窗口裁决定谳**[push
 exit 128=connect 失败非 Mimosa——工作流通道豁免结论保持；双探测通过才推定式]；
-零 spawn 真 worker[红线]；基线 pytest **414**/mocha **2006**[+25→26 xring 契约测试]/
+零 spawn 真 worker[红线]；基线 pytest **414**/mocha **2007**[1981+26 xring 契约测试]（A/B 复核 B7 笔误修正：总数按 26 例计）
 panel **88**）
 下一步建议（**当前唯一有效**·XR-P0 时点）：**XR-P1 排批归用户**[spawn 接线（adapter
 直调 ring='xring'+真 worker+监控进程接核）+三级产出六写端点通道实测+verify 独立重放
