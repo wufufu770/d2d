@@ -1,5 +1,10 @@
 # LBD-2 生产切换就绪检查单（LBD-2-pre 产出 · 2026-10-04）
 
+> **执行状态：已由 LBD-2 切换批执行完毕（2026-10-04 23:43–23:52，切换成功）**——逐项
+> 留证见 docs/lbd2-cutover-record.md；本单保留为回滚演练/复审骨架。执行中新发现：
+> 生产实例由 systemd user unit `d2d-graphd.service` 托管（翻转形态=改 unit Environment
+> 三件，非手动进程），ladybug 运行时=系统 python user 层包（非 venv）。
+>
 > 用法：用户 go 后另批执行，本单逐项勾选作为切换批的验收骨架。执行蓝图=runbook-storage
 > §八（本单为其可勾选形态，冲突时以 §八 为准）。**零生产面红线全程有效**：执行前生产
 > kuzu_db 零写、生产 graphd 实例零重启、T4-3-2 bak 零触碰。
@@ -9,8 +14,10 @@
 - [ ] **A1 引擎开关面**：`P2P_GRAPH_ENGINE` 缺省 kuzu（生产态零变化）——合并后 main 实测
   （LBD-2-pre 双轨 414 绿：缺省 101.20s / ladybug 90.31s，mocha 1981 / panel 88）
 - [ ] **A2 liblbug 就位**：`liblbug-linux-x86_64.tar.gz`（v0.21.2 资产）下载落位
-  `<staging>/lib/ladybug/liblbug.so.0.21.2`，sha256 复算 =
-  `f3de0f9be86fffd0919bc7a7f65699d1b099d0a1df7115142fa1606ba83c94c4`
+  （LBD-2 执行落位=`%h/lib/ladybug/` 常驻路径），**双哈希锚**——tar.gz 资产包
+  sha256=`f3de0f9be86fffd0919bc7a7f65699d1b099d0a1df7115142fa1606ba83c94c4`（下载校验）
+  + 解包 `.so` 本体 sha256=`7784b10397386b63998d2b6e80e819476569f4e1c5e92ae42d8ea4e92d80cf6f`
+  （就位校验，LBD-2 执行实测新锚）
 - [ ] **A3 ladybug 运行时冒烟**：`LBUG_C_API_LIB_PATH=<A2 路径> python3 -c "import ladybug;
   ladybug.Database('/tmp/lbd2-smoke')"` 建/销一次成功（无 `_lbug_capi.py:186` RuntimeError）
 - [ ] **A4 新库路径**：`<new_db>` 目录已规划（**不在**生产 kuzu_db 路径、不在 bak 路径；
