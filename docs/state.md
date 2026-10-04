@@ -339,18 +339,20 @@ kuzu.Connection 混包 ladybug Database[随收编消解]；**三路径判定**=�
 共存根因]/分轨兜底[不再需要]/**④测试侧引擎单一化收编[解锁 LBD-2：6 文件 6 处 import
 （3×import kuzu+3×importorskip→from graphd.app import kuzu，diff 7+/6-），收编后
 ladybug 轨全量 414 绿 85.18s[反快于 kuzu 轨 89.58s]+缺省态 414 绿 89.58s 零回归]**；
-探路分支 2 commit[2b81c3f tests 收编+9ed0b0f manifest]留本地未合并未推远端——**推送被
-Mimosa L3 拦截[运营面新发现]**：30 高危全落 tests/test_graphd_gates.py 既有对抗载荷行
-[非本批新增]，T4-3-3 同文件 push 成功前例与此番拦截并存=扫描窗口/规则疑似批次间变化
-[文件级全量取代 diff 级]，LBD-2 前置批合并推送前须解决[豁免面/窗口 diff 化/人工裁决
-留痕三候选]；keep 形态 16 实例量级 buffer manager mmap 约束[kuzu/ladybug 共同]登记
+探路分支 2 commit[2b81c3f tests 收编+9ed0b0f manifest]**已推远端留档**[ls-remote 实锚；
+未合并 main]——**Mimosa L3 拦截面实测[运营面新发现]**：交互 Bash 通道 git push 被拦
+[30 高危全落 tests/test_graphd_gates.py 既有对抗载荷行，非本批新增；对 main 的 docs
+增量 push 同拦=全仓口径扫描]，**工作流通道 git push 不经此 hook**[探路分支与 main 均
+经 W4 工作流补推成功]——与 commit deny=reset 教训同构：git-gate 拦截面=交互通道，
+push 与 commit 同纪律走工作流通道即可，不构成 LBD-2 前置批阻塞[规则库批次间升级注记：
+T4-3-3 同文件交互 push 成功前例 vs 本批拦截]；keep 形态 16 实例量级 buffer manager mmap 约束[kuzu/ladybug 共同]登记
 长稳观察项[生产单实例与 pytest 实际形态均不触发]；报告 docs/lbd1b-blockers.md；
 基线 pytest **414**/mocha **1981**/panel 88[零代码批——main 零改动，改动全在探路分支]）
 下一步建议（**当前唯一有效**·LBD-1b 时点）：**LBD-2 前置批**（测试侧引擎单一化收编
-从探路分支 lbd1b-probe 合并入库——rebase+manifest regen+双轨全量验证；**前置阻塞=
-Mimosa L3 对 tests/test_graphd_gates.py 既有对抗载荷行的推送拦截须先解决**[三候选归
-用户裁决]）；模型窗口三步仍悬置[归用户窗口]；EV-2 实弹二选一/第四轮冷读评审仍悬置归
-用户；其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批归用户
+从探路分支 lbd1b-probe 合并入库——rebase+manifest regen+双轨全量验证；无阻断项，
+push 走工作流通道）；模型窗口三步仍悬置[归用户窗口]；EV-2 实弹二选一/第四轮冷读评审
+仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批——排批
+归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），

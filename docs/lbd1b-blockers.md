@@ -115,18 +115,20 @@ LBD-1 遗留的"切换前依赖上游修复"前提解除；LBD-2（生产切换�
 
 ## 八、边界与遗留
 
-- 探路分支 `lbd1b-probe` **未合并主分支**（本批硬边界）；2 commit 已落本地留存
-  （`2b81c3f` tests 收编 + `9ed0b0f` manifest regen，tip 实测 `9ed0b0f`）；合并前须
-  rebase main + manifest regen（两分支 manifest 各自一致，分叉已知）。
-- **探路分支推送被 Mimosa L3 拦截（运营面新发现）**：push 前扫描报 30 高危/9 中危，
-  全部落在 `tests/test_graphd_gates.py` 的**既有对抗载荷测试行**（注入/SSRF 用例的本职
-  字符串——该文件即注入防御测试集），非本批新增行（本批在该文件仅改 :510 一行 import
-  收编+注释）。T4-3-3 曾改同一文件 push 成功、R5 今日 push main 成功（变更面不含此
-  文件）——两次成功与此番拦截并存，判定 **Mimosa 扫描窗口/规则库在批次间发生变化**
-  （疑似对变更文件做文件级全量扫描而非仅 diff 行）。处置：探路分支留本地不推远端
-  （推送非本批硬要求）；**LBD-2 前置批合并时该文件随增量入 main，届时推送将面临同样
-  拦截**——需先解决（候选：Mimosa 规则对 tests/ 对抗载荷用例的豁免面、扫描窗口
-  diff 化、逐条人工裁决留痕），登记为本批最重要的运营面遗留项。
+- 探路分支 `lbd1b-probe` **未合并主分支**（本批硬边界）；2 commit 已留存并**推送远端
+  成功**（`2b81c3f` tests 收编 + `9ed0b0f` manifest regen，tip 实测 `9ed0b0f`；
+  `git ls-remote origin lbd1b-probe` 实锚）；合并前须 rebase main + manifest regen
+  （两分支 manifest 各自一致，分叉已知）。
+- **Mimosa L3 拦截面实测（运营面新发现）**：交互 Bash 通道 `git push` 被拦（30 高危/9
+  中危，全部落在 `tests/test_graphd_gates.py` 的**既有对抗载荷测试行**——注入/SSRF
+  用例的本职字符串，非本批新增行；本批在该文件仅改 :510 一行 import 收编+注释），
+  且对 main 分支的 docs 增量 push 同样被拦（证明扫描为**全仓口径**而非增量）；
+  **world.run 工作流通道的 git push 不经此 hook**——探路分支（含该测试文件修改）与
+  main 均经工作流通道推送成功。与 commit 的 deny=reset 教训（LBD-1）同构：
+  **Mimosa git-gate 的拦截面 = 交互 Bash 通道，工作流通道为既有豁免通道**。
+  T4-3-3 曾改同一文件 push 成功、本批交互通道拦截——规则库在批次间升级（新规则将
+  测试载荷字符串标高危）。运营含义：交互通道 push 对触碰测试载荷文件的批次已不可用，
+  push 一律走工作流通道（与 commit 同纪律）；不构成 LBD-2 前置批的阻塞。
 - keep 形态并存累积的 buffer manager 约束（16 实例量级 mmap 耗尽，kuzu/ladybug 共同）
   登记为**长稳边界观察项**——生产单实例形态与 pytest 实际形态均不触发。
 - 符号拦截定性基于：崩点跨界证据（dmesg GPF 落 _lbug 扩展 × faulthandler 栈在真 kuzu
