@@ -168,7 +168,7 @@ def test_finding_critical_columns_all_present_in_create():
     assert "related_to" not in create  # 存量形态留证(未顺手改 — 只追加零改既有纪律)
 
 
-kuzu = pytest.importorskip("kuzu")
+from graphd.app import kuzu  # noqa: E402 — LBD-1b 探路: 引擎单一化(与 graphd.app 同引擎)
 
 
 def test_init_schema_new_db_repairability_usable(tmp_path):
