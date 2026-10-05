@@ -127,8 +127,10 @@ export function preflightStart(recordRoot) {
 }
 
 /** 孤儿回收入口（拍板 3）：扫 recordRoot, 标 orphaned+遗留回流, stray 报告不杀。 */
-export function recover(recordRoot) {
-  return recoverRuns({ recordRoot })
+export async function recover(recordRoot) {
+  // XR-P4⑤: livePids 接通（P3 缺省 null 使 CLI 面 stray 检测休眠——B 层观察收口）
+  const { liveWorkerPids } = await import('../../plugin/pentest-dsh/adapter-dsh.mjs')
+  return recoverRuns({ recordRoot, livePids: liveWorkerPids() })
 }
 
 /** stop：唯一干预例外——写 stop 事件（监控进程轮询消费后执行终止）。 */
