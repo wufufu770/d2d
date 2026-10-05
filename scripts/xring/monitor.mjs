@@ -40,17 +40,19 @@ export function parseUsageLine(line) {
 }
 
 /**
- * 多行累计（纯函数；语义=**会话内 last-wins**）。
- * XR-P3 调查实证（docs/xrp3-token-investigation.md）: dsh 转录 usage.totalTokens 为
- * 会话累计值（单调递增+cache 抖动微降, 4/4 样本 last==max）——旧求和语义高估 ~16×
- * （探针实录: sumAll 198356 vs 真值 lastTotal 12149）。
+ * 多行累计（纯函数；语义=**会话内 max-wins**）。
+ * XR-P3 调查实证：dsh 转录 usage.totalTokens 为会话累计值——旧求和语义高估 ~16×
+ * （探针实录: sumAll 198356 vs 真值 12149）。
+ * XR-P4② 采纳 max-wins（替代 last-wins）：B 层 30 样本复核发现 2 例计数器回落
+ * （会话内上下文重置/分叉后重新爬升，末值 < 峰值达 2.5×）——预算语境取峰值宁高估
+ * （max ≥ last 恒成立=熔断只早不晚）；跨文件仍求和（每文件=独立会话计数器）。
  */
 export function accumulateUsage(lines) {
   let total = 0
   let messages = 0
   for (const line of lines) {
     const t = parseUsageLine(line)
-    if (t > 0) { messages++; total = t } // last-wins: 累计计数器取末值
+    if (t > 0) { messages++; if (t > total) total = t } // max-wins: 峰值胜（回落不回吐）
   }
   return { totalTokens: total, usageMessages: messages }
 }
@@ -99,15 +101,20 @@ export function collectTranscriptUsage(sessionsDir, runExec, subBucket = null, n
 
 /**
  * dsh 会话桶名推导（源码级对齐 dsh-session-persistence-jsonl projectKey）：
- * 分隔符（/ \\ :）游程折叠为单个 '-'；[A-Za-z0-9._-] 保留；其余 → ~XXXX 十六进制转义；
+ * 分隔符（/ \ :）游程折叠为单个 '-'；[A-Za-z0-9._-] 保留；其余 → ~XXXX 十六进制转义；
  * 剥前导 '-' 后以 `--…--` 双杠包裹（截 251 字符；空串落 'root'）。
  * XR-P3 调查实证：旧 '/'+ws+'/' replaceAll 公式少一个尾杠恒 mismatch（真桶双尾杠），
  * 是 P1/P2 files=0 误诊的真因。
+ * XR-P4①：按 UTF-16 码元迭代（charCodeAt，与 dsh 逐字同构）——B 层观察：for..of 码点迭代
+ * 对星外平面字符（emoji 等）产生单 ~1F600 而 dsh 产 ~D83D~DE00 代理对双转义。
  */
 export function sessionsBucketFor(workspace) {
+  const s = String(workspace)
   let readable = ''
   let sep = false
-  for (const ch of String(workspace)) {
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i)
+    const ch = s[i]
     if (ch === '/' || ch === '\\' || ch === ':') {
       if (!sep) readable += '-'
       sep = true
@@ -115,7 +122,7 @@ export function sessionsBucketFor(workspace) {
       readable += ch
       sep = false
     } else {
-      readable += '~' + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+      readable += '~' + code.toString(16).toUpperCase().padStart(4, '0')
       sep = false
     }
   }

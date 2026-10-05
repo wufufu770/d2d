@@ -23,8 +23,17 @@ function pidAlive(pid) {
   }
 }
 
-/** worker pid/workspace 提取: worker-spawned 事件（编排层 spawn 后落档）。 */
-function workerOf(events) {
+/**
+ * worker pid/workspace 提取: 优先 worker.json 旁记录（XR-P4④——events 尾窗 400 行在
+ * 超长 run 会滚出 worker-spawned 行）; 回退 worker-spawned 事件（P3 形态兼容）。
+ */
+function workerOf(runDir, events) {
+  try {
+    const side = JSON.parse(fs.readFileSync(path.join(runDir, 'worker.json'), 'utf8'))
+    if (Number.isFinite(Number(side.pid)) || side.workspace) {
+      return { pid: Number(side.pid) || null, workspace: side.workspace ? String(side.workspace) : null }
+    }
+  } catch { /* 旁记录缺/坏=回退事件形态 */ }
   const w = [...events].reverse().find((e) => e.event === 'worker-spawned')
   return w ? { pid: Number(w.pid) || null, workspace: w.workspace ? String(w.workspace) : null } : { pid: null, workspace: null }
 }
@@ -52,7 +61,7 @@ export async function recoverRuns(opts) {
   for (const run of snap.runs) {
     if (run.status !== 'running') continue
     const events = readEvents(path.join(recordRoot, run.eng, run.runId, 'events.jsonl'), 400)
-    const { pid, workspace } = workerOf(events)
+    const { pid, workspace } = workerOf(path.join(recordRoot, run.eng, run.runId), events)
     if (pid && pidAlive(pid)) liveRunPids.add(pid)
     const lastEv = events[events.length - 1]
     const idleMs = lastEv?.ts ? Math.max(0, nowMs - Date.parse(lastEv.ts)) : null

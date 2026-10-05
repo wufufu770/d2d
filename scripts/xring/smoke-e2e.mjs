@@ -87,6 +87,8 @@ try {
   log('worker spawned pid=', workerPid, 'workspace=', WORKSPACE)
   // worker-spawned 事件（XR-P3 拍板 3: 孤儿回收的 pid/workspace 依据——编排层 spawn 后必落档）
   appendEvent(EVENTS, { event: 'worker-spawned', pid: workerPid, workspace: WORKSPACE })
+  // 旁记录（XR-P4④: events 尾窗 400 行在超长 run 会滚出——pid/workspace 另落 worker.json 恒可读）
+  try { fs.writeFileSync(path.join(RECORD, 'worker.json'), JSON.stringify({ pid: workerPid, workspace: WORKSPACE, ts: new Date().toISOString() })) } catch {}
 
   function os_homedir_tmp() { return '/tmp' }
 
@@ -142,7 +144,14 @@ try {
   // 偏差实测（拍板 2）: 运行中最后一次 budget-tick 的代理值 vs 退出后转录末值（精确）
   const ticks = readEvents(EVENTS, 100).filter((e) => e.event === 'budget-tick' && Number.isFinite(e.tokens) && e.tokens > 0)
   const lastProxy = ticks.length ? ticks[ticks.length - 1].tokens : null
-  const exactTotal = usage.totalTokens
+  // 退出后精确值重试（XR-P3 实录: teardown 压缩 finalize 有秒级窗口, 撕尾 decode 失败=tokens 0）
+  let usageExact = usage
+  for (let i = 0; i < 3 && usageExact.totalTokens === 0 && i < 2; i++) {
+    await new Promise((r) => setTimeout(r, 2000))
+    usageExact = collectTranscriptUsage(path.join(process.env.HOME ?? '/home/kali', '.dsh', 'sessions'), null, sessionsBucketFor(WORKSPACE))
+    if (usageExact.totalTokens > 0) log(`精确值重试第 ${i + 1} 次成功: totalTokens=${usageExact.totalTokens}`)
+  }
+  const exactTotal = usageExact.totalTokens
   const tokenDeviation = lastProxy != null && exactTotal > 0
     ? { lastProxy, exactTotal, deltaPct: +(((lastProxy - exactTotal) / exactTotal) * 100).toFixed(1), proxySemantics: 'transcript-tail(last-wins)' }
     : { lastProxy, exactTotal, note: '运行中无有效 tick（转录出现前 run 已结束=短 run 形态）' }
@@ -150,7 +159,7 @@ try {
 
   // 纪律 16（AGENTS.md 16①）: 实录标注来源版本——本 smoke 只在代码族全部 commit 后运行
   let headSha = null
-  try { headSha = execFileSyncSync('git', ['-C', REPO, 'rev-parse', 'HEAD']) } catch { headSha = null }
+  try { headSha = execFileSyncSync('git', ['-C', REPO, 'rev-parse', 'HEAD']).toString().trim() } catch { headSha = null }
   const summary = {
     ok: rf.ok && (expRows.length >= 1 || rf.held.length >= 0),
     headSha,
