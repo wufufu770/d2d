@@ -5,12 +5,12 @@
 // 拍板 4: 生产 :8766 零写——本脚本起独立 graphd 测试实例（tmp kuzu 库, 双 token）。
 // 用法: node scripts/xring/smoke-e2e.mjs [--graphd-url http://…] [--keep]
 //   缺省自起测试实例; --graphd-url 外部实例（已按 tmp 库+token 起好, HOST token 取 env XRP1_HOST_TOKEN）
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync as execFileSyncSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createXRingRunner, stripGraphTokenEnv } from './runner.mjs'
-import { startMonitor, collectTranscriptUsage, readEvents, sessionsBucketFor } from './monitor.mjs'
+import { startMonitor, collectTranscriptUsage, readEvents, sessionsBucketFor, appendEvent } from './monitor.mjs'
 import { reflow, probeWriteAuth } from './reflow.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
 
@@ -85,6 +85,8 @@ try {
   const pids = (await import('../../plugin/pentest-dsh/adapter-dsh.mjs')).liveWorkerPids()
   const workerPid = pids[pids.length - 1] ?? null
   log('worker spawned pid=', workerPid, 'workspace=', WORKSPACE)
+  // worker-spawned 事件（XR-P3 拍板 3: 孤儿回收的 pid/workspace 依据——编排层 spawn 后必落档）
+  appendEvent(EVENTS, { event: 'worker-spawned', pid: workerPid, workspace: WORKSPACE })
 
   function os_homedir_tmp() { return '/tmp' }
 
@@ -113,11 +115,11 @@ try {
     path.join(process.env.HOME ?? '/home/kali', '.dsh', 'sessions'),
     null, sessionsBucketFor(WORKSPACE))
   log(`worker 终态: ${result.kind} code=${result.code ?? '-'} 耗时=${(elapsedMs / 1000).toFixed(1)}s 熔断触发=${termInfo ? termInfo.reason : 'no'}`)
-  log(`转录累计（全机桶）: totalTokens=${usage.totalTokens} files=${usage.files}`)
+  log(`转录累计（workspace 桶）: totalTokens=${usage.totalTokens} files=${usage.files} bytes=${usage.bytes} idleMs=${usage.idleMs}`)
 
   log('进入回流阶段')
   // ---- 回流（host token 持写权）----
-  const rf = await reflow({ workspace: WORKSPACE, runId: RUN_ID, graphdUrl: graphd.base, hostToken: HOST_TOKEN, eventsFile: EVENTS, eng: 'eng-xrp1-smoke', verifyRunner: createVerifyRunner() })
+  const rf = await reflow({ workspace: WORKSPACE, runId: RUN_ID, graphdUrl: graphd.base, hostToken: HOST_TOKEN, eventsFile: EVENTS, eng: 'eng-xrp1-smoke', mode: 'queue', verifyRunner: createVerifyRunner() })
   log('reflow:', JSON.stringify({ ok: rf.ok, written: rf.written, held: rf.held, errors: rf.errors }))
 
   // ---- 图内验证 ----
@@ -137,10 +139,24 @@ try {
   log('events.jsonl 序列:')
   for (const e of readEvents(EVENTS, 100)) log(' ', JSON.stringify(e).slice(0, 160))
 
+  // 偏差实测（拍板 2）: 运行中最后一次 budget-tick 的代理值 vs 退出后转录末值（精确）
+  const ticks = readEvents(EVENTS, 100).filter((e) => e.event === 'budget-tick' && Number.isFinite(e.tokens) && e.tokens > 0)
+  const lastProxy = ticks.length ? ticks[ticks.length - 1].tokens : null
+  const exactTotal = usage.totalTokens
+  const tokenDeviation = lastProxy != null && exactTotal > 0
+    ? { lastProxy, exactTotal, deltaPct: +(((lastProxy - exactTotal) / exactTotal) * 100).toFixed(1), proxySemantics: 'transcript-tail(last-wins)' }
+    : { lastProxy, exactTotal, note: '运行中无有效 tick（转录出现前 run 已结束=短 run 形态）' }
+  log('token 代理 vs 精确:', JSON.stringify(tokenDeviation))
+
+  // 纪律 16（AGENTS.md 16①）: 实录标注来源版本——本 smoke 只在代码族全部 commit 后运行
+  let headSha = null
+  try { headSha = execFileSyncSync('git', ['-C', REPO, 'rev-parse', 'HEAD']) } catch { headSha = null }
   const summary = {
     ok: rf.ok && (expRows.length >= 1 || rf.held.length >= 0),
+    headSha,
     worker: { kind: result.kind, code: result.code ?? null, elapsedSec: +(elapsedMs / 1000).toFixed(1), budgetTriggered: termInfo?.reason ?? null },
     usage: { totalTokens: usage.totalTokens, files: usage.files, maxTokens: MAX_TOKENS },
+    tokenDeviation,
     reflow: { ok: rf.ok, written: rf.written, held: rf.held, errors: rf.errors },
     graphVerify: { experiences: expRows, hypotheses: hypRows },
     auth: { noTokenWriteStatus: noTok.status, workerTokenWriteStatus: withWorkerTok.status },

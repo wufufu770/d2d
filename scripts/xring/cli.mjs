@@ -7,6 +7,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { BUDGET_LIMITS, XRING_MODES, readEvents, appendEvent } from './monitor.mjs'
+import { readXringRuns } from '../../plugin/d2d-panel/lib/host/snapshot.mjs'
+import { recoverRuns, STALE_AFTER_MS_DEFAULT } from './recover.mjs'
 
 const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
 
@@ -84,20 +86,49 @@ export function costLine(model, maxHours, maxTokens) {
   return `成本上界（单价无源，原值显示）：${maxHours}h + ${maxTokens.toLocaleString()} token 上限——请按所选模型自行折价确认`
 }
 
-/** status：记录面只读投影。 */
+/** status：记录面只读投影 + monitor 心跳失联检测（拍板 6：budget-tick 即心跳）。 */
 export function status(runDir) {
   const eventsFile = path.join(runDir, 'events.jsonl')
   const events = readEvents(eventsFile)
   if (!events.length) return { ok: false, detail: `无记录: ${eventsFile}` }
   const last = events[events.length - 1]
   const budgetTicks = events.filter((e) => e.event === 'budget-tick')
+  const stopped = events.some((e) => e.event === 'stop')
+  let staleWarning = null
+  if (!stopped && last?.ts) {
+    const idleMs = Date.now() - Date.parse(last.ts)
+    const staleAfterMs = Number(process.env.P2P_XRING_STALE_MS) || STALE_AFTER_MS_DEFAULT
+    if (idleMs > staleAfterMs) {
+      staleWarning = `monitor 心跳失联 ${Math.round(idleMs / 1000)}s（阈值 ${Math.round(staleAfterMs / 1000)}s）——worker 可能裸奔到自然退出, 建议显式 stop`
+    }
+  }
   return {
     ok: true,
     lastEvent: last,
     budgetTicks: budgetTicks.length,
     lastBudget: budgetTicks[budgetTicks.length - 1]?.detail ?? 'n/a',
-    stopped: events.some((e) => e.event === 'stop'),
+    lastTokens: budgetTicks[budgetTicks.length - 1]?.tokens ?? null,
+    stopped,
+    staleWarning,
   }
+}
+
+/** 单活跃守卫（拍板 5）：已有 running run → 拒绝（列出+提示 stop）; 并发放开归 P4 后评估。 */
+export function preflightStart(recordRoot) {
+  const snap = readXringRuns({ base: recordRoot }, fs, process.env)
+  const active = snap.runs.filter((r) => r.status === 'running')
+  if (active.length) {
+    return {
+      ok: false,
+      detail: `已有 ${active.length} 个活跃 run（${active.map((r) => `${r.eng}/${r.runId}`).join(', ')}）——先 stop（node scripts/xring/cli.mjs stop <runDir>）或等预算熔断；并发放开归 P4 后评估`,
+    }
+  }
+  return { ok: true, detail: '无活跃 run', active: [] }
+}
+
+/** 孤儿回收入口（拍板 3）：扫 recordRoot, 标 orphaned+遗留回流, stray 报告不杀。 */
+export function recover(recordRoot) {
+  return recoverRuns({ recordRoot })
 }
 
 /** stop：唯一干预例外——写 stop 事件（监控进程轮询消费后执行终止）。 */
@@ -117,9 +148,15 @@ if (isDirect) {
       for (const e of r.errors) console.error('✗ ' + e)
       process.exit(1)
     }
+    // 单活跃守卫（拍板 5）：缺省记录面基址；已有活跃 run 拒绝
+    const guard = preflightStart(process.env.P2P_XRING_RECORD ?? `${process.env.D2D_DATA_DIR ?? DATA_DIR}/xring`)
+    if (!guard.ok) {
+      console.error('✗ ' + guard.detail)
+      process.exit(1)
+    }
     console.log('参数校验通过:', JSON.stringify(r.params))
     console.log(costLine(r.params.model, r.params.maxHours, r.params.maxTokens))
-    console.log('启动确认：确认上界后执行。本批 skeleton 未接 spawn（P1）。')
+    console.log('启动确认：确认上界后执行。spawn 编排归 P4（当前骨架不派真 worker）。')
     process.exit(0)
   }
   if (cmd === 'status') {
@@ -131,6 +168,11 @@ if (isDirect) {
     console.log(JSON.stringify(r))
     process.exit(r.ok ? 0 : 1)
   }
-  console.error('用法: cli.mjs start|status|stop …')
+  if (cmd === 'recover') {
+    const r = await recover(rest[0] ?? '')
+    console.log(JSON.stringify(r, null, 1))
+    process.exit(0)
+  }
+  console.error('用法: cli.mjs start|status|stop|recover …')
   process.exit(2)
 }
