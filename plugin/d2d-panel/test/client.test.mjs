@@ -69,7 +69,7 @@ test('client: bundle 执行仅注册 factory(零副作用); materialize 只 requ
   assert.deepEqual(Object.keys(exp).sort(), ['apply', 'inject'])
 })
 
-test('client: apply 注册 8 个 single tab(60-67), badge 能力探测通过时挂 badge, component 装配到对应视图', () => {
+test('client: apply 注册 9 个 single tab(60-68), badge 能力探测通过时挂 badge, component 装配到对应视图', () => {
   const { materialize } = loadBundle()
   const { apply } = materialize()
   const { ctx, tabs, effects } = fakeCtx({ features: ['badge'] })
@@ -77,16 +77,17 @@ test('client: apply 注册 8 个 single tab(60-67), badge 能力探测通过时�
   assert.deepEqual(effects, [
     'd2d-panel: ops tab', 'd2d-panel: findings tab', 'd2d-panel: viz tab',
     'd2d-panel: approval tab', 'd2d-panel: chain tab', 'd2d-panel: tools tab', 'd2d-panel: audit tab', 'd2d-panel: config tab',
-  ], 'T3-3-2: 五新 tab 注册(approval/chain/tools/audit/config)')
-  assert.deepEqual(tabs.map((t) => t.id), ['d2d:ops', 'd2d:findings', 'd2d:viz', 'd2d:approval', 'd2d:chain', 'd2d:tools', 'd2d:audit', 'd2d:config'])
-  assert.deepEqual(tabs.map((t) => t.order), [60, 61, 62, 63, 64, 65, 66, 67])
-  assert.deepEqual(tabs.map((t) => t.single), [true, true, true, true, true, true, true, true])
-  assert.deepEqual(tabs.map((t) => t.title()), ['d2d', 'd2d Findings', 'd2d Viz', 'd2d Approval', 'd2d Chain', 'd2d Tools', 'd2d Audit', 'd2d Config'])
+    'd2d-panel: xring tab',
+  ], 'XR-P2: X-Ring tab 注册(九 tab)')
+  assert.deepEqual(tabs.map((t) => t.id), ['d2d:ops', 'd2d:findings', 'd2d:viz', 'd2d:approval', 'd2d:chain', 'd2d:tools', 'd2d:audit', 'd2d:config', 'd2d:xring'])
+  assert.deepEqual(tabs.map((t) => t.order), [60, 61, 62, 63, 64, 65, 66, 67, 68])
+  assert.deepEqual(tabs.map((t) => t.single), [true, true, true, true, true, true, true, true, true])
+  assert.deepEqual(tabs.map((t) => t.title()), ['d2d', 'd2d Findings', 'd2d Viz', 'd2d Approval', 'd2d Chain', 'd2d Tools', 'd2d Audit', 'd2d Config', 'd2d XRing'])
   assert.deepEqual(tabs.slice(0, 2).map((t) => t.badge()), [null, null], '未拉取快照前 badge 为 null(同步缓存读, 不发请求)')
   assert.equal(tabs[3].badge(), null, 'T3-3-2: approval tab badge=待决数(快照 approvals.pending, 缺席→null)')
-  for (const i of [2, 4, 5, 6, 7]) assert.equal('badge' in tabs[i], false, `tab#${i} 无 badge 语义`)
+  for (const i of [2, 4, 5, 6, 7, 8]) assert.equal('badge' in tabs[i], false, `tab#${i} 无 badge 语义`)
   const props = { visible: true }
-  const [ops, findings, viz, approval, chain, tools, audit, config] = tabs.map((t) => t.component(props))
+  const [ops, findings, viz, approval, chain, tools, audit, config, xring] = tabs.map((t) => t.component(props))
   assert.equal(ops.type.name, 'OpsView')
   assert.equal(findings.type.name, 'FindingsView')
   assert.equal(viz.type.name, 'VizView', 'T3-3-1: viz tab 装配 VizView')
@@ -95,6 +96,7 @@ test('client: apply 注册 8 个 single tab(60-67), badge 能力探测通过时�
   assert.equal(tools.type.name, 'ToolsView', 'T3-3-2: tools tab 装配 ToolsView')
   assert.equal(audit.type.name, 'AuditView', 'T3-3-2: audit tab 装配 AuditView')
   assert.equal(config.type.name, 'ConfigView', 'T3-3-2: config tab 装配 ConfigView')
+  assert.equal(xring.type.name, 'XRingView', 'XR-P2: xring tab 装配 XRingView')
   assert.equal(ops.props, props, 'props 原样透传给视图')
 })
 
@@ -103,11 +105,11 @@ test('client: 老版本 better-sidebar(无 features 数组)仍挂 badge; feature
   const { apply } = materialize()
   const legacy = fakeCtx({})
   apply(legacy.ctx)
-  // badge 挂点: ops/findings(既有) + approval(T3-3-2); viz/chain/tools/audit/config 无 badge 语义
-  assert.deepEqual(legacy.tabs.map((t) => typeof t.badge), ['function', 'function', 'undefined', 'function', 'undefined', 'undefined', 'undefined', 'undefined'])
+  // badge 挂点: ops/findings(既有) + approval(T3-3-2); viz/chain/tools/audit/config/xring 无 badge 语义
+  assert.deepEqual(legacy.tabs.map((t) => typeof t.badge), ['function', 'function', 'undefined', 'function', 'undefined', 'undefined', 'undefined', 'undefined', 'undefined'])
   const noBadge = fakeCtx({ features: ['something-else'] })
   apply(noBadge.ctx)
-  assert.deepEqual(noBadge.tabs.map((t) => 'badge' in t), [false, false, false, false, false, false, false, false])
+  assert.deepEqual(noBadge.tabs.map((t) => 'badge' in t), [false, false, false, false, false, false, false, false, false])
 })
 
 test('client: betterSidebar 服务缺失 → 记录日志并静默跳过(软依赖, 不注册 effect)', () => {
@@ -474,6 +476,66 @@ test('client(config): ConfigView 只读总览(探针降级态) + 写面卡集中
   assert.ok(blob.includes('审批模式 off'), '模式 chip(来自 useSnapshot 桩)')
   const comps = els.filter((e) => [ctx.DenylistCard, ctx.CapsCard, ctx.FleetCard].includes(e.type))
   assert.equal(comps.length, 3, '三个既有写面卡集中(复用不重写, vnode 在位)')
+})
+
+test('client(xring): XRingView 只读投影 — 当前 run/预算/工件/事件尾窗 + 空态; 零动作红线(源码+渲染双面)', () => {
+  // 零动作红线(拍板 1): 片段源码级 — 无事件处理器/无写端点引用/无 button
+  const src = fs.readFileSync(path.join(FRAG_DIR, 'view.xring.js'), 'utf8')
+  assert.doesNotMatch(src, /onClick|postJson|'button'/, '零动作红线: 无 onClick/postJson/button 引用')
+  assert.match(src, /cli\.mjs stop/, 'CLI 提示文案在位(停止唯一例外=CLI)')
+  // 空/缺记录面 → 合法空态(CLI 提示仍在)
+  const { ctx, els } = loadNewFragment('view.xring.js', {
+    useSnapshot: () => ({ snap: { xring: { available: false, base: '/d2d/xring', activeCount: 0, runs: [], degraded: [] } }, err: null, refresh: () => {} }),
+    FailClosedBanner: function F() {}, Skeleton: function S() {},
+  })
+  ctx.XRingView({ visible: true })
+  let blob = JSON.stringify(els)
+  assert.ok(blob.includes('合法空态'), '空态文案')
+  assert.ok(blob.includes('零干预入口'), 'CLI 提示(空态也在位)')
+  // 有 run 数据 → 状态/预算/工件/事件尾窗/degraded
+  const snap = { xring: { available: true, base: '/d2d/xring', activeCount: 1, degraded: ['eng-x/run-2: events.jsonl 不可读(ENOENT)'], runs: [
+    { eng: 'eng-x', runId: 'run-1', status: 'running', stopReason: null, startedAt: '2026-10-06T01:00:00.000Z', elapsedSec: 125, budget: { maxHours: 3, maxTokens: 1000000 }, lastTick: { ok: true, detail: '0.03h/3h, 0/1000000 tokens' }, artifacts: null, events: [
+      { ts: '2026-10-06T01:01:40.000Z', event: 'budget-tick', ok: true, detail: '0.03h/3h, 0/1000000 tokens' },
+      { ts: '2026-10-06T01:00:00.000Z', event: 'monitor-start', maxHours: 3, maxTokens: 1000000 },
+    ] },
+    { eng: 'eng-x', runId: 'run-0', status: 'stopped', stopReason: 'budget', startedAt: '2026-10-05T09:00:00.000Z', elapsedSec: 10800.5, budget: { maxHours: 3, maxTokens: 1000000 }, lastTick: null, artifacts: { A: 1, B: 2, C: 1, reflow: { written: 2, held: 1, errors: 0 } }, events: [] },
+  ] } }
+  const { ctx: c2, els: e2 } = loadNewFragment('view.xring.js', {
+    useSnapshot: () => ({ snap, err: null, refresh: () => {} }),
+    FailClosedBanner: function F() {}, Skeleton: function S() {},
+  })
+  c2.XRingView({ visible: true })
+  // 行组件直驱(makeH 不展开子组件 — ChainTaskBoard/AuditRow 同款口径): 状态/计数叶子在行内
+  c2.XRingRunRow({ r: snap.xring.runs[1] })
+  c2.XRingRunRow({ r: snap.xring.runs[0] })
+  const b2 = JSON.stringify(e2)
+  assert.ok(b2.includes('活跃 run 1') && b2.includes('历史 2'), '活跃/历史计数 chips')
+  assert.ok(b2.includes('running') && b2.includes('stopped·budget'), '状态 chip(含停止原因)')
+  assert.ok(b2.includes('预算 3h') && b2.includes('token 上限'), '预算行')
+  assert.ok(b2.includes('时长为主旋钮'), 'token 运行中不可得注记(诚实呈现, XR-P1 通道时序)')
+  assert.ok(b2.includes('工件计数待回流'), '未回流=计数不可得(不造 0)')
+  assert.ok(b2.includes('budget-tick') && b2.includes('0.03h/3h'), '事件尾窗渲染')
+  assert.ok(b2.includes('eng-x/run-2: events.jsonl 不可读'), 'degraded 记因进 UI')
+  assert.ok(b2.includes('A:1 B:2 C:1'), '历史行工件三级计数')
+  const rows = e2.filter((e) => e.type === c2.XRingRunRow)
+  assert.ok(rows.length >= 2, '当前+历史 run 行 vnode 在位(容器装配)')
+  assert.equal(e2.filter((e) => e.type === 'button').length, 0, '零按钮(渲染层)')
+  // cur 已回流形态 → 回流账目行(与"待回流"互斥, 独立上下文)
+  const { ctx: c4, els: e4 } = loadNewFragment('view.xring.js', {
+    useSnapshot: () => ({ snap: { xring: { available: true, base: '/d2d/xring', activeCount: 0, degraded: [], runs: [
+      { eng: 'eng-x', runId: 'run-1', status: 'stopped', stopReason: 'user', startedAt: '2026-10-06T01:00:00.000Z', elapsedSec: 36.5, budget: { maxHours: 3, maxTokens: 1000000 }, lastTick: null, artifacts: { A: 1, B: 2, C: 1, reflow: { written: 2, held: 1, errors: 0 } }, events: [] },
+    ] } }, err: null, refresh: () => {} }),
+    FailClosedBanner: function F() {}, Skeleton: function S() {},
+  })
+  c4.XRingView({ visible: true })
+  assert.ok(JSON.stringify(e4).includes('回流: 写入 2 / 留验 1 / 错误 0'), '回流账目行(已回流形态)')
+  // err 且无 snap → fail-closed banner(standalone 同构)
+  const { ctx: c3, els: e3 } = loadNewFragment('view.xring.js', {
+    useSnapshot: () => ({ snap: null, err: new Error('HTTP 503'), refresh: () => {} }),
+    FailClosedBanner: function F() {}, Skeleton: function S() {},
+  })
+  c3.XRingView({ visible: true })
+  assert.ok(e3.some((e) => e.type === c3.FailClosedBanner), 'fail-closed banner(快照整体不可达)')
 })
 
 test('T3-3-2 禁区 grep: 授权契约链/tier-approval 零出现于 panel 面; approvals.mjs import 仅既有单一消费点', () => {
