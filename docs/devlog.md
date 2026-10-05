@@ -339,6 +339,13 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 教训沉淀：**引根依赖前先看 CI 装到哪一层**（npm ci 在 plugin/ 内跑——根 node_modules 在 CI 不存在，本地存在=本地过 CI 挂的经典分层差异；根依赖引入必须同步改 workflow 安装面）；**断言"值"不如断言"路径一致"**（五环 resolveModel 具体值随部署态漂移，五环彼此一致+xring 恒 null 才是跨环境成立的语义）
 开放项：**XR-P1 排批归用户**（spawn 接线+写面实测+verify 重放骨架；前置=allowlist 白名单内容归用户填入）；LBD-2 观察期；R5 模型窗口/EV-2 实弹/冷读评审/密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
 
+## 2026-10-05 · XR-P1 X-Ring 写面接线批（spawn 通道+监控接核+回流执行器+双 smoke）
+底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **414** / mocha **2022**（+13: P1 面）/ panel **88**
+产出：**写权归 host 定谳落地**（token 分级实测取证=worker token 对结构化写面可写[I-013 既有]+host-only 403——X-Ring 落更强形态 worker env 剥除全部图 token 实测全 401，断言固化 xring-p1.test.mjs；graphd 侧收紧归用户裁决）+族 1 runner.mjs（prompt 实例化+adapter 直调+workspace 0750/记录面 0700 路径不进 task）+族 2 monitor 真进程化（stop-request/budget 双路+组杀真执行+**递归扫描修复**[真实转录三层形态]+sessionsBucketFor 桶限定）+族 3 reflow.mjs（B/C 直写+A 级必经 verifyRunner+schema 外零写入）+族 4 verify-runner 骨架（manual 缺省留验+replay 注入）+族 5 双 smoke（端到端真 worker 36.5s/回流 written=2/图内 quarantined 验证+熔断双路径零模型成本五步全落）——实录 experiments/results/xrp1-smoke-{e2e,budget}.json+docs/xrp1-smoke-record.md
+关键裁决：**"应拒"断言实测不成立的处置**（拍板断言"worker token 应拒"实测=既有 I-013 设计可写结构化面——如实登记为安全面发现归用户裁决，本批落更强形态 env 剥除使 X-Ring worker 图完全不可达，既有通道零触碰）；**运行中 token 增量不可得定谳**（dsh 转录会话级落盘——运行中仅 session.lock，退出才压缩；token 熔断实测按拍板 3 原口径预置转录，真运行 token 主旋钮退化时长+P2 接会话 tail）；**smoke 重跑非确定性挂起登记不硬凑**（首跑成功实录完整=证据链成立，挂起疑与熔断 SIGKILL 后转录落盘时序相关归 P2）
+教训沉淀：**拍板断言也要实测取证**（"应拒"实测可写——照抄断言会写错安全测试；取证后落更强形态并登记差异才是如实）；**harness 与真实形态的层数差**（P0 测试两层转录目录在真三层形态 files=0——测试 fixture 必须逐字复刻真实布局包括深度）；**子进程类 smoke 必须带同步文件日志+节点打点**（stderr 缓冲在强杀时丢失=排查黑洞）
+开放项：XR-P2 面板 tab 排批；XR-P3/P4；**allowlist 白名单内容归用户填入**（正式运行前置）；smoke 重跑挂起 P2 排查；graphd worker-token 写面收紧裁决；LBD-2 观察期；R5 模型窗口/EV-2 实弹/冷读评审/密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+
 ## 2026-10-05 · WD-1 lease-cas-watchdog 时序 flake 根治批（测试基建面；生产代码零 diff）
 底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **414** / mocha **2009**（+2: WD-1 失败注入用例）/ panel **88**
 产出：归因定谳（生产面零竞态——真根因=旧独立采样谓词两半写在 tick 尾部非原子序，慢查询机上采样轮询整窗错过"计数到达+ticking 已落"瞬间；deep tick 长度∝查询延迟叠加实测 40/90/150ms 三档定谳）+修复=waitH3Branch 事件推进谓词（计数到达后再等完整一拍，零采样原子性要求）+失败注入 2 例（150ms/查询慢机 fake：旧谓词短窗必错过+修复谓词稳定达成语义保持）+稳定性证明（本地 20 连跑零 flake+CI 三绿+watchdog 面第 2 轮 rerun 绿）

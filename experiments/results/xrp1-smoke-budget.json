@@ -1,0 +1,29 @@
+{
+ "timeout": {
+  "terminated": true,
+  "workerKilled": true,
+  "events": [
+   "monitor-start",
+   "budget-tick",
+   "budget-tick",
+   "budget-tick",
+   "budget-exceeded",
+   "stop",
+   "kill-error"
+  ],
+  "partialReadable": true,
+  "elapsedSec": 6
+ },
+ "tokens": {
+  "terminated": true,
+  "workerKilled": true,
+  "lastTickDetail": "180000 >= 100000",
+  "events": [
+   "monitor-start",
+   "budget-tick",
+   "budget-exceeded",
+   "stop",
+   "kill-error"
+  ]
+ }
+}
