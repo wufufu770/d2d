@@ -17,7 +17,7 @@
  "tokens": {
   "terminated": true,
   "workerKilled": true,
-  "lastTickDetail": "180000 >= 100000",
+  "lastTickDetail": "120000 >= 100000",
   "events": [
    "monitor-start",
    "budget-tick",

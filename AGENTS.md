@@ -140,6 +140,15 @@ mocha 通道瞬断（-1）按先例手动实锚 + CI 全量最终裁决。
    pytest 414，合计约 3 分钟；ladybug 轨要件=系统 python user 层 `ladybug==0.21.2`+
    `LBUG_C_API_LIB_PATH=$HOME/lib/ladybug/liblbug.so.0.21.2`）。
    缺省引擎翻转+kuzu 退役复评=观察期满 clean 后另批（WRAP-4 或 micro-batch）。
+16. **证据与清单的提交态一致性（XR-P2 双教训固化，2026-10-06 生效）**：
+   ① **实录/smoke 类证据必须出自已提交代码**——或标注来源版本 SHA 且在提交后复跑覆盖
+   （XR-P2 事故：smoke 实录出自提交前工作树迭代版，提交版回归为挂起形态，三次复跑全挂
+   才暴露）；执行口径=代码族全部 commit 之后再跑 smoke，实录 json 内标注 HEAD SHA。
+   ② **manifest regen 一律最后一步，且 regen 前工作树无 untracked**——`git ls-files`
+   不含 untracked 文件，先建文件后 regen 才能入完整性锁（XR-P2 事故：regen 时
+   view.xring.js/xrp2-smoke-hang.md 尚未 track → 漏收，B 层复核才发现）；执行口径=
+   `git add -A` 先行（或确认 status 无 ?? 项）→ regen → `sha256sum -c` 自校验 →
+   全集核对（ls-files vs manifest 条目 comm 为空）→ commit。
 
 ## 提示词生成规范（给生成批次提示词的一方，人或 AI）
 固定结构：进入[阶段号] → 背景 → 拍板决定（已授权决策直接执行）→
