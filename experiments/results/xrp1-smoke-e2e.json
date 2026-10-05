@@ -1,0 +1,150 @@
+{
+ "ok": true,
+ "worker": {
+  "kind": "exited",
+  "code": 0,
+  "elapsedSec": 36.5,
+  "budgetTriggered": null
+ },
+ "usage": {
+  "totalTokens": 0,
+  "files": 0,
+  "maxTokens": 100000
+ },
+ "reflow": {
+  "ok": true,
+  "written": [
+   {
+    "level": "C",
+    "id": "L-1",
+    "status": "quarantined"
+   },
+   {
+    "level": "B",
+    "id": "H-1"
+   }
+  ],
+  "held": [],
+  "errors": []
+ },
+ "graphVerify": {
+  "experiences": [
+   {
+    "s": "quarantined",
+    "t": "environment: 探测前未核对靶机时钟,导致时间戳对齐浪费了一轮。"
+   }
+  ],
+  "hypotheses": []
+ },
+ "auth": {
+  "noTokenWriteStatus": 401,
+  "workerTokenWriteStatus": 200
+ },
+ "events": [
+  {
+   "ts": "2026-10-05T12:40:50.581Z",
+   "event": "monitor-start",
+   "runId": "run-e2e",
+   "maxHours": 0.08333333333333333,
+   "maxTokens": 100000
+  },
+  {
+   "ts": "2026-10-05T12:40:54.111Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:40:57.084Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:00.039Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:03.055Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:06.063Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:09.040Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:12.062Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:15.072Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:18.084Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:21.082Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:24.081Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:27.064Z",
+   "event": "budget-tick",
+   "ok": true,
+   "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
+   "transcripts": 0
+  },
+  {
+   "ts": "2026-10-05T12:41:27.547Z",
+   "event": "reflow-start",
+   "runId": "run-e2e",
+   "workspace": "/tmp/xrp1-smoke-h2c6Xd/record/xring-smoke/run-e2e/workspace"
+  },
+  {
+   "ts": "2026-10-05T12:41:27.612Z",
+   "event": "reflow-done",
+   "runId": "run-e2e",
+   "written": 2,
+   "held": 0,
+   "errors": 0
+  }
+ ]
+}
