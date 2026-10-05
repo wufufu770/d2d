@@ -541,6 +541,47 @@ test('client(xring): XRingView 只读投影 — 当前 run/预算/工件/事件�
   assert.ok(e3.some((e) => e.type === c3.FailClosedBanner), 'fail-closed banner(快照整体不可达)')
 })
 
+test('client(wrap2): 回灌双按钮两步确认(verified 专用) — arm 态零出网, 确认后恰一次(裁决=设计内动作面)', async () => {
+  const posts = []
+  // 有状态 hook 探针(FleetCard saveCredential 同款): arm set 后重渲染可见
+  const hookStore = new Map()
+  let hookIdx = 0
+  const useState = (init) => {
+    const k = hookIdx++
+    if (!hookStore.has(k)) hookStore.set(k, init)
+    return [hookStore.get(k), (v) => hookStore.set(k, v)]
+  }
+  const { h, els } = makeH()
+  const ctx = loadFragment('view.findings.js', {
+    h, useState,
+    postJson: async (ep, body) => { posts.push([ep, body]); return { ok: true } },
+    sevColor: () => 'var(--x)', fmtClock: () => '03:00',
+    ...panelStubs(),
+  })
+  const render = () => { hookIdx = 0; ctx.AdjudicateOps({ f: { id: 'f-v', state: 'verified' }, refresh: () => {} }) }
+  // 非 verified → 零按钮(裁决入口只收 verified)
+  hookIdx = 0
+  ctx.AdjudicateOps({ f: { id: 'f-t', state: 'triaged' }, refresh: () => {} })
+  const triagedBtns = els.filter((e) => e.type === 'button').length
+  render()
+  let btns = els.filter((e) => e.type === 'button')
+  assert.equal(triagedBtns, 0, 'triaged 零回灌按钮')
+  assert.equal(btns.length, 2, '撤销+标假阳性双按钮')
+  btns[0].props.onClick() // 第一击=arm
+  assert.equal(posts.length, 0, 'arm 态零出网(防误触)')
+  render()
+  btns = els.filter((e) => e.type === 'button').slice(-2)
+  assert.ok(JSON.stringify(btns).includes('再点一次'), 'arm 态文案=确认提示')
+  btns[0].props.onClick() // 第二击=执行
+  await Promise.resolve()
+  assert.equal(posts.length, 1, '两步确认后恰一次出网')
+  assert.equal(posts[0][0], 'adjudicate')
+  assert.equal(posts[0][1].kind, 'finding')
+  assert.equal(posts[0][1].action, 'revoke')
+  assert.equal(posts[0][1].operator, 'panel')
+  assert.ok(posts[0][1].reason.length > 0 && posts[0][1].reason.length <= 80, 'reason 缺省自动填(1-80)')
+})
+
 test('T3-3-2 禁区 grep: 授权契约链/tier-approval 零出现于 panel 面; approvals.mjs import 仅既有单一消费点', () => {
   const libDir = path.dirname(FRAG_DIR)
   const files = []

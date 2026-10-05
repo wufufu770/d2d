@@ -31,6 +31,7 @@ function makeFake(t = {}) {
     if (cypher.includes('count(s)')) return t.signalsOpen ?? [{ n: 0 }]
     if (cypher.includes('count(h)')) return t.hyps ?? [{ n: 0 }]
     if (cypher.includes('count(x)')) return t.experience ?? [{ n: 0 }]
+    if (cypher.includes("x.status='quarantined'")) return t.quarantine ?? [] // WRAP-2 #18: 幻觉抽检浏览面
     // T3-3-2 探索链路(chain 路由)九查询
     if (cypher.includes('t.kind AS kind')) return t.chainTasks ?? []
     if (cypher.includes('-[:CONFIRMS]->')) return t.confirms ?? []
@@ -1066,6 +1067,13 @@ test('T3-3-2 host 路由: 四 fail-soft 本地面可达 + chain/frontier fail-cl
     // 审计时间线: kind 过滤
     const audit = await driveRoute(handler, 'GET', '/d2d/api/audit?kind=auth-fail')
     assert.equal(audit.body.audit.total, 1)
+    // WRAP-2 #18: quarantine 节(buildSnapshot 集成, makeFake t.quarantine 路由)
+    const snapQ = await buildSnapshot(makeFake({ quarantine: [{ id: 'exp-1', title: '幻觉样本', created_at: '2026-10-06' }] }))
+    assert.equal(snapQ.quarantine.length, 1)
+    assert.equal(snapQ.quarantine[0].id, 'exp-1')
+    assert.equal(snapQ.quarantine[0].title, '幻觉样本')
+    const snapQ0 = await buildSnapshot(makeFake())
+    assert.deepEqual(snapQ0.quarantine, [], '缺省空池')
     // 配置总览: paused 清单 + notify 未配置
     const cfg = await driveRoute(handler, 'GET', '/d2d/api/configx')
     assert.deepEqual(cfg.body.config.paused, ['eng-a'])

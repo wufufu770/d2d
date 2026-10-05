@@ -40,6 +40,47 @@
       return h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' } }, chain, branch)
     }
 
+    /** WRAP-2 回灌两路(verified 专用, 拍板 1): 显式两步确认(arm→confirm 防误触)→
+     *  POST /d2d/api/adjudicate(kind=finding; 后端分流 revoke|false_positive;
+     *  host-only+审计+既有门在 graphd 校验)。revoke=隔离待裁(可重开);
+     *  false_positive=拒真终态不可逆。 */
+    function AdjudicateOps({ f, refresh }) {
+      const [reason, setReason] = useState('')
+      const [arm, setArm] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [err, setErr] = useState(null)
+      const [done, setDone] = useState(null)
+      if (f.state !== 'verified') return null
+      const go = async (action) => {
+        setBusy(true); setErr(null)
+        try {
+          const fallback = action === 'revoke' ? 'panel 撤销: 复验未复现, 隔离待裁' : 'panel 标假阳性: 鉴权档位/证据复核不成立'
+          await postJson('adjudicate', { kind: 'finding', action, id: f.id, operator: 'panel', reason: (reason.trim() || fallback).slice(0, 80) })
+          setDone(action); setArm(null); setReason('')
+          refresh()
+        } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+      }
+      const btn = (action, label, warn) => h('button', {
+        ...panel.btn({ borderColor: warn ? 'var(--d2d-sev-high)' : 'var(--d2d-warn)', color: warn ? 'var(--d2d-sev-high)' : 'var(--d2d-warn)' }),
+        disabled: busy,
+        onClick: () => (arm === action ? go(action) : setArm(action)),
+      }, arm === action ? `确认${label}?(再点一次)` : label)
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '4px' } },
+        h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' } },
+          btn('revoke', '回灌·撤销(隔离待裁)', false),
+          btn('false_positive', '回灌·标假阳性(终态不可逆)', true),
+          h('span', panel.muted(0.45), 'host-only · 全量审计留痕')),
+        h('input', {
+          ...panel.input({ flex: 1 }),
+          placeholder: '裁决理由(回灌必填, 缺省自动填; 1-80 字符)',
+          value: reason,
+          disabled: busy,
+          onChange: (ev) => setReason(ev.target.value),
+        }),
+        err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null,
+        done ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-ok)' } }, `已回灌(${done === 'revoke' ? '撤销→isolated 可重开' : '假阳性→rejected 终态'}); 审计 operator=panel`) : null)
+    }
+
     /** 人工裁决: 合法转移按钮 + reason 输入 → POST /d2d/api/transition(actor=panel)。 */
     function TransitionOps({ f, refresh }) {
       const [reason, setReason] = useState('')
@@ -102,7 +143,8 @@
           f.verified_at ? h('div', panel.muted(0.55), `verified_at: ${f.verified_at}`) : null,
           traj ? h('div', panel.muted(0.55),
             `上次转移: ${traj.from}→${traj.to} · ${traj.actor} · ${String(traj.reason ?? '')}`) : null,
-          h(TransitionOps, { f, refresh })) : null)
+          h(TransitionOps, { f, refresh }),
+          h(AdjudicateOps, { f, refresh })) : null)
     }
 
     function FindingsView(props) {
@@ -126,6 +168,19 @@
               shown.map((f) =>
                 h(FindingCard, { key: f.id, f, expanded: openId === f.id, onToggle: () => setOpenId(openId === f.id ? null : f.id), refresh })))
             : h('div', panel.muted(0.4), '该状态无记录')) : null,
+        h(Card, {
+          title: '幻觉抽检(#18 合并 · 隔离池浏览)',
+          extra: h('span', panel.muted(0.5), '记账: node scripts/brain/experience-metrics.mjs --sample 5 → 人工审 → --record'),
+        },
+          (snap.quarantine ?? []).length
+            ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto', paddingRight: '2px' } },
+              snap.quarantine.map((xq) => h('div', { key: xq.id, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
+                h('span', panel.chip({ borderColor: 'var(--d2d-warn)' }), 'quarantined'),
+                h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }, title: xq.id }, xq.title || xq.id),
+                h('span', { ...panel.mono, style: { ...panel.mono.style, fontSize: '9px', opacity: '.5', flex: '0 0 auto' } }, String(xq.created_at ?? '').slice(0, 10)))))
+            : h('div', panel.muted(0.4), '隔离池空 — 经验回流写入即 quarantined, 评审出池后在此浏览'),
+          h('div', { ...panel.muted(0.45), style: { borderTop: '1px dashed var(--d2d-line)', paddingTop: '4px' } },
+            '抽检=裁决入口的抽样浏览形态(同一入口): 勾选对象经 CLI --record 记账; 撤销经经验裁决回灌(active→deprecated, 检索面即时排除)')),
         h('div', {
           style: {
             display: 'grid',
