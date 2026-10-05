@@ -381,3 +381,6 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 关键裁决：**撤销与标假阳性分态设计**（撤销≠终判——isolated 保留 isolated→candidate 重开边；假阳性=rejected 终态不可逆——两路语义各自忠于状态机既有边，零新态零新列）；**dual_sign 不混用**（signed 终态语义属验证环签章，假阳性判定走八态机——机制边界不跨越）；**审计载体取舍**（不加列拍板⑧沿用——false_positive 标注在审计与轨迹 reason，图内列零增）
 教训沉淀：**状态机扩展前先读全边集**（dual_sign signed→() 终态使 disputed 路径不可达——设计在边集事实面前改道而非改状态机）；**组合两跳要同锁窗**（verified→isolated→rejected 跨两门原子完成，避免中间态窗口）；**面板动作面测试要有状态 hook 探针**（arm 确认态的重渲染可见性——无状态桩测不出两步确认）
 开放项：阶段 B 真首跑=allowlist 填入后单批；WRAP 波后续清欠按用户排批；graphd worker-token 收紧裁决；LBD-2 观察期；R5 模型窗口/EV-2 实弹/冷读评审/密钥异构小批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+
+### WRAP-2 补笔（B 层复核 FAIL 项修复，同日）
+`fix(panel)`: host /d2d/api/adjudicate 路由 body 越界引用（插入点落在 transition 块作用域外——面板回灌链路恒 400 断链，fail-closed 方向但功能性不成立）。修复=自带 POST 守卫+readBody（同族写分支形态）+路由驱动回归测试（graphd 不可达=400 adjudicate-error 分型+GET 405+空 body 400——'body is not defined' 不复现锚）。教训：**跨作用域插入的路由必须自带请求生命周期三件（method 守卫/readBody/错误分型）**——B 层"无测试驱动路由本体"的覆盖缺口是该 bug 零拦截的根因，路由驱动测试补齐。

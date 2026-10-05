@@ -1256,3 +1256,15 @@ test('xring: env 注入与 buildSnapshot 集成 — snap.xring 节随记录面�
     else process.env.P2P_XRING_RECORD = saved
   }
 })
+
+test('host 路由 WRAP-2: POST /d2d/api/adjudicate 可达 — body 解析在位(B 层 FAIL 修复防回归), graphd 不可达=400 adjudicate-error; GET=405', async () => {
+  const handler = mountPanelHost()
+  const r = await driveRoute(handler, 'POST', '/d2d/api/adjudicate', { kind: 'finding', action: 'revoke', id: 'f-1', operator: 'op', reason: 'r' })
+  assert.equal(r.code, 400, r.raw.slice(0, 120))
+  assert.equal(r.body.error?.code, 'adjudicate-error', 'graphd 不可达=代理错误分型')
+  assert.ok(!String(r.body.error?.message).includes('body is not defined'), 'body 越界 ReferenceError 不复现(B 层 FAIL 回归锚)')
+  const g = await driveRoute(handler, 'GET', '/d2d/api/adjudicate')
+  assert.equal(g.code, 405, 'GET → 405(POST 守卫, 同族写分支形态)')
+  const bad = await driveRoute(handler, 'POST', '/d2d/api/adjudicate')
+  assert.equal(bad.code, 400, '空 body=400(bad-request)')
+})

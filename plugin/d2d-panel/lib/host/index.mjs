@@ -162,6 +162,13 @@ export function apply(ctx, config = {}) {
       if (method === 'adjudicate') {
         // WRAP-2: 裁决回灌统一入口(一处入口两路分流; kind/action/id/operator/reason;
         // host-only+审计+既有门在 graphd /write/adjudicate 校验, 面板纯代理)。
+        // B 层复核 FAIL 修复: 自带 POST 守卫+readBody(body 原越界引用 transition 块作用域
+        // ——面板回灌链路恒 400 断链; 路由驱动测试防回归)。
+        if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST required' } })
+        let body
+        try { body = await readBody(req) } catch (e) {
+          return send(400, { ok: false, error: { code: 'bad-request', message: String(e?.message ?? e) } })
+        }
         try {
           const r = await adjudicate({ graphdUrl, token: readHostToken(), kind: body.kind, action: body.action, id: body.id, operator: body.operator, reason: body.reason })
           cache = null // 裁决即状态变更, 快照立即失效
