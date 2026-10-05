@@ -79,6 +79,15 @@
         single: true,
         component: (props) => h(ConfigView, props),
       }), 'd2d-panel: config tab')
+
+      // XR-P2: X-Ring 旁路探索只读投影 tab(零写零动作 —— 无 badge 语义, 停止唯一例外=CLI)
+      ctx.effect(() => svc.registerTab({
+        id: 'd2d:xring',
+        title: () => 'd2d XRing',
+        order: 68,
+        single: true,
+        component: (props) => h(XRingView, props),
+      }), 'd2d-panel: xring tab')
     }
 
     exports.apply = apply
