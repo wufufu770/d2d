@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createXRingRunner, stripGraphTokenEnv } from './runner.mjs'
-import { startMonitor, collectTranscriptUsage, readEvents } from './monitor.mjs'
+import { startMonitor, collectTranscriptUsage, readEvents, sessionsBucketFor } from './monitor.mjs'
 import { reflow, probeWriteAuth } from './reflow.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
 
@@ -27,7 +27,7 @@ const MAX_TOKENS = 100000
 
 const _logf = '/tmp/xrp1-smoke-sync.log'
 const log = (...a) => { const line = '[smoke] ' + a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); console.error(line); try { fs.appendFileSync(_logf, line + '\n') } catch {} }
-setTimeout(() => { console.error('[smoke] 总窗 8 分钟超时——强杀'); process.exit(3) }, 8 * 60 * 1000).unref?.()
+setTimeout(() => { log('总窗 8 分钟超时——强杀'); process.exit(3) }, 8 * 60 * 1000).unref?.()
 
 // ---- graphd 测试实例 ----
 async function startTestGraphd() {
@@ -106,7 +106,12 @@ try {
   ])
   const elapsedMs = Date.now() - t0
   mon.stop()
-  const usage = collectTranscriptUsage(path.join(process.env.HOME ?? '/home/kali', '.dsh', 'sessions'))
+  // XR-P2 挂起根治: 收集段必须桶限定(与 monitor 同构)。全机扫描实测 3305 文件×286.6ms/file
+  // ≈947s 纯同步阻塞(spawnSync unzstd)——事件循环冻结期间 setTimeout watchdog 永不触发,
+  // 三次复跑全挂同一处(三次实证 + 采样外推留档 docs/xrp2-smoke-hang.md)。
+  const usage = collectTranscriptUsage(
+    path.join(process.env.HOME ?? '/home/kali', '.dsh', 'sessions'),
+    null, sessionsBucketFor(WORKSPACE))
   log(`worker 终态: ${result.kind} code=${result.code ?? '-'} 耗时=${(elapsedMs / 1000).toFixed(1)}s 熔断触发=${termInfo ? termInfo.reason : 'no'}`)
   log(`转录累计（全机桶）: totalTokens=${usage.totalTokens} files=${usage.files}`)
 
