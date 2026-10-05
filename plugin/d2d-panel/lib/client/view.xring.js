@@ -46,9 +46,17 @@
         ...((x.degraded ?? []).map((d, i) => h('div', { key: `dg${i}`, ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, d))),
         h('div', { key: 'cur', style: { borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px', display: 'flex', flexDirection: 'column', gap: '3px' } },
           h(XRingRunRow, { r: cur }),
-          h('div', panel.muted(0.5), cur.budget ? `预算 ${cur.budget.maxHours ?? '?'}h / ${Number(cur.budget.maxTokens ?? 0).toLocaleString()} token 上限` : '预算参数缺（超长 run 推导窗外）'),
+          h('div', panel.muted(0.5), `${cur.mode ? `档位 ${cur.mode} · ` : ''}${cur.budget ? `预算 ${cur.budget.maxHours ?? '?'}h / ${Number(cur.budget.maxTokens ?? 0).toLocaleString()} token 上限` : '预算参数缺（超长 run 推导窗外）'}${cur.mode === 'bypass' ? ' · bypass: A 级 verify 双签仍硬线' : ''}`),
           h('div', panel.muted(0.5), cur.lastTick ? `最近预算判定: ${cur.lastTick.ok ? 'ok' : '超限'} · ${cur.lastTick.detail}` : '无预算 tick'),
-          h('div', panel.muted(0.5), 'token 计数运行中不可得（dsh 转录会话级落盘, 退出才压缩）—— 时长为主旋钮'),
+          h('div', panel.muted(0.5), cur.lastTick?.tokens != null
+            ? `token 代理: ${Number(cur.lastTick.tokens).toLocaleString()}（转录尾; 近精确——dsh 200ms 批窗持久追加, XR-P3 实录）`
+            : 'token 代理: 暂无（转录未落盘前=时长口径兜底）'),
+          cur.lastTick?.idleMs != null
+            ? h('div', panel.muted(0.5), `转录静默: ${(cur.lastTick.idleMs / 1000).toFixed(0)}s（停滞遥测——干预仅预算熔断与显式 stop, 拍板 4）`)
+            : null,
+          cur.stale
+            ? h('div', { ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, `⚠ monitor 心跳失联 ${(cur.stale.idleMs / 1000).toFixed(0)}s（阈 ${(cur.stale.thresholdMs / 1000).toFixed(0)}s）——worker 可能裸奔, 建议显式 stop`)
+            : null,
           cur.artifacts
             ? h('div', panel.muted(0.5), `回流: 写入 ${cur.artifacts.reflow?.written ?? 0} / 留验 ${cur.artifacts.reflow?.held ?? 0} / 错误 ${cur.artifacts.reflow?.errors ?? 0}`)
             : null),

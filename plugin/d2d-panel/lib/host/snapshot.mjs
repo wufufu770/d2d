@@ -1056,7 +1056,9 @@ function projectEngagement(row) {
 export const XRING = Object.freeze({
   eventTail: 50, // 事件尾窗(拍板 2: 轮询快照即可, 不做 SSE)
   maxRuns: 20, // 历史 run 列表上限(新→旧; 活跃计数在截断前统计)
+  maxScan: 40, // 扫描上限(XR-P3 拍板 7 成本上界: 按 mtime 新→旧扫描, 超出部分不解析——记录树积累不拖垮轮询)
   deriveLines: 2000, // 状态推导读尾上限(预算 tick 30s/条 ≈ 一天量级; 超长 run 的 monitor-start 可能落出窗 → budget:null 降级)
+  staleAfterMs: 120_000, // 心跳失联阈(budget-tick 即心跳; env P2P_XRING_STALE_MS 可调——拍板 6)
 })
 
 /** X-Ring 记录面根目录(env 可注入; 与 cli.mjs DATA_DIR 同序)。 */
@@ -1064,21 +1066,24 @@ export function xringRecordBase(env = process.env) {
   return env.P2P_XRING_RECORD ?? `${env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/xring`
 }
 
-/** events.jsonl 单行 → wire 投影(封闭形态; 长字段截尾)。 */
+/** events.jsonl 单行 → wire 投影(封闭形态; 长字段截尾)。tokens/idleMs=XR-P3 运行中代理+停滞遥测。 */
 function xringEventOf(r) {
   const e = { ts: String(r.ts ?? ''), event: String(r.event ?? '') }
   if (r.ok !== undefined) e.ok = r.ok === true
   if (r.reason !== undefined) e.reason = cap(r.reason, 60)
   if (r.detail !== undefined) e.detail = cap(r.detail, 160)
+  if (Number.isFinite(r.tokens)) e.tokens = r.tokens
+  if (Number.isFinite(r.idleMs)) e.idleMs = r.idleMs
+  if (Number.isFinite(r.transcripts)) e.transcripts = r.transcripts
   return e
 }
 
 /** 单个 run 目录 → 投影(任何局部读失败 = degraded 记因继续, 不抛)。 */
-function xringRunOf(eng, runId, runDir, fsImpl, nowMs, degraded) {
+function xringRunOf(eng, runId, runDir, fsImpl, nowMs, degraded, env = process.env) {
   const run = {
     eng: String(eng), runId: String(runId),
     status: 'unknown', stopReason: null, startedAt: null, elapsedSec: null,
-    budget: null, lastTick: null, artifacts: null, events: [],
+    mode: null, budget: null, lastTick: null, artifacts: null, events: [],
   }
   let lines = []
   try {
@@ -1097,7 +1102,10 @@ function xringRunOf(eng, runId, runDir, fsImpl, nowMs, degraded) {
   }
   run.events = events.slice(-XRING.eventTail).map(xringEventOf)
   const start = events.find((e) => e.event === 'monitor-start')
-  if (start) run.budget = { maxHours: num(start.maxHours) || null, maxTokens: num(start.maxTokens) || null }
+  if (start) {
+    run.budget = { maxHours: num(start.maxHours) || null, maxTokens: num(start.maxTokens) || null }
+    if (start.mode !== undefined) run.mode = cap(start.mode, 20) // U2 三档（XR-P3 首事件落档）
+  }
   const firstTs = Date.parse(events[0]?.ts ?? '')
   const startedMs = start ? Date.parse(start.ts ?? '') : (Number.isFinite(firstTs) ? firstTs : NaN)
   if (Number.isFinite(startedMs)) run.startedAt = new Date(startedMs).toISOString()
@@ -1110,7 +1118,11 @@ function xringRunOf(eng, runId, runDir, fsImpl, nowMs, degraded) {
     run.elapsedSec = +Math.max(0, ((stop ? endMs : nowMs) - startedMs) / 1000).toFixed(1)
   }
   const tick = [...events].reverse().find((e) => e.event === 'budget-tick')
-  if (tick) run.lastTick = { ok: tick.ok === true, detail: cap(tick.detail ?? '', 160) }
+  if (tick) {
+    run.lastTick = { ok: tick.ok === true, detail: cap(tick.detail ?? '', 160) }
+    if (Number.isFinite(tick.tokens)) run.lastTick.tokens = tick.tokens // 运行中转录尾代理（近精确）
+    if (Number.isFinite(tick.idleMs)) run.lastTick.idleMs = tick.idleMs // 停滞遥测
+  }
   // 工件计数(A=repro_paths.findings / B=hypotheses / C=lessons): 只在回流发生后可得 ——
   // reflow-start 事件携带 workspace 路径; 无回流 = null(计数不可得的诚实呈现, 不造 0)。
   const rs = [...events].reverse().find((e) => e.event === 'reflow-start')
@@ -1129,6 +1141,13 @@ function xringRunOf(eng, runId, runDir, fsImpl, nowMs, degraded) {
       C: count('lessons.json', 'lessons'),
       reflow: done ? { written: num(done.written) || 0, held: num(done.held) || 0, errors: num(done.errors) || 0 } : null,
     }
+  }
+  // 心跳失联（拍板 6）: running 且末事件早于阈值 → stale 标记（面板降级警告+建议 stop;
+  // monitor 死亡时 worker 会裸奔到自然退出——检测+警告为必做, 自动耦合杀=调查项登记）
+  if (run.status === 'running') {
+    const staleMs = Number(env.P2P_XRING_STALE_MS) || XRING.staleAfterMs
+    const lastTs = Date.parse(events[events.length - 1]?.ts ?? '')
+    if (Number.isFinite(lastTs) && nowMs - lastTs > staleMs) run.stale = { idleMs: nowMs - lastTs, thresholdMs: staleMs }
   }
   return run
 }
@@ -1149,6 +1168,9 @@ export function readXringRuns(opts = {}, fsImpl = fs, env = process.env) {
     return { available: false, base, activeCount: 0, runs: [], degraded } // 无记录面 = 合法空态(尚未跑过任何 run)
   }
   const runs = []
+  const candidates = []
+  let scanned = 0
+  let skipped = 0
   for (const eng of engDirs) {
     let runDirs = []
     try {
@@ -1157,8 +1179,23 @@ export function readXringRuns(opts = {}, fsImpl = fs, env = process.env) {
       degraded.push(`${eng.name}: 不可读(${String(e?.code ?? e?.message ?? e).slice(0, 60)})`)
       continue
     }
-    for (const rd of runDirs) runs.push(xringRunOf(eng.name, rd.name, path.join(base, eng.name, rd.name), fsImpl, nowMs, degraded))
+    for (const rd of runDirs) candidates.push({ eng: eng.name, runId: rd.name, dir: path.join(base, eng.name, rd.name) })
   }
+  // 扫描成本上界（拍板 7）: 按 events.jsonl mtime 新→旧排序, 只解析最近 XRING.maxScan 个——
+  // mtime 早退=记录树积累后老 run 不再逐次解析（活跃计数在"已扫描集合"内, cap 外 run 视为
+  // 非活跃——上限 40 远大于单活跃守卫语义所需的可见窗口）
+  candidates.sort((a, b) => {
+    const mt = (c) => {
+      try { return fsImpl.statSync(path.join(c.dir, 'events.jsonl')).mtimeMs } catch { return 0 }
+    }
+    return mt(b) - mt(a)
+  })
+  for (const c of candidates) {
+    if (scanned >= XRING.maxScan) { skipped++; continue }
+    scanned++
+    runs.push(xringRunOf(c.eng, c.runId, c.dir, fsImpl, nowMs, degraded, env))
+  }
+  if (skipped > 0) degraded.push(`扫描上限 ${XRING.maxScan}: ${skipped} 个更早 run 未解析（mtime 排序截断）`)
   const activeCount = runs.filter((r) => r.status === 'running').length
   runs.sort((a, b) => String(b.startedAt ?? '').localeCompare(String(a.startedAt ?? '')))
   return { available: true, base, activeCount, runs: runs.slice(0, XRING.maxRuns), degraded }

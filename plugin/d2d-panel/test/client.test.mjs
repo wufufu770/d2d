@@ -479,9 +479,10 @@ test('client(config): ConfigView 只读总览(探针降级态) + 写面卡集中
 })
 
 test('client(xring): XRingView 只读投影 — 当前 run/预算/工件/事件尾窗 + 空态; 零动作红线(源码+渲染双面)', () => {
-  // 零动作红线(拍板 1): 片段源码级 — 无事件处理器/无写端点引用/无 button
+  // 零动作红线(拍板 1; XR-P3 拍板 7 词表扩宽): 片段源码级 — 无事件处理器/无写端点/
+  // 无 HTTP 动作词/无内容编辑面（B 层复核观察: 守卫窄于红线措辞——本表扩宽收口）
   const src = fs.readFileSync(path.join(FRAG_DIR, 'view.xring.js'), 'utf8')
-  assert.doesNotMatch(src, /onClick|postJson|'button'/, '零动作红线: 无 onClick/postJson/button 引用')
+  assert.doesNotMatch(src, /onClick|postJson|'button'|addEventListener|XMLHttpRequest|contentEditable|method\s*:\s*['"](POST|PUT|DELETE|PATCH)['"]|\.method\s*=|fetch\(|submit\(|FormData|navigator\.sendBeacon/, '零动作红线: 事件处理器/写端点/HTTP 动作词/编辑面全零引用')
   assert.match(src, /cli\.mjs stop/, 'CLI 提示文案在位(停止唯一例外=CLI)')
   // 空/缺记录面 → 合法空态(CLI 提示仍在)
   const { ctx, els } = loadNewFragment('view.xring.js', {
@@ -494,11 +495,11 @@ test('client(xring): XRingView 只读投影 — 当前 run/预算/工件/事件�
   assert.ok(blob.includes('零干预入口'), 'CLI 提示(空态也在位)')
   // 有 run 数据 → 状态/预算/工件/事件尾窗/degraded
   const snap = { xring: { available: true, base: '/d2d/xring', activeCount: 1, degraded: ['eng-x/run-2: events.jsonl 不可读(ENOENT)'], runs: [
-    { eng: 'eng-x', runId: 'run-1', status: 'running', stopReason: null, startedAt: '2026-10-06T01:00:00.000Z', elapsedSec: 125, budget: { maxHours: 3, maxTokens: 1000000 }, lastTick: { ok: true, detail: '0.03h/3h, 0/1000000 tokens' }, artifacts: null, events: [
+    { eng: 'eng-x', runId: 'run-1', status: 'running', stopReason: null, startedAt: '2026-10-06T01:00:00.000Z', elapsedSec: 125, mode: 'queue', budget: { maxHours: 3, maxTokens: 1000000 }, lastTick: { ok: true, detail: '0.03h/3h, 12590/1000000 tokens', tokens: 12590, idleMs: 42000 }, artifacts: null, events: [
       { ts: '2026-10-06T01:01:40.000Z', event: 'budget-tick', ok: true, detail: '0.03h/3h, 0/1000000 tokens' },
       { ts: '2026-10-06T01:00:00.000Z', event: 'monitor-start', maxHours: 3, maxTokens: 1000000 },
     ] },
-    { eng: 'eng-x', runId: 'run-0', status: 'stopped', stopReason: 'budget', startedAt: '2026-10-05T09:00:00.000Z', elapsedSec: 10800.5, budget: { maxHours: 3, maxTokens: 1000000 }, lastTick: null, artifacts: { A: 1, B: 2, C: 1, reflow: { written: 2, held: 1, errors: 0 } }, events: [] },
+    { eng: 'eng-x', runId: 'run-0', status: 'stopped', stopReason: 'budget', startedAt: '2026-10-05T09:00:00.000Z', elapsedSec: 10800.5, mode: 'bypass', budget: { maxHours: 3, maxTokens: 1000000 }, lastTick: null, artifacts: { A: 1, B: 2, C: 1, reflow: { written: 2, held: 1, errors: 0 } }, events: [] },
   ] } }
   const { ctx: c2, els: e2 } = loadNewFragment('view.xring.js', {
     useSnapshot: () => ({ snap, err: null, refresh: () => {} }),
@@ -512,7 +513,9 @@ test('client(xring): XRingView 只读投影 — 当前 run/预算/工件/事件�
   assert.ok(b2.includes('活跃 run 1') && b2.includes('历史 2'), '活跃/历史计数 chips')
   assert.ok(b2.includes('running') && b2.includes('stopped·budget'), '状态 chip(含停止原因)')
   assert.ok(b2.includes('预算 3h') && b2.includes('token 上限'), '预算行')
-  assert.ok(b2.includes('时长为主旋钮'), 'token 运行中不可得注记(诚实呈现, XR-P1 通道时序)')
+  assert.ok(b2.includes('档位 queue'), 'U2 档位显示')
+  assert.ok(b2.includes('token 代理: 12,590'), '运行中 token 代理值（转录尾近精确, XR-P3）')
+  assert.ok(b2.includes('转录静默: 42s'), '停滞遥测显示（拍板 4）')
   assert.ok(b2.includes('工件计数待回流'), '未回流=计数不可得(不造 0)')
   assert.ok(b2.includes('budget-tick') && b2.includes('0.03h/3h'), '事件尾窗渲染')
   assert.ok(b2.includes('eng-x/run-2: events.jsonl 不可读'), 'degraded 记因进 UI')
