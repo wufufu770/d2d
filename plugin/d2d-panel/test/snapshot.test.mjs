@@ -1109,8 +1109,8 @@ test('xring: readXringRuns 布局解析 — stopped+reason/预算/工件三级�
   try {
     const ws = path.join(dir, 'eng-a', 'run-1', 'workspace')
     mkXringRun(dir, 'eng-a', 'run-1', [
-      { ts: '2026-10-06T01:00:00.000Z', event: 'monitor-start', runId: 'run-1', maxHours: 3, maxTokens: 1000000 },
-      { ts: '2026-10-06T01:00:30.000Z', event: 'budget-tick', ok: true, detail: '0.01h/3h, 0/1000000 tokens', transcripts: 0 },
+      { ts: '2026-10-06T01:00:00.000Z', event: 'monitor-start', runId: 'run-1', maxHours: 3, maxTokens: 1000000, mode: 'queue' },
+      { ts: '2026-10-06T01:00:30.000Z', event: 'budget-tick', ok: true, detail: '0.01h/3h, 12590/1000000 tokens', transcripts: 1, tokens: 12590, idleMs: 42000 },
       { ts: '2026-10-06T01:01:00.000Z', event: 'budget-exceeded', reason: 'timeout', detail: '3.00h >= 3h' },
       { ts: '2026-10-06T01:01:00.100Z', event: 'stop', reason: 'budget', detail: '3.00h >= 3h' },
       { ts: '2026-10-06T01:01:01.000Z', event: 'reflow-start', runId: 'run-1', workspace: ws },
@@ -1134,7 +1134,10 @@ test('xring: readXringRuns 布局解析 — stopped+reason/预算/工件三级�
     assert.equal(run.startedAt, '2026-10-06T01:00:00.000Z')
     assert.equal(run.elapsedSec, 60.1, 'stop 事件边界计时')
     assert.deepEqual(run.budget, { maxHours: 3, maxTokens: 1000000 })
+    assert.equal(run.mode, 'queue', 'U2 档位投影（首事件落档）')
     assert.equal(run.lastTick.ok, true)
+    assert.equal(run.lastTick.tokens, 12590, '运行中 token 代理值（XR-P3 转录尾）')
+    assert.equal(run.lastTick.idleMs, 42000, '停滞遥测投影')
     assert.deepEqual(run.artifacts, { A: 1, B: 2, C: 1, reflow: { written: 2, held: 1, errors: 0 } }, 'A/B/C 三级计数 + 回流账目')
     assert.equal(run.events.length, 6, '坏行不进尾窗')
     assert.equal(run.events[0].event, 'monitor-start')
@@ -1184,6 +1187,40 @@ test('xring: fail-soft — base 缺失=available:false 空态; workspace 缺失=
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 })
 
+test('xring: 心跳失联 stale 标记 + 扫描 cap（拍板 6/7）', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xring-stale-'))
+  try {
+    // running + 末事件早于阈 → stale; stopped 不标
+    mkXringRun(dir, 'eng-e', 'run-stale', [
+      { ts: '2026-10-06T01:00:00.000Z', event: 'monitor-start', runId: 'run-stale', maxHours: 1, maxTokens: 100000 },
+      { ts: '2026-10-06T01:01:00.000Z', event: 'budget-tick', ok: true, detail: 'x' },
+    ])
+    mkXringRun(dir, 'eng-e', 'run-stopped', [
+      { ts: '2026-10-06T00:00:00.000Z', event: 'monitor-start', runId: 'run-stopped', maxHours: 1, maxTokens: 100000 },
+      { ts: '2026-10-06T00:30:00.000Z', event: 'stop', reason: 'user', detail: 'd' },
+    ])
+    const nowMs = Date.parse('2026-10-06T01:05:00.000Z') // stale run 末事件后 4 分钟（>120s 阈）
+    const r = readXringRuns({ base: dir, nowMs })
+    const st = r.runs.find((x) => x.runId === 'run-stale')
+    assert.deepEqual(st.stale, { idleMs: 240000, thresholdMs: 120000 }, 'running 心跳失联=stale 标记')
+    assert.equal(r.runs.find((x) => x.runId === 'run-stopped').stale, undefined, 'stopped 不标')
+    // env 阈可调
+    const r2 = readXringRuns({ base: dir, nowMs: Date.parse('2026-10-06T01:02:30.000Z') }, fs, { P2P_XRING_STALE_MS: '60000' })
+    assert.ok(r2.runs.find((x) => x.runId === 'run-stale')?.stale, 'env 阈 60s 下 90s 间隔即标（严格大于）')
+    // 扫描 cap: 45 run 目录只解析 40, degraded 记因
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'xring-cap-'))
+    try {
+      for (let i = 0; i < 45; i++) {
+        fs.mkdirSync(path.join(dir2, 'eng', `run-${String(i).padStart(2, '0')}`), { recursive: true })
+        fs.writeFileSync(path.join(dir2, 'eng', `run-${String(i).padStart(2, '0')}`, 'events.jsonl'), JSON.stringify({ ts: '2026-10-06T01:00:00.000Z', event: 'stop', reason: 'user' }) + '\n')
+      }
+      const r3 = readXringRuns({ base: dir2 })
+      assert.equal(r3.runs.length, 20, '返回仍受 maxRuns=20 截（解析成本由 maxScan=40 封顶）')
+      assert.ok(r3.degraded.some((d) => d.includes('扫描上限 40: 5 个更早 run 未解析')), 'cap 截断记因（45-40=5 个 mtime 最旧不解析）')
+    } finally { fs.rmSync(dir2, { recursive: true, force: true }) }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
 test('xring: env 注入与 buildSnapshot 集成 — snap.xring 节随记录面在/缺切换(缺=available:false 不炸)', async () => {
   const saved = process.env.P2P_XRING_RECORD
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xring-snap-'))
@@ -1198,8 +1235,9 @@ test('xring: env 注入与 buildSnapshot 集成 — snap.xring 节随记录面�
     assert.equal(snap.xring.runs[0].status, 'stopped')
     assert.equal(snap.xring.runs[0].stopReason, 'user')
     assert.equal(snap.xring.activeCount, 0)
-    // 无记录面 → 空形态(整体快照不抛 = xring 面与图 fail-closed 语义刻意区分)
-    delete process.env.P2P_XRING_RECORD
+    // 无记录面 → 空形态(整体快照不抛 = xring 面与图 fail-closed 语义刻意区分)。
+    // env 注入不存在的路径（XR-P2 B 层观察修正: 不依赖本机无真实记录面——消机器状态依赖）
+    process.env.P2P_XRING_RECORD = path.join(os.tmpdir(), 'xring-snap-definitely-missing')
     snap = await buildSnapshot(makeFake())
     assert.equal(snap.xring.available, false)
     assert.deepEqual(snap.xring.runs, [])
