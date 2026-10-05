@@ -545,12 +545,29 @@ off 只标不回流）+stray 报告不擅杀+smoke worker-spawned 事件；注�
 +扫描成本上界 maxScan=40+零动作守卫词表扩宽+测试例 4 env 注入化]；**AGENTS.md 16**
 [证据与清单提交态一致性——XR-P2 双教训固化]；提交态双 smoke 复跑 SHA 标注[纪律 16
 首演]；基线 pytest **414**/mocha **2022+1 pending**/panel **94**[+1 stale/cap]）
-下一步建议（**当前唯一有效**·XR-P3 时点）：**XR-P4 首跑验收排批归用户**[受控靶端到端+
+下一步建议（历史·XR-P3 时点，已被后续批单值化取代）：**XR-P4 首跑验收排批归用户**[受控靶端到端+
 零主流程触碰证明；**前置=allowlist 白名单内容归用户填入**——当前占位 cli start 会拒绝；
 单活跃守卫已就位，并发放开归 P4 后评估]；PDEATHSIG 自动耦合杀调查项登记[拍板 6 非必做]；
 graphd worker-token 写面是否收紧（降只读）归用户裁决；LBD-2 观察期进行中[AGENTS.md 15]；
 R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/
 人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+XR-P4 ◐（**X-Ring 首跑验收批**[双阶段结构]：**阶段 A ✅**[族 0 顺手项五件[charCodeAt 码元
+对齐/max-wins 采纳/smoke 重试+toString/worker.json 旁记录/CLI stray 激活]+族 1 verify
+真执行器[纯重放+机械 EXPECT 比对+歧义 manual+目标面硬边界实测靶外零请求+R9 规避声明
+=重放器非裁判]+族 2 注入链全链[种子→重放 pass→双签→finding 入图；bypass 档 fail/manual
+双双零入图=硬线确定性证明]+DVWA 实测重放 pass[真靶 473ms]+A1-A12 验收表[11/12 静态 ✅
+docs/xrp4-acceptance.md]+AGENTS.md 17[钩子禁用旗标=L3 纪律违反]+XR 波收官小结
+[docs/xr-wave-wrapup.md]；**阶段 B ⏸ gated**[allowlist 仍占位→停下回报=拍板 1 授权
+合法结局]；基线 pytest **414**/mocha **2044**[+8 P4]/panel **94**）
+下一步建议（**当前唯一有效**·XR-P4 时点）：**阶段 B 真首跑=allowlist 填入后单批**
+[唯一前置：~/.d2d-data/config/model-policies.json roles.xring.allowlist 填前沿模型 id；
+DVWA 已就绪 Up:80+重置脚本+NO_PROXY 直连；首跑形态 --max-hours 0.5；验收动作清单
+docs/xrp4-acceptance.md 待命节——跑后回填 A7/A12+复盘]；XR 波收官=阶段 B 后（P0-P3
+完整+P4 阶段 A 已入 docs/xr-wave-wrapup.md 盘点）；
+PDEATHSIG 调查项/max-wins 多段合计口径/smoke 偏差段重试边界=登记非必做；
+graphd worker-token 写面收紧裁决；LBD-2 观察期进行中[AGENTS.md 15]；R5 模型窗口三步/
+EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/
+js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
