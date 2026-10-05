@@ -559,7 +559,7 @@ XR-P4 ◐（**X-Ring 首跑验收批**[双阶段结构]：**阶段 A ✅**[族 0
 docs/xrp4-acceptance.md]+AGENTS.md 17[钩子禁用旗标=L3 纪律违反]+XR 波收官小结
 [docs/xr-wave-wrapup.md]；**阶段 B ⏸ gated**[allowlist 仍占位→停下回报=拍板 1 授权
 合法结局]；基线 pytest **414**/mocha **2044**[+8 P4]/panel **94**）
-下一步建议（**当前唯一有效**·XR-P4 时点）：**阶段 B 真首跑=allowlist 填入后单批**
+下一步建议（历史·XR-P4 时点，已被 WRAP-2 单值化取代）：**阶段 B 真首跑=allowlist 填入后单批**
 [唯一前置：~/.d2d-data/config/model-policies.json roles.xring.allowlist 填前沿模型 id；
 DVWA 已就绪 Up:80+重置脚本+NO_PROXY 直连；首跑形态 --max-hours 0.5；验收动作清单
 docs/xrp4-acceptance.md 待命节——跑后回填 A7/A12+复盘]；XR 波收官=阶段 B 后（P0-P3
@@ -568,6 +568,25 @@ PDEATHSIG 调查项/max-wins 多段合计口径/smoke 偏差段重试边界=登�
 graphd worker-token 写面收紧裁决；LBD-2 观察期进行中[AGENTS.md 15]；R5 模型窗口三步/
 EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/
 js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+
+WRAP-2 ✅（**人工裁决回灌批**[运营闭环最后一块]：**一处入口两路回灌**[graphd 新端点
+/write/adjudicate host-only——路径 A revoke=verified→isolated 既有边[可重开]/experience
+active→deprecated[检索面即时排除+时效降权]；路径 B false_positive=verified→isolated→
+rejected 组合两跳同锁窗[rejected 终态不可逆；dual_sign 零触碰——signed 终态语义不混用；
+标注载体=审计+轨迹 reason 不加列]；面板统一入口=findings tab 回灌双按钮[两步确认防误触
++arm 态零出网断言]→host /d2d/api/adjudicate 纯代理]；**审计三面全 append-only**
+[audit.log+transition-log.jsonl+last_transition 轨迹列；auth-fail/adjudicate/
+adjudicate-illegal 全落]；**负例生效实测**[标假阳性后四消费面查询逐一对表：insight 面/
+策略迁移面/双签处理面全过滤+MCP 面可见标注 gate=rejected]；**#18 合并**[抽检=裁决入口
+同 tab 隔离池浏览卡+--sample/--record CLI 记账提示]；**双轨纪律首演**[kuzu 418+ladybug
+418 两轨严格相等——AGENTS.md 15② 首次真实触发 docs/wrap2-dual-track.md]；host-only 403
+双态断言[worker/缺 token]；非 verified 409+illegal 审计；panel **95**[+1]/pytest **418**
+[+4]/mocha **2044**）
+下一步建议（**当前唯一有效**·WRAP-2 时点）：**阶段 B 真首跑=allowlist 填入后单批**
+[唯一前置=roles.xring.allowlist 填前沿模型 id——裁决回灌已就绪给首跑产物纠错回路]；
+**WRAP 波清欠**[下一项按用户排批]；graphd worker-token 写面收紧裁决；LBD-2 观察期进行中
+[AGENTS.md 15]；R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=
+密钥异构小批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
