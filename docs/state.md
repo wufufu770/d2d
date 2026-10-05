@@ -467,10 +467,35 @@ WD-1 ✅（**lease-cas-watchdog 时序 flake 根治批**[测试基建面；XR-P0
 同条件稳定达成（语义保持：quota 拦截不计数+零派发）]；**稳定性证明=本地 20 连跑零
 flake**+CI 三绿+watchdog 面 rerun 第 2 轮绿；底账 mocha **2009**[2007+2 注入用例]/
 pytest **414**/panel **88**；L1 快照开工对比[RSS 173-177MB/线程 9 带内]）
-下一步建议（**当前唯一有效**·WD-1 时点）：**XR-P1 排批归用户**[spawn 接线+写面实测+
+下一步建议（历史·WD-1 时点，已被后续批单值化取代）：**XR-P1 排批归用户**[spawn 接线+写面实测+
 verify 重放骨架；前置=allowlist 白名单内容归用户填入]；LBD-2 观察期进行中[AGENTS.md
 15]；R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构
 小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+XR-P1 ✅（**X-Ring 写面接线批**[spawn 通道+监控接核+回流执行器+双 smoke]：**写权归
+host 回流管道定谳落地**[token 分级实测取证=worker token 对结构化写面可写[I-013 既有
+设计]+host-only 面 403——X-Ring 落**更强形态：worker env 剥除全部图 token**[P2P_WORKER_
+TOKEN 剥除+TOKEN_FILE 指必不存在 sentinel]，实测对 /query 与 /write/* 全 401——安全
+断言固化 xring-p1.test.mjs；graphd 侧是否收紧（worker token 降只读）归用户裁决]；
+**族 1 runner.mjs**[prompt 实例化+adapter 直调零 scheduler+workspace 0750/记录面 0700+
+路径不进 task 文本]；**族 2 monitor 真进程化**[stop-request/budget 双路消费+真计时+
+SIGTERM→SIGKILL 组杀真执行+**递归扫描修复**[真实 dsh 转录三层形态，P0 版两层在真形态
+files=0]+sessionsBucketFor 桶限定[全量扫历史桶线性变慢消解]]；**族 3 reflow.mjs**[
+B/C 直写+A 级必经 verifyRunner+schema 外零写入+host token 持写权]；**族 4 verify 骨架**
+[manual 缺省留验不入图+replay 注入点 pass/fail]；**族 5 双 smoke**[①端到端真 worker
+36.5s 自然退出 code=0+回流 written=2[B+C]errors=0+Experience 图内验证 quarantined×1+
+字段保真②熔断双路径零模型成本[超时 3s 预算组杀真执行 worker 确死+token 预置转录
+180000>100000 触发五步全落]——实录 experiments/results/xrp1-smoke-{e2e,budget}.json+
+docs/xrp1-smoke-record.md]；**实施发现四项登记**[转录会话级落盘时序=运行中 token 增量
+不可得→token 主旋钮退化时长+P2 接会话 tail/zstd 后缀双 d/Hypothesis 归属兜底 eng=''/(
+Experience id 服务端生成 exp-uuid)]；生产 :8766 零写[smoke 全程独立测试实例]+scheduler/
+graphd 零 diff[adapter 仅 +liveWorkerPids 导出=监控组杀必要面]；L1 快照[178MB/线程 9
+带内]；基线 pytest **414**/mocha **2022**[+13: P1 面]/panel **88**）
+下一步建议（**当前唯一有效**·XR-P1 时点）：**XR-P2 排批归用户**[面板 X-Ring tab 只读
+投影]；XR-P3/P4[循环编排+受控靶验收]；**allowlist 白名单内容仍占位归用户填入**[正式
+运行前置]；smoke 重跑非确定性挂起登记[P2 排查——首跑成功实录完整]；graphd worker-token
+写面是否收紧归用户裁决；LBD-2 观察期进行中[AGENTS.md 15]；R5 模型窗口三步/EV-2 实弹
+二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/js catch 146/
+门禁候选二批/探路分支远端清理卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
