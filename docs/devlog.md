@@ -374,3 +374,10 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 关键裁决：**阶段分支如实执行**（allowlist N-0 实测仍占位→阶段 B 不跑=拍板 1 授权的合法结局, 不硬凑 smoke 替代首跑；停下本身是验收纪律的验收）；**max-wins 采纳**（last-wins 在计数器回落段低估→预算语境 max≥last 恒成立=熔断只早不晚, 代价=回落段合计仍低估登记非必做）；**executor 是重放器不是裁判**（R9 面的结构性规避: 判定=人写 expected vs 靶 observed 机械包含, 内容质量判断全在环外）
 教训沉淀：**合法结局与失败的区分要靠拍板事前写死**（"占位→停下回报"入拍板=阶段 B 缺位不构成批次失败）；**硬线强度要用确定性注入链证明**（真首跑只能证明"这次没绕过", 种子工件+反面用例才能证明"绕不过"）
 开放项：阶段 B 真首跑=allowlist 填入后单批（唯一前置; 待命清单就绪）；max-wins 多段合计口径/smoke 偏差段重试边界/PDEATHSIG=登记非必做；graphd worker-token 收紧裁决；LBD-2 观察期；R5 模型窗口/EV-2 实弹/冷读评审/密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+
+## 2026-10-06 · WRAP-2 人工裁决回灌批（运营闭环最后一块；双轨纪律首演）
+底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **418**（+4: adjudicate 端点面）/ mocha **2044** / panel **95**（+1: wrap2）
+产出：**一处入口两路回灌**（graphd /write/adjudicate host-only：路径 A revoke=verified→isolated 既有边可重开/experience active→deprecated 检索面即时排除+时效降权；路径 B false_positive=verified→isolated→rejected 组合两跳同锁窗终态不可逆+dual_sign 零触碰+标注载体=审计与轨迹 reason 不加列；面板 findings tab 回灌双按钮两步确认防误触→host /d2d/api/adjudicate 纯代理）+审计三面全 append-only（audit.log+transition-log+轨迹列；auth-fail/adjudicate/adjudicate-illegal 全落）+负例生效实测（标假阳性后 insight/策略迁移/双签处理面全过滤+MCP 面可见标注——四消费面查询逐一对表）+#18 合并（抽检=裁决入口同 tab 隔离池浏览卡+--sample/--record CLI 提示，不另建面）+**双轨纪律首演**（kuzu 418+ladybug 418 两轨严格相等——AGENTS.md 15② 首次真实触发，docs/wrap2-dual-track.md 命令逐字留档）
+关键裁决：**撤销与标假阳性分态设计**（撤销≠终判——isolated 保留 isolated→candidate 重开边；假阳性=rejected 终态不可逆——两路语义各自忠于状态机既有边，零新态零新列）；**dual_sign 不混用**（signed 终态语义属验证环签章，假阳性判定走八态机——机制边界不跨越）；**审计载体取舍**（不加列拍板⑧沿用——false_positive 标注在审计与轨迹 reason，图内列零增）
+教训沉淀：**状态机扩展前先读全边集**（dual_sign signed→() 终态使 disputed 路径不可达——设计在边集事实面前改道而非改状态机）；**组合两跳要同锁窗**（verified→isolated→rejected 跨两门原子完成，避免中间态窗口）；**面板动作面测试要有状态 hook 探针**（arm 确认态的重渲染可见性——无状态桩测不出两步确认）
+开放项：阶段 B 真首跑=allowlist 填入后单批；WRAP 波后续清欠按用户排批；graphd worker-token 收紧裁决；LBD-2 观察期；R5 模型窗口/EV-2 实弹/冷读评审/密钥异构小批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
