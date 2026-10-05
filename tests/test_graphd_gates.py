@@ -5135,3 +5135,165 @@ def test_t433_dual_sign_transition_endpoint_states(tmp_path, monkeypatch):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ---- WRAP-2: /write/adjudicate 人工裁决回灌(一处入口两路分流; host-only; 既有门既有态) ----
+
+def _wrap2_spawn_server(tmp_path, monkeypatch):
+    """WRAP-2 端点专用(3.5-4-2 同款形态): host+worker 双 token; 预置 verified Finding
+    (dual_sign='signed') + active Experience + 一个 triaged Finding(非 verified 反例)。"""
+    for var in ("P2P_TOKEN", "P2P_TOKEN_REQUIRED", "P2P_OPEN_RANGE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("P2P_HOST_TOKEN", "t-wrap2-host")
+    monkeypatch.setenv("P2P_WORKER_TOKEN", "t-wrap2-worker")
+    monkeypatch.setattr(graphd_app, "_D2D_PAUSE_FILE", str(tmp_path / "paused.json"))
+    dbp = tmp_path / "kuzu_db"
+    db = kuzu.Database(str(dbp))
+    conn = kuzu.Connection(db)
+    for ddl in SCHEMA:
+        conn.execute(ddl)
+    init_schema(conn)
+    conn.execute("CREATE (f:Finding {id:'f-wrap2', eng:'eng-a', title:'verified finding', "
+                 "severity:'low', repro:'r', gate_status:'verified', dual_sign:'signed'})")
+    conn.execute("CREATE (f:Finding {id:'f-triaged', eng:'eng-a', title:'triaged finding', "
+                 "severity:'low', repro:'r', gate_status:'triaged'})")
+    conn.execute("CREATE (x:Experience {id:'exp-wrap2', eng_id:'eng-a', title:'t', content:'c', "
+                 "status:'active', provenance_hash:'ph'})")
+    monkeypatch.setattr(graphd_app, "DB_PATH", str(dbp))
+    monkeypatch.setattr(graphd_app, "_db", db)
+    srv = graphd_app.GraphdHTTPServer(("127.0.0.1", 0), graphd_app.Handler)
+    _threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_address[1]}", conn, srv
+
+
+def _wrap2_post(base_url, payload, token="t-wrap2-host"):
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Auth"] = token
+    req = _urllib_request.Request(base_url + "/write/adjudicate",
+                                  data=json.dumps(payload).encode(), headers=headers)
+    try:
+        with _urllib_request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.load(resp)
+    except _urllib_request.HTTPError as e:
+        return e.code, json.load(e)
+
+
+def test_wrap2_host_only_worker_and_missing_token_denied(tmp_path, monkeypatch):
+    """host-only 断言(WRAP-2 拍板 2/XR-P1 同款取证): worker token 403 + 缺 token 403;
+    状态零变更; auth-fail 审计两落(_auth 包装器既有面)。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    try:
+        payload = {"kind": "finding", "action": "revoke", "id": "f-wrap2",
+                   "operator": "op1", "reason": "误报"}
+        s1, _ = _wrap2_post(base_url, payload, token="t-wrap2-worker")
+        s2, _ = _wrap2_post(base_url, payload, token="")
+        assert s1 == 403 and s2 == 403, (s1, s2)
+        row = conn.execute("MATCH (f:Finding {id:'f-wrap2'}) RETURN f.gate_status").get_next()
+        assert str(row[0]) == "verified", "被拒形态下状态零变更"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    assert len([e for e in events if e["kind"] == "auth-fail"]) >= 2, "auth-fail 审计两落"
+
+
+def test_wrap2_revoke_verified_to_isolated(tmp_path, monkeypatch):
+    """路径 A 撤销: verified→isolated(既有边); last_transition 轨迹+双审计
+    (adjudicate+transition-log)落盘; 其余列零触碰; isolated→candidate 重开边在(撤销≠终判)。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    tlog = tmp_path / "transition-log.jsonl"
+    monkeypatch.setenv("P2P_TRANSITION_LOG", str(tlog))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _wrap2_post(base_url, {"kind": "finding", "action": "revoke",
+                                             "id": "f-wrap2", "operator": "评审员甲",
+                                             "reason": "复验未复现, 撤销待裁"})
+        assert status == 200 and out["ok"] is True, out
+        assert out["to"] == "isolated"
+        row = conn.execute("MATCH (f:Finding {id:'f-wrap2'}) RETURN f.gate_status, "
+                           "f.dual_sign, f.last_transition").get_next()
+        assert str(row[0]) == "isolated", "撤销=隔离待裁态"
+        assert str(row[1]) == "signed", "dual_sign 零触碰(revoke 不混签章语义)"
+        traj = json.loads(str(row[2]))
+        assert traj["from"] == "verified" and traj["to"] == "isolated"
+        assert traj["actor"] == "评审员甲", "轨迹含操作者"
+        ok, err, _ = transition_gate("isolated", "candidate", "op", "re-verify")
+        assert ok, f"isolated→candidate 重开边应合法: {err}"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    adj = [e for e in events if e["kind"] == "adjudicate"]
+    assert len(adj) == 1, [e["kind"] for e in events]
+    d = adj[0]["detail"]
+    assert d["operator"] == "评审员甲" and d["from"] == "verified" and d["to"] == "isolated", d
+    assert d["ts"] and "T" in d["ts"], "审计必须带 ts"
+    tl = [json.loads(l) for l in tlog.read_text().splitlines() if l.strip()]
+    assert any(t["node_id"] == "f-wrap2" and t["actor"] == "评审员甲" and t["source_batch"] == "adjudicate"
+               for t in tl), "transition 旁路日志 append(审计不可删面)"
+
+
+def test_wrap2_false_positive_composed_two_hop_terminal(tmp_path, monkeypatch):
+    """路径 B 标假阳性: verified→isolated→rejected 组合两跳(既有边各自动门, 同一锁窗);
+    rejected 终态不可迁=误报判定不可逆; reason 载 false_positive 标注;
+    检索负例生效实测(WRAP-2 拍板 5): 消费面查询形态逐一对表全过滤。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _wrap2_post(base_url, {"kind": "finding", "action": "false_positive",
+                                             "id": "f-wrap2", "operator": "评审员乙",
+                                             "reason": "false_positive: 鉴权档位标注与实测不符"})
+        assert status == 200 and out["ok"] is True and out["to"] == "rejected", out
+        row = conn.execute("MATCH (f:Finding {id:'f-wrap2'}) RETURN f.gate_status, f.dual_sign").get_next()
+        assert str(row[0]) == "rejected", "假阳性=拒真终态"
+        assert str(row[1]) == "signed", "dual_sign 零触碰(signed 终态语义不混用)"
+        ok, err, _ = transition_gate("rejected", "candidate", "op", "try")
+        assert not ok, "rejected 终态不可迁(不可逆设计)"
+        # 负例生效(消费面查询形态逐一对表):
+        q1 = conn.execute("MATCH (f:Finding) WHERE f.gate_status='verified' AND "
+                          "f.severity IN ['critical','high','medium'] RETURN count(f)").get_next()
+        assert int(q1[0]) == 0, "①insight 面(verified+sev)不再推荐"
+        q2 = conn.execute("MATCH (f:Finding) WHERE f.gate_status='verified' RETURN count(f)").get_next()
+        assert int(q2[0]) == 0, "②策略迁移面(verified 先验)不再推荐"
+        q3 = conn.execute("MATCH (f:Finding) WHERE f.dual_sign IN ['pending','blocked'] RETURN count(f)").get_next()
+        assert int(q3[0]) == 0, "③双签处理面(pending/blocked)不含"
+        q4 = conn.execute("MATCH (f:Finding {id:'f-wrap2'}) RETURN f.gate_status").get_next()
+        assert str(q4[0]) == "rejected", "④MCP/报告面可见但标注 gate=rejected(可见性非推荐)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_wrap2_experience_revoke_and_non_verified_rejected(tmp_path, monkeypatch):
+    """experience revoke: active→deprecated(既有边; experience-ref 检索面 status='active'
+    即时排除=负例降权既有机制); 非 verified finding 409+adjudicate-illegal 审计。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    try:
+        status, out = _wrap2_post(base_url, {"kind": "experience", "action": "revoke",
+                                             "id": "exp-wrap2", "operator": "评审员丙",
+                                             "reason": "幻觉抽检判定: 引用不存在的端点"})
+        assert status == 200 and out["to"] == "deprecated", out
+        row = conn.execute("MATCH (x:Experience {id:'exp-wrap2'}) RETURN x.status").get_next()
+        assert str(row[0]) == "deprecated"
+        q = conn.execute("MATCH (x:Experience) WHERE x.status='active' RETURN count(x)").get_next()
+        assert int(q[0]) == 0, "worker 经验检索面(active)不再推荐"
+        s409, out409 = _wrap2_post(base_url, {"kind": "finding", "action": "revoke",
+                                              "id": "f-triaged", "operator": "op",
+                                              "reason": "不该放行"})
+        assert s409 == 409 and "verified" in out409["error"], out409
+        row2 = conn.execute("MATCH (f:Finding {id:'f-triaged'}) RETURN f.gate_status").get_next()
+        assert str(row2[0]) == "triaged", "被拒形态状态零变更"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    assert len([e for e in events if e["kind"] == "adjudicate-illegal"]) == 1, "非法对象审计可追溯"
+    adj = [e for e in events if e["kind"] == "adjudicate"]
+    assert len(adj) == 1 and adj[0]["detail"]["operator"] == "评审员丙", "合法裁决审计恰一"
