@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // scripts/xring/smoke-budget.mjs — XR-P1 熔断双路径实测（零模型成本; 拍板 3 口径）
 // ①超时路径: stub worker（sleep detached 组）+30s 预算 → 五步真执行（SIGTERM→SIGKILL→读 workspace→回流→stop 事件）
-// ②token 路径: 预置大 usage 转录文件（会话级落盘时序下运行中增量不可得——XR-P1 实测定谳, 拍板 3 原口径）→ token 熔断
+// ②token 路径: 预置大 usage 转录 → token 熔断（XR-P3 语义修正: totalTokens=会话累计值 last-wins;
+// P1"运行中增量不可得"已被调查作废——live 转录尾近实时可得, 预置形态保留因零模型成本）
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { startMonitor, readEvents } from './monitor.mjs'
+import { startMonitor, readEvents, sessionsBucketFor } from './monitor.mjs'
 
 const log = (...a) => console.error('[budget-smoke]', ...a)
 const results = {}
@@ -59,14 +60,16 @@ const results = {}
   fs.mkdirSync(bucket, { recursive: true })
   const sessDir = path.join(bucket, 'session-smoke0001')
   fs.mkdirSync(sessDir)
-  // 预置大 usage 转录: 每行 totalTokens=60000 × 3 行 = 180000 > maxTokens 100000
-  const lines = Array.from({ length: 3 }, (_, i) => JSON.stringify({ type: 'message', seq: i, usage: { inputTokens: 50000, outputTokens: 10000, totalTokens: 60000, cacheReadTokens: 0 } })).join('\n') + '\n'
+  // 预置大 usage 转录（XR-P3 语义修正: dsh usage.totalTokens=会话累计值, last-wins 实证）:
+  // 累计行 40000→80000→120000, 末值 120000 ≥ maxTokens 100000 → 熔断
+  const cum = [40000, 80000, 120000]
+  const lines = cum.map((tt, i) => JSON.stringify({ type: 'message', seq: i, usage: { inputTokens: 40000, outputTokens: 0, totalTokens: tt, cacheReadTokens: 0 } })).join('\n') + '\n'
   const raw = path.join(sessDir, 'session.v3.jsonl')
   fs.writeFileSync(raw, lines)
   execFileSync('zstd', ['-q', '-f', raw])
   fs.renameSync(raw + '.zst', raw + '.zstd')   // zstd CLI 后缀恒 .zst; dsh 产物=双 d(.zstd) — rename 对齐
-  // 桶名与 startMonitor 的 sessionsBucketFor(workspace) 对齐（XR-P1 实测定式）
-  const slug = ('/' + workspace + '/').replaceAll('/', '-')
+  // 桶名与 startMonitor 的 sessionsBucketFor(workspace) 对齐（XR-P3 修正公式=dsh projectKey 源码级）
+  const slug = sessionsBucketFor(workspace)
   const alignedBucket = path.join(sessionsDir, slug)
   if (alignedBucket !== bucket) {
     fs.mkdirSync(path.dirname(alignedBucket), { recursive: true })
@@ -74,7 +77,7 @@ const results = {}
   }
   const stub = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' })
   stub.unref()
-  log('② stub worker pid=', stub.pid, '预置转录 totalTokens=180000 > maxTokens=100000')
+  log('② stub worker pid=', stub.pid, '预置转录累计末值=120000 > maxTokens=100000')
   let term = null
   const mon = startMonitor({
     runId: 'run-tokens', eventsFile, sessionsDir, workspace,
