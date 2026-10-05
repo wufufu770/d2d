@@ -1575,6 +1575,104 @@ class Handler(BaseHTTPRequestHandler):
         # 仅经 log_transition 追加单行(0600/0700 + O_NOFOLLOW, 见 gd/transition_log.py),
         # 不读不改既有行; 无 SQL 无出网。写失败如实 500(本端点的业务就是落盘, 不假成功);
         # 超长截断收敛在模块单点(_MAX), 此处只做必填校验(现有端点 400 惯例)。
+        # ---- WRAP-2: /write/adjudicate —— 人工裁决回灌统一入口(一处入口两路分流, host-only)。
+        # 独立早退路由(transition 族先例同款, 既有路由零改写); 认证照 host 端点先例(_auth("host")
+        # 恒等比较, worker token 403/无 token 401)。两路复用既有门与既有态, 不发明新态不加列:
+        #   路径 A(revoke 撤销): finding verified→isolated(FINDING_TRANSITIONS 既有边, isolated
+        #     =隔离待裁态, isolated→candidate 重开边在=撤销≠终判) / experience active→deprecated
+        #     (experience_transition_gate 既有边, experience-ref 检索面 status='active' 即时排除
+        #     +时效四档 deprecated 降权=检索负例既有机制);
+        #   路径 B(false_positive 标假阳性): finding verified→isolated→rejected 组合两跳(既有边
+        #     各自过门, 同一锁窗)——rejected 终态不可迁=误报判定不可逆, dual_sign 不动(signed 终态
+        #     语义不混用)。false_positive 标注载体=审计+transition 轨迹 reason 前缀(拍板: 不加列)。
+        # 审计三面全 append-only: _audit_event(audit.log)+_log_transition(transition-log.jsonl)+
+        # Finding.last_transition 轨迹列(transition_gate 产物)——无任何删除路径(拍板: 审计不可删)。
+        # 非法迁移/非 verified 对象 409+'adjudicate-illegal' 审计(#73 同款可追溯)。
+        # 共享门自动生效(Content-Length 门/legacy token/R6 denylist 红线扫描——本 path 以 /write/ 开头)。
+        if self.path == "/write/adjudicate":
+            if not self._auth("host"):
+                return self._send(403, {"ok": False, "error": "adjudication requires host token"})
+            kind = str(req.get("kind") or "").strip().lower()
+            action = str(req.get("action") or "").strip().lower()
+            ident = str(req.get("id") or "").strip()
+            operator = str(req.get("operator") or "").strip()
+            reason = str(req.get("reason") or "").strip()
+            if kind not in ("finding", "experience"):
+                return self._send(400, {"ok": False, "error": "kind required (finding|experience)"})
+            if action not in ("revoke", "false_positive"):
+                return self._send(400, {"ok": False, "error": "action required (revoke|false_positive)"})
+            if not ident:
+                return self._send(400, {"ok": False, "error": "id required"})
+            if not (1 <= len(operator) <= 40):
+                return self._send(400, {"ok": False, "error": "operator required (1-40 字符)"})
+            if not (1 <= len(reason) <= 80):
+                return self._send(400, {"ok": False, "error": "reason required (1-80 字符)"})
+            with _locked():  # V-11 同一锁窗: 读旧态→门判定→组合写入(路径 B 两跳原子)
+                try:
+                    conn = kuzu.Connection(db())
+                    if kind == "finding":
+                        r = conn.execute("MATCH (f:Finding {id:$id}) RETURN f.gate_status",
+                                         parameters={"id": ident})
+                        if not r.has_next():
+                            return self._send(404, {"ok": False, "error": "finding not found"})
+                        cur = str(r.get_next()[0] or "candidate")
+                        orig = cur
+                        if cur != "verified":
+                            _err = f"裁决入口仅收 verified 对象(当前 {cur!r})——撤销语义=撤 verified 结论"
+                            _audit_event("adjudicate-illegal",
+                                         {"kind": kind, "action": action, "id": ident, "cur": cur,
+                                          "operator": operator[:80], "err": _err})
+                            return self._send(409, {"ok": False, "error": _err})
+                        hops = [("isolated",)] if action == "revoke" else [("isolated",), ("rejected",)]
+                        traj = None
+                        for (to,) in hops:
+                            ok, err, traj = transition_gate(cur, to, operator, reason)
+                            if not ok:
+                                _audit_event("adjudicate-illegal",
+                                             {"kind": kind, "action": action, "id": ident, "cur": cur,
+                                              "to": to, "operator": operator[:80], "err": err})
+                                return self._send(409, {"ok": False, "error": err})
+                            conn.execute(
+                                "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.last_transition=$traj",
+                                parameters={"id": ident, "to": to, "traj": json.dumps(traj, ensure_ascii=False)})
+                            cur = to
+                        final = cur
+                    else:  # experience
+                        r = conn.execute("MATCH (x:Experience {id:$id}) RETURN x.status",
+                                         parameters={"id": ident})
+                        if not r.has_next():
+                            return self._send(404, {"ok": False, "error": "experience not found"})
+                        cur = str(r.get_next()[0] or "quarantined")
+                        orig = cur
+                        if action != "revoke":
+                            _err = "experience 裁决仅支持 revoke(active→deprecated 既有边)"
+                            _audit_event("adjudicate-illegal",
+                                         {"kind": kind, "action": action, "id": ident, "cur": cur,
+                                          "operator": operator[:80], "err": _err})
+                            return self._send(409, {"ok": False, "error": _err})
+                        ok, err = experience_transition_gate(cur, "deprecated", reason)
+                        if not ok:
+                            _audit_event("adjudicate-illegal",
+                                         {"kind": kind, "action": action, "id": ident, "cur": cur,
+                                          "operator": operator[:80], "err": err})
+                            return self._send(409, {"ok": False, "error": err})
+                        conn.execute("MATCH (x:Experience {id:$id}) SET x.status=$to",
+                                     parameters={"id": ident, "to": "deprecated"})
+                        final = "deprecated"
+                except TimeoutError as _te:
+                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
+                except Exception as e:
+                    return self._send(500, {"ok": False, "error": str(e)[:200]})
+            _audit_event("adjudicate",
+                         {"kind": kind, "action": action, "id": ident, "from": orig, "to": final,
+                          "operator": operator[:80], "reason": reason,
+                          "ts": datetime.now(timezone.utc).isoformat()})
+            _log_transition({"node_id": ident, "from_status": orig,
+                             "to_status": final, "actor": operator, "reason": reason,
+                             "source_batch": "adjudicate"})
+            return self._send(200, {"ok": True, "kind": kind, "action": action, "id": ident,
+                                    "to": final})
+
         if self.path == "/write/transition-log":
             if not self._auth("host"):
                 return self._send(403, {"ok": False, "error": "transition-log requires host token"})
