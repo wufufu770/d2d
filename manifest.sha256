@@ -322,7 +322,7 @@ f407abeab08434f800d81130b88396fee23fb8c5930a3bcef986ff92f97b295b  plugin/pentest
 01dd2de38ba88b87f069fa18c45a0af26879dc1ce588a91be789e4ada99b9957  plugin/pentest-dsh/test/knowledge-gaps.test.mjs
 22087982120d3346c2826601db3a9f91a7e427092955962a5d8cafa1fe5e1452  plugin/pentest-dsh/test/knowledge-retrieval.test.mjs
 4e03df5c14b314b9c7393c82cb74f3c40b4a709c56b36d004fc703a7de468704  plugin/pentest-dsh/test/knowledge-trace.test.mjs
-84746422ad46894c5c180e02935475e44a7bf8200a0a8701d2347ecf347f7e61  plugin/pentest-dsh/test/lease-cas-watchdog.test.mjs
+2b7ba3cf973921618a96a0cd2d3cc7cf4a5ccb25b82005cc72fddf7bbd245824  plugin/pentest-dsh/test/lease-cas-watchdog.test.mjs
 cfd70d908e9e0f65b285524456c4461218d0a3b95340b5f9d334ac653acf648b  plugin/pentest-dsh/test/lifecycle.test.mjs
 054d65527413e06c7f876d8239a92848c3dad1cf6524297530fec6c96159d462  plugin/pentest-dsh/test/mapping.test.mjs
 3a43ffd39cec30ebccae353e2fcf8cd345071b8c83158a8894f704c6d32fb2b7  plugin/pentest-dsh/test/match-site.test.mjs
