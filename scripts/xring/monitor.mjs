@@ -13,6 +13,12 @@ export const BUDGET_LIMITS = Object.freeze({
   maxTokens: { default: 1_000_000, cap: 2_000_000 },
 })
 
+// ---- U2 共存三档（XR-P3 拍板 1；档位细目=本批提示词，方案 §五留位由本批补齐）----
+// off=纯观察（监控记录照常，回流整体跳过=零图写）；queue=缺省（B/C 入 quarantine、
+// A 走 verify 双签）；bypass=B/C 直接入图（落库可见性由 graphd 服务端语义决定——
+// C 写入即隔离是服务端硬语义，档位不改变它）、A 级 verify 双签硬线不随档位豁免。
+export const XRING_MODES = Object.freeze(['off', 'queue', 'bypass'])
+
 /** 预算判定（纯函数）：超时/超 token 任一触发即停。 */
 export function budgetCheck({ elapsedMs, tokensUsed, maxHours, maxTokens }) {
   const hours = elapsedMs / 3_600_000
@@ -120,11 +126,12 @@ export function overBudgetSequence(run, { killFn = null, reflow = null, killAfte
 export function startMonitor(opts) {
   const { runId, eventsFile, sessionsDir, workspace, maxHours = BUDGET_LIMITS.maxHours.default,
     maxTokens = BUDGET_LIMITS.maxTokens.default, startedAt = Date.now(), pollIntervalMs = 30_000,
-    workerPid = null, onTerminate = null, killAfterMs = 8000, killFn = null } = opts
+    workerPid = null, onTerminate = null, killAfterMs = 8000, killFn = null, mode = 'queue' } = opts
   for (const [k, v] of [['maxHours', maxHours], ['maxTokens', maxTokens]]) {
     if (v > BUDGET_LIMITS[k].cap) throw new Error(`${k}=${v} 超硬上限 ${BUDGET_LIMITS[k].cap}（拒绝，不 clamp）`)
   }
-  appendEvent(eventsFile, { event: 'monitor-start', runId, maxHours, maxTokens })
+  if (!XRING_MODES.includes(mode)) throw new Error(`mode=${mode} 非法（${XRING_MODES.join('|')}）`)
+  appendEvent(eventsFile, { event: 'monitor-start', runId, maxHours, maxTokens, mode })
   let terminated = false
   const timer = setInterval(() => {
     if (terminated) return

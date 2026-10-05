@@ -6,7 +6,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { BUDGET_LIMITS, readEvents, appendEvent } from './monitor.mjs'
+import { BUDGET_LIMITS, XRING_MODES, readEvents, appendEvent } from './monitor.mjs'
 
 const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
 
@@ -20,7 +20,9 @@ export function loadPolicies(dataDir = DATA_DIR) {
 
 /**
  * start 参数解析与校验（纯函数；返回 {ok, errors, params}）。
- * 拒绝路径：--model 缺失/不在白名单；--max-hours/--max-tokens 非数/超硬上限（拒绝不 clamp）。
+ * 拒绝路径：--model 缺失/不在白名单；--max-hours/--max-tokens 非数/超硬上限（拒绝不 clamp）；
+ * --mode 非法；bypass 无 --i-know-bypass 显式确认旗标（U2 拍板 1：无旗标拒绝+说明文案）。
+ * mode 优先级：--mode 旗标 > P2P_XRING_MODE env（合法值才采纳）> 'queue' 缺省。
  */
 export function parseStart(argv, policies = loadPolicies()) {
   const errors = []
@@ -33,7 +35,21 @@ export function parseStart(argv, policies = loadPolicies()) {
   if (!model) errors.push('--model 必填（前沿模型准入，显式指定）')
   else if (!allowlist.includes(model)) errors.push(`--model "${model}" 不在 xring 准入白名单（内容归用户维护；当前白名单 ${JSON.stringify(allowlist)}）`)
 
-  const params = { model, maxHours: BUDGET_LIMITS.maxHours.default, maxTokens: BUDGET_LIMITS.maxTokens.default }
+  const modeFlag = get('--mode')
+  const envMode = process.env.P2P_XRING_MODE
+  let mode = 'queue'
+  if (modeFlag !== undefined) {
+    if (!XRING_MODES.includes(modeFlag)) errors.push(`--mode "${modeFlag}" 非法（可选 ${XRING_MODES.join('|')}）`)
+    else mode = modeFlag
+  } else if (envMode !== undefined) {
+    if (!XRING_MODES.includes(envMode)) errors.push(`P2P_XRING_MODE "${envMode}" 非法（可选 ${XRING_MODES.join('|')}）`)
+    else mode = envMode
+  }
+  if (mode === 'bypass' && !argv.includes('--i-know-bypass')) {
+    errors.push('--mode bypass 需显式确认：追加 --i-know-bypass 旗标（B/C 产物绕过排队直达主图；A 级 verify 双签仍为硬线不豁免；确认你理解 bypass 的图卫生代价）')
+  }
+
+  const params = { model, mode, maxHours: BUDGET_LIMITS.maxHours.default, maxTokens: BUDGET_LIMITS.maxTokens.default }
   const mh = get('--max-hours')
   if (mh !== undefined) {
     const n = Number(mh)
