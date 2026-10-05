@@ -149,6 +149,9 @@ mocha 通道瞬断（-1）按先例手动实锚 + CI 全量最终裁决。
    view.xring.js/xrp2-smoke-hang.md 尚未 track → 漏收，B 层复核才发现）；执行口径=
    `git add -A` 先行（或确认 status 无 ?? 项）→ regen → `sha256sum -c` 自校验 →
    全集核对（ls-files vs manifest 条目 comm 为空）→ commit。
+17. **钩子禁用旗标=违反 L3 门纪律（XR-P4 固化）**：任何钩子禁用形态（`--no-verify`/
+   `core.hooksPath` 重定向/同族手段）视同违反 Mimosa L3 门纪律——"已做后果分析"不构成
+   合规依据；commit/push 一律走 world.run 工作流通道（先例 13），交互通道零禁用旗标。
 
 ## 提示词生成规范（给生成批次提示词的一方，人或 AI）
 固定结构：进入[阶段号] → 背景 → 拍板决定（已授权决策直接执行）→
