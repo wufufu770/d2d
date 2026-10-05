@@ -27,7 +27,9 @@ export function budgetCheck({ elapsedMs, tokensUsed, maxHours, maxTokens }) {
   return { ok: true, reason: null, detail: `${hours.toFixed(2)}h/${maxHours}h, ${tokensUsed}/${maxTokens} tokens` }
 }
 
-/** 转录单行 → usage.totalTokens（非 usage 行/坏行 = 0）。 */
+/**
+ * 转录单行 → usage.totalTokens（非 usage 行/坏行 = 0）。
+ */
 export function parseUsageLine(line) {
   try {
     const j = JSON.parse(line)
@@ -37,28 +39,37 @@ export function parseUsageLine(line) {
   }
 }
 
-/** 多行累计（纯函数）。 */
+/**
+ * 多行累计（纯函数；语义=**会话内 last-wins**）。
+ * XR-P3 调查实证（docs/xrp3-token-investigation.md）: dsh 转录 usage.totalTokens 为
+ * 会话累计值（单调递增+cache 抖动微降, 4/4 样本 last==max）——旧求和语义高估 ~16×
+ * （探针实录: sumAll 198356 vs 真值 lastTotal 12149）。
+ */
 export function accumulateUsage(lines) {
   let total = 0
   let messages = 0
   for (const line of lines) {
     const t = parseUsageLine(line)
-    if (t > 0) messages++
-    total += t
+    if (t > 0) { messages++; total = t } // last-wins: 累计计数器取末值
   }
   return { totalTokens: total, usageMessages: messages }
 }
 
 /**
- * 转录目录 token 累计（通道①）：递归扫 sessions 下全部 *.jsonl.zstd（真实 dsh 形态=
- * sessions/<cwd 桶>/session-<uuid>/session.v3.jsonl.zstd 三层; XR-P1 实测修——P0 版只扫
- * 两层在真形态下 files=0），unzstd 只读解压逐行累计（仓内先例同构：adapter-dsh.mjs:101）。
- * runExec 注入点：测试传假实现；生产缺省 spawnSync('unzstd')。
+ * 转录目录 token 累计（通道①，XR-P3 升格=运行中近精确代理）：递归扫桶下全部
+ * *.jsonl.zstd（真实 dsh 形态=sessions/<projectKey(cwd)>/session-<uuid>/session.v3.jsonl.zstd），
+ * unzstd 只读解压逐行累计。dsh 源码级事实（调查实录）：追加经 200ms 批窗持久落盘
+ * （enqueueLive→drainLive→appendLines fsync），转录文件运行中存在且增长、可随时解码
+ * ——运行中 token 增量可得的结论推翻 P1"会话级落盘时序不可得"旧解释（该误诊实为
+ * 桶名公式错+解码缺位）。runExec 注入点：测试传假实现；缺省 spawnSync('unzstd')。
+ * 返回 { totalTokens, files, bytes, idleMs } — bytes/idleMs=停滞遥测（拍板 4）。
  */
-export function collectTranscriptUsage(sessionsDir, runExec, subBucket = null) {
+export function collectTranscriptUsage(sessionsDir, runExec, subBucket = null, nowMs = Date.now()) {
   const exec = runExec ?? ((file) => spawnSync('unzstd', ['-c', file], { maxBuffer: 2e8, encoding: 'utf8' }))
   let totalTokens = 0
   let files = 0
+  let bytes = 0
+  let newestMtimeMs = 0
   const walk = (dir) => {
     let entries
     try {
@@ -71,19 +82,44 @@ export function collectTranscriptUsage(sessionsDir, runExec, subBucket = null) {
       if (d.isDirectory()) walk(p)
       else if (d.name.endsWith('.jsonl.zstd')) {
         files++
+        try {
+          const st = fs.statSync(p)
+          bytes += st.size
+          if (st.mtimeMs > newestMtimeMs) newestMtimeMs = st.mtimeMs
+        } catch { /* stat 失败不碍解码累计 */ }
         const r = exec(p)
         if (r.status === 0 && r.stdout) totalTokens += accumulateUsage(String(r.stdout).split('\n')).totalTokens
       }
     }
   }
-  // subBucket: workspace 对应桶（XR-P1 smoke 实测——全量扫历史桶随运行次数线性变慢）
+  // subBucket: workspace 对应桶（全量扫历史桶随运行次数线性变慢——P2 挂起根因, 恒桶限定）
   walk(subBucket ? path.join(sessionsDir, subBucket) : sessionsDir)
-  return { totalTokens, files }
+  return { totalTokens, files, bytes, idleMs: newestMtimeMs ? Math.max(0, nowMs - newestMtimeMs) : null }
 }
 
-/** dsh 会话桶名推导: ('/' + workspace + '/') 全 '/' → '-'（实测桶名逐字一致）。 */
+/**
+ * dsh 会话桶名推导（源码级对齐 dsh-session-persistence-jsonl projectKey）：
+ * 分隔符（/ \\ :）游程折叠为单个 '-'；[A-Za-z0-9._-] 保留；其余 → ~XXXX 十六进制转义；
+ * 剥前导 '-' 后以 `--…--` 双杠包裹（截 251 字符；空串落 'root'）。
+ * XR-P3 调查实证：旧 '/'+ws+'/' replaceAll 公式少一个尾杠恒 mismatch（真桶双尾杠），
+ * 是 P1/P2 files=0 误诊的真因。
+ */
 export function sessionsBucketFor(workspace) {
-  return ('/' + workspace + '/').replaceAll('/', '-')
+  let readable = ''
+  let sep = false
+  for (const ch of String(workspace)) {
+    if (ch === '/' || ch === '\\' || ch === ':') {
+      if (!sep) readable += '-'
+      sep = true
+    } else if (ch !== '~' && /^[A-Za-z0-9._-]$/.test(ch)) {
+      readable += ch
+      sep = false
+    } else {
+      readable += '~' + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+      sep = false
+    }
+  }
+  return `--${(readable.replace(/^-+/, '') || 'root').slice(0, 251)}--`
 }
 
 /** events.jsonl 追加（append-only；本进程独占写——调用方约定单写者）。 */
@@ -140,7 +176,9 @@ export function startMonitor(opts) {
     const stopReq = [...events].reverse().find((e) => e.event === 'stop-request')
     const usage = collectTranscriptUsage(sessionsDir, null, workspace ? sessionsBucketFor(workspace) : null)
     const verdict = budgetCheck({ elapsedMs: Date.now() - startedAt, tokensUsed: usage.totalTokens, maxHours, maxTokens })
-    appendEvent(eventsFile, { event: 'budget-tick', ok: verdict.ok, detail: verdict.detail, transcripts: usage.files })
+    // token 旋钮升格（XR-P3 调查实录）: 运行中转录尾近精确（200ms 批窗+append fsync）——
+    // budgetCheck 的 tokensUsed 即该值; 停滞遥测随 tick 落盘（transcriptBytes/idleMs, 拍板 4）
+    appendEvent(eventsFile, { event: 'budget-tick', ok: verdict.ok, detail: verdict.detail, transcripts: usage.files, tokens: usage.totalTokens, transcriptBytes: usage.bytes, idleMs: usage.idleMs })
     if (stopReq) {
       terminated = true
       clearInterval(timer)
