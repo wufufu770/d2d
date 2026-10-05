@@ -2852,17 +2852,20 @@ def test_3542_transition_requires_host_token(tmp_path, monkeypatch):
     monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
     base_url, conn, srv = _3542_spawn_server(tmp_path, monkeypatch)
     try:
-        for tok in ("t-3542-worker", None):
+        for tok, expect in (("t-3542-worker", 403), (None, 401)):
+            # WRAP-3 gap 12 语义分层: worker token=已认证未授权 403(路由内 _auth("host"));
+            # 无 token=未认证 401(认证前置块——先于 denylist 扫描, 差分 oracle 关闭)
             status, out = _3542_post(base_url, {"experience_id": "exp-3542", "target_status": "active",
                                                 "reviewer_note": "越权探针"}, token=tok)
-            assert status == 403 and "host token" in out["error"], (tok, out)
+            assert status == expect and "token" in out["error"], (tok, out)
         assert str(conn.execute("MATCH (x:Experience {id:'exp-3542'}) RETURN x.status").get_next()[0]) \
             == "quarantined", "越权请求状态不变"
     finally:
         srv.shutdown()
         srv.server_close()
     kinds = _354_audit_kinds(audit_log)
-    assert kinds.count("auth-fail") == 2, kinds
+    assert kinds.count("auth-fail") == 1 and kinds.count("auth-fail-worker") == 1, \
+        "WRAP-3 gap 12 分层: worker 臂 auth-fail + 无 token 臂 auth-fail-worker " + str(kinds)
 
 
 def test_3542_transition_idempotent_no_double_apply(tmp_path, monkeypatch):
@@ -3524,18 +3527,20 @@ def test_361_transition_requires_host_token(tmp_path, monkeypatch):
         status, out = _361_post(base_url, "/write/frontier", _361_valid_payload())
         assert status == 200, out
         fid = out["id"]
-        for tok in ("t-361-worker", None):
+        for tok, expect in (("t-361-worker", 403), (None, 401)):
+            # WRAP-3 gap 12 语义分层(同 3542 注): worker 403/无 token 401
             status, out = _361_post(base_url, "/write/frontier-transition",
                                     {"frontier_id": fid, "target_status": "accepted",
                                      "review_note": "越权探针"}, token=tok)
-            assert status == 403 and "host token" in out["error"], (tok, out)
+            assert status == expect and "token" in out["error"], (tok, out)
         assert str(conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status",
                                 parameters={"id": fid}).get_next()[0]) == "proposed", "越权请求状态不变"
     finally:
         srv.shutdown()
         srv.server_close()
     kinds = _354_audit_kinds(audit_log)
-    assert kinds.count("auth-fail") == 2, kinds
+    assert kinds.count("auth-fail") == 1 and kinds.count("auth-fail-worker") == 1, \
+        "WRAP-3 gap 12 分层: worker 臂 auth-fail + 无 token 臂 auth-fail-worker " + str(kinds)
     assert kinds.count("frontier-transition") == 0, "越权不得产生成功转态审计"
 
 
@@ -5190,14 +5195,18 @@ def test_wrap2_host_only_worker_and_missing_token_denied(tmp_path, monkeypatch):
                    "operator": "op1", "reason": "误报"}
         s1, _ = _wrap2_post(base_url, payload, token="t-wrap2-worker")
         s2, _ = _wrap2_post(base_url, payload, token="")
-        assert s1 == 403 and s2 == 403, (s1, s2)
+        assert s1 == 403, (s1, "worker token=已认证未授权 403")
+        assert s2 == 401, (s2, "WRAP-3 gap 12: 无 token=未认证 401(认证前置, 先于 denylist)")
         row = conn.execute("MATCH (f:Finding {id:'f-wrap2'}) RETURN f.gate_status").get_next()
         assert str(row[0]) == "verified", "被拒形态下状态零变更"
     finally:
         srv.shutdown()
         srv.server_close()
     events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
-    assert len([e for e in events if e["kind"] == "auth-fail"]) >= 2, "auth-fail 审计两落"
+    # WRAP-3 gap 12 语义分层: worker 臂拒于路由内 _auth("host")=auth-fail;
+    # 无 token 臂拒于认证前置 _auth("worker")=auth-fail-worker —— 两类合计两落
+    assert len([e for e in events if e["kind"] == "auth-fail"]) == 1
+    assert len([e for e in events if e["kind"] == "auth-fail-worker"]) >= 1, "认证前置审计落(kind 分层)"
 
 
 def test_wrap2_revoke_verified_to_isolated(tmp_path, monkeypatch):
@@ -5297,3 +5306,68 @@ def test_wrap2_experience_revoke_and_non_verified_rejected(tmp_path, monkeypatch
     assert len([e for e in events if e["kind"] == "adjudicate-illegal"]) == 1, "非法对象审计可追溯"
     adj = [e for e in events if e["kind"] == "adjudicate"]
     assert len(adj) == 1 and adj[0]["detail"]["operator"] == "评审员丙", "合法裁决审计恰一"
+
+
+# ---- WRAP-3: gap 12(认证前置消差分 oracle) + TR39 skeleton(同形字骨架折叠) ----
+
+def test_wrap3_gap12_no_denylist_oracle_for_unauthenticated(tmp_path, monkeypatch):
+    """gap 12(WRAP-3 拍板 4): 无凭据者恒 401 且不触 denylist 扫描——载荷含红线资产与否则
+    不可区分(403/401 差分 oracle 关闭); 已认证者(worker)红线行为不变 403。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    monkeypatch.setattr(graphd_app, "DENYLIST", {"domains": ["demo-src.com"], "cidr_prefix": []})
+    try:
+        # ①无凭据 + 红线资产载荷 → 401(修复前=403 denylist-hit, 泄露资源存在性+红线匹配信息)
+        s1, o1 = _wrap2_post(base_url, {"experience_id": "exp-x", "title": "探测 demo-src.com",
+                                        "content": "c", "provenance_hash": "ph"}, token="")
+        assert s1 == 401, (s1, o1)
+        assert "denylist" not in json.dumps(o1), "无凭据响应不得携带 denylist 信息"
+        # ②无凭据 + 无辜载荷 → 401 与①完全同形(不可区分=oracle 关闭)
+        s2, o2 = _wrap2_post(base_url, {"experience_id": "exp-x", "title": "无辜标题",
+                                        "content": "c", "provenance_hash": "ph"}, token="")
+        assert s2 == 401 and o1["error"] == o2["error"], (o1, o2)
+        # ③已认证 worker + 红线资产 → 403 denylist-hit(已认证者行为不变)
+        s3, o3 = _wrap2_post(base_url, {"experience_id": "exp-x", "title": "探测 demo-src.com",
+                                        "content": "c", "provenance_hash": "ph"})
+        assert s3 == 403 and "denylist" in json.dumps(o3), (s3, o3)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    assert len([e for e in events if e["kind"] == "denylist-hit"]) == 1, "denylist-hit 审计恰一(仅已认证轮)"
+    assert len([e for e in events if e["kind"] == "auth-fail-worker"]) >= 2, "无凭据两轮 auth 审计"
+
+
+def test_wrap3_tr39_skeleton_folds_confusable_domain(tmp_path, monkeypatch):
+    """TR39 skeleton(WRAP-3 拍板 3): 跨脚本同形字(西里尔/希腊, NFKC 不折叠——gatewarden #20
+    实证)折叠后与 ASCII 名单条目同构——confusable 域名散文提及被 denylist 扫描命中 403。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    monkeypatch.setattr(graphd_app, "DENYLIST", {"domains": ["demo-src.com"], "cidr_prefix": []})
+    try:
+        # ①西里尔 с(U+0441) 替换 src 的 c → 修复前词边界正则按码点比对漏检
+        s1, o1 = _wrap2_post(base_url, {"experience_id": "exp-x", "title": "探测 demo-srс.com",
+                                        "content": "c", "provenance_hash": "ph"})
+        assert s1 == 403 and "demo-src.com" in json.dumps(o1), (s1, o1)
+        # ②希腊 ο(U+03BF) 替换 demo 的 o → 同折叠命中
+        s2, o2 = _wrap2_post(base_url, {"experience_id": "exp-x", "title": "探测 demο-src.com",
+                                        "content": "c", "provenance_hash": "ph"})
+        assert s2 == 403 and "demo-src.com" in json.dumps(o2), (s2, o2)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    assert len([e for e in events if e["kind"] == "denylist-hit"]) == 2, "两条同形字形态均命中审计"
+
+
+def test_wrap3_tr39_skeleton_pure_function():
+    """skeleton_fold 纯函数单测: cyrillic/greek/CJK 句点折叠 + ASCII 直通 + 空串安全。"""
+    from graphd.gd.confusables import skeleton_fold
+    assert skeleton_fold("demo-srс.com") == "demo-src.com", "西里尔 с→c"
+    assert skeleton_fold("demο-src.com") == "demo-src.com", "希腊 ο→o"
+    assert skeleton_fold("demo-src。com") == "demo-src.com", "CJK 句点→点"
+    assert skeleton_fold("plain-ascii.com") == "plain-ascii.com", "ASCII 直通"
+    assert skeleton_fold("") == ""
+    assert skeleton_fold(None) is None, "空安全(None 原样)"
