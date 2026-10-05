@@ -67,6 +67,9 @@ const Q = {
   agents: `MATCH (a:AgentIdentity) WHERE a.eng = $eng RETURN a.worker_id AS worker_id, a.ring AS ring, a.chain AS chain, a.status AS status, a.checkpoint AS checkpoint, a.todo AS todo, a.updated_at AS updated_at ORDER BY coalesce(a.updated_at, '') DESC LIMIT ${MAX.workers}`,
   findingsByState: `MATCH (f:Finding) WHERE f.eng = $eng RETURN f.gate_status AS state, count(f) AS n`,
   findingsList: `MATCH (f:Finding) WHERE f.eng = $eng RETURN f.id AS id, f.title AS title, f.severity AS severity, f.cvss AS cvss, f.gate_status AS state, f.category AS category, f.ts AS ts, f.verified_at AS verified_at, f.last_transition AS last_transition ORDER BY coalesce(f.ts, '') DESC LIMIT ${MAX.findings}`,
+  // WRAP-2 #18: 幻觉抽检人口=Experience 表 quarantined 隔离池(与 ExperienceWeight 先验表异表)——
+  // 面板抽检浏览面数据源; 裁决回流经 /write/adjudicate(experience revoke)。
+  quarantine: `MATCH (x:Experience) WHERE x.status='quarantined' RETURN x.id AS id, x.title AS title, x.created_at AS created_at ORDER BY coalesce(x.created_at, '') DESC LIMIT 12`,
   experienceTail: `MATCH (x:ExperienceWeight) RETURN x.id AS id, x.pattern AS pattern, x.stack AS stack, x.prior AS prior, x.hits AS hits, x.wins AS wins, x.target_type AS target_type ORDER BY coalesce(x.prior, 1.0) DESC, coalesce(x.hits, 0) DESC LIMIT ${MAX.exp}`,
   signalsTail: `MATCH (s:Signal_) WHERE s.status = 'open' AND s.eng = $eng RETURN s.id AS id, s.type AS type, s.weight AS weight, s.ts AS ts ORDER BY coalesce(s.ts, '') DESC LIMIT ${MAX.signals}`,
   coverage: `MATCH (e:Endpoint) WHERE e.eng = $eng RETURN count(e) AS total, sum(CASE WHEN e.exhausted = true OR e.coverage_votes >= 2 THEN 1 ELSE 0 END) AS covered`,
@@ -749,6 +752,19 @@ export async function transitionFinding({ graphdUrl, token, id, to, actor, reaso
   return data
 }
 
+/** WRAP-2 面板侧裁决回灌: 代理 graphd /write/adjudicate(host token 通道; 两路分流+审计+403 门在 graphd 校验)。 */
+export async function adjudicate({ graphdUrl, token, kind, action, id, operator, reason }, fetchImpl = fetch, timeoutMs = 8000) {
+  const res = await fetchImpl(`${graphdUrl}/write/adjudicate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Auth': token } : {}) },
+    body: JSON.stringify({ kind: String(kind ?? ''), action: String(action ?? ''), id: String(id ?? ''), operator: String(operator ?? ''), reason: String(reason ?? '') }),
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok || !data?.ok) throw new Error(String(data?.error ?? `graphd http ${res.status}`))
+  return data
+}
+
 // ---------- 4-4 子批次 A: 通道①审批队列 pending 计数(快照暴露, 缺席降级 null) ----------
 // 复用 pentest-dsh/scheduler/approvals.mjs(同仓库兄弟包链接部署, 单一格式源); 动态导入 +
 // 失败返 null —— 面板核心快照不因审批队列缺席而降级(fail-soft 只作用这个附加字段)。
@@ -1212,7 +1228,7 @@ export function readXringRuns(opts = {}, fsImpl = fs, env = process.env) {
 export async function buildSnapshot(query, { fleet = null, runEvents = null, modelUsage = null, eng = '', approvalSummary } = {}) {
   const strategies = await loadStrategies(process.env, query).catch(() => [])
   const approvals = approvalSummary !== undefined ? approvalSummary : await readApprovalSummary()
-  const [engListRows, byEngRows, workersByEngRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows, frontierRows, sevRows] = await Promise.all([
+  const [engListRows, byEngRows, workersByEngRows, agents, byStateRows, findings, signals, endpoints, signalsOpen, hypsOpen, experience, experienceTail, coverageRows, gapRows, handoffRows, frontierRows, sevRows, quarantineRows] = await Promise.all([
     query(Q.engList),
     query(Q.findingsByEng),
     query(Q.workersByEng).catch(() => []),
@@ -1230,6 +1246,7 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, mod
     query(Q.handoffs, { eng }),
     query(Q.frontierConversion, { eng }), // T2-1-2: Frontier 两 ref 列按 selected eng(空选中 → 空池全零)
     query(Q_FINDINGS_SEV), // T3-3-2 总览补全: 每 engagement severity 计数(一条聚合喂全列表)
+    query(Q.quarantine), // WRAP-2 #18: 幻觉抽检浏览面(隔离池尾 12, 裁决回流经 adjudicate)
   ])
 
   // W5: 选中 = 显式 selected 文件 > 最新 active > 最新任意(历史回看)。每 engagement 进度聚合。
@@ -1379,5 +1396,11 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, mod
     // XR-P2: X-Ring 过程可见节(只读聚合, fail-soft 恒不抛 —— 记录面缺失=available:false 空形态)
     xring: (() => { try { return readXringRuns({}, fs, process.env) } catch (e) { return { available: false, base: '', activeCount: 0, runs: [], degraded: [String(e?.message ?? e).slice(0, 80)] } } })(),
     approvals, // 4-4 子批次 A: {mode, pending} | null(队列模块缺席降级) — 审批待办计数
+    // WRAP-2 #18: 幻觉抽检浏览面(quarantined 池尾 12)——裁决入口同 tab 抽样浏览形态
+    quarantine: (quarantineRows ?? []).map((x) => ({
+      id: String(x?.id ?? ''),
+      title: cap(x?.title, MAX.title),
+      created_at: String(x?.created_at ?? ''),
+    })),
   }
 }

@@ -2,7 +2,7 @@
 // 路由: ctx.webServer.register({kind:'prefix', path:'/d2d/api'}) — 与 dsh /api 同一道
 // 浏览器信任栅栏(Host loopback/受信 + sec-fetch-site + Origin 同源), 同源零跨域,
 // token 全程留 host 侧。机制参照 dsh-sidebar-leap 宿主半(生态已验证模式)。
-import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, readModelUsage, transitionFinding, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement, buildStarmap, buildCoverage, buildHypLane, buildCapability, readTransitionFlows, readAuditTail, readToolCalls, buildChain, buildFrontierPool, frontierTransition, readConfigOverview, attachEngCosts } from './snapshot.mjs'
+import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, readModelUsage, transitionFinding, adjudicate, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement, buildStarmap, buildCoverage, buildHypLane, buildCapability, readTransitionFlows, readAuditTail, readToolCalls, buildChain, buildFrontierPool, frontierTransition, readConfigOverview, attachEngCosts } from './snapshot.mjs'
 import { validateStartRequest } from './start-policy.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -157,6 +157,17 @@ export function apply(ctx, config = {}) {
           return send(200, { ok: true, transition: r })
         } catch (e) {
           return send(400, { ok: false, error: { code: 'transition-error', message: String(e?.message ?? e).slice(0, 160) } })
+        }
+      }
+      if (method === 'adjudicate') {
+        // WRAP-2: 裁决回灌统一入口(一处入口两路分流; kind/action/id/operator/reason;
+        // host-only+审计+既有门在 graphd /write/adjudicate 校验, 面板纯代理)。
+        try {
+          const r = await adjudicate({ graphdUrl, token: readHostToken(), kind: body.kind, action: body.action, id: body.id, operator: body.operator, reason: body.reason })
+          cache = null // 裁决即状态变更, 快照立即失效
+          return send(200, { ok: true, adjudication: r })
+        } catch (e) {
+          return send(400, { ok: false, error: { code: 'adjudicate-error', message: String(e?.message ?? e).slice(0, 160) } })
         }
       }
       // ---- R6.3: 黑名单卡片 CRUD(改文件 + graphd 热重载) ----
