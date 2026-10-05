@@ -33,6 +33,7 @@ export const ORDER = [
   'view.tools.js', // T3-3-2 工具调用明细 tab: run-log 全事件投影+工具量榜
   'view.audit.js', // T3-3-2 审计时间线 tab: audit.log+transition-log 合流
   'view.config.js', // T3-3-2 配置 tab: 只读总览+配置写面卡集中
+  'view.xring.js', // XR-P2 X-Ring tab: 旁路探索只读投影(零写零动作)
   'router.js', // better-sidebar tab 注册(inject / apply / exports)
 ]
 
