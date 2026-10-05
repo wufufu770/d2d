@@ -504,7 +504,7 @@ XR-P2 ✅（**X-Ring 面板 tab 批**[只读投影+过程可见 M6 落地]：**�
 恒不抛**[记录面缺失=available:false 空形态，与图查询 fail-closed 整体 503 语义刻意区分；
 坏行跳过+degraded 记因]；env seam P2P_XRING_RECORD/D2D_DATA_DIR 同序回退]；
 **族 2 view.xring.js**[第 9 tab order 68'd2d XRing'——当前 run/预算/工件/事件尾窗/历史
-列表/CLI 提示文案"停止请用 cli.mjs stop"（/xring-stop 唯一干预例外，tab 零干预入口）；
+列表/CLI 提示文案"停止请用 cli.mjs stop"（CLI stop 唯一干预例外，tab 零干预入口）；
 **零写零动作红线**[源码级 grep 无 onClick/postJson/button+渲染级零 button 双面固化
 client.test.mjs]；token"时长主旋钮"注记[运行中不可得诚实呈现]；空态=合法形态]；
 **族 3 panel 测试增量**[93/93 全绿 +5：snapshot 4 例[布局解析/stopped+reason/工件三级
@@ -520,7 +520,7 @@ client.test.mjs]；token"时长主旋钮"注记[运行中不可得诚实呈现]�
 +reflow written=2+图内验证 1+1——docs/xrp2-smoke-hang.md 留档]]；生产代码面零触碰
 [panel 面板+smoke 工具两处；graphd/scheduler 零 diff]；L1 快照[RSS 175.8MB/线程 9/
 engine ladybug 带内]；基线 pytest **414**/mocha **2022**/panel **93**[+5])
-下一步建议（**当前唯一有效**·XR-P2 时点）：**XR-P3 循环编排排批归用户**[停滞等价接管/
+下一步建议（历史·XR-P2 时点，已被后续批单值化取代）：**XR-P3 循环编排排批归用户**[停滞等价接管/
 孤儿回收/成本熔断/U2 三档宿主侧实现]；XR-P4 首跑验收[DVWA/本地受控靶端到端+零主流程
 触碰证明；**前置=allowlist 白名单内容归用户填入**——当前占位 cli start 会拒绝]；
 graphd worker-token 写面是否收紧（降只读）归用户裁决；smoke 收集段转录压缩落后于
@@ -528,6 +528,29 @@ graphd worker-token 写面是否收紧（降只读）归用户裁决；smoke 收
 LBD-2 观察期进行中[AGENTS.md 15]；R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍
 悬置归用户；其余候选=密钥异构小批/人工裁决回灌批/js catch 146/门禁候选二批/探路分支
 远端清理卫生批——排批归用户
+XR-P3 ✅（**X-Ring 循环编排批**[U2 三档+token 软代理+孤儿回收+生命周期守卫]：
+**调查先行双误诊纠正**[dsh 源码级+live 探针 62.7s 实录：①转录 200ms 批窗持久追加=
+运行中可解码——P1"会话级落盘不可得"作废②sessionsBucketFor 桶名公式恒 mismatch=
+P1/P2 files=0 真因（重写为 projectKey 源码级）③usage.totalTokens=会话累计值
+last-wins——旧求和语义高估 16.3×（198356 vs 12149）；docs/xrp3-token-investigation.md]
+；**族 1 U2 三档**[off/queue/bypass：off=整体跳过零图写；queue 缺省；bypass=A 级
+verify 硬线不豁免断言固化+--i-know-bypass 显式旗标；mode 旗标>env>缺省三入口，
+monitor-start 首事件落档]；**族 2 token 软代理升格近精确**[budget-tick 增 tokens/
+transcriptBytes/idleMs；budgetCheck 用转录尾值——token 熔断从退出后可判升格运行中
+近精确（批窗 200ms）；面板"token 代理"注记替换"时长为主旋钮"]；**族 3 孤儿回收**
+[recover.mjs：pid 确死/心跳超时→orphaned 标记+遗留 workspace 回流（mode 尊重落档，
+off 只标不回流）+stray 报告不擅杀+smoke worker-spawned 事件；注入测试四形态]；
+**族 4 生命周期守卫**[单活跃守卫（cli start 拒绝+stop 提示）+monitor 失联检测
+（stale 警告不自动杀——PDEATHSIG 调查项登记）+停滞遥测（转录静默入 events+面板）
++扫描成本上界 maxScan=40+零动作守卫词表扩宽+测试例 4 env 注入化]；**AGENTS.md 16**
+[证据与清单提交态一致性——XR-P2 双教训固化]；提交态双 smoke 复跑 SHA 标注[纪律 16
+首演]；基线 pytest **414**/mocha **2022+1 pending**/panel **94**[+1 stale/cap]）
+下一步建议（**当前唯一有效**·XR-P3 时点）：**XR-P4 首跑验收排批归用户**[受控靶端到端+
+零主流程触碰证明；**前置=allowlist 白名单内容归用户填入**——当前占位 cli start 会拒绝；
+单活跃守卫已就位，并发放开归 P4 后评估]；PDEATHSIG 自动耦合杀调查项登记[拍板 6 非必做]；
+graphd worker-token 写面是否收紧（降只读）归用户裁决；LBD-2 观察期进行中[AGENTS.md 15]；
+R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=密钥异构小批/
+人工裁决回灌批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），

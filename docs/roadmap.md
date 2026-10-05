@@ -86,7 +86,7 @@ metrics 标准化。上游一动随时可插队。
 | 8 | T4-4 OTel | 遥测接入 | **触发条件**：上游 GenAI OTel 正式版 | L | 遥测面板+采样策略成文 | 挂触发条件 |
 | 9 | T4-5 公开脱敏 | 公开前必修（含 #3 真 eng 名处理等脱敏清单） | 用户拍板公开时点 | M | 脱敏清单全清+双通道发布 smoke | 归用户 |
 | 10 | 长期项群 | T4-1 分布式 / LadybugDB B 预案（四触发条件）/ 6-6 双条件解锁 / embedding hook R5（接入后重测 26 条）/ v3 阻断语义（首个分歧对触发——决策账）/ **attended 宿主工程化**（触发条件=[评测频次成瓶颈/无人值守场景]——EV-2 宿主缺口发现后登记；安全姿态注记：当前人在环启动是**监督特性非纯摩擦**，工程化前须裁决接受「无人在环+双签/门禁留痕」替代形态） | 各自触发条件 | — | 各自定义 | 不排期 |
-| 11 | X-Ring v1.1 旁路自主探索通道 | XR-P0 骨架+spawn 通道→P1 写面接线→P2 面板 tab→P3 循环编排→P4 受控靶验收（五 Phase 修订路线 docs/xr0-audit.md；方案全文 docs/xring-plan.md §五） | **XR-0 ✅**（六项定谳零红线）；**XR-P0 ✅**（全文入库+三 Schema+prompt 零流程+roles.xring+骨架）；**XR-P1 ✅**（spawn 通道+监控接核+回流执行器+verify 骨架+双 smoke；写权归 host=worker env 剥除全图 token 实测 401）；**XR-P2 ✅**（面板 X-Ring tab 只读投影+过程可见 M6——host 聚合面 fail-soft+零写零动作红线双面固化+smoke 挂起根治；panel 93） | M-L | P4 首跑验收=受控靶端到端+零主流程触碰证明（前置=allowlist 白名单内容归用户填入） | **XR-P3 待用户排批**（循环编排：停滞等价接管/孤儿回收/成本熔断/U2 三档宿主侧） |
+| 11 | X-Ring v1.1 旁路自主探索通道 | XR-P0 骨架+spawn 通道→P1 写面接线→P2 面板 tab→P3 循环编排→P4 受控靶验收（五 Phase 修订路线 docs/xr0-audit.md；方案全文 docs/xring-plan.md §五） | **XR-0 ✅**（六项定谳零红线）；**XR-P0 ✅**（全文入库+三 Schema+prompt 零流程+roles.xring+骨架）；**XR-P1 ✅**（spawn 通道+监控接核+回流执行器+verify 骨架+双 smoke；写权归 host=worker env 剥除全图 token 实测 401）；**XR-P2 ✅**（面板 X-Ring tab 只读投影+过程可见 M6——host 聚合面 fail-soft+零写零动作红线双面固化+smoke 挂起根治；panel 93） | M-L | P4 首跑验收=受控靶端到端+零主流程触碰证明（前置=allowlist 白名单内容归用户填入） | **XR-P3 ✅**（U2 三档[off/queue/bypass+A 级硬线]+token 软代理升格近精确[调查双误诊纠正：桶名公式+累计语义]+孤儿回收+stray 检测+单活跃守卫+失联检测+停滞遥测；panel 94） |
 
 ## 悬置小批（不占梯队号）
 | 小批 | 内容 | 时机 |
