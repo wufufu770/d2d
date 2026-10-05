@@ -9,6 +9,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { validateFile } from './validate.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
+import { XRING_MODES } from './monitor.mjs'
 
 async function post(graphdUrl, apiPath, payload, token) {
   const res = await fetch(graphdUrl + apiPath, {
@@ -39,19 +40,32 @@ export function provenanceOf(runId) {
 
 /**
  * 回流主入口。
- * opts: { workspace, runId, graphdUrl, hostToken, eventsFile?, verifyRunner?, eng? }
- * 返回 { ok, written, held, errors } — written=已入图条目, held=A 级 manual 留验。
+ * opts: { workspace, runId, graphdUrl, hostToken, eventsFile?, verifyRunner?, eng?, mode? }
+ * mode（U2 三档, XR-P3 拍板 1）: 'off'=整体跳过零图写（工件只留 workspace, 事件照落）；
+ * 'queue'（缺省）/'bypass'=走本写管道——两者在可控写面上同形: B/C 经六写端点入图, 落库
+ * 可见性由 graphd 服务端语义决定（C 写入即隔离是服务端硬语义, 档位不改变它）; bypass 档
+ * 的现实契约=A 级 verify 双签硬线不随档位豁免（测试断言固化, xring-p3）。
+ * 返回 { ok, written, held, errors, skipped? } — written=已入图条目, held=A 级 manual 留验。
  */
 export async function reflow(opts) {
-  const { workspace, runId, graphdUrl, hostToken, eventsFile = null, eng = '' } = opts
+  const { workspace, runId, graphdUrl, hostToken, eventsFile = null, eng = '', mode = 'queue' } = opts
+  if (!XRING_MODES.includes(mode)) throw new Error(`mode=${mode} 非法（${XRING_MODES.join('|')}）`)
   const verifyRunner = opts.verifyRunner ?? createVerifyRunner()
   const written = []
   const held = []
   const errors = []
-  const found = scanArtifacts(workspace)
-
   const emit = (event) => { if (eventsFile) { try { fs.appendFileSync(eventsFile, JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n') } catch {} } }
-  emit({ event: 'reflow-start', runId, workspace })
+
+  if (mode === 'off') {
+    // 纯观察档: 扫描照做（产物形态可见）, 写面整体跳过——数据保全在 workspace, 零图写。
+    const found = scanArtifacts(workspace)
+    emit({ event: 'reflow-start', runId, workspace, mode, skipped: true })
+    emit({ event: 'reflow-done', runId, mode, skipped: true, written: 0, held: 0, errors: 0 })
+    return { ok: true, skipped: true, written, held, errors, artifacts: Object.keys(found).filter((k) => found[k]) }
+  }
+
+  const found = scanArtifacts(workspace)
+  emit({ event: 'reflow-start', runId, workspace, mode })
 
   // ---- C 级: lessons.json → /write/experience（写入即 quarantined — graphd 语义）----
   if (found['lessons.json']) {
@@ -123,7 +137,7 @@ export async function reflow(opts) {
     }
   }
 
-  emit({ event: 'reflow-done', runId, written: written.length, held: held.length, errors: errors.length })
+  emit({ event: 'reflow-done', runId, mode, written: written.length, held: held.length, errors: errors.length })
   return { ok: errors.length === 0, written, held, errors }
 }
 
