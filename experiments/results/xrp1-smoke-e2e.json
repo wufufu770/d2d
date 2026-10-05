@@ -1,15 +1,66 @@
 {
  "ok": true,
+ "headSha": {
+  "type": "Buffer",
+  "data": [
+   101,
+   53,
+   49,
+   102,
+   54,
+   55,
+   99,
+   98,
+   51,
+   99,
+   52,
+   51,
+   50,
+   51,
+   97,
+   100,
+   97,
+   51,
+   97,
+   101,
+   48,
+   57,
+   102,
+   97,
+   53,
+   50,
+   100,
+   102,
+   48,
+   52,
+   51,
+   55,
+   48,
+   52,
+   53,
+   98,
+   49,
+   57,
+   51,
+   99,
+   10
+  ]
+ },
  "worker": {
   "kind": "exited",
   "code": 0,
-  "elapsedSec": 61.2,
+  "elapsedSec": 55.7,
   "budgetTriggered": null
  },
  "usage": {
   "totalTokens": 0,
-  "files": 0,
+  "files": 1,
   "maxTokens": 100000
+ },
+ "tokenDeviation": {
+  "lastProxy": null,
+  "exactTotal": 0,
+  "note": "运行中无有效 tick（转录出现前 run 已结束=短 run 形态）"
  },
  "reflow": {
   "ok": true,
@@ -48,162 +99,211 @@
  },
  "events": [
   {
-   "ts": "2026-10-05T15:17:56.015Z",
+   "ts": "2026-10-05T17:19:40.536Z",
+   "event": "worker-spawned",
+   "pid": 3581229,
+   "workspace": "/tmp/xrp1-smoke-8SpiUc/record/xring-smoke/run-e2e/workspace"
+  },
+  {
+   "ts": "2026-10-05T17:19:40.541Z",
    "event": "monitor-start",
    "runId": "run-e2e",
    "maxHours": 0.08333333333333333,
-   "maxTokens": 100000
+   "maxTokens": 100000,
+   "mode": "queue"
   },
   {
-   "ts": "2026-10-05T15:17:59.021Z",
+   "ts": "2026-10-05T17:19:43.548Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 0,
+   "tokens": 0,
+   "transcriptBytes": 0,
+   "idleMs": null
   },
   {
-   "ts": "2026-10-05T15:18:02.020Z",
+   "ts": "2026-10-05T17:19:46.545Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 0,
+   "tokens": 0,
+   "transcriptBytes": 0,
+   "idleMs": null
   },
   {
-   "ts": "2026-10-05T15:18:05.023Z",
+   "ts": "2026-10-05T17:19:49.546Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 0,
+   "tokens": 0,
+   "transcriptBytes": 0,
+   "idleMs": null
   },
   {
-   "ts": "2026-10-05T15:18:08.026Z",
+   "ts": "2026-10-05T17:19:52.550Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 0,
+   "tokens": 0,
+   "transcriptBytes": 0,
+   "idleMs": null
   },
   {
-   "ts": "2026-10-05T15:18:11.027Z",
+   "ts": "2026-10-05T17:19:55.552Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.00h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 0,
+   "tokens": 0,
+   "transcriptBytes": 0,
+   "idleMs": null
   },
   {
-   "ts": "2026-10-05T15:18:14.030Z",
+   "ts": "2026-10-05T17:19:58.554Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 0,
+   "tokens": 0,
+   "transcriptBytes": 0,
+   "idleMs": null
   },
   {
-   "ts": "2026-10-05T15:18:17.032Z",
+   "ts": "2026-10-05T17:20:01.556Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 0,
+   "tokens": 0,
+   "transcriptBytes": 0,
+   "idleMs": null
   },
   {
-   "ts": "2026-10-05T15:18:20.035Z",
+   "ts": "2026-10-05T17:20:04.558Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 0,
+   "tokens": 0,
+   "transcriptBytes": 0,
+   "idleMs": null
   },
   {
-   "ts": "2026-10-05T15:18:23.039Z",
+   "ts": "2026-10-05T17:20:07.562Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 0,
+   "tokens": 0,
+   "transcriptBytes": 0,
+   "idleMs": null
   },
   {
-   "ts": "2026-10-05T15:18:26.040Z",
+   "ts": "2026-10-05T17:20:10.655Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 1,
+   "tokens": 0,
+   "transcriptBytes": 22875,
+   "idleMs": 2681.6669921875
   },
   {
-   "ts": "2026-10-05T15:18:29.043Z",
+   "ts": "2026-10-05T17:20:13.598Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 1,
+   "tokens": 0,
+   "transcriptBytes": 24471,
+   "idleMs": 1916.68359375
   },
   {
-   "ts": "2026-10-05T15:18:32.048Z",
+   "ts": "2026-10-05T17:20:16.600Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 1,
+   "tokens": 0,
+   "transcriptBytes": 25696,
+   "idleMs": 1524.69873046875
   },
   {
-   "ts": "2026-10-05T15:18:35.050Z",
+   "ts": "2026-10-05T17:20:19.603Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 1,
+   "tokens": 0,
+   "transcriptBytes": 26942,
+   "idleMs": 2409.7080078125
   },
   {
-   "ts": "2026-10-05T15:18:38.052Z",
+   "ts": "2026-10-05T17:20:22.606Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 1,
+   "tokens": 0,
+   "transcriptBytes": 29153,
+   "idleMs": 799.72802734375
   },
   {
-   "ts": "2026-10-05T15:18:41.055Z",
+   "ts": "2026-10-05T17:20:25.604Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 1,
+   "tokens": 0,
+   "transcriptBytes": 29153,
+   "idleMs": 3801.72802734375
   },
   {
-   "ts": "2026-10-05T15:18:44.059Z",
+   "ts": "2026-10-05T17:20:28.609Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 1,
+   "tokens": 0,
+   "transcriptBytes": 32189,
+   "idleMs": 1928.74951171875
   },
   {
-   "ts": "2026-10-05T15:18:47.062Z",
+   "ts": "2026-10-05T17:20:31.629Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.01h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 1,
+   "tokens": 0,
+   "transcriptBytes": 32189,
+   "idleMs": 4929.74951171875
   },
   {
-   "ts": "2026-10-05T15:18:50.062Z",
+   "ts": "2026-10-05T17:20:34.621Z",
    "event": "budget-tick",
    "ok": true,
    "detail": "0.02h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
+   "transcripts": 1,
+   "tokens": 0,
+   "transcriptBytes": 34554,
+   "idleMs": 2278.77392578125
   },
   {
-   "ts": "2026-10-05T15:18:53.067Z",
-   "event": "budget-tick",
-   "ok": true,
-   "detail": "0.02h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
-  },
-  {
-   "ts": "2026-10-05T15:18:56.068Z",
-   "event": "budget-tick",
-   "ok": true,
-   "detail": "0.02h/0.08333333333333333h, 0/100000 tokens",
-   "transcripts": 0
-  },
-  {
-   "ts": "2026-10-05T15:18:57.191Z",
+   "ts": "2026-10-05T17:20:36.264Z",
    "event": "reflow-start",
    "runId": "run-e2e",
-   "workspace": "/tmp/xrp1-smoke-UlqL9q/record/xring-smoke/run-e2e/workspace"
+   "workspace": "/tmp/xrp1-smoke-8SpiUc/record/xring-smoke/run-e2e/workspace",
+   "mode": "queue"
   },
   {
-   "ts": "2026-10-05T15:18:57.269Z",
+   "ts": "2026-10-05T17:20:36.339Z",
    "event": "reflow-done",
    "runId": "run-e2e",
+   "mode": "queue",
    "written": 2,
    "held": 0,
    "errors": 0
