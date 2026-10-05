@@ -112,3 +112,8 @@
 
 **存储域触碰预期**：全 Phase 零（XR-P2 只读图面——若触碰图读面代码，按 LBD-2 观察期
 纪律 push 前双轨全量，拍板 4）。
+
+**落地进度（2026-10-05 XR-P2 收官）**：XR-P0 ✅ / XR-P1 ✅ / **XR-P2 ✅**（面板 tab
+只读投影+host 聚合面 fail-soft[readXringRuns]+零写零动作红线双面固化+smoke 挂起根治
+[docs/xrp2-smoke-hang.md]；panel 93）——XR-P3/P4 待用户排批（P4 前置=allowlist
+白名单内容填入）。

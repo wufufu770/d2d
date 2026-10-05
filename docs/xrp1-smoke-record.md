@@ -20,8 +20,9 @@
 1. **graphd token 分级实测**：worker token 对结构化写面（/write/finding|signal|hypothesis|endpoint）**可写**（400=repro 校验非 401；I-013 既有设计）；host-only 面（transition/dual-sign）403。X-Ring 不受影响（env 剥除全 token，图不可达）。**是否 graphd 侧收紧（worker token 降只读）归用户裁决**——动既有 scheduler worker 回写通道，本批零触碰。
 2. **Experience id 服务端生成**：/write/experience 忽略请求 id，服务端 `exp-<uuid>`（graphd/app.py:988）——reflow 按 eng_id 追溯（图内验证口径已对齐）。
 
-### 已知问题（P2 排查，不阻塞）
+### 已知问题（P2 排查，不阻塞）—— **已于 XR-P2 根治（2026-10-05）**
 smoke 重跑存在非确定性挂起（worker resolved 后收集段；首跑成功实录完整；collectTranscriptUsage 独立复刻 45ms 正常）——疑与 worker 5 分钟熔断 SIGKILL 后转录落盘时序相关。smoke 为本地集成工具非 CI 面。
+**XR-P2 收口**：根因=smoke 收集段全机转录扫描（3305 文件×286.6ms/file≈947s 纯同步阻塞>8min watchdog 窗，同步阻塞期间计时器全停）——非转录时序问题；修复=收集段 sessionsBucketFor 桶限定（与 monitor 同构）+watchdog 落 sync log；复跑验证 exit=0 全链 61.2s。证据链全文：docs/xrp2-smoke-hang.md。
 
 ## 二、熔断双路径实测（scripts/xring/smoke-budget.mjs → experiments/results/xrp1-smoke-budget.json）
 
