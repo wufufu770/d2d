@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
-import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, computeConversion, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs, readCaps, writeCaps, buildStarmap, buildCoverage, buildHypLane, parseCandidatePairs, buildCapability, clampLaneDays, aggregateTransitions, clampFlowDays, readTransitionFlows, readAuditTail, readToolCalls, buildChain, buildFrontierPool, frontierTransition, readConfigOverview, attachEngCosts } from '../lib/host/snapshot.mjs'
+import { buildSnapshot, groupStates, markZombie, createGraphdQuery, readFleet, writeFleet, readRunEvents, readModelUsage, costEfficiency, computeConversion, transitionFinding, FINDING_STATES, parseProviderModels, loadDshCatalog, readSelectedEngagement, writeSelectedEngagement, mergeCredentialRefs, readCaps, writeCaps, buildStarmap, buildCoverage, buildHypLane, parseCandidatePairs, buildCapability, clampLaneDays, aggregateTransitions, clampFlowDays, readTransitionFlows, readAuditTail, readToolCalls, buildChain, buildFrontierPool, frontierTransition, readConfigOverview, attachEngCosts, readXringRuns, xringRecordBase } from '../lib/host/snapshot.mjs'
 import { apply as applyHostRoutes } from '../lib/host/index.mjs'
 
 // fake query: 按 cypher 特征路由(与 snapshot.mjs 的 Q 常量一一对应); params 透传给断言用断言器
@@ -1087,5 +1087,126 @@ test('T3-3-2 host 路由: 四 fail-soft 本地面可达 + chain/frontier fail-cl
       if (saved[k] === undefined) delete process.env[k]
       else process.env[k] = saved[k]
     }
+  }
+})
+
+// ══════════ XR-P2: X-Ring 只读聚合面(readXringRuns + snapshot.xring 节, 过程可见 M6) ══════════
+
+/** 造一个 run 记录目录(布局 = <base>/<eng>/<run-id>/events.jsonl, runner.start recordRoot 同构)。 */
+function mkXringRun(base, eng, runId, events, workspaceFiles = null) {
+  const runDir = path.join(base, eng, runId)
+  fs.mkdirSync(runDir, { recursive: true })
+  fs.writeFileSync(path.join(runDir, 'events.jsonl'), events.map((e) => (typeof e === 'string' ? e : JSON.stringify(e))).join('\n') + '\n')
+  if (workspaceFiles) {
+    fs.mkdirSync(path.join(runDir, 'workspace'), { recursive: true })
+    for (const [f, doc] of Object.entries(workspaceFiles)) fs.writeFileSync(path.join(runDir, 'workspace', f), JSON.stringify(doc))
+  }
+  return runDir
+}
+
+test('xring: readXringRuns 布局解析 — stopped+reason/预算/工件三级计数/事件尾窗(坏行容忍)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xring-agg-'))
+  try {
+    const ws = path.join(dir, 'eng-a', 'run-1', 'workspace')
+    mkXringRun(dir, 'eng-a', 'run-1', [
+      { ts: '2026-10-06T01:00:00.000Z', event: 'monitor-start', runId: 'run-1', maxHours: 3, maxTokens: 1000000 },
+      { ts: '2026-10-06T01:00:30.000Z', event: 'budget-tick', ok: true, detail: '0.01h/3h, 0/1000000 tokens', transcripts: 0 },
+      { ts: '2026-10-06T01:01:00.000Z', event: 'budget-exceeded', reason: 'timeout', detail: '3.00h >= 3h' },
+      { ts: '2026-10-06T01:01:00.100Z', event: 'stop', reason: 'budget', detail: '3.00h >= 3h' },
+      { ts: '2026-10-06T01:01:01.000Z', event: 'reflow-start', runId: 'run-1', workspace: ws },
+      { ts: '2026-10-06T01:01:01.500Z', event: 'reflow-done', runId: 'run-1', written: 2, held: 1, errors: 0 },
+      '{bad json', // 坏行跳过(audit 同款语义), 不抛
+    ], {
+      'hypotheses.json': { hypotheses: [{ id: 'H-1' }, { id: 'H-2' }] },
+      'lessons.json': { lessons: [{ id: 'L-1' }] },
+      'repro_paths.json': { findings: [{ id: 'F-1' }] },
+    })
+    const r = readXringRuns({ base: dir })
+    assert.equal(r.available, true)
+    assert.equal(r.base, dir)
+    assert.equal(r.activeCount, 0, '已停止不计活跃')
+    assert.equal(r.runs.length, 1)
+    const run = r.runs[0]
+    assert.equal(run.eng, 'eng-a')
+    assert.equal(run.runId, 'run-1')
+    assert.equal(run.status, 'stopped')
+    assert.equal(run.stopReason, 'budget')
+    assert.equal(run.startedAt, '2026-10-06T01:00:00.000Z')
+    assert.equal(run.elapsedSec, 60.1, 'stop 事件边界计时')
+    assert.deepEqual(run.budget, { maxHours: 3, maxTokens: 1000000 })
+    assert.equal(run.lastTick.ok, true)
+    assert.deepEqual(run.artifacts, { A: 1, B: 2, C: 1, reflow: { written: 2, held: 1, errors: 0 } }, 'A/B/C 三级计数 + 回流账目')
+    assert.equal(run.events.length, 6, '坏行不进尾窗')
+    assert.equal(run.events[0].event, 'monitor-start')
+    assert.equal(run.events[run.events.length - 1].event, 'reflow-done')
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('xring: running run — elapsed 按 nowMs 推导; 回流未发生=artifacts null(计数不可得不造 0)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xring-run-'))
+  try {
+    const t0 = '2026-10-06T01:00:00.000Z'
+    mkXringRun(dir, 'eng-b', 'run-live', [
+      { ts: t0, event: 'monitor-start', runId: 'run-live', maxHours: 6, maxTokens: 2000000 },
+      { ts: '2026-10-06T01:01:40.000Z', event: 'budget-tick', ok: true, detail: '0.03h/6h, 0/2000000 tokens', transcripts: 0 },
+    ])
+    const r = readXringRuns({ base: dir, nowMs: Date.parse('2026-10-06T01:01:40.000Z') })
+    const run = r.runs[0]
+    assert.equal(r.activeCount, 1)
+    assert.equal(run.status, 'running')
+    assert.equal(run.stopReason, null)
+    assert.equal(run.elapsedSec, 100, 'running = now - startedAt')
+    assert.equal(run.artifacts, null, '未回流 → 计数不可得(诚实呈现, 不造 0)')
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('xring: fail-soft — base 缺失=available:false 空态; workspace 缺失=计数 null; 空事件=degraded 记因; 多 run 新→旧+cap', () => {
+  assert.deepEqual(readXringRuns({ base: '/tmp/definitely-missing-xring-dir' }),
+    { available: false, base: '/tmp/definitely-missing-xring-dir', activeCount: 0, runs: [], degraded: [] }, '记录面缺失=合法空态(不炸面板)')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xring-fs-'))
+  try {
+    // workspace 指向不存在路径 → 三级计数 null(文件面邻居缺失是合法常态)
+    mkXringRun(dir, 'eng-c', 'run-nows', [
+      { ts: '2026-10-06T02:00:00.000Z', event: 'monitor-start', runId: 'run-nows', maxHours: 1, maxTokens: 100000 },
+      { ts: '2026-10-06T02:00:05.000Z', event: 'reflow-start', runId: 'run-nows', workspace: '/tmp/xring-no-such-ws' },
+    ])
+    // 空 events → degraded 记因, run 不抛
+    mkXringRun(dir, 'eng-c', 'run-empty', [''])
+    const r = readXringRuns({ base: dir })
+    assert.equal(r.available, true)
+    assert.equal(r.runs.length, 2)
+    const nows = r.runs.find((x) => x.runId === 'run-nows')
+    assert.deepEqual(nows.artifacts, { A: null, B: null, C: null, reflow: null })
+    const empty = r.runs.find((x) => x.runId === 'run-empty')
+    assert.equal(empty.status, 'unknown')
+    assert.ok(r.degraded.some((d) => d.includes('run-empty')), 'degraded 记因含 run 标识')
+    assert.ok(r.degraded.some((d) => d.includes('无可解析事件行')))
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('xring: env 注入与 buildSnapshot 集成 — snap.xring 节随记录面在/缺切换(缺=available:false 不炸)', async () => {
+  const saved = process.env.P2P_XRING_RECORD
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xring-snap-'))
+  try {
+    mkXringRun(dir, 'eng-d', 'run-9', [
+      { ts: '2026-10-06T03:00:00.000Z', event: 'monitor-start', runId: 'run-9', maxHours: 2, maxTokens: 500000 },
+      { ts: '2026-10-06T03:00:10.000Z', event: 'stop', reason: 'user', detail: 'stop-request' },
+    ])
+    process.env.P2P_XRING_RECORD = dir
+    let snap = await buildSnapshot(makeFake())
+    assert.equal(snap.xring.available, true)
+    assert.equal(snap.xring.runs[0].status, 'stopped')
+    assert.equal(snap.xring.runs[0].stopReason, 'user')
+    assert.equal(snap.xring.activeCount, 0)
+    // 无记录面 → 空形态(整体快照不抛 = xring 面与图 fail-closed 语义刻意区分)
+    delete process.env.P2P_XRING_RECORD
+    snap = await buildSnapshot(makeFake())
+    assert.equal(snap.xring.available, false)
+    assert.deepEqual(snap.xring.runs, [])
+    assert.equal(xringRecordBase({ D2D_DATA_DIR: '/data' }), '/data/xring', 'DATA_DIR 同序回退')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+    if (saved === undefined) delete process.env.P2P_XRING_RECORD
+    else process.env.P2P_XRING_RECORD = saved
   }
 })
