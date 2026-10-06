@@ -97,7 +97,7 @@ if (!SKIP_RESET) {
   log('DVWA 重置（dvwa-reset.sh）...')
   execFileSync('bash', [path.join(REPO, 'scripts', 'ops', 'dvwa-reset.sh')], { stdio: 'inherit' })
 }
-const dvwaUp = await fetch(`${TARGET_BASE}/login.php`, { signal: AbortSignal.timeout(8000) })
+const dvwaUp = await fetch(`${TARGET_BASE}/login.php`, { signal: AbortSignal.timeout(8000) }) // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request — 本地受控靶（DVWA 无 https 面），http=设计内形态非降级
 if (!dvwaUp.ok) throw new Error(`DVWA 不就绪: login.php=${dvwaUp.status}（先跑 scripts/ops/dvwa-reset.sh）`)
 log('DVWA 就绪: login.php', dvwaUp.status)
 
