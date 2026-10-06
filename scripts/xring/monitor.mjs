@@ -40,19 +40,22 @@ export function parseUsageLine(line) {
 }
 
 /**
- * 多行累计（纯函数；语义=**会话内 max-wins**）。
+ * 多行累计（纯函数；语义=**逐段 delta 求和**——SC-1 族7 落地 xr-wave-wrapup 登记的精确口径）。
  * XR-P3 调查实证：dsh 转录 usage.totalTokens 为会话累计值——旧求和语义高估 ~16×
  * （探针实录: sumAll 198356 vs 真值 12149）。
- * XR-P4② 采纳 max-wins（替代 last-wins）：B 层 30 样本复核发现 2 例计数器回落
- * （会话内上下文重置/分叉后重新爬升，末值 < 峰值达 2.5×）——预算语境取峰值宁高估
- * （max ≥ last 恒成立=熔断只早不晚）；跨文件仍求和（每文件=独立会话计数器）。
+ * XR-P4② 曾采 max-wins：B 层 30 样本复核发现 2 例计数器回落（会话内上下文重置/分叉后
+ * 重新爬升）——max-wins 对多段合计仍低估（峰值 ≠ 各段真和）。
+ * SC-1 族7 逐段 delta：单调段 delta=增量（累计值语义下 sum(delta)=末值=max-wins 等值）；
+ * 回落=新段开启（delta=当前值重计）——跨段真和 ≥ max-wins 恒成立=预算熔断只早不晚。
+ * 跨文件仍求和（每文件=独立会话计数器）。
  */
 export function accumulateUsage(lines) {
   let total = 0
   let messages = 0
+  let prev = 0
   for (const line of lines) {
     const t = parseUsageLine(line)
-    if (t > 0) { messages++; if (t > total) total = t } // max-wins: 峰值胜（回落不回吐）
+    if (t > 0) { messages++; total += t >= prev ? t - prev : t; prev = t } // 单调段=增量；回落=新段重计
   }
   return { totalTokens: total, usageMessages: messages }
 }
