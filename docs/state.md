@@ -20,9 +20,9 @@
   gates 37127595793/dsh-compat 37127595782+底账顺延笔 f9f1148c 三绿；本批收官 run 以
   `gh run list` 实测为准——CI 绿以**分支 push** 为准，tag push 仅触发 ci.yml
   [gates/dsh-compat 的 push.branches 过滤不含 tag refs，.github/workflows on: 实测]）
-- 测试基线（T4-3-4 固化）：pytest **414** / mocha **1971**（+4 stability-view 聚合与入口
-  守卫；T4-3-3 时点 414/1967+EV-2 前值链见各批 ✅ 段）/ panel **88**
-  （口径 = `pytest tests/` 全目录 / `node node_modules/mocha/bin/mocha.js test/` / panel `npm test`）
+- 测试基线（WF-1 时点更新）：pytest **422** / mocha **2099+1 pending**（+44 wf 面；
+  前值链 T4-3-4 414/1971 → KEYS-1 422/2053 → WF-1 2099 见各批 ✅ 段）/ panel **96**
+  （口径 = `pytest tests/` 全目录 / `npx mocha test/` / panel `npm test`）
 - CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
   来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
   （npm ci 确定性安装）
@@ -601,6 +601,9 @@ P2P_DUAL_KEY_MODE=on 生产翻转归观察期后另批拍板；密钥轮换机�
 时取证归首跑批；WRAP 波清欠继续[下一项按用户排批]；graphd worker-token 收紧裁决；LBD-2
 观察期进行中[AGENTS.md 15]；R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；
 其余候选=js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+
+WF-1 ✅（**工作流 agent 化批**[模板库+预检 linter+失败钩子——八批事故目录变机制]：**四层架构**[L1 模板库 scripts/wf/templates 七 fragments+assemble.mjs 三 kind 组装器 fold manifest 缺省=树-清单自洽/L2 预检 linter lint.mjs R1-R14 历史事故 fixture 检出率 100%/L3 agent 失败钩子[诊断员 persona 绑定 L3+策略表三档+绝不碰清单+自修正 ≤2 轮漂移守卫+evidence-only 降级并行]/L4 终态分类 probe-classify 四态[window-closed 绝不判不一致]]；**事故目录** docs/wf-incident-catalog.md 13 条目×5 层消解矩阵；**agent 权限面实锚**=原生形态[L3 对 agent 是机制保证 AGENTS.md:55+world.run 命令集提交批准]+对抗越界实测拒绝；**dogfood 三跑全单发**[族 1-4 四 fold 笔/修复笔/收官笔——对照 WD-2 基线 6 commit 3 窗口 2 更正周期归零]；基线 pytest **422**/mocha **2099+1 pending**[+44]/panel **96**）
+下一步建议（**当前唯一有效**·WF-1 时点）：**阶段 B 真首跑=allowlist 填入后单批**；SC-1 收官=新机制第二次实跑；钩子真实触发待首次落库失败兑现；P2P_DUAL_KEY_MODE=on 生产翻转归观察期后另批拍板；graphd worker-token 收紧裁决；LBD-2 观察期进行中[AGENTS.md 15]；R5 模型窗口/EV-2 实弹/第四轮冷读评审仍悬置归用户；其余候选=js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
