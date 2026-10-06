@@ -20,6 +20,7 @@ export function extractWorldRuns(src) {
   let line = 1
   const state = { sq: false, dq: false, bt: false, expr: 0, lc: false, bc: false }
   const depth = { paren: 0, brace: 0 }
+  const aliases = new Set()
   let callStart = -1
   let callText = ''
   while (i < n) {
@@ -48,10 +49,34 @@ export function extractWorldRuns(src) {
     if (c === "'") { state.sq = true; i++; continue }
     if (c === '"') { state.dq = true; i++; continue }
     if (c === '`') { state.bt = true; i++; continue }
+    // WF-2 R2a: 正则字面量状态——`/` 在 regex 可前缀上下文（= ( , : [ ! & | ? ; { 或行首）开启，
+    // 跳到未转义闭 `/`；冷读致盲样本 `const re = /'/;` 引号被吞进 regex 不再破坏字符串状态机。
+    if (c === '/' && src[i + 1] !== '/' && src[i + 1] !== '*') {
+      const prev = src.slice(0, i).replace(/[ \t]+$/, '').at(-1)
+      if (prev === undefined || '=(,:[!&|?;{}+-'.includes(prev)) {
+        i++
+        while (i < n && src[i] !== '/') { if (src[i] === '\\') i++; if (src[i] === '\n') line++; i++ }
+        i++
+        continue
+      }
+    }
     if (src.slice(i, i + 10) === 'world.run(' && depth.paren === 0) {
       callStart = i
       depth.paren = 1
       i += 10
+      continue
+    }
+    // WF-2 R2b: 别名登记——`const|let|var X = world.run` 后 `X(` 与 world.run( 同权入扫描面
+    const aliasM = /^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*world\.run\s*$/.exec(src.slice(i, i + 120).split('\n')[0])
+    if (aliasM && depth.paren === 0) { aliases.add(aliasM[1]); i++; continue }
+    let aliasHit = -1
+    for (const al of aliases) {
+      if (src.startsWith(al + '(', i) && depth.paren === 0) { aliasHit = al.length; break }
+    }
+    if (aliasHit > 0) {
+      callStart = i
+      depth.paren = 1
+      i += aliasHit + 1
       continue
     }
     if (callStart >= 0) {
@@ -159,12 +184,16 @@ export function lintScript(src) {
       if (/(^|\n|\\n)[ \t]*\/\//.test(s.content)) err('R3', r.line, `字符串内行注释注入——吞包装收口风险（catalog B3）: ${s.content.slice(0, 60)}`)
     }
     // R4 grep -c 退出码纪律（D1/G）
-    if (/grep\s+-c/.test(all) && !hasGuardTail(all)) {
+    if (/grep\s+(-c|--count)/.test(all) && !hasGuardTail(all)) {
       err('R4', r.line, 'grep -c 无退出码守卫（; true / echo rc=）——零匹配 exit 1 劫持 stdout 判据（catalog D1/G）')
     }
     // R10 钩子禁用旗标（F/AGENTS 17）
     if (/--no-verify|core\.hooksPath|core\.hooks\b/.test(all)) {
       err('R10', r.line, '钩子禁用旗标=违反 L3 门纪律（AGENTS 17）')
+    }
+    // B8d: .git/config 直写（printf 追加重定向形态——持久 hooksPath/配置污染通道，AGENTS 17 同族）
+    if (/\.git\/?config\b/.test(all) && /(>>|>)/.test(all)) {
+      err('R10', r.line, '.git/config 直写面——持久钩子/配置污染通道（AGENTS 17 同族）')
     }
     // R11 命令白名单（F 相邻——告警）
     if (cmd && !CMD_ALLOWLIST.has(cmd)) warn('R11', r.line, `命令 ${cmd} 在白名单外——确认是否应进工作流通道`)
@@ -173,11 +202,12 @@ export function lintScript(src) {
     callSigs.set(sig, (callSigs.get(sig) ?? 0) + 1)
 
     // 事件序列（R5/R6/R7/R8）
-    if (cmd === 'node' && /manifest\.sha256/.test(all) && /createHash/.test(all)) {
+    // WF-2 B8b: regen 判定走内容（createHash+manifest）不限 cmd——`bash -lc "node -e …"` 包装形态同入事件面
+    if (/manifest\.sha256/.test(all) && /createHash/.test(all)) {
       events.push({ type: 'regen', idx, line: r.line })
       pendingRegenNeedsReadd = idx
     }
-    if (cmd === 'git' && contents.includes('add') && contents.includes('manifest.sha256')) {
+    if (cmd === 'git' && all.includes('add') && all.includes('manifest.sha256')) {
       events.push({ type: 'add-manifest', idx, line: r.line })
       if (pendingRegenNeedsReadd >= 0) pendingRegenNeedsReadd = -1
     }
@@ -185,9 +215,11 @@ export function lintScript(src) {
       events.push({ type: 'commit', idx, line: r.line })
       if (pendingRegenNeedsReadd >= 0) { err('R5', r.line, 'regen 与 commit 之间无 git add manifest.sha256——manifest 更新漏入库（catalog D2）') }
     }
-    if (cmd === 'git' && contents.includes('add') && contents.includes('-A')) { events.push({ type: 'add-A', idx, line: r.line }); sawAddA = true }
+    // B8f: add -A 长选项 --all 同权（R6 误报源——git add --all 是合法 add -A）
+    if (cmd === 'git' && all.includes('add') && (all.includes('-A') || all.includes('--all'))) { events.push({ type: 'add-A', idx, line: r.line }); sawAddA = true }
     if (cmd === 'git' && all.includes('ls-remote')) { events.push({ type: 'ls-remote', idx, line: r.line }); sawLsRemote = true }
-    if (cmd === 'git' && all.includes('push') && all.includes('refs/heads')) { events.push({ type: 'push', idx, line: r.line }) }
+    // WF-2 R3: push 判定去 refs/heads 硬约束——`git push origin main` 简写形态同入事件面（保守方向：多要求守卫）
+    if (cmd === 'git' && all.includes('push')) { events.push({ type: 'push', idx, line: r.line }) }
     if (cmd === 'git' && all.includes('merge-base') && all.includes('--is-ancestor')) { events.push({ type: 'ancestor', idx, line: r.line }); sawAncestor = true }
   }
 
@@ -200,9 +232,10 @@ export function lintScript(src) {
     // R9 终态/探测分类锚（E）
     if (!src.includes('[wf:lib:probe-classify]')) err('R9', firstPush.line, '推送面无探针分类锚 [wf:lib:probe-classify]——窗口态与确定性失配未分型（catalog E）')
   }
-  if (/\bwhile\s*\(\s*true\s*\)/.test(src)) err('R9', lineAt(src, src.search(/\bwhile\s*\(\s*true\s*\)/)), '无界 while(true)——终态核验/重试必须有界（catalog E）')
+  const unbounded = /\bwhile\s*\(\s*true\s*\)|\bfor\s*\(\s*;\s*;\s*\)/.exec(src)
+  if (unbounded) err('R9', lineAt(src, unbounded.index), '无界循环（while(true)/for(;;)）——终态核验/重试必须有界（catalog E）')
   // R13 agent 约束样板（拍板 1）
-  const agentRe = /(?<![.\w])agent\(/g
+  const agentRe = /(?<![.\w])agent\s*\(/g
   let m
   while ((m = agentRe.exec(src))) {
     const window = src.slice(m.index, m.index + 900)
