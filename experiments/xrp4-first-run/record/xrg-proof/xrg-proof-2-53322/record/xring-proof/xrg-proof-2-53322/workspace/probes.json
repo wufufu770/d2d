@@ -1,0 +1,8 @@
+{
+  "login_status": null,
+  "login_note": "bash curl 被 OPSEC scope 门拦截, 未发出请求",
+  "outer_attempt": {
+    "blocked": true,
+    "message": "Error: OPSEC: 无 engagement 上下文(eng 缺失或 scope 为空) — scope 门 fail-closed, 请在活跃 engagement 内操作"
+  }
+}
