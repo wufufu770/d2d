@@ -447,3 +447,14 @@ allowlist 落地（部署态，用户模型政策已拍板）：roles.xring.allo
 关键裁决：**A8 修法=rank 最优而非双 break**（"首匹配即停"的字面形态会破坏「同一子目录 v3 优先」既有设计语义的推广形态——修法选择在消除误归属的同时保住 v3 活体优先，fixture 三例分别锁定互含 bucket/v3 跨子目录/同 rank 确定性）；**A4 企业代理点降级登记**（绑定目标 IP 对代理转发无意义——该点本就不存在本网关侧的二次解析，登记为边界非缺口）；**A7 断言独立性=提取而非内联**（env 构造从 spawn IIFE 提取为模块级导出——「worker env 全量 dump 零 host 凭据面」从口号变可执行断言，xring smoke 与单测共用同一真源）
 教训沉淀：**Mimosa 对 Bash 写测试文件双态**（cat >> heredoc 侥幸通过、sed -i 当场被拦——写文件一律走 Edit/Write 通道不再试探，本批第二次验证「L3 门=通道强制」）；**测试期望值先算后写**（_rangeOf 169.254 段期望值手算错两次——纯函数边界值用脚本算完再落断言）
 开放项：B10 后三模块（digest-bridge/experience-bridge ctx 依赖 mock 面广=框架性受阻；bias-block 已有 business-card.test.mjs 间接覆盖）——登记跳过不阻塞（拍板边界授权）；gap GW-GW23-D-001 缓存窗残余（A4 消的是校验-建连窗，缓存 TTL 窗=独立登记面）；XR-P4 阶段 B 真首跑（本批后全前置就绪）；LBD-2 观察期；冷读余项——排批归用户
+
+## 2026-10-07 · XR-P4 阶段 B 真首跑批（验证主事件——全链实录+验收回填+XR-G1/G2 系统级发现）
+底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **428**（单轨豁免——graphd 零 diff）/ mocha **2145+1 pending**（持平）/ panel **96**（持平）——首跑零生产代码改动，新增面=first-run.mjs 编排+docs
+产出：**首跑执行**（run-xrp4b-10070540：DVWA 重置→发射[worker pid=600343]→自然退出 4.6min/预算 0.5h→三 JSON 工件[hypotheses 14/repro findings 0/lessons 3]→reflow written=17[C×3 quarantine+B×14 hypothesis]→图内 delta 逐条对账[experiences+3/hypotheses+14/findings+0]）+**验收回填**（xrp4-acceptance.md A7[熔断未触发=自主收敛 4.6min+XR-G2 token 盲区登记]/A12[◐→✅：F 类真实观察达成——L-2 cognitive 留痕可追溯]/双阶段表 B=✅/阶段 B 执行记录全段）+**first-run.mjs 编排脚本**（五项观察采集+能力日志+实录落 experiments/results/xrp4-first-run.json）
+全链验收结论：**通道机制验收达成**（发射/预算/回流/图写/审计/隔离/env 白名单全链真实走通，越界面为零[OPSEC 门下 worker 连靶场都未实际触达]）；**自主测试效能未达成**（XR-G1 系统门阻断侦察→发现环节——模型质量在位：14 条真实侦察假设链[可达性→凭据→security 级别→SQLi 反射]+认知失败诚实留痕+预检协议建议）
+系统级发现（拍板边界：记开放项不修）：**XR-G1**=X-Ring 发射通道与 dsh OPSEC scope 门的整合缺口（xring 直调 spawnWorker 不建立 engagement 上下文→插件工具治理面对全部网络/bash/burp 工具 fail-closed"无 engagement 上下文"→worker 无法触达授权靶场本身；worker 视角=L-1/L-2/L-3 三条 quarantined 可追溯教训；修复方向=xring 发射预建 engagement 上下文或 OPSEC 门开 xring ring 受控豁免——设计权衡归用户排批）；**XR-G2**=monitor collectTranscriptUsage 对 dsh v3 `data.usage` 嵌套形态读 0（token 熔断路径本形态盲[16 usage 行实耗 ~24 万 tok 计账 0]，时长路径正常；修复=解析器兼容嵌套一处 diff 归后续批）
+五项观察+三项收口触发实录：私钥运行时探测 **hits=[]（FIX-2 A7 白名单实战验证通过）**/孤儿零残留/wall-clock 4.6min+9 次 budget-tick/会话态语法=data.usage 嵌套发现（XR-G2）/R4c 空闲图=findings delta=0 无事件；**A7 env 白名单实战触发通过 ✓、disputed 仲裁未触发（无双签活动）、暂停门未触发**——如实记录
+能力调用统计（阶段九输入——调用≠成功如实注明）：bash=107/glob=63/read=27/burp_repeater=19/write=19/p2p_graph=15/p2p_status=11/subagent=11[L-3 子代理继承同一门]/burp_http_log=7/p2p_js_scan=7/propose_direction=7/burp_comparer·decoder·intruder=3/apk-reverse=3
+关键裁决：**首跑失败定性=通道验证成功+效能验证受阻**（首跑的核心交付物恰恰是 XR-G1 这个系统级发现的定位与归因[worker 侧三条教训+宿主侧 environ/会话解析双实证]——"首跑是验证不是修复"边界的教科书兑现；XR-G1 修复批=真首跑成果转化的前置）；**budget-tick token=0 不判熔断失效**（时长路径+预算窗+组杀三件套在位，token 计数盲区=独立缺陷 XR-G2 单列）
+教训沉淀：**真首跑的最大价值在系统整合缝隙**（单测/集成/smoke 全绿的四个 XR 阶段没能暴露的跨层整合缺口[xring 编排层 vs dsh 插件治理层]，第一次真实条件运行即显形——验证主事件的本义）；**观察数据如实记录不美化**（token 计 0/A 级 0 findings/能力调用多数被拒全部原样入档——数字的失败面与成功面同价）
+开放项：XR-G1 修复批（xring×OPSEC 整合——真自主测试的前置）+XR-G2 修复（解析器嵌套兼容一处 diff）——排批归用户；LBD-2 观察期；冷读余项
