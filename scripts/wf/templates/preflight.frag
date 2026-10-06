@@ -6,7 +6,7 @@ const families = __FAMILIES_JSON__ as { subject: string; body: string; paths: st
 const stAll = await world.run("git", ["-C", repo, "-c", "core.quotePath=false", "status", "--porcelain=v1", "--untracked-files=all"])
 if (stAll.exitCode !== 0) throw new Error("git status 失败")
 const dirty = stAll.stdout.split("\n").map((l) => l.slice(3).trim()).filter(Boolean).sort()
-const whitelist = [...families.flatMap((f) => f.paths)].sort()
+const whitelist = [...families.flatMap((f) => f.paths), "manifest.sha256"].sort()
 const outside = dirty.filter((p) => !whitelist.includes(p))
 if (outside.length > 0) throw new Error(`工作树含预期外改动（止损）: ${outside.join(", ")}`)
 const logNow = await world.run("git", ["-C", repo, "log", "--format=%s", "-12"])

@@ -6,12 +6,13 @@ const GATE_EXPECT = "__GATE_EXPECT__"
 let gateVerdict = ""
 for (let gi = 1; gi <= __GATE_MAX_POLLS__ && !gateVerdict; gi++) {
   const gf = await world.run("bash", ["-lc", `test -f ${GATE_FILE} && cat ${GATE_FILE} || echo __GATE_MISSING__`])
-  if (gf.exitCode === 0 && !gf.stdout.includes("__GATE_MISSING__") && gf.stdout.includes(GATE_EXPECT) && gf.stdout.includes("__BATCH__")) {
+  // WF-2 B6: 结论绑定目标 SHA——旧结论复用/跨批伪造双洞闭合（verdict 必须含本批落库后的 newSha）
+  if (gf.exitCode === 0 && !gf.stdout.includes("__GATE_MISSING__") && gf.stdout.includes(GATE_EXPECT) && gf.stdout.includes("__BATCH__") && gf.stdout.includes(newSha)) {
     gateVerdict = gf.stdout.trim()
     break
   }
-  if (gi === 1) log(`gate 相等待 B 层结论文件（${GATE_FILE}，期望含 ${GATE_EXPECT}+批标签）…`)
+  if (gi === 1) log(`gate 相等待 B 层结论文件（${GATE_FILE}，期望含 ${GATE_EXPECT}+批标签+目标 SHA ${newSha.slice(0, 12)}）…`)
   await world.run("sleep", ["30"])
 }
-if (!gateVerdict) throw new Error(`[gate] B 层结论未达/不达标（__GATE_MAX_POLLS__ 次轮询，期望 ${GATE_EXPECT}+批标签）——fail-closed 不推（B 层复核未完成或 FAIL）`)
+if (!gateVerdict) throw new Error(`[gate] B 层结论未达/不达标（__GATE_MAX_POLLS__ 次轮询，期望 ${GATE_EXPECT}+批标签+目标 SHA）——fail-closed 不推（B 层复核未完成或 FAIL）`)
 log(`gate 相通过：${gateVerdict.split("\n")[0].slice(0, 160)}`)
