@@ -71,7 +71,7 @@ function main() {
   if (!['landing-push', 'landing', 'push'].includes(kind)) throw new Error(`--kind 非法: ${kind}`)
   const batch = a.batch ?? ''
   if (!batch) throw new Error('--batch 必填（工作流标签）')
-  const repo = a.repo ?? '/home/kali/d2d'
+  const repo = a.repo ?? ROOT // 缺省=组装器自身所在仓根（AGENTS 14：环境路径不得硬编码——CI 检出非本机路径）
   const baseSha = a.base ?? ''
   if (kind !== 'push' && !/^[0-9a-f]{40}$/.test(baseSha)) throw new Error('--base 必填且须为 40 位 sha（landing 类）')
   const hookMode = a['hook-mode'] ?? 'agent'

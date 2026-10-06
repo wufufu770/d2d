@@ -106,6 +106,15 @@
 | 复发 | 3 |
 | 消解 | **P**（AGENTS 17：commit/push 一律 world.run 通道）+ **L1**（模板只产出 world.run 形态）+ **L2 R10**（`--no-verify`/`core.hooksPath` 等禁用旗标=拒绝，AGENTS 17）+ **L2 R11**（命令白名单外=告警） |
 
+### H.（WF-1 dogfood 首演自伤）工具默认值硬编码环境路径
+| 项 | 内容 |
+|---|---|
+| 签名 | wf-assemble 三测试 CI 全红：assemble.mjs 缺省 repo 硬编码 `/home/kali/d2d`——CI 检出在 `/home/runner/work/d2d/d2d`，族路径存在性检查必炸（AGENTS 14 环境路径纪律的工具侧新形态） |
+| 根因 | 环境相关值不只 world.run 参数与测试 fixture——**工具自身缺省值也是环境依赖**；本地全绿恰好掩盖（本机路径存在） |
+| 当时处置 | 缺省改=组装器自身 import.meta.url 推导仓根（真·环境无关）；CI 兜住即机制工作 |
+| 复发 | 1（首演即抓——dogfood 的价值兑现） |
+| 消解 | **L1**（组装器缺省自推导）+ **P**（AGENTS 14 广义化登记）；注：linter R 系不覆盖工具源码缺省值——该面由"新测试先单跑+跨环境跑"纪律兜底，登记为机制边界 |
+
 ### G.（相邻）world.run stdout 捕获不稳
 | 项 | 内容 |
 |---|---|
@@ -131,6 +140,7 @@
 | E 终态误判 | 终态模板 | R9 拒绝 | S1 | classify 四态 | 容错定式 |
 | F 通道 | world.run-only | R10/R11 | — | — | AGENTS17 |
 | G stdout 不稳 | 判据形态 | R4 | — | — | exit-code 口径 |
+| H 环境路径自伤 | 组装器缺省自推导 | —（工具源码缺省值不归 R 系——登记机制边界） | — | — | AGENTS14 |
 
 ## 三、agent 权限面（N-0 实锚）
 
