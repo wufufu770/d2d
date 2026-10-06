@@ -387,8 +387,8 @@ ops 实锚：**归档首执行**——EXPORT DATABASE 经 /query host 通道实�
 
 
 ## 2026-10-06 · WRAP-3 门禁小收紧批（gap 残留一轮批清+push 前置 gate 首演）
-底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **421**（+3: gap12/TR39 面）/ mocha **2044+1 pending** / panel **96** / 双轨 pytest 421×2（本批触 graphd——纪律②第二次执行）
-产出：**gap 12 ✅**（graphd /write/* 剩余路由认证前置——无凭据恒 401 且不触 denylist，403/401 差分 oracle 关闭；_auth 包装器保 auth-fail-worker 审计不缺口；已认证者红线 403 不变）+**gap 24 ✅ 端口半**（egress CONNECT 端口 pin：缺省 443+P2P_PROXY_CONNECT_PORTS 扩展；pin 外 403+port-not-pinned 审计；e2e 隧道字节往返实证+6379 拒绝实证；MODEL_HOSTS/OSINT 内容面半仍登记）+**TR39 ✅ 缩减集**（gd/confusables.py vendored 骨架表 cyrillic/greek/CJK 句点；R6 扫描 _blob 折叠——confusable 域名散文提及 403 命中；覆盖注记=非全 confusables 残余登记）+**gap 10 ⛔跳过**（处置表⛔豁免与拍板对齐方向冲突——对齐只剩 scope→精确=破坏子域授权语义，按批边界登记不硬绕）
+底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **421**（+3: gap12/TR39 面）/ mocha **2046+1 pending**（+2: gap24 网关面）/ panel **96** / 双轨 pytest 421×2（本批触 graphd——纪律②第二次执行）
+产出：**gap 12 ✅**（graphd 写面认证前置两处（:559 /write/* 剩余路由 + 共享尾门 URL 扫描区——B 层复核证伪 /write/* 单点声明后完整闭合）：无凭据恒 401 且不触 denylist，403/401 差分 oracle 关闭；_auth 包装器保 auth-fail-worker 审计不缺口；已认证者红线 403 不变）+**gap 24 ✅ 端口半**（egress CONNECT 端口 pin：缺省 443+P2P_PROXY_CONNECT_PORTS 扩展；pin 外 403+port-not-pinned 审计；e2e 隧道字节往返实证+6379 拒绝实证；MODEL_HOSTS/OSINT 内容面半仍登记）+**TR39 ✅ 缩减集**（gd/confusables.py vendored 骨架表 cyrillic/greek/CJK 句点；R6 扫描 _blob 折叠——confusable 域名散文提及 403 命中；覆盖注记=非全 confusables 残余登记）+**gap 10 ⛔跳过**（处置表⛔豁免与拍板对齐方向冲突——对齐只剩 scope→精确=破坏子域授权语义，按批边界登记不硬绕）
 关键裁决：**豁免裁决的边界效力**（登记处置⛔的 rationale 禁止一个方向、反方向破坏语义——两项都不是"对齐"能安全落地的形态，边界条款触发即停是纪律不是消极）；**oracle 关闭的语义分层**（认证失败 401 恒形+授权失败 403 归路由内——未认证者不可区分资源存在性，已认证者治理行为全保留）；**TR39 缩减集诚实注记**（vendored 高频骨架子集而非 5 万行全表——零网络依赖+体量可控，残余如实登记）
 教训沉淀：**登记处置表是拍板的边界条件来源**（N-0 读处置表先于读代码——⛔/⏸裁决各有 rationale，新拍板与旧裁决冲突时边界条款即触发）；**审计包装器与裸判定的差别是审计缺口**（auth_check 直调静默跳过 auth-fail 审计——认证面一律走 _auth 包装器）；**CONNECT 隧道测试要显式拆套接字**（残留套接字挂死 server.close——closeAllConnections 兜底）
 开放项：gap 24 MODEL/OSINT 内容面半；TR39 全表 vendored 拍板；gap 10 双向不可对齐的架构注记；阶段 B 真首跑=allowlist 填入后单批；graphd worker-token 收紧裁决；LBD-2 观察期；R5 模型窗口/EV-2 实弹/冷读评审/密钥异构小批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户

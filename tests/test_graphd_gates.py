@@ -5362,6 +5362,45 @@ def test_wrap3_tr39_skeleton_folds_confusable_domain(tmp_path, monkeypatch):
     assert len([e for e in events if e["kind"] == "denylist-hit"]) == 2, "两条同形字形态均命中审计"
 
 
+def _wrap3_raw_post(base_url, path, payload, token=""):
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Auth"] = token
+    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(), headers=headers)
+    try:
+        with _urllib_request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.load(resp)
+    except _urllib_request.HTTPError as e:
+        return e.code, json.load(e)
+
+
+def test_wrap3_gap12_tail_gate_no_oracle(tmp_path, monkeypatch):
+    """B 层复核 FAIL 项回归锚: 共享尾门(URL 扫描区, 路由早退后落点)无凭据 POST 任意未消费
+    路径 + 红线 URL cypher → 恒 401(修复前=403 资产名回显+denylist-hit 审计=oracle 存活)。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    monkeypatch.setattr(graphd_app, "DENYLIST", {"domains": ["demo-src.com"], "cidr_prefix": []})
+    conn.execute("CREATE (e:Engagement {name:'eng-tg', status:'active', scope:'innocent.example'})")
+    try:
+        probe = {"cypher": "CREATE (n:Probe {url:'http://mail.demo-src.com/x'}) RETURN n"}
+        # ①无凭据 + 红线 URL → 401(非 403 资产名回显)
+        s1, o1 = _wrap3_raw_post(base_url, "/xyz-not-a-route", probe, token="")
+        assert s1 == 401 and "demo-src.com" not in json.dumps(o1), (s1, o1)
+        # ②无凭据 + 无辜 URL → 401 同形(不可区分)
+        s2, o2 = _wrap3_raw_post(base_url, "/xyz-not-a-route",
+                                 {"cypher": "CREATE (n:Probe {url:'http://innocent.example/x'}) RETURN n"}, token="")
+        assert s2 == 401 and o1["error"] == o2["error"], (o1, o2)
+        # ③已认证 worker + 红线 URL → 403 denylist-hit(已认证者行为不变, 资产名回显)
+        s3, o3 = _wrap3_raw_post(base_url, "/xyz-not-a-route", probe, token="t-wrap2-worker")
+        assert s3 == 403 and "demo-src.com" in json.dumps(o3), (s3, o3)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    assert len([e for e in events if e["kind"] == "denylist-hit"]) == 1, "denylist-hit 审计恰一(仅已认证轮)"
+
+
 def test_wrap3_tr39_skeleton_pure_function():
     """skeleton_fold 纯函数单测: cyrillic/greek/CJK 句点折叠 + ASCII 直通 + 空串安全。"""
     from graphd.gd.confusables import skeleton_fold

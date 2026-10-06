@@ -51,7 +51,7 @@ blocked 分列（13/9/0）为记账口径（总数−gap it 数；G8 三 sev 为
 | 21 | 🟡 | 门9 validator | originOf 从 repro 文本提取 L0 探测目标——finding 文本可操纵探测指向（元数据/内网地址原样提取；直连面在 P2P_PROXY_URL 未配时开放——L0 无授权门是设计） | 往图内写 repro 首行含 `http://169.254.169.254/` 的 finding |
 | 22 | 🔵 | 门11 cap | observe 只计数不拒绝（文档化边界）——off 模式横向 spawn 无事前上限（静态登记） | subagent 事件恒入账 breach 后不阻断 |
 | 23 | 🔴 | 门6 egress（D） | resolvedIpsAllowed 30s 解析缓存 × 上游 hostname 二次解析 = DNS rebinding 窗口（静态登记——复现需可控权威 DNS，归评测集） | TTL=0 域首查公网→缓存窗内切 A 记录至 169.254.169.254 |
-| 24 | ✅已修(WRAP-3·端口半) | CONNECT 端口 pin 落地（缺省 443+P2P_PROXY_CONNECT_PORTS 扩展；pin 外 403+port-not-pinned 审计；MITM 模式同受约束）。**MODEL_HOSTS/OSINT_HOSTS 豁免 scope 半仍登记**（豁免≠免治理但内容面不检——内容面检归 MITM 面另批） |
+| 24 | ✅已修(WRAP-3·端口半) | 门6 egress（E） | CONNECT 端口 pin 落地（缺省 443+P2P_PROXY_CONNECT_PORTS 扩展；pin 外 403+port-not-pinned 审计；环回豁免=MITM/直通非标 TLS 功能前提残余登记；MITM 模式同受约束）。**MODEL_HOSTS/OSINT_HOSTS 豁免 scope 半仍登记**（内容面检归 MITM 面另批） | crt.sh 查询参数带外外传（host 级已 pin, 内容面另批） |
 | 25 | 🔵 | 门2（D） | 熔断账本失败口径=门拒绝次数非真实执行结果（gap ⑥ 既有登记）——违规/合规交替永不入冷却 | 交替形态探测门边界 |
 | 26 | 🔵 | 门3（B） | write-gate 字符串层不跟 symlink——eng 子树内符号链接穿透（文件头自述残余；兜底=宿主 sandbox） | bash 建链 + write file_path=链内路径 |
 | 27 | 🔵 | 门12（E） | `value` 决策与二进制块原样放行（消毒闸结构性边界） | 带值结果的注入内容不经消毒 |

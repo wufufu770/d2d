@@ -1784,6 +1784,11 @@ class Handler(BaseHTTPRequestHandler):
                 if h not in ("127.0.0.1", "localhost"):
                     hosts.add(h)
             if hosts:
+                # WRAP-3 gap 12(尾门闭合): 认证前置于 denylist/scope 差分判定——无凭据请求恒 401,
+                # 不获 403 资产名回显与 denylist-hit 审计(B 层复核证伪闭环声明处: 共享落点
+                # POST 任意未消费路径 + URL cypher 曾直穿本区)。与 :559 前置块同语义分层。
+                if not self._auth("worker"):
+                    return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
                 # 首个 engagement 创建时无活跃 scope，跳过校验（自身即定义 scope）
                 if "Engagement" in cypher_raw and "CREATE" in cypher_raw.upper():
                     pass
