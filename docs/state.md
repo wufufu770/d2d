@@ -582,11 +582,25 @@ adjudicate-illegal 全落]；**负例生效实测**[标假阳性后四消费面�
 418 两轨严格相等——AGENTS.md 15② 首次真实触发 docs/wrap2-dual-track.md]；host-only 403
 双态断言[worker/缺 token]；非 verified 409+illegal 审计；panel **95**[+1]/pytest **418**
 [+4]/mocha **2044**）
-下一步建议（**当前唯一有效**·WRAP-2 时点）：**阶段 B 真首跑=allowlist 填入后单批**
+下一步建议（历史·WRAP-2 时点，已被 KEYS-1 单值化取代）：**阶段 B 真首跑=allowlist 填入后单批**
 [唯一前置=roles.xring.allowlist 填前沿模型 id——裁决回灌已就绪给首跑产物纠错回路]；
 **WRAP 波清欠**[下一项按用户排批]；graphd worker-token 写面收紧裁决；LBD-2 观察期进行中
 [AGENTS.md 15]；R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；其余候选=
 密钥异构小批/js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
+
+KEYS-1 ✅（**密钥异构批**[双签第二维度]：**族 1 dual-keyring.mjs**[T4-3-3 原文形态：ed25519
+平行模块不改 auth-contract 禁区/evidence-crypto 原语模式/调度器代签持钥；双槽 a/b 独立
+钥匙不同源自检 fail-closed；门控 off 缺省] + **族 3 三触点接线**[pending 登记 a 钥/signed
+完成 b 钥——nonce 入签=nonce→密码学升级；DUALSIG gate-log 消费面验签；代签失败降级不阻
+断] + **私钥边界双向断言**[worker env 零注入源级 grep+缺省根=数据根非 workspace+代签产物
+仅 b64] + 消费链语言面实锚=全 Node 零 Python 依赖[graphd dual_sign=簿记无验签——拍板 5
+graphd 预设被实锚修正，双轨照走第三次 422×2]；基线 pytest **422**/mocha **2053+1 pending**
+[+7]/panel **96**）
+下一步建议（**当前唯一有效**·KEYS-1 时点）：**阶段 B 真首跑=allowlist 填入后单批**；
+P2P_DUAL_KEY_MODE=on 生产翻转归观察期后另批拍板；密钥轮换机制登记开放项；私钥边界运行
+时取证归首跑批；WRAP 波清欠继续[下一项按用户排批]；graphd worker-token 收紧裁决；LBD-2
+观察期进行中[AGENTS.md 15]；R5 模型窗口三步/EV-2 实弹二选一/第四轮冷读评审仍悬置归用户；
+其余候选=js catch 146/门禁候选二批/探路分支远端清理卫生批——排批归用户
 
 ## 评测集跑测立项卡（T3-3 收官登记，实施单独立项——拍板 6：本批只立项不实施）
 - **范围**：8.5 评测集跑测——SPA/DVWA 靶场全链路（五角色+调度环+验证闭环+经验回流），
