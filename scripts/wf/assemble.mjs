@@ -79,6 +79,14 @@ function main() {
   const fold = a['fold-manifest'] === 'false' ? false : true
   const maxPushRounds = String(a['max-push-rounds'] ?? '10')
   const maxTerminalAttempts = String(a['max-terminal-attempts'] ?? '5')
+  const gateMode = a.gate === 'none' ? 'none' : 'file'
+  let gateFile = a['gate-file'] ?? ''
+  if (kind !== 'landing' && gateMode === 'file') {
+    if (!gateFile) throw new Error('--gate-file 必填（push 类 gate 相 fail-closed 缺省；legacy 逃生口=--gate none 并登记豁免理由）')
+    if (!/^[A-Za-z0-9_./-]+$/.test(gateFile)) throw new Error(`--gate-file 路径含非白名单字符: ${gateFile}`)
+  }
+  const gateExpect = (a['gate-expect'] ?? 'GATE: PASS').replace(/"/g, '“')
+  const gateMaxPolls = String(a['gate-max-polls'] ?? '60')
   const forbidden = (a.forbidden ?? 'scheduler 核心/graphd 生产代码/生产库/scripts/browser//sanitize-ingest 链/xring 面板面').replace(/"/g, '“')
   let families = []
   if (kind !== 'push') {
@@ -97,7 +105,10 @@ function main() {
   const parts = [read('header.frag'), read('hook.frag'), read('regen.frag')]
   if (kind !== 'push') parts.push(read('preflight.frag'), read('families.frag'))
   parts.push(read('newsha.frag'))
-  if (kind !== 'landing') parts.push(read('push.frag'))
+  if (kind !== 'landing') {
+    if (gateMode === 'file') parts.push(read('gate.frag'))
+    parts.push(read('push.frag'))
+  }
   parts.push(read('report.frag'))
 
   const foldLabel = fold ? 'fold manifest，每笔树-清单自洽' : '独立 manifest 笔'
@@ -116,6 +127,9 @@ function main() {
     [/__MAX_TERMINAL_ATTEMPTS__/g, maxTerminalAttempts],
     [/__PROD_DIFF_PATHS__/g, JSON.stringify((a['prod-paths'] ?? 'plugin/pentest-dsh/scheduler/,plugin/pentest-dsh/scheduler.js,plugin/pentest-dsh/domain/,graphd/,plugin/d2d-panel/').split(','))],
     [/__REPORT_TAIL__/g, reportTail],
+    [/__GATE_FILE__/g, gateFile],
+    [/__GATE_EXPECT__/g, gateExpect],
+    [/__GATE_MAX_POLLS__/g, gateMaxPolls],
   ]
   for (const [re, v] of subs) out = out.replace(re, v)
   out = out.replace('/*__LIB_PROBE__*/', inlineLib('probe-classify.mjs'))
@@ -123,13 +137,19 @@ function main() {
 
   const leftover = out.match(/__LIB_[A-Z_]+__|\/\*__[A-Z_]+__\*\//g) ?? []
   const markerLeft = out.match(/__[A-Z][A-Z0-9_]{2,}__/g) ?? []
+  if (gateMode === 'file' && kind !== 'landing') {
+    const cleaned = markerLeft.filter((m) => m !== '__GATE_MISSING__')
+    if (cleaned.length !== markerLeft.length) { markerLeft.length = 0; markerLeft.push(...cleaned) }
+  }
   if (leftover.length || markerLeft.length) throw new Error(`残留标记未替换: ${[...new Set([...leftover, ...markerLeft])].join(', ')}`)
 
   const outPath = path.resolve(a.out ?? path.join(ROOT, '.zcode/workflow-drafts', `wf-${kind}.dwf.ts`))
   fs.mkdirSync(path.dirname(outPath), { recursive: true })
   fs.writeFileSync(outPath, out)
   const lines = out.split('\n').length
-  console.log(`assembled: ${outPath} (${lines} lines, kind=${kind}, families=${families.length}, fold=${fold}, hook=${hookMode})`)
+  const gateNote = kind !== 'landing' ? (gateMode === 'file' ? `gate=${gateFile}` : 'gate=NONE(legacy 逃生口——登记豁免)') : 'no-push'
+  console.log(`assembled: ${outPath} (${lines} lines, kind=${kind}, families=${families.length}, fold=${fold}, hook=${hookMode}, ${gateNote})`)
+  if (gateMode === 'none' && kind !== 'landing') console.warn('⚠ gate=none：legacy 逃生口使用须登记豁免理由（SC-1 拍板 1 fail-closed 缺省）')
 }
 
 main()
