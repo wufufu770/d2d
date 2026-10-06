@@ -118,6 +118,7 @@ try:
                            prose_denylist_hit, redact_pii, repro_gate, title_tokens,
                            titles_duplicate, transition_gate, url_sig, worker_query_allowed,
                            SCHEMA_DEGRADED)
+    from graphd.gd.confusables import skeleton_fold
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd import (_URL_RE, DENYLIST, FINDING_DEDUP_SCAN_SQL, FINDING_STATES,
                     FINDING_TRANSITIONS, JUNK_PATTERNS, L1_DENY_REASON, MAX_BODY_BYTES,
@@ -134,6 +135,7 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
                     prose_denylist_hit, redact_pii, repro_gate, title_tokens,
                     titles_duplicate, transition_gate, url_sig, worker_query_allowed,
                     SCHEMA_DEGRADED)
+    from gd.confusables import skeleton_fold
 
 # 3C: 双哈希 + 证据指针纯函数(gd/gates.py 纯函数区新增)。gd/__init__ 未聚合 3C 新名
 # (本批次授权改动仅 gates.py/app.py/tests 三文件) — 直接从子模块导入, 两种运行形态都接住。
@@ -549,6 +551,14 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/query", "/write/finding", "/write/signal", "/write/hypothesis", "/write/endpoint"):
             if not self._auth("worker"):
                 return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
+        # WRAP-3 gap 12: 剩余 /write/ 路由认证前置(未认证先于未授权——无凭据恒 401)。
+        # 登记原文: denylist 红线扫描先于路由认证 = 无凭据 403/401 差分 oracle(载荷含红线资产
+        # 与否可被未认证者探测)。修法=扫描前先做"有凭据"判定(auth_check worker 级覆盖 host/worker
+        # 双 token); 缺/坏凭据恒 401 且不触 denylist; 角色 403 仍由路由内 _auth("host") 判定
+        # (已认证者的授权失败不构成 oracle)。既有 I-013 五路由(:543)已前置, 本块收编其余 /write/*。
+        if self.path.startswith("/write/") and self.path not in ("/write/transition", "/write/finding", "/write/signal", "/write/hypothesis", "/write/endpoint"):
+            if not self._auth("worker"):  # _auth 包装器带 auth-fail-worker 审计(#73 面不缺口)
+                return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
         # R6: 排除清单(denylist)硬拦截 —— 结构化写端点全字段扫描(禁引用: 载荷含排除资产即 403)。
         # 实证通道: /write/signal 的 evidence 带 mail.demo-src.com 曾直穿(旧实现只扫 /query 变更类 cypher)。
         # /write/transition 豁免 —— 合规隔离转移的 reason 需要引用红线资产本身。
@@ -571,7 +581,10 @@ class Handler(BaseHTTPRequestHandler):
             if _denied:
                 # #73 大小写一致性: 名单加载即 lower()(:19), scope `!` 条目 lower()(:下方), 文本亦
                 # lower() 后比对 —— 双端同构, 无需 re.I。
-                _blob = json.dumps(req, ensure_ascii=False).lower()
+                # WRAP-3 TR39(gap 20 残余): 跨脚本同形字骨架折叠——西里尔 с/希腊 ο 等非 NFKC
+                # 兼容映射, 词边界正则按码点比对漏检; 折叠后与 ASCII 名单条目同构。缩减集注记
+                # 见 gd/confusables.py(非全 confusables, 残余=未收录同形字)。
+                _blob = skeleton_fold(json.dumps(req, ensure_ascii=False).lower())
                 _hit = None
                 for _d in _denied:
                     # 网段前缀条目(如 "203.0.113.")后接数字 IP 主机位; 域名条目要求词边界
