@@ -149,6 +149,9 @@ mocha 通道瞬断（-1）按先例手动实锚 + CI 全量最终裁决。
    view.xring.js/xrp2-smoke-hang.md 尚未 track → 漏收，B 层复核才发现）；执行口径=
    `git add -A` 先行（或确认 status 无 ?? 项）→ regen → `sha256sum -c` 自校验 →
    全集核对（ls-files vs manifest 条目 comm 为空）→ commit。
+   ③ **补笔 commit 必须随批回填 devlog**（SC-1 固化——先例不齐：WD-2 补笔 proxy-addr 在
+   KEYS-1 条目补记、WRAP-3 补笔无独立条目）——执行口径=补笔落库当批内，devlog 追加一行
+   （主题+归因+基线影响），并入最近批条目或独立短条目均可，不许只留 commit message。
 17. **钩子禁用旗标=违反 L3 门纪律（XR-P4 固化）**：任何钩子禁用形态（`--no-verify`/
    `core.hooksPath` 重定向/同族手段）视同违反 Mimosa L3 门纪律——"已做后果分析"不构成
    合规依据；commit/push 一律走 world.run 工作流通道（先例 13），交互通道零禁用旗标。

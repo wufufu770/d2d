@@ -16,6 +16,7 @@
 `graphd.app` 的引擎开关（6 处 import，diff 7+/6-），收编后 **ladybug 轨全量 pytest 414
 全绿（85.18s）+ 缺省 kuzu 轨 414 全绿（89.58s，CI 形态零回归）**。探路分支
 `lbd1b-probe` 已留档（2 commit，tip 见 `git rev-parse lbd1b-probe` 实测），作为 LBD-2
+> **SC-1 更新**：远端分支 origin/lbd1b-probe 已删（内容经 LBD-2-pre merge f7db4b7 全量入 main、零未合并提交终核后删除——留档职能由本文件+main 历史承接）。
 前置批另行回报再合。
 
 ## 二、探针 1：上游调查（0.21.2 已是最新；上游无此缺陷登记）
