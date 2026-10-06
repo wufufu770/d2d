@@ -404,7 +404,7 @@ export function readFleet(env = process.env) {
       if (m && !seen.has(m)) { seen.add(m); fleet.models.push(m) }
     }
     let catalog = []
-    try { catalog = loadDshCatalog(env) } catch {}
+    try { catalog = loadDshCatalog(env) } catch { /* 已记因: 降级路径——dsh 目录枚举失败时 catalog 置空，fleet 卡降级 */ }
     fleet.catalog = catalog
     for (const { provider, models } of catalog) {
       for (const id of models) {
@@ -466,7 +466,7 @@ export function credentialEnvNames(env = process.env) {
         if (m) names.add(m[1])
       }
     }
-  } catch {}
+  } catch { /* 已记因: 降级路径——凭据文件缺失/不可读时跳过 refs 收集，仅用进程环境兜底 */ }
   for (const k of Object.keys(env)) if (/API_KEY/.test(k)) names.add(k)
   return names
 }
@@ -507,7 +507,7 @@ export function loadDshCatalog(env = process.env) {
       const p = `${home}/profiles/${e}/cordis.patch.yml`
       if (fs.existsSync(p)) files.push(p)
     }
-  } catch {}
+  } catch { /* 已记因: 降级路径——profiles 目录缺失/不可读时仅读 settings.yaml */ }
   const refs = credentialEnvNames(env)
   const byProv = new Map() // provider → {models:Set, apiKeyEnv}
   for (const f of files) {
@@ -518,7 +518,7 @@ export function loadDshCatalog(env = process.env) {
         if (apiKeyEnv) cur.apiKeyEnv = apiKeyEnv
         byProv.set(provider, cur)
       }
-    } catch {}
+    } catch { /* 已记因: 解析容错——单个配置文件缺失/损坏时跳过，继续枚举其余文件 */ }
   }
   return [...byProv.entries()]
     .map(([provider, cur]) => ({ provider, models: [...cur.models].sort(), apiKeyEnv: cur.apiKeyEnv || '',
@@ -550,7 +550,7 @@ export async function loadStrategies(env = process.env, query) {
   try {
     const rows = await query(`MATCH (e:ExperienceWeight) WHERE e.id STARTS WITH 'card:' RETURN e.id AS id, e.wins AS w, e.hits AS h`)
     for (const r of rows ?? []) winsMap[String(r.id)] = { wins: Number(r.w) || 0, hits: Number(r.h) || 0 }
-  } catch {}
+  } catch { /* 已记因: 降级路径——战果图查询失败时 wins/hits 置零，策略卡照常返回 */ }
   for (const s of out) s.stats = winsMap[s.id] ?? { wins: 0, hits: 0 }
   return out
 }
@@ -615,10 +615,10 @@ export function readRunEvents({ engName, dataDir }, fsImpl = fs, env = process.e
             if (r.quota) out.cost.quotaEvents24h++
           }
         }
-      } catch {}
+      } catch { /* 已记因: 解析容错——model-usage 坏行跳过，不中断其余行烧速统计 */ }
     }
     out.cost.workerMin24h = Math.round(out.cost.workerMin24h)
-  } catch {}
+  } catch { /* 已记因: 降级路径——账本文件缺失/不可读时烧速口径留零值 */ }
   // run-log.jsonl: dispatch/terminal/zero-write/handoff 事件(轨迹主线)
   if (engName) {
     try {
@@ -639,9 +639,9 @@ export function readRunEvents({ engName, dataDir }, fsImpl = fs, env = process.e
           }
           if (ev.kind) out.events.push(ev)
           if (ev.kind === 'terminal' && ev.quota && ev.model && !out.quotaHits.includes(ev.model)) out.quotaHits.push(ev.model)
-        } catch {}
+        } catch { /* 已记因: 解析容错——run-log 坏行跳过，不影响其余轨迹事件 */ }
       }
-    } catch {}
+    } catch { /* 已记因: 降级路径——轨迹文件缺失/不可读时事件列表留空 */ }
   }
   return out
 }
@@ -685,7 +685,7 @@ export function readModelUsage({ engName, dataDir }, fsImpl = fs, env = process.
       if (r?.model && !r?.event) out.dispatches++
       out.inputTokens += posTok(r, ['input_tokens', 'inputTokens'])
       out.outputTokens += posTok(r, ['output_tokens', 'outputTokens'])
-    } catch {}
+    } catch { /* 已记因: 解析容错——token 账本坏行跳过，不计入聚合 */ }
   }
   return out
 }

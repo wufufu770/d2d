@@ -64,7 +64,7 @@ async function main() {
       const cdp = c.events.filter((e) => e.method === 'Network.requestWillBeSent').map((e) => e.params.request)
       const hooked = await c.send('Runtime.evaluate', { expression: 'JSON.stringify(window.__d2d_reqs||[])', returnByValue: true }).catch(() => null)
       let hx = []
-      try { hx = JSON.parse(hooked?.result?.value ?? '[]') } catch {}
+      try { hx = JSON.parse(hooked?.result?.value ?? '[]') } catch { /* 已记因: 解析容错——钩子回值非 JSON 时按 0 条展示, CDP 捕获流照常输出 */ }
       console.log(`== CDP 捕获 ${cdp.length} 条 ==`)
       for (const r of cdp.slice(0, 50)) console.log(`${r.method} ${r.url}`)
       console.log(`== wx.request 钩子 ${hx.length} 条 ==`)
@@ -82,7 +82,7 @@ async function main() {
       console.error(`未知命令: ${cmd}`)
       process.exit(2)
     }
-  } finally { try { c.ws.close() } catch {} }
+  } finally { try { c.ws.close() } catch { /* 已记因: 尽力而为——收尾关 ws 失败(已断/未开)静默, 不掩盖主流程结果 */ } }
 }
 import fs from 'node:fs'
 import path from 'node:path'

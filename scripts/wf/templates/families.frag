@@ -4,7 +4,7 @@ for (const [i, f] of families.entries()) {
   const st = await world.run("git", ["-C", repo, "status", "--porcelain=v1", "--untracked-files=all", "--", ...f.paths])
   if (st.stdout.trim() === "") { log(`族 ${i + 1}/${families.length} 干净（幂等跳过）：${f.subject}`); continue }
   const add = await world.run("git", ["-C", repo, "add", "--", ...f.paths])
-  if (add.exitCode !== 0) throw new Error(`add 族${i + 1} 失败`)
+  if (add.exitCode !== 0) throw new Error(`add 族${i + 1} 失败: ${(add.stderr || add.stdout).slice(0, 300)}`)
   if (__FOLD_MANIFEST__) await manifestGates(`族 ${i + 1}/${families.length} fold:`, f.paths)
   const c = await world.run("git", ["-C", repo, "commit", "-m", f.subject, "-m", f.body])
   if (c.exitCode !== 0) throw new Error(`commit 族${i + 1} 失败: ${(c.stderr || c.stdout).slice(0, 400)}`)

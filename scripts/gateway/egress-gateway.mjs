@@ -96,12 +96,12 @@ let _mitm = null
 let _mitmP = null // 初始化单飞 Promise(并发 CONNECT 只 init 一次; 失败复位允许重试)
 // R3: 数据外置 D2D_DATA_DIR(默认 ~/.d2d-data)
 const EVIDENCE_DIR = process.env.P2P_PROXY_EVIDENCE ?? `${process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/evidence/proxy`
-try { mkdirSync(EVIDENCE_DIR, { recursive: true }) } catch {}
+try { mkdirSync(EVIDENCE_DIR, { recursive: true }) } catch { /* 已记因: 尽力而为——证据目录已存在或创建失败, 不阻断网关启动 */ }
 const logFile = `${EVIDENCE_DIR}/proxy-${Date.now()}.jsonl`
-const audit = (e) => { try { appendFileSync(logFile, JSON.stringify({ ts: new Date().toISOString(), ...e }) + '\n') } catch {} }
+const audit = (e) => { try { appendFileSync(logFile, JSON.stringify({ ts: new Date().toISOString(), ...e }) + '\n') } catch { /* 已记因: 尽力而为——审计行写盘失败静默, 不阻断代理判定与转发 */ } }
 // T2-2b-1: 解密分支加密事务捕获目录(mitm-http 元数据审计旁) — 只落密文, 不落明文
 const MITM_ENC_DIR = path.join(EVIDENCE_DIR, 'mitm-enc')
-try { mkdirSync(MITM_ENC_DIR, { recursive: true }) } catch {}
+try { mkdirSync(MITM_ENC_DIR, { recursive: true }) } catch { /* 已记因: 尽力而为——加密捕获目录创建失败不阻断网关, 写入侧另有审计兜底 */ }
 // 事务体捕获上限(与 mitm-capture BODY_CAP 缺省同量级): 头必全量, 体截断记 truncated 标记
 const MITM_TXN_BODY_CAP = 256 * 1024
 
@@ -121,7 +121,7 @@ const FORBIDDEN_CIDRS = _FORBIDDEN_CIDRS
 // ---- 动态 scope: control 图的活跃 Engagement.scope, 30s 刷新 ----
 let dynScope = new Set()
 let token = ''
-try { token = readFileSync(TOKEN_FILE, 'utf8').trim() } catch {}
+try { token = readFileSync(TOKEN_FILE, 'utf8').trim() } catch { /* 已记因: 降级路径——token 文件缺失时空令牌启动, scope 取不到按拒处理 */ }
 async function refreshScope() {
   const next = new Set()
   const nextPathDeny = new Set() // 4.5-1: 本轮 '!host/path' 条目解析出的 path deny 集(与 dynScope 同生命周期)
@@ -276,7 +276,7 @@ function deny(res, host, why, code = 403) {
 }
 const _sockDeny = (sock, host, why, code = 403) => {
   audit({ event: 'deny', host, why })
-  try { sock.end(`HTTP/1.1 ${code} Forbidden\r\n\r\n`) } catch {}
+  try { sock.end(`HTTP/1.1 ${code} Forbidden\r\n\r\n`) } catch { /* 已记因: 另面留痕——deny 决定已审计, 对端已断时 403 写回失败静默 */ }
 }
 const server = http.createServer(async (req, res) => {
   // 0906 修复: worker 被杀/客户端半途断连时 req/res 的 'error'(ECONNRESET) 无监听 → 整进程退出(12:15 实证)
@@ -312,7 +312,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(r.statusCode, r.headers); r.pipe(res)
     })
     up.on('timeout', () => up.destroy(new Error(`upstream timeout ${UPSTREAM_TIMEOUT_MS}ms`)))
-    up.on('error', () => { try { res.writeHead(502); res.end() } catch {} })
+    up.on('error', () => { try { res.writeHead(502); res.end() } catch { /* 已记因: 尽力而为——上游错误回 502 时响应已发出/客户端已断, 写回失败静默 */ } })
     req.pipe(up)
   } catch { deny(res, host, 'bad upstream') }
 })
@@ -350,7 +350,7 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
     if (!_mitmP) {
       _mitmP = startTlsIntercept({
         dataDir: process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`,
-        handler: (req, res) => { mitmHandle(req, res).catch(() => { try { res.writeHead(500); res.end() } catch {} }) },
+        handler: (req, res) => { mitmHandle(req, res).catch(() => { try { res.writeHead(500); res.end() } catch { /* 已记因: 尽力而为——解密请求处理异常回 500, 客户端已断时写回失败静默 */ } }) },
         onAudit: audit,
       }).then((h) => { _mitm = h; return h }).catch((e) => {
         audit({ event: 'mitm-init-error', host, error: String(e?.message ?? e).slice(0, 120) })
@@ -366,9 +366,9 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
           if (head.length) up.write(head)
           sock.pipe(up); up.pipe(sock)
         })
-        up.setTimeout(UPSTREAM_TIMEOUT_MS, () => { try { up.destroy(); sock.end() } catch {} })
+        up.setTimeout(UPSTREAM_TIMEOUT_MS, () => { try { up.destroy(); sock.end() } catch { /* 已记因: 尽力而为——隧道上游超时拆除, 对端已断时写回失败静默 */ } })
         up.on('error', () => sock.end())
-        sock.on('close', () => { try { up.destroy() } catch {} }) // 客户端断开 → 拆回环侧, 防半开隧道残留
+        sock.on('close', () => { try { up.destroy() } catch { /* 已记因: 尽力而为——客户端断开拆回环侧, 已销毁时重复 destroy 空过 */ } }) // 客户端断开 → 拆回环侧, 防半开隧道残留
       }).catch(() => sock.end())
       return
     }
@@ -382,14 +382,14 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
         up.setTimeout(0) // 隧道已建立: 解除握手超时(长连接空闲属正常, 挂死风险只在握手窗口)
         sock.write('HTTP/1.1 200 Connection Established\r\n\r\n'); up.write(head); up.pipe(sock); sock.pipe(up)
       })
-      up.setTimeout(UPSTREAM_TIMEOUT_MS, () => { try { up.destroy(); sock.end() } catch {} })
+      up.setTimeout(UPSTREAM_TIMEOUT_MS, () => { try { up.destroy(); sock.end() } catch { /* 已记因: 尽力而为——直连隧道上游超时拆除, 对端已断时失败静默 */ } })
       up.on('error', () => sock.end())
       return
     }
     const up = net.connect(upstreamFor.port, upstreamFor.host, () => {
       up.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`)
     })
-    up.setTimeout(UPSTREAM_TIMEOUT_MS, () => { try { up.destroy(); sock.end() } catch {} })
+    up.setTimeout(UPSTREAM_TIMEOUT_MS, () => { try { up.destroy(); sock.end() } catch { /* 已记因: 尽力而为——企业代理隧道超时拆除, 对端已断时失败静默 */ } })
     let buf = ''
     up.on('data', function onData(d) {
       buf += d.toString('latin1')
@@ -408,7 +408,7 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
     up.on('error', () => sock.end())
   }).catch(() => sock.end())
 })
-server.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n') } catch {} })
+server.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n') } catch { /* 已记因: 尽力而为——畸形请求回 400, 连接已坏时写回失败静默 */ } })
 
 // ---- 4.5-1 解密面: 内部 TLS 服务解密出的明文 HTTP 进这里(同一判定链 → https 转发上游 → 响应透传) ----
 // 转发用 https: CONNECT 语义 = 上游是 TLS(与直通裸隧道可达性一致 — 直通从不校验上游证书, 这里同样
@@ -487,11 +487,11 @@ async function mitmHandle(req, res) {
             res: { status: r.statusCode, headers: headOut(r.headers) },
             resBody: { size: resBytes, truncated: resBytes > MITM_TXN_BODY_CAP, text: resChunks.length ? Buffer.concat(resChunks).toString('utf8') : '' },
           })
-        } catch {}
+        } catch { /* 已记因: 另面留痕——事务组包失败静默, sink 侧错误已走 mitm-enc-error 审计 */ }
       })
     })
     up.on('timeout', () => up.destroy(new Error(`upstream timeout ${UPSTREAM_TIMEOUT_MS}ms`)))
-    up.on('error', () => { audited(502); try { res.writeHead(502); res.end() } catch {} })
+    up.on('error', () => { audited(502); try { res.writeHead(502); res.end() } catch { /* 已记因: 另面留痕——502 已审计留痕, 客户端已断时写回失败静默 */ } })
     req.pipe(up)
   } catch { deny(res, host, 'bad upstream') }
 }

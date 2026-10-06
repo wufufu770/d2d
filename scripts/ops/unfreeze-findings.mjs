@@ -35,7 +35,7 @@ function transition(id, to) {
     '-d', JSON.stringify({ id, to, actor: 'migration', reason: 'issue #88: frozen 存量解冻, 回验证管线重新分诊' })], { encoding: 'utf8' })
   const nl = out.lastIndexOf('\n')
   let body = {}
-  try { body = JSON.parse(out.slice(0, nl)) } catch {}
+  try { body = JSON.parse(out.slice(0, nl)) } catch { /* 已记因: 解析容错——响应体非 JSON 时保持空对象, HTTP 状态码照常驱动成败分类 */ }
   return { status: Number(out.slice(nl + 1).trim()), ...body }
 }
 

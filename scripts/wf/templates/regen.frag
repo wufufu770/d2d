@@ -24,7 +24,7 @@ async function manifestGates(label: string, pathspec?: string[]) {
   const addA = pathspec
     ? await world.run("git", ["-C", repo, "add", "-A", "--", ...pathspec, "manifest.sha256"])
     : await world.run("git", ["-C", repo, "add", "-A"])
-  if (addA.exitCode !== 0) throw new Error(`add -A 失败`)
+  if (addA.exitCode !== 0) throw new Error(`add -A 失败: ${(addA.stderr || addA.stdout).slice(0, 300)}`)
   const regen = await world.run("node", ["-e", regenCode])
   if (regen.exitCode !== 0) throw new Error(`regen 失败: ${regen.stderr.slice(0, 300)}`)
   log(`${label} ${regen.stdout.trim()}`)

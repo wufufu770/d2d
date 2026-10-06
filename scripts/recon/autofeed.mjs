@@ -245,7 +245,7 @@ if (IS_MAIN) {
   const has = (k) => process.argv.includes(k)
   const asJson = has('--json')
   const auditFile = path.join(DATA_DIR, 'osint-feed-audit.jsonl')
-  const auditSink = (e) => { try { fs.appendFileSync(auditFile, JSON.stringify({ ts: new Date().toISOString(), ...e }) + '\n') } catch {} }
+  const auditSink = (e) => { try { fs.appendFileSync(auditFile, JSON.stringify({ ts: new Date().toISOString(), ...e }) + '\n') } catch { /* 已记因: 尽力而为——审计行写盘失败静默, 不阻断 feed 轮询主流程 */ } }
   const log = (m) => console.error(`[osint-feed] ${m}`)
   const once = async () => {
     const s = await runCycle({ audit: auditSink, log })

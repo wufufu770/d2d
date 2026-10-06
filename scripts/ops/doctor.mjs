@@ -21,12 +21,12 @@ let graphdOk = false
 try {
   const r = await fetch(`${GRAPH}/health`, { signal: AbortSignal.timeout(4000) })
   graphdOk = (await r.json()).ok === true
-} catch {}
+} catch { /* 已记因: 另面留痕——探活失败折算为检查项失败, 在 doctor 报告中留痕 */ }
 check('graphd 健康', graphdOk, GRAPH)
 
 // 2. host token + 生命周期列(0905 实证: 缺列时栅栏/租约/取消整体静默失效)
 let tok = ''
-try { tok = fs.readFileSync(`${os.homedir()}/.config/d2d/host-token`, 'utf8').trim() } catch {}
+try { tok = fs.readFileSync(`${os.homedir()}/.config/d2d/host-token`, 'utf8').trim() } catch { /* 已记因: 另面留痕——token 不可读折算为检查项失败, 在 doctor 报告中留痕 */ }
 check('host-token 可读', Boolean(tok))
 const q = async (cypher) => {
   const r = await fetch(`${GRAPH}/query`, {
@@ -60,7 +60,7 @@ check('写通道暂停开关', !paused, paused ? 'paused.json 存在 — 新 eng
       const text = fs.readFileSync(ca, 'utf8')
       count = (text.match(/-----BEGIN CERTIFICATE-----/g) ?? []).length
       pemOk = count > 0
-    } catch {}
+    } catch { /* 已记因: 另面留痕——CA 包不可读折算为检查项失败, 在 doctor 报告中留痕 */ }
     check('D2D_CA_BUNDLE 证书包可解析', pemOk, pemOk ? `${count} 张证书` : '文件缺失或非 PEM — curl --cacert 会全量拒连')
   }
   const relaxed = String(process.env.NODE_TLS_REJECT_UNAUTHORIZED ?? '') === '0'
@@ -143,7 +143,7 @@ for (const d of ['current', 'staged', 'shadow']) {
   } catch (e) { check(`知识脑 ${d} 包可解析`, false, e.message.slice(0, 50)) }
 }
 let inboxN = 0
-try { inboxN = fs.readdirSync(`${DATA_DIR}/knowledge/inbox`).filter((f) => /\.(md|txt|markdown)$/i.test(f)).length } catch {}
+try { inboxN = fs.readdirSync(`${DATA_DIR}/knowledge/inbox`).filter((f) => /\.(md|txt|markdown)$/i.test(f)).length } catch { /* 已记因: 降级路径——inbox 目录缺失时按空队列报告, 不作为异常项 */ }
 check('学习队列状态', true, inboxN ? `inbox 待蒸馏 ${inboxN} 篇(下次 auto-study 消化)` : 'inbox 空(已消化)')
 
 // ---- 汇总 ----

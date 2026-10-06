@@ -99,7 +99,7 @@
         setOff((prev) => {
           const next = new Set(prev)
           if (next.has(key)) next.delete(key); else next.add(key)
-          try { localStorage.setItem('d2d-ops-modules-off', JSON.stringify([...next])) } catch {}
+          try { localStorage.setItem('d2d-ops-modules-off', JSON.stringify([...next])) } catch { /* 已记因: 降级路径——localStorage 不可用时模块开关仅内存态生效 */ }
           return next
         })
       }, [])
