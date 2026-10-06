@@ -385,8 +385,8 @@ aa00a0af9f329c6fbdcc27f5cb9bf31563228493052ef9815437ba9f05e54918  plugin/pentest
 47a38c2ee5579e1f1df8815b29fcf3d5dd726a8ed8a54be2f3f9d271e71f4cc4  plugin/pentest-dsh/test/verify-dsh-version.test.mjs
 3bef4e95a2abfa0d65eece0c7340436e9115e912def63293aa2c5de00e2f7392  plugin/pentest-dsh/test/verify-pipeline.test.mjs
 29d44cd75ebea772f26f031863cb80b0d73e2f2e172e99ee73ab1340dc25295a  plugin/pentest-dsh/test/verify-verdicts.test.mjs
-ac9d6f93b22e4bb2aedeedc94c60f488a895778e865ab46a28a80884929740c7  plugin/pentest-dsh/test/wf-assemble.test.mjs
-40ea0aaba7f02f7f0bf9275ac7832b35264c524af0c1f1ee460595e543346ca9  plugin/pentest-dsh/test/wf-lint.test.mjs
+47453e98c10f9275dcf584aeec93d051097834586cc24e0de41edb0ef0f8ce18  plugin/pentest-dsh/test/wf-assemble.test.mjs
+527847c9c8e3aa136d51d5becbb244dd9ec14e2e5d08f63916839df21e20886b  plugin/pentest-dsh/test/wf-lint.test.mjs
 413ae97a0e2a0876f9a1901491b7cec9b0463708d2da0e419b6903281964bd93  plugin/pentest-dsh/test/wordlists.test.mjs
 2cd27ccda356eef183efea4d155678a5e032cbaffc30cec1296d260167e58632  plugin/pentest-dsh/test/write-gate.test.mjs
 73a10f5d0af8db1b061ac5f42b451ef4f7be0d3ff1b43af80ee80a35b3d3621b  plugin/pentest-dsh/test/xring-p1.test.mjs
