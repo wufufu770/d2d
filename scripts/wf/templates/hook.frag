@@ -11,9 +11,10 @@ async function collectLive(phase: string, message: string, round: number) {
   report(pack) // 证据包入 run Results——失败也送达
   return pack
 }
-async function hookDiagnose(phase: string, pack: any) {
+async function hookDiagnose(phase: string, pack: any, round: number) {
   if (HOOK_MODE !== "agent") return { strategy: "S3", reason: "evidence-only 降级（拍板 3）：证据包已归集，主 agent 读包直修" }
-  const doctor = agent("诊断员", {
+  // WF-2: 诊断员名带轮次唯一化——withHook 多轮失败各建一次 agent，重名炸整个 run（一演实证）
+  const doctor = agent(`诊断员-${phase}-${round}`, {
     system: `你是落库工作流的失败诊断员（${BATCH_LABEL}）。纪律红线（违反=批止损）：只做诊断与策略选择；不得修改任何文件；不得执行 git commit/push；不得绕过 Mimosa L3 门；零钩子禁用旗标（AGENTS.md 17 对你的动作同样生效）；本工作流绝不碰清单：${FORBIDDEN}。只能从预声明策略表选一项：S1=等窗重试（仅推送/终态相的窗口态失败——连接失败/空输出/超时，绝不判不一致）；S2=重跑 manifest 四道闸（仅落库/manifest 相失败）；S3=停下留证（一切结构不明/越界/超预算失败）。`,
   })
   const verdict = await doctor.ask(`失败证据包（JSON）：\n${JSON.stringify(pack)}\n\n只输出 JSON：{"strategy":"S1|S2|S3","reason":"一句话"}。证据不足或策略不合法一律 S3。`)
@@ -29,7 +30,7 @@ async function withHook(phaseName: string, allowedStrategies: string[], fn: (rou
     } catch (e: any) {
       const message = String(e?.message ?? e)
       const pack = await collectLive(phaseName, message, round)
-      const verdict = await hookDiagnose(phaseName, pack)
+      const verdict = await hookDiagnose(phaseName, pack, round)
       const allowed = allowedStrategies.includes(verdict.strategy)
       log(`[hook:${phaseName}] 第${round}轮失败 → ${verdict.strategy}${allowed ? "" : "(越表→按 S3)"}: ${verdict.reason}`)
       if (!allowed) verdict.strategy = "S3"

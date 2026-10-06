@@ -72,9 +72,13 @@ function main() {
   if (!['landing-push', 'landing', 'push'].includes(kind)) throw new Error(`--kind 非法: ${kind}`)
   const batch = a.batch ?? ''
   if (!batch) throw new Error('--batch 必填（工作流标签）')
+  // WF-2 R4 参数净化（冷读四轮注入实证：batch 引号逃逸/数值表达式/repo 元字符三通道）——白名单 fail-closed
+  if (/[^-\w./（）()：:·、\u4e00-\u9fa5 ]/.test(batch) || batch.length > 80) throw new Error(`--batch 含非法字符（禁引号/反斜杠/$/分号/管道/尖括号/换行）或超 80 字符: ${JSON.stringify(batch.slice(0, 40))}`)
   const repo = a.repo ?? ROOT // 缺省=组装器自身所在仓根（AGENTS 14：环境路径不得硬编码——CI 检出非本机路径）
+  if (!/^[-A-Za-z0-9_./]+$/i.test(repo) || repo.includes('..')) throw new Error(`--repo 含元字符或上跳（注入面）: ${repo}`)
   const baseSha = a.base ?? ''
-  if (kind !== 'push' && !/^[0-9a-f]{40}$/.test(baseSha)) throw new Error('--base 必填且须为 40 位 sha（landing 类）')
+  // WF-2 B7: base 全 kind 必填（空串=明确报错——push 类空基线使钩子漂移守卫必败误诊）
+  if (!/^[0-9a-f]{40}$/.test(baseSha)) throw new Error('--base 必填且须为 40 位 sha（全 kind——push 类空基线会让钩子守卫误诊）')
   if (baseSha) {
     const chk = spawnSync('git', ['-C', repo, 'cat-file', '-e', `${baseSha}^{commit}`], { stdio: 'ignore' })
     if (chk.status !== 0) throw new Error(`--base 非有效 commit 对象: ${baseSha}（防手打截断 SHA 误扩展）`)
@@ -84,6 +88,9 @@ function main() {
   const fold = a['fold-manifest'] === 'false' ? false : true
   const maxPushRounds = String(a['max-push-rounds'] ?? '10')
   const maxTerminalAttempts = String(a['max-terminal-attempts'] ?? '5')
+  for (const [k, v] of [['max-push-rounds', maxPushRounds], ['max-terminal-attempts', maxTerminalAttempts]]) {
+    if (!/^\d+$/.test(v)) throw new Error(`--${k} 须为纯数字（注入面）: ${JSON.stringify(v.slice(0, 40))}`)
+  }
   const gateMode = a.gate === 'none' ? 'none' : 'file'
   let gateFile = a['gate-file'] ?? ''
   if (kind !== 'landing' && gateMode === 'file') {
@@ -92,6 +99,7 @@ function main() {
   }
   const gateExpect = (a['gate-expect'] ?? 'GATE: PASS').replace(/"/g, '“')
   const gateMaxPolls = String(a['gate-max-polls'] ?? '60')
+  if (!/^\d+$/.test(gateMaxPolls)) throw new Error(`--gate-max-polls 须为纯数字（注入面）`)
   const forbidden = (a.forbidden ?? 'scheduler 核心/graphd 生产代码/生产库/scripts/browser//sanitize-ingest 链/xring 面板面').replace(/"/g, '“')
   let families = []
   if (kind !== 'push') {
