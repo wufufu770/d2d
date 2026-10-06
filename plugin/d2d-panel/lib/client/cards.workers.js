@@ -21,7 +21,7 @@
           void navigator?.clipboard?.writeText?.(txt)
           setCopied(true)
           setTimeout(() => setCopied(false), 1500)
-        } catch {}
+        } catch { /* 已记因: 尽力而为——复制轨迹写剪贴板失败仅不亮"已复制"，不阻断抽屉 */ }
       }
       return h('div', {
         style: { border: '1px solid var(--d2d-line)', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--dsw-alias-bg-layer-2, transparent)' },

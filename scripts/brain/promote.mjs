@@ -174,9 +174,9 @@ if (cmd === '--to-current') {
     process.exit(1)
   }
   const vdir = path.basename(shadowLink)
-  try { fs.rmSync(`${BRAIN}/current`) } catch {}
+  try { fs.rmSync(`${BRAIN}/current`) } catch { /* 已记因: 尽力而为——首次晋级无 current 旧链, 删除空过即接建新链 */ }
   fs.symlinkSync(`${VERSIONS}/${vdir}`, `${BRAIN}/current`)
-  try { fs.rmSync(`${BRAIN}/shadow`) } catch {}
+  try { fs.rmSync(`${BRAIN}/shadow`) } catch { /* 已记因: 尽力而为——无旧 shadow 链时删除空过, 不阻断晋级 */ }
   const manifest = JSON.parse(fs.readFileSync(`${shadowLink}/manifest.json`, 'utf8'))
   fs.writeFileSync(`${shadowLink}/manifest.json`, JSON.stringify({ ...manifest, status: 'current', promoted_at: new Date().toISOString(), field_evidence: g3.pass }, null, 2))
   // 1.6-A: 双时长过期清扫 — 检测类超 30 天物理删(指纹类超 180 天保留, 检索带 [已过期] 标记)
@@ -216,14 +216,14 @@ if (cmd === '--seed') {
   fs.writeFileSync(`${VERSIONS}/${next}/manifest.json`, JSON.stringify({ created_at: new Date().toISOString(), status: 'current', parent_version: curBase || null, source_docs: ['builtin-seed'], bench_score: null }, null, 2))
   // recursive+force: reset 流程会把 current 建成真实目录(非空), 无选项的 rmSync 会抛 ENOTEMPTY 被
   // 本 catch 吞掉 → 下行 symlinkSync 撞 EEXIST, 冷启动播种永久失败(0906 实证)
-  try { fs.rmSync(`${BRAIN}/current`, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(`${BRAIN}/current`, { recursive: true, force: true }); } catch { /* 已记因: 尽力而为——冷启动无旧链时清理空过, 直接播种即可 */ }
   fs.symlinkSync(`${VERSIONS}/${next}`, `${BRAIN}/current`)
   // 旧 current 降为 retired(状态字段与软链一致, 便于审计)
   if (curBase) {
     try {
       const om = JSON.parse(fs.readFileSync(`${VERSIONS}/${curBase}/manifest.json`, 'utf8'))
       fs.writeFileSync(`${VERSIONS}/${curBase}/manifest.json`, JSON.stringify({ ...om, status: 'retired', retired_at: new Date().toISOString() }, null, 2))
-    } catch {}
+    } catch { /* 已记因: 尽力而为——旧版 manifest 不可读时跳过 retired 标注, 播种不受影响 */ }
   }
   console.log(`${next} 基线已安装为 current(parent=${curBase || 'null'})`)
   prune()
@@ -263,7 +263,7 @@ if (cmd === '--to-shadow') {
   fs.writeFileSync(`${VERSIONS}/${next}/techniques.json`, JSON.stringify({ cards: finalCards }, null, 1))
   const manifest = JSON.parse(fs.readFileSync(`${STAGED}/manifest.json`, 'utf8'))
   fs.writeFileSync(`${VERSIONS}/${next}/manifest.json`, JSON.stringify({ ...manifest, status: 'shadow', gate: { structural_rejected: g1.errs, quarantined: g2.quarantined } }, null, 2))
-  try { fs.rmSync(`${BRAIN}/shadow`) } catch {}
+  try { fs.rmSync(`${BRAIN}/shadow`) } catch { /* 已记因: 尽力而为——无旧 shadow 链时删除空过, 即接建新链 */ }
   fs.symlinkSync(`${VERSIONS}/${next}`, `${BRAIN}/shadow`)
   fs.rmSync(STAGED, { recursive: true, force: true })
   // 1.6-A: 同题重写即续期 — 新版卡(含同题旧卡)刷新账本 renewed_at, 过期时钟重置

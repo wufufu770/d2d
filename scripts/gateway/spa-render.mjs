@@ -34,7 +34,7 @@ export function normalizeWsUrl(u) {
     const x = new URL(String(u))
     if (x.protocol === 'ws:') { x.protocol = 'http:'; return x.href }
     if (x.protocol === 'wss:') { x.protocol = 'https:'; return x.href }
-  } catch {}
+  } catch { /* 已记因: 解析容错——非 URL 输入解析失败返空串, 调用方跳过该 WS 事件 */ }
   return ''
 }
 export function extractEndpoints(networkEvents = [], domLinks = [], wsEvents = []) {
@@ -45,7 +45,7 @@ export function extractEndpoints(networkEvents = [], domLinks = [], wsEvents = [
       if (!/^https?:$/.test(u.protocol)) return
       const key = `${u.origin}${u.pathname}${u.search}`
       if (!seen.has(key)) seen.set(key, tech ? { url: key, method: method || 'GET', via, tech } : { url: key, method: method || 'GET', via })
-    } catch {}
+    } catch { /* 已记因: 解析容错——坏端点 URL 解析失败跳过, 继续收集其余端点 */ }
   }
   for (const e of networkEvents) if (e?.url) add(e.url, e.method, e.type === 'XHR' || e.type === 'Fetch' ? 'xhr' : 'doc', e.tech)
   for (const l of domLinks) if (l) add(l, 'GET', 'dom')
@@ -60,7 +60,7 @@ let cdpHttp = process.env.P2P_CDP_URL ?? ''
 function findChrome() {
   if (process.env.P2P_CHROME_PATH) return process.env.P2P_CHROME_PATH
   for (const b of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
-    try { return execFileSync('which', [b], { encoding: 'utf8' }).trim() } catch {}
+    try { return execFileSync('which', [b], { encoding: 'utf8' }).trim() } catch { /* 已记因: 尽力而为——该候选浏览器未安装, 继续探测下一个候选 */ }
   }
   return ''
 }
@@ -78,8 +78,8 @@ export function tryAcquireLock() {
   try {
     const st = fs.statSync(SPA_LOCK)
     if (Date.now() - st.mtimeMs < LOCK_STALE_MS) return false // 他者新鲜持有(崩溃残留按过期接管)
-    try { fs.rmSync(SPA_LOCK, { force: true }) } catch {} // 过期残留: 先删, 下方 wx 独占重建
-  } catch {} // 不存在: 直接独占创建
+    try { fs.rmSync(SPA_LOCK, { force: true }) } catch { /* 已记因: 尽力而为——过期锁删除竞争失败, 下方 wx 独占创建仍兜底 */ } // 过期残留: 先删, 下方 wx 独占重建
+  } catch { /* 已记因: 尽力而为——锁文件不存在属首次获取, 直接进入独占创建 */ } // 不存在: 直接独占创建
   try {
     fs.writeFileSync(SPA_LOCK, JSON.stringify({ pid: process.pid, at: Date.now() }), { flag: 'wx' })
     ownsLock = true
@@ -90,7 +90,7 @@ export function releaseLock() {
   // H16 配套: 只释放自己持有的锁(旧实现 exit 钩子无条件 rm, 抢锁失败的进程退出会删掉胜者的锁)
   if (!ownsLock) return
   ownsLock = false
-  try { fs.rmSync(SPA_LOCK, { force: true }) } catch {}
+  try { fs.rmSync(SPA_LOCK, { force: true }) } catch { /* 已记因: 尽力而为——退出清锁失败(已被接管或已删)不抛错 */ }
 }
 async function waitLock() {
   for (let i = 0; i < LOCK_WAIT_MS / 500; i++) {
@@ -148,7 +148,7 @@ function cdpSession(cdpHttp) {
       if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
       else if (msg.method) events.push(msg)
     }
-    ws.onclose = () => { for (const fn of pending.values()) try { fn({ error: { message: 'cdp ws closed' } }) } catch {} ; pending.clear() }
+    ws.onclose = () => { for (const fn of pending.values()) try { fn({ error: { message: 'cdp ws closed' } }) } catch { /* 已记因: 尽力而为——逐个唤醒挂起请求, 单个唤醒失败继续清其余 */ } ; pending.clear() }
     ws.onerror = () => {}
   }
   const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
@@ -157,7 +157,7 @@ function cdpSession(cdpHttp) {
     ws.send(JSON.stringify(sessionId ? { id, method, params, sessionId } : { id, method, params }))
     setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error(`cdp timeout: ${method}`)) } }, 30_000)
   })
-  const close = () => { try { if (ws && ws.readyState <= 1) ws.close() } catch {} }
+  const close = () => { try { if (ws && ws.readyState <= 1) ws.close() } catch { /* 已记因: 尽力而为——ws 已断或关闭失败静默, 不碍会话收尾 */ } }
   return { connect, send, events, close }
 }
 
@@ -180,18 +180,18 @@ async function renderPage(url, waitMs) {
     }
     c.events.push = Array.prototype.push.bind(c.events) // keep default
     const origPush = c.events.push.bind(c.events)
-    c.events.push = (m) => { try { onMsg(m) } catch {} ; return origPush(m) }
+    c.events.push = (m) => { try { onMsg(m) } catch { /* 已记因: 尽力而为——单条 CDP 事件归类失败跳过, 事件流照常入队 */ } ; return origPush(m) }
     await c.send('Page.navigate', { url }, sessionId)
     await new Promise((r) => setTimeout(r, waitMs || 4000))
     let domLinks = []
     try {
       const ev = await c.send('Runtime.evaluate', { expression: `[...new Set([...document.querySelectorAll('a[href]')].map(a => a.href))].slice(0,300)`, returnByValue: true }, sessionId)
       domLinks = ev.result?.value ?? []
-    } catch {}
+    } catch { /* 已记因: 降级路径——页面取 DOM 链接失败按空降级, 网络事件端点照常返回 */ }
     return extractEndpoints(net, domLinks, wsEvents)
   } finally {
     // 中危审计修复(0910): 断开/异常路径统一清理 — 关 target + 关 ws, 无僵尸页无 socket 泄漏
-    try { if (targetId) await c.send('Target.closeTarget', { targetId }) } catch {}
+    try { if (targetId) await c.send('Target.closeTarget', { targetId }) } catch { /* 已记因: 尽力而为——关闭目标页失败(已崩/已关)静默, 不掩盖原异常 */ }
     c.close()
   }
 }
@@ -226,7 +226,7 @@ function writeEndpoints(port, endpoints) {
       execFileSync('curl', ['-s', '-m', '8', '-X', 'POST', `http://127.0.0.1:${port}/query`, '-H', 'Content-Type: application/json',
         '-H', `X-Auth: ${hostToken}`, '-d', JSON.stringify(payload)], { encoding: 'utf8' })
       n++
-    } catch {}
+    } catch { /* 已记因: 尽力而为——单端点写图失败跳过, 继续写其余端点 */ }
   }
   return n
 }

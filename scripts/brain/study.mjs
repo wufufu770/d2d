@@ -40,7 +40,7 @@ function saveProgress(done) {
   } catch (e) { console.error('[study] progress save:', e?.message) }
 }
 function clearProgress() {
-  try { fs.rmSync(PROGRESS_FILE, { force: true }) } catch {}
+  try { fs.rmSync(PROGRESS_FILE, { force: true }) } catch { /* 已记因: 尽力而为——进度文件本不存在时清理空过 */ }
 }
 
 const readJson = (p, d = null) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return d } }
@@ -93,7 +93,7 @@ function buildModelHome(model) {
     fs.writeFileSync(`${dir}/settings.yaml`, rewriteDefaultModel(fs.readFileSync(`${dshHome}/settings.yaml`, 'utf8'), model))
     for (const ent of fs.readdirSync(dshHome, { withFileTypes: true })) {
       if (ent.name === 'settings.yaml') continue
-      try { fs.symlinkSync(`${dshHome}/${ent.name}`, `${dir}/${ent.name}`) } catch {}
+      try { fs.symlinkSync(`${dshHome}/${ent.name}`, `${dir}/${ent.name}`) } catch { /* 已记因: 尽力而为——单个 overlay 项链接失败跳过, 不阻断模型家目录搭建 */ }
     }
     return dir
   } catch (e) { console.error('[study] model home:', e?.message); return null }
@@ -204,7 +204,7 @@ function runBatch(corpus) {
     console.log(`[批 ${i + 1}/${batches.length}] 提炼 ${r.cards.length} 张(去重后 +${kept})`)
   }
   if (resumed) console.log(`复用 ${resumed} 批上次进度`)
-  try { if (home) fs.rmSync(home, { recursive: true, force: true }) } catch {}
+  try { if (home) fs.rmSync(home, { recursive: true, force: true }) } catch { /* 已记因: 尽力而为——临时模型家目录清理失败, 仅留残目录不阻断收尾 */ }
   if (!all.length) { console.error('全部批次失败 — 未产出卡片'); process.exit(1) }
   console.log(`合计 ${all.length} 张卡(去重后, ${failed} 批失败):`)
   for (const c of all.slice(0, 20)) console.log(`  - ${c.id} ${c.title} [${(c.applies_to ?? []).slice(0, 4).join(',')}]`)
@@ -228,7 +228,7 @@ function runBatch(corpus) {
     fs.mkdirSync(HOLD, { recursive: true })
     let moved = 0
     for (const b of batches) for (const d of b.docs) {
-      try { fs.renameSync(`${INBOX}/${d.name}`, `${HOLD}/${d.name}`); moved++ } catch {}
+      try { fs.renameSync(`${INBOX}/${d.name}`, `${HOLD}/${d.name}`); moved++ } catch { /* 已记因: 尽力而为——单篇移动失败跳过, moved 计数少记不阻断队列消费 */ }
     }
     console.log(`已蒸馏文档 ${moved} 篇移入 inbox-hold(队列消费, 防重复蒸馏)`)
   } catch (e) { console.error('hold 移动失败(不影响 staged):', e?.message) }

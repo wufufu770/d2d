@@ -69,8 +69,8 @@ export function queryA(name, server, { timeoutMs = 3000, id = undefined } = {}) 
       socket.close()
       try { resolve(parseARecords(msg)) } catch (e) { reject(e) }
     })
-    socket.on('error', (e) => { clearTimeout(timer); try { socket.close() } catch {} ; reject(e) })
-    socket.send(buf, port, host, (err) => { if (err) { clearTimeout(timer); try { socket.close() } catch {} ; reject(err) } })
+    socket.on('error', (e) => { clearTimeout(timer); try { socket.close() } catch { /* 已记因: 尽力而为——错误路径兜底关 socket, 已被关闭时重复 close 空过 */ } ; reject(e) })
+    socket.send(buf, port, host, (err) => { if (err) { clearTimeout(timer); try { socket.close() } catch { /* 已记因: 尽力而为——发送失败关 socket, 已被关闭时重复 close 空过 */ } ; reject(err) } })
   })
 }
 

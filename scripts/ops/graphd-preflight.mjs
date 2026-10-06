@@ -57,7 +57,7 @@ function terminateOwn(pid) {
     if (!alive(pid)) return
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500)
   }
-  try { process.kill(pid, 'SIGKILL') } catch {}
+  try { process.kill(pid, 'SIGKILL') } catch { /* 已记因: 尽力而为——进程已自行退出时 SIGKILL 空过(ESRCH) */ }
 }
 
 function startGraphd(port) {

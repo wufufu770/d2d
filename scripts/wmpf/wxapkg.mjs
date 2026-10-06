@@ -45,7 +45,7 @@ export function locate({ appid = '', home = os.homedir(), env = process.env } = 
         } else if (e.name.endsWith('.wxapkg')) {
           if (!appid || full.toLowerCase().includes(String(appid).toLowerCase())) {
             let size = 0
-            try { size = fs.statSync(full).size } catch {}
+            try { size = fs.statSync(full).size } catch { /* 已记因: 尽力而为——stat 失败按 0 字节记入, 文件路径仍列入命中清单 */ }
             hits.push({ path: full, size })
           }
         }
