@@ -9,6 +9,7 @@
 //     [--max-push-rounds 10] [--max-terminal-attempts 5] --out <file.dwf.ts>
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -74,6 +75,10 @@ function main() {
   const repo = a.repo ?? ROOT // 缺省=组装器自身所在仓根（AGENTS 14：环境路径不得硬编码——CI 检出非本机路径）
   const baseSha = a.base ?? ''
   if (kind !== 'push' && !/^[0-9a-f]{40}$/.test(baseSha)) throw new Error('--base 必填且须为 40 位 sha（landing 类）')
+  if (baseSha) {
+    const chk = spawnSync('git', ['-C', repo, 'cat-file', '-e', `${baseSha}^{commit}`], { stdio: 'ignore' })
+    if (chk.status !== 0) throw new Error(`--base 非有效 commit 对象: ${baseSha}（防手打截断 SHA 误扩展）`)
+  }
   const hookMode = a['hook-mode'] ?? 'agent'
   if (!['agent', 'evidence-only'].includes(hookMode)) throw new Error(`--hook-mode 非法: ${hookMode}`)
   const fold = a['fold-manifest'] === 'false' ? false : true

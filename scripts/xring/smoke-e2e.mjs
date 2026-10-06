@@ -26,7 +26,7 @@ const MAX_MINUTES = 5
 const MAX_TOKENS = 100000
 
 const _logf = '/tmp/xrp1-smoke-sync.log'
-const log = (...a) => { const line = '[smoke] ' + a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); console.error(line); try { fs.appendFileSync(_logf, line + '\n') } catch {} }
+const log = (...a) => { const line = '[smoke] ' + a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); console.error(line); try { fs.appendFileSync(_logf, line + '\n') } catch { /* 已记因: 另面留痕——该行已输出 stderr, /tmp 镜像写失败静默不碍测试 */ } }
 setTimeout(() => { log('总窗 8 分钟超时——强杀'); process.exit(3) }, 8 * 60 * 1000).unref?.()
 
 // ---- graphd 测试实例 ----
@@ -41,7 +41,7 @@ async function startTestGraphd() {
   const base = `http://127.0.0.1:${port}`
   const deadline = Date.now() + 30000
   while (Date.now() < deadline) {
-    try { const r = await fetch(base + '/health', { signal: AbortSignal.timeout(1500) }); if (r.ok) return { base, proc, dataDir } } catch {}
+    try { const r = await fetch(base + '/health', { signal: AbortSignal.timeout(1500) }); if (r.ok) return { base, proc, dataDir } } catch { /* 已记因: 测试容错——graphd 未就绪时健康轮询失败, 循环重试直至超窗抛错 */ }
     await new Promise((r) => setTimeout(r, 300))
   }
   throw new Error('graphd 测试实例未起')
@@ -88,7 +88,7 @@ try {
   // worker-spawned 事件（XR-P3 拍板 3: 孤儿回收的 pid/workspace 依据——编排层 spawn 后必落档）
   appendEvent(EVENTS, { event: 'worker-spawned', pid: workerPid, workspace: WORKSPACE })
   // 旁记录（XR-P4④: events 尾窗 400 行在超长 run 会滚出——pid/workspace 另落 worker.json 恒可读）
-  try { fs.writeFileSync(path.join(RECORD, 'worker.json'), JSON.stringify({ pid: workerPid, workspace: WORKSPACE, ts: new Date().toISOString() })) } catch {}
+  try { fs.writeFileSync(path.join(RECORD, 'worker.json'), JSON.stringify({ pid: workerPid, workspace: WORKSPACE, ts: new Date().toISOString() })) } catch { /* 已记因: 另面留痕——pid/workspace 已落 events.jsonl, worker.json 旁记失败静默 */ }
 
   function os_homedir_tmp() { return '/tmp' }
 
@@ -153,7 +153,7 @@ try {
   }
   const exactTotal = usageExact.totalTokens
   const tokenDeviation = lastProxy != null && exactTotal > 0
-    ? { lastProxy, exactTotal, deltaPct: +(((lastProxy - exactTotal) / exactTotal) * 100).toFixed(1), proxySemantics: 'transcript-tail(last-wins)' }
+    ? { lastProxy, exactTotal, deltaPct: +(((lastProxy - exactTotal) / exactTotal) * 100).toFixed(1), proxySemantics: 'transcript-tail(segment-delta, SC-1 族7)' }
     : { lastProxy, exactTotal, note: '运行中无有效 tick（转录出现前 run 已结束=短 run 形态）' }
   log('token 代理 vs 精确:', JSON.stringify(tokenDeviation))
 

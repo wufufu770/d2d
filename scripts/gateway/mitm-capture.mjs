@@ -40,9 +40,9 @@ const FLUSH_N = Math.max(1, parseInt(process.env.D2D_MITM_FLUSH ?? '20', 10))
 const BODY_CAP = parseInt(process.env.D2D_MITM_BODY_CAP ?? String(256 * 1024), 10)
 let RATE = parseFloat(process.env.D2D_MITM_RATE ?? '100')
 const STATIC_ALLOW = new Set((process.env.D2D_MITM_ALLOW ?? '127.0.0.1,localhost').split(',').map(s => s.trim().toLowerCase()).filter(Boolean))
-try { fs.mkdirSync(EVID_DIR, { recursive: true }) } catch {}
+try { fs.mkdirSync(EVID_DIR, { recursive: true }) } catch { /* 已记因: 尽力而为——证据目录已存在或创建失败, 不阻断捕获服务启动 */ }
 const auditLog = `${EVID_DIR}/mitm-audit.jsonl`
-const audit = (e) => { try { fs.appendFileSync(auditLog, JSON.stringify({ ts: new Date().toISOString(), ...e }) + '\n') } catch {} }
+const audit = (e) => { try { fs.appendFileSync(auditLog, JSON.stringify({ ts: new Date().toISOString(), ...e }) + '\n') } catch { /* 已记因: 尽力而为——审计行写盘失败静默, 不阻断拦截转发 */ } }
 const readToken = () => { try { return fs.readFileSync(TOKEN_FILE, 'utf8').trim() } catch { return '' } }
 
 // ---- host 归一(与 egress-gateway 同口径的最小面: 剥端口/方括号) + scope/denylist 判定 ----
@@ -83,7 +83,7 @@ let ENGS = []
 async function refreshEngs() {
   const token = readToken()
   let dl = { domains: [], cidr_prefix: [] }
-  try { dl = JSON.parse(fs.readFileSync(process.env.P2P_DENYLIST_FILE ?? `${DATA_DIR}/config/denylist.json`, 'utf8')) } catch {}
+  try { dl = JSON.parse(fs.readFileSync(process.env.P2P_DENYLIST_FILE ?? `${DATA_DIR}/config/denylist.json`, 'utf8')) } catch { /* 已记因: 解析容错——denylist 缺失或坏 JSON 时按空红线名单继续, scope 仍强制 */ }
   try {
     const res = await fetch(`${GRAPHD}/query`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth': token },
@@ -223,7 +223,7 @@ async function handle(req, res) {
   req.on('error', () => {}); res.on('error', () => {})
   const t = targetOf(req)
   let _hp = ''
-  try { _hp = new URL(req.url ?? '/', 'http://x').pathname } catch {}
+  try { _hp = new URL(req.url ?? '/', 'http://x').pathname } catch { /* 已记因: 解析容错——坏 URL 时 _hp 留空跳过探活判定, 继续代理流程 */ }
   if (_hp === '/health' && ['127.0.0.1', 'localhost', '::1'].includes(t.host)) { // 探活: 仅回环目标短路, 不劫持代理路径上的 /health
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, tls: TLS_ON, wss: WSS_ON, rate: RATE, engs: ENGS.length, pending: pending.length }))
@@ -255,7 +255,7 @@ async function handle(req, res) {
       })
     })
   } catch { return deny(502, 'bad upstream') }
-  up.on('error', () => { try { res.writeHead(502); res.end() } catch {} })
+  up.on('error', () => { try { res.writeHead(502); res.end() } catch { /* 已记因: 尽力而为——上游错误回 502, 响应已发出/客户端已断时写回失败静默 */ } })
   req.pipe(up)
 }
 
@@ -265,15 +265,15 @@ async function handle(req, res) {
 export const ensureCA = (dir = CA_DIR) => _ensureCA(dir, audit)
 export const signLeaf = (host, dir = CA_DIR) => _signLeaf(host, dir, audit)
 
-const server = http.createServer((req, res) => { handle(req, res).catch(() => { try { res.writeHead(500); res.end() } catch {} }) })
+const server = http.createServer((req, res) => { handle(req, res).catch(() => { try { res.writeHead(500); res.end() } catch { /* 已记因: 尽力而为——请求处理异常回 500, 客户端已断时写回失败静默 */ } }) })
 // ws:// 明文升级(D2D_MITM_WSS=1 审计; 否则原样隧道)
 server.on('upgrade', (req, sock, head) => {
   sock.on('error', () => {})
   const t = targetOf(req)
   const allowed = mitmAllowed(t.host)
-  const deny = (why) => { audit({ event: 'deny', host: t.host, why }); try { sock.end('HTTP/1.1 403 Forbidden\r\n\r\n') } catch {} }
+  const deny = (why) => { audit({ event: 'deny', host: t.host, why }); try { sock.end('HTTP/1.1 403 Forbidden\r\n\r\n') } catch { /* 已记因: 另面留痕——拒绝决定已审计, 对端已断时 403 写回失败静默 */ } }
   if (allowed === false || !allowed) return deny(allowed === false ? 'denylist 红线资产' : 'host not in scope')
-  if (!allowRate()) { try { sock.end('HTTP/1.1 503 Service Unavailable\r\n\r\n') } catch {}; return }
+  if (!allowRate()) { try { sock.end('HTTP/1.1 503 Service Unavailable\r\n\r\n') } catch { /* 已记因: 尽力而为——升级面限速 503 写回失败(对端已断)静默 */ }; return }
   const started = Date.now()
   const up = http.request({ host: t.host, port: t.port, path: t.path, method: req.method, headers: { ...req.headers, host: `${t.host}${t.port ? `:${t.port}` : ''}` } })
   up.on('upgrade', (r, upSock, upHead) => {
@@ -295,7 +295,7 @@ server.on('upgrade', (req, sock, head) => {
     const done = () => { if (WSS_ON) captureTxn({ eng: allowed.name ?? '', durMs: Date.now() - started, ws: { handshake: { host: t.host, path: t.path, status: r.statusCode, headers: headOut(r.headers) }, frames } }) }
     sock.on('close', done); upSock.on('close', done)
   })
-  up.on('error', () => { try { sock.end() } catch {} })
+  up.on('error', () => { try { sock.end() } catch { /* 已记因: 尽力而为——升级上游错误断开客户端, 对端已断时静默 */ } })
   up.end()
 })
 server.on('connect', (req, sock, head) => { // HTTPS CONNECT: TLS_ON 解密(经内部 https 服务回环), 否则直通
@@ -304,10 +304,10 @@ server.on('connect', (req, sock, head) => { // HTTPS CONNECT: TLS_ON 解密(经�
   const host = normalizeHost(m?.[1] ?? m?.[2] ?? '')
   const port = parseInt(m?.[3] ?? '443', 10)
   const allowed = mitmAllowed(host)
-  const deny = (code, why) => { audit({ event: 'deny', host, why }); try { sock.end(`HTTP/1.1 ${code} Forbidden\r\n\r\n`) } catch {} }
+  const deny = (code, why) => { audit({ event: 'deny', host, why }); try { sock.end(`HTTP/1.1 ${code} Forbidden\r\n\r\n`) } catch { /* 已记因: 另面留痕——拒绝决定已审计, 对端已断时写回失败静默 */ } }
   if (allowed === false) return deny(403, isForbiddenTarget(host) ? 'metadata/link-local 硬黑面(H14)' : 'denylist 红线资产')
   if (!allowed) return deny(403, 'host not in scope (#44 MITM 拦截面)')
-  if (!allowRate()) { try { sock.end('HTTP/1.1 503 Service Unavailable\r\n\r\n') } catch {}; return }
+  if (!allowRate()) { try { sock.end('HTTP/1.1 503 Service Unavailable\r\n\r\n') } catch { /* 已记因: 尽力而为——隧道面限速 503 写回失败(对端已断)静默 */ }; return }
   audit({ event: 'connect', host, port, decrypt: TLS_ON })
   if (!TLS_ON) { // 直通: 不解密(默认), 连接层仅 scope/限速/审计
     const up = net.connect(port, host, () => { sock.write('HTTP/1.1 200 Connection Established\r\n\r\n'); up.write(head); up.pipe(sock); sock.pipe(up) })
@@ -322,15 +322,15 @@ server.on('connect', (req, sock, head) => { // HTTPS CONNECT: TLS_ON 解密(经�
       sock.pipe(up); up.pipe(sock)
     })
     up.on('error', () => sock.end())
-  } catch { try { sock.end('HTTP/1.1 502 Bad Gateway\r\n\r\n') } catch {} }
+  } catch { try { sock.end('HTTP/1.1 502 Bad Gateway\r\n\r\n') } catch { /* 已记因: 尽力而为——回环建立失败回 502, 对端已断时写回失败静默 */ } }
 })
-server.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n') } catch {} })
+server.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n') } catch { /* 已记因: 尽力而为——畸形请求回 400, 连接已坏时写回失败静默 */ } })
 
 // TLS 解密模式: 内部 https 服务(SNI 动态证书)在共享模块(进程级单例面) — CONNECT 隧道回环至此,
 // 明文请求进同一 handle; mitm 侧只注入缺省目录/audit/handle/upgrade 转发(原样搬移, 行为零变化)。
 function tlsSrvPort() {
   return _tlsSrvPort(
-    (req, res) => { handle(req, res).catch(() => { try { res.writeHead(500); res.end() } catch {} }) },
+    (req, res) => { handle(req, res).catch(() => { try { res.writeHead(500); res.end() } catch { /* 已记因: 尽力而为——解密请求处理异常回 500, 客户端已断时写回失败静默 */ } }) },
     { caDir: CA_DIR, onAudit: audit, onUpgrade: (req, sock, head) => server.emit('upgrade', req, sock, head) },
   )
 }

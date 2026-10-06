@@ -14,11 +14,11 @@ const DNS_PORT = parseInt(process.env.P2P_OAST_DNS_PORT ?? '0', 10) // 默认关
 const DNS_IP = process.env.P2P_OAST_DNS_IP ?? '127.0.0.1' // A 记录应答值(指向回调收集端)
 // R3: 数据外置 D2D_DATA_DIR(默认 ~/.d2d-data)
 const DIR = process.env.P2P_OAST_DIR ?? `${process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/evidence/oast`
-try { mkdirSync(DIR, { recursive: true }) } catch {}
+try { mkdirSync(DIR, { recursive: true }) } catch { /* 已记因: 尽力而为——目录已存在或创建失败, 不阻断回调服务启动 */ }
 const LOG = `${DIR}/oast-${Date.now()}.jsonl`
 const hit = (path, src) => {
   const entry = { ts: new Date().toISOString(), path, src }
-  try { appendFileSync(LOG, JSON.stringify(entry) + '\n') } catch {}
+  try { appendFileSync(LOG, JSON.stringify(entry) + '\n') } catch { /* 已记因: 尽力而为——单条命中落盘失败静默, 不阻断 DNS/HTTP 应答 */ }
   return entry
 }
 
@@ -68,7 +68,7 @@ if (DNS_PORT > 0) {
     try {
       const resp = dnsAnswer(msg, rinfo)
       if (resp) udp.send(resp, rinfo.port, rinfo.address)
-    } catch {}
+    } catch { /* 已记因: 解析容错——畸形 DNS 报文解析失败跳过, 服务继续收下一个包 */ }
   })
   udp.bind(DNS_PORT, '127.0.0.1', () => console.log(`[oast] dns :${DNS_PORT} (A→${DNS_IP}) log=${LOG}`))
 }
@@ -80,7 +80,7 @@ http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x')
     const tail = Math.min(Number(url.searchParams.get('tail') ?? '0'), 500)
     let rows = []
-    try { rows = readFileSync(LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean) } catch {}
+    try { rows = readFileSync(LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean) } catch { /* 已记因: 降级路径——命中日志尚未生成时按空结果应答查询 */ }
     if (tail > 0) rows = rows.slice(-tail)
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, log: LOG, hits: rows }))

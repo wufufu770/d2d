@@ -34,7 +34,7 @@ function fingerprint(f) {
       host = u.hostname
       path_ = u.pathname
       param = [...u.searchParams.keys()][0] ?? ''
-    } catch {}
+    } catch { /* 已记因: 解析容错——repro 内坏 URL 解析失败字段留空, 指纹仍含 payload 哈希 */ }
   }
   const payloadHash = crypto.createHash('sha1').update(repro.slice(0, 400)).digest('hex').slice(0, 10)
   return { fp: `${host}|${path_}|${param}|${f.category ?? ''}|${payloadHash}`, host, path: path_, param }
@@ -43,7 +43,7 @@ function fingerprint(f) {
 const rows = gq(`MATCH (f:Finding) RETURN f.id AS id, f.title AS t, f.severity AS sev, f.cvss AS cvss, f.repro AS repro, f.category AS cat, f.gate_status AS g, f.evidence_dir AS ed, f.verified_at AS va, f.last_transition AS lt ORDER BY f.ts DESC LIMIT 200`)
 const ledgerPath = `${DATA_DIR}/evidence/src-submitted.json`
 let ledger = { submitted: {} }
-try { ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8')) } catch {}
+try { ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8')) } catch { /* 已记因: 降级路径——提交台账缺失或坏 JSON 时按空台账, 全部按新指纹处理 */ }
 
 const ALL_STATES = process.argv.includes('--all-states')
 const now = new Date().toISOString()

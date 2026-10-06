@@ -485,7 +485,7 @@ async function driveRoute(handler, method, pathname, body) {
   req.emit('end')
   await p
   let json = {}
-  try { json = JSON.parse(res.raw || '{}') } catch {}
+  try { json = JSON.parse(res.raw || '{}') } catch { /* 已记因: 测试容错——响应体非 JSON 时保留空对象，断言改走 code/raw */ }
   return { code: res.code, body: json, raw: res.raw }
 }
 

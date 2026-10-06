@@ -28,10 +28,10 @@ function gq(cy) {
 let experiences = [], winsThemes = []
 try {
   experiences = gq(`MATCH (x:Experience) RETURN x.id AS id, x.title AS t, x.category AS c, x.content AS ct, x.status AS st LIMIT 100`)
-} catch {}
+} catch { /* 已记因: 降级路径——graphd 经验查询失败, 按空素材走空转保护退出 */ }
 try {
   winsThemes = gq(`MATCH (e:ExperienceWeight) WHERE e.id STARTS WITH 'card:' AND e.wins >= 2 RETURN e.id AS id, e.wins AS w`)
-} catch {}
+} catch { /* 已记因: 降级路径——卡池胜场查询失败, 按无胜题继续候选聚集 */ }
 
 // ---------- 同主题聚集(词面重叠 ≥2 条经验) ----------
 const tokensOf = (t) => { const s = norm(t); return new Set(s.length > 4 ? [s.slice(0, 4), s.slice(-4)] : [s]) }

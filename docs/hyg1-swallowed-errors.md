@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | python `except…: pass` | **35** | 17 | 18 | 裸 18 处置：A 模式性 10（schema.py 8+tests 2）+ B 有兜底 5 + C 补记因 3（app.py:1500/gates.py:749/gates.py:556——后两处 gates.py 首版漏 556，A 层复核抓出补齐）= **18 全覆盖清零** |
 | python `except Exception` 全形态 | 90 | — | — | 其余为记因/降级路径（stderr 一次性提示+计数语义） |
-| js `catch {}`（空体） | **444** | 298（`catch { /* … */ }` 记因形态另计） | 146 | 无注释 146 分布：mitm-capture 14 / egress-gateway 14 / spa-render 12 / snapshot 10 / 其余散布——**网关与面板 best-effort idiom 为主** |
+| js `catch {}`（空体） | **444** | 298→**456**（SC-1 后记因形态总数） | 146→**0**（SC-1 清零） | SC-1 族3：禁区外 158 处全部补记因（三 agent 并行+grep 终验零残留+语法门 467 文件零错）；**禁区邻接豁免登记**：scheduler 核心+adapters 57 / scripts/browser 12（红线面零触碰）；.stryker-tmp 沙箱 548 为构建产物不计源码账 |
 
 ## 二、python 窗口裸 18 处分级（v2 校准账）
 
@@ -44,10 +44,15 @@
 - `scripts/recon/wordlists.mjs:14` REPO_ROOT 仍 `new URL(import.meta.url).pathname` 直读
   （与 match-site 同类编码弱形态，非本批 5 处主判范围）——登记残余。
 
-## 三、js 空 catch 146 处（D 待审——归后续批）
+## 三、js 空 catch 146 处（SC-1 族3 ✅ 清零——禁区外 158 处全记因）
 
-分布与抽样表明主体是网关/面板数据面 best-effort（帧解析/单条跳过/可选字段），与仓内
-"尽力而为旁路不阻断业务"哲学一致；但**逐处记因缺失**使审计面不可快速分辨真异常吞没。
+原登记 146 处（HYG-1 时点）经 SC-1 重计为禁区外 158 处（后续批次自然增长+口径厘清：
+.stryker-tmp 沙箱与 scripts/browser 不入源码账）。SC-1 处置=逐处补 `/* 已记因: <类别>——
+<语义> */`（五类：尽力而为/降级路径/解析容错/测试容错/另面留痕），三 agent 并行扫录+
+grep 终验零残留+`node scripts/lint.mjs` 467 文件零语法错。分布实证：test 面 52 处=测试
+容错、panel snapshot 10=降级+解析、gateway 三件 40=尽力而为为主——与既判"网关与面板
+best-effort idiom 为主"一致。**禁区邻接豁免**：scheduler 核心+adapters 57 处、scripts/
+browser 12 处（红线面注释亦不触碰，登记留账）。
 处置建议（后续批，不排期）：按文件清点补 `/* 已记因: … */`；优先级=egress-gateway/mitm-capture
 （数据完整性敏感）→ snapshot（面板观测）→ spa-render（渲染面）。
 

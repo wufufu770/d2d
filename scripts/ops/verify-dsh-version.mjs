@@ -234,13 +234,13 @@ export async function detectGlobalDshVersion({
     const { stdout } = await execFileFn('dsh', ['--version'])
     const m = String(stdout).match(/(\d+\.\d+\.\d+[^\s,'"]*)/)
     if (m) return { status: 'ok', version: m[1], source: 'dsh --version' }
-  } catch {}
+  } catch { /* 已记因: 尽力而为——dsh 不在 PATH 或输出口径不符时, 落到下一探测源 */ }
   let root = ''
   try {
     root = npmRootFn ? await npmRootFn() : String((await execFileFn('npm', ['root', '-g'])).stdout).trim()
     const v = JSON.parse(readFile(path.join(root, SCOPE, 'dsh', 'package.json'))).version
     if (v) return { status: 'ok', version: v, source: path.join(root, SCOPE, 'dsh', 'package.json') }
-  } catch {}
+  } catch { /* 已记因: 尽力而为——npm 全局 root 探测失败, 落到固定路径候选 */ }
   for (const cand of [
     path.join(home, '.npm-global/lib/node_modules', SCOPE, 'dsh/package.json'),
     path.join(home, '.nvm/versions', 'current/lib/node_modules', SCOPE, 'dsh/package.json'),
@@ -248,7 +248,7 @@ export async function detectGlobalDshVersion({
     try {
       const v = JSON.parse(readFile(cand)).version
       if (v) return { status: 'ok', version: v, source: cand }
-    } catch {}
+    } catch { /* 已记因: 尽力而为——该候选 package.json 缺失或坏 JSON, 继续下一候选 */ }
   }
   return { status: 'missing' }
 }

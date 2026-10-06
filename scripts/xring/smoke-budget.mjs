@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/xring/smoke-budget.mjs — XR-P1 熔断双路径实测（零模型成本; 拍板 3 口径）
 // ①超时路径: stub worker（sleep detached 组）+30s 预算 → 五步真执行（SIGTERM→SIGKILL→读 workspace→回流→stop 事件）
-// ②token 路径: 预置大 usage 转录 → token 熔断（XR-P3 语义修正: totalTokens=会话累计值 last-wins;
+// ②token 路径: 预置大 usage 转录 → token 熔断（XR-P3 语义修正: totalTokens=会话累计值; 现行=逐段 delta[SC-1 族7]——历史沿革 last-wins→max-wins→delta;
 // P1"运行中增量不可得"已被调查作废——live 转录尾近实时可得, 预置形态保留因零模型成本）
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
@@ -60,7 +60,7 @@ const results = {}
   fs.mkdirSync(bucket, { recursive: true })
   const sessDir = path.join(bucket, 'session-smoke0001')
   fs.mkdirSync(sessDir)
-  // 预置大 usage 转录（XR-P3 语义修正: dsh usage.totalTokens=会话累计值, last-wins 实证）:
+  // 预置大 usage 转录（XR-P3 语义修正: dsh usage.totalTokens=会话累计值; 现行逐段 delta 口径）:
   // 累计行 40000→80000→120000, 末值 120000 ≥ maxTokens 100000 → 熔断
   const cum = [40000, 80000, 120000]
   const lines = cum.map((tt, i) => JSON.stringify({ type: 'message', seq: i, usage: { inputTokens: 40000, outputTokens: 0, totalTokens: tt, cacheReadTokens: 0 } })).join('\n') + '\n'

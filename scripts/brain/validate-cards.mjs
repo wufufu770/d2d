@@ -53,14 +53,14 @@ if (DO_DATA) {
   const BRAIN = `${DATA_DIR}/brain`
   const targets = []
   for (const link of ['current', 'shadow']) {
-    try { targets.push([link, `${fs.readlinkSync(`${BRAIN}/${link}`)}/techniques.json`]) } catch {}
+    try { targets.push([link, `${fs.readlinkSync(`${BRAIN}/${link}`)}/techniques.json`]) } catch { /* 已记因: 尽力而为——current/shadow 软链未安装时跳过该目标, 校验其余 */ }
   }
   try {
     for (const d of fs.readdirSync(`${BRAIN}/versions`).filter((x) => /^v\d+$/.test(x))) {
       const p = `${BRAIN}/versions/${d}/techniques.json`
       if (fs.existsSync(p)) targets.push([`versions/${d}`, p])
     }
-  } catch {}
+  } catch { /* 已记因: 降级路径——versions 目录缺失时跳过历史版本, 校验已收集目标 */ }
   const seen = new Set()
   for (const [label, p] of targets) {
     if (seen.has(p)) continue // current/shadow 与 versions 同文件, 去重

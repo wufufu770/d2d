@@ -25,7 +25,7 @@ const arg = process.argv[2] ?? ''
 function locateTarget() {
   const candidates = []
   // ① npm 全局 root(覆盖 npm prefix -g 与 pnpm 全局)
-  try { candidates.push(path.join(execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(), '@deepseek-ai/dsh')) } catch {}
+  try { candidates.push(path.join(execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(), '@deepseek-ai/dsh')) } catch { /* 已记因: 尽力而为——npm 探测失败跳过该候选, 兜底前缀候选继续 */ }
   // ② 常见全局前缀兜底
   for (const p of [`${os.homedir()}/.npm-global/lib/node_modules/@deepseek-ai/dsh`, '/usr/lib/node_modules/@deepseek-ai/dsh', '/usr/local/lib/node_modules/@deepseek-ai/dsh']) {
     candidates.push(p)

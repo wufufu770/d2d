@@ -47,9 +47,9 @@ if (process.argv.includes('--record')) {
 const manifests = []
 try {
   for (const d of fs.readdirSync(`${BRAIN}/versions`).filter((x) => /^v\d+$/.test(x))) {
-    try { manifests.push({ dir: d, ...JSON.parse(fs.readFileSync(`${BRAIN}/versions/${d}/manifest.json`, 'utf8')) }) } catch {}
+    try { manifests.push({ dir: d, ...JSON.parse(fs.readFileSync(`${BRAIN}/versions/${d}/manifest.json`, 'utf8')) }) } catch { /* 已记因: 解析容错——单版本 manifest 缺失或坏 JSON, 跳过该版本继续清点 */ }
   }
-} catch {}
+} catch { /* 已记因: 降级路径——versions 目录不存在(首次运行), 按空版本清单出报告 */ }
 const transitions = readJsonLines(`${DATA_DIR}/logs/transition-log.jsonl`)
 const auditEvents = readJsonLines(`${DATA_DIR}/logs/audit.log`)
 // 测试污染过滤(口径见 docs/brain-audit-runbook.md): 本机 pytest 临时 graphd 实例写同一批日志文件。
@@ -70,7 +70,7 @@ try {
     const rows = readJsonLines(`${RUNS}/${d}/run-log.jsonl`)
     if (rows.length) runLogs[d] = rows
   }
-} catch {}
+} catch { /* 已记因: 降级路径——runs 目录缺失时按无运行记录统计, 报告余下指标照常 */ }
 
 // ---------- --sample ----------
 if (process.argv.includes('--sample')) {

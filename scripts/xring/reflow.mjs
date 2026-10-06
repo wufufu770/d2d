@@ -19,7 +19,7 @@ async function post(graphdUrl, apiPath, payload, token) {
     signal: AbortSignal.timeout(15000),
   })
   let body = {}
-  try { body = await res.json() } catch {}
+  try { body = await res.json() } catch { /* 已记因: 解析容错——响应非 JSON 时保持空 body, 状态码照常返回给调用方 */ }
   return { status: res.status, body }
 }
 
@@ -54,7 +54,7 @@ export async function reflow(opts) {
   const written = []
   const held = []
   const errors = []
-  const emit = (event) => { if (eventsFile) { try { fs.appendFileSync(eventsFile, JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n') } catch {} } }
+  const emit = (event) => { if (eventsFile) { try { fs.appendFileSync(eventsFile, JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n') } catch { /* 已记因: 尽力而为——单条事件落盘失败静默, 不阻断回流写入主流程 */ } } }
 
   if (mode === 'off') {
     // 纯观察档: 扫描照做（产物形态可见）, 写面整体跳过——数据保全在 workspace, 零图写。

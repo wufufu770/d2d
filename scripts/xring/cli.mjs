@@ -15,7 +15,7 @@ const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
 /** 读 model-policies（与 scheduler.loadPolicies 同序：DATA_DIR → 仓内回退）。 */
 export function loadPolicies(dataDir = DATA_DIR) {
   for (const p of [`${dataDir}/config/model-policies.json`, new URL('../../config/model-policies.example.json', import.meta.url).pathname]) {
-    try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch {}
+    try { return JSON.parse(fs.readFileSync(p, 'utf8')) } catch { /* 已记因: 尽力而为——该策略文件缺失或坏 JSON, 落到下一路径/默认兜底 */ }
   }
   return { default: { primary: '', backup: '' }, roles: {} }
 }
