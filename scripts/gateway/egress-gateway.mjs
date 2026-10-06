@@ -316,7 +316,19 @@ const server = http.createServer(async (req, res) => {
     req.pipe(up)
   } catch { deny(res, host, 'bad upstream') }
 })
-server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 scope 强制
+// WRAP-3 gap 24: CONNECT 端口 pin —— host 级 scope 通过 ≠ 任意端口隧道授权(登记原文:
+// scope http:80 host 可 CONNECT :6379)。缺省 pin 443(TLS 隧道本义); env P2P_PROXY_CONNECT_PORTS
+// 逗号白名单扩展。**环回内部服务豁免**(127.0.0.1/localhost/::1): 4.5-1 MITM 解密与直通非标
+// TLS 的内部服务端口多样性是功能前提——pin 治理外部隧道面, 环回面残余登记(非 TLS 内部服务
+// 探测面留 open, 由 sandbox/宿主边界兜底)。非 pin 端口 → 403 + audit deny(port-not-pinned);
+// host 级 scope 门仍是第一道(本门为端口第二道)。
+const CONNECT_PORTS = new Set((process.env.P2P_PROXY_CONNECT_PORTS ?? '443').split(',').map((x) => _envInt(x.trim(), -1)).filter((x) => x > 0))
+const CONNECT_LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1'])
+const connectPortAllowed = (p, host = '') => CONNECT_PORTS.has(p) || CONNECT_LOOPBACK.has(String(host ?? '').toLowerCase())
+const _setConnectPorts = (ports) => { CONNECT_PORTS.clear(); for (const p of (ports ?? [])) { const v = _envInt(p, -1); if (v > 0) CONNECT_PORTS.add(v) } } // 测试注入口(_setDynScope 口径)
+const _connectPortsView = () => new Set(CONNECT_PORTS)
+
+server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 scope 强制 + 端口 pin(gap 24)
   sock.on('error', () => {}) // 0906 修复: 隧道对端 RST(step-limit 杀 worker 等)无监听 → 崩进程(12:15 实证)
   // H14: CONNECT 目标可能是 [v6]:port 形态 — 旧版 split(':')[0] 会把它截成 "[::ffff"(比对必然失真)
   const cm = String(req.url ?? '').match(/^(?:\[([^\]]+)\]|([^:]+))(?::(\d+))?$/)
@@ -324,6 +336,7 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
   const port = _envInt(cm?.[3], 443) // 中危审计修复(13): 端口 NaN/越界兜底(旧版 parseInt 原样透传给 net.connect)
   if (isForbiddenTarget(host)) return _sockDeny(sock, host, 'metadata/link-local/CGNAT/0-net 硬黑面(H14), scope 声明也不放行')
   if (!hostAllowed(host)) { audit({ event: 'deny', host, why: 'CONNECT not in scope' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
+  if (!connectPortAllowed(port, host)) { audit({ event: 'deny', host, port, why: 'CONNECT port not pinned (gap 24)' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
   if (!allowRate(host)) { sock.end('HTTP/1.1 429 Too Many Requests\r\n\r\n'); return }
   if (!(await resolvedIpsAllowed(host))) return _sockDeny(sock, host, 'DNS 解析失败或解析到保留/元数据地址(H14 fail-closed)')
   audit({ event: 'connect', host })
@@ -492,4 +505,4 @@ if (IS_MAIN) {
   server.listen(PORT, '127.0.0.1', () => console.log(`[egress-gateway] :${PORT} allow=${[...STATIC_ALLOW]} + dynamic scope from ${GRAPHS.join(',')}`))
 }
 
-export { normalizeHost, isForbiddenTarget, hostAllowed, allowRate, resolvedIpsAllowed, refreshScope, server, _setDynScope, _clearDnsCache, UPSTREAM_TIMEOUT_MS, MAP_CAP, buckets as _buckets, _dnsCache, noteUpstreamStatus, parseRetryAfter, mitmHandle, logFile as _auditLog, MITM_ENC_DIR as _mitmEncDir, MITM_TXN_BODY_CAP }
+export { normalizeHost, isForbiddenTarget, hostAllowed, allowRate, resolvedIpsAllowed, refreshScope, server, _setDynScope, _clearDnsCache, UPSTREAM_TIMEOUT_MS, MAP_CAP, buckets as _buckets, _dnsCache, noteUpstreamStatus, parseRetryAfter, mitmHandle, logFile as _auditLog, MITM_ENC_DIR as _mitmEncDir, MITM_TXN_BODY_CAP, connectPortAllowed, _setConnectPorts, _connectPortsView }
