@@ -5035,23 +5035,30 @@ def test_t433_dual_sign_transition_gate_full_table():
         for to in DUAL_SIGN_STATES:
             ok, _r = gate(cur, to)
             assert ok == (to in DUAL_SIGN_TRANSITIONS.get(cur, ())), (cur, to, ok)
-    # 合法迁移全表逐边(11 处直写实测边集)
+    # 合法迁移全表逐边(11 处直写实测边集 + FIX-1 A1 人工仲裁出口 2 边 — 仅经
+    # /write/adjudicate disputed_confirm/disputed_reject 触达, 端点校验 dual_sign=='disputed')
     legal = {
         "": {"pending", "single", "blocked"},
         "pending": {"signed", "disputed", "blocked", "single"},
         "blocked": {"pending", "single"},
         "single": {"pending"},
         "signed": set(),
-        "disputed": set(),
+        "disputed": {"signed", "rejected"},
+        "rejected": set(),
     }
     assert {k: set(v) for k, v in DUAL_SIGN_TRANSITIONS.items()} == legal, "迁移表与实测边集逐边一致"
     for cur, targets in legal.items():
         for to in targets:
             assert gate(cur, to) == (True, ""), (cur, to)
-    # 真终态不可迁: signed/disputed 无任何出边含同态(0914 仲裁锁定); blocked 是可解冻挂起态非终态
+    # 真终态不可迁: signed 无出边(0914 自动面锁定) / rejected 无出边(人工否决不可逆);
+    # disputed 仅有两条人工仲裁出边(自动结果不得翻转 — gates.mjs disputed-locked 消费留痕);
+    # blocked 是可解冻挂起态非终态
     for to in DUAL_SIGN_STATES:
         assert gate("signed", to)[0] is False
-        assert gate("disputed", to)[0] is False
+        assert gate("rejected", to)[0] is False
+    assert set(DUAL_SIGN_TRANSITIONS["disputed"]) == {"signed", "rejected"}, "disputed 出边恰为人工仲裁两条"
+    assert gate("disputed", "single")[0] is False, "disputed→single 仍拒(0914 先例面)"
+    assert gate("disputed", "verified")[0] is False, "verified 不在 dual_sign 枚举(gate_status 面概念, 不混列)"
     assert gate("blocked", "pending") == (True, ""), "0915 B1 解冻边必须合法"
     assert gate("blocked", "single") == (True, "")
     # NULL 归一 ''(列 DEFAULT ''): cur=None 等价 ''
@@ -5061,6 +5068,42 @@ def test_t433_dual_sign_transition_gate_full_table():
     assert gate("", "weird")[0] is False and "to must be one of" in gate("", "weird")[1]
     assert gate("mystery", "pending")[0] is False
     assert gate("", "")[0] is False, "无任何边指向 ''(空态只可作源)"
+
+
+def test_fix1_dual_sign_convergence():
+    """FIX-1 A1 收敛性构造证明(冷读 A1 死路根治的数学面):
+    ①全源可达终态 — 从每态出发 BFS, 可达集合必须与终态集 {signed, rejected} 相交
+      (disputed 不再是『进得去出不来』的死路, 三门可收敛);
+    ②终态封闭 — 终态无出边(到达即停, 无环逃逸), rejected 与 signed 同级终态;
+    ③环上每态有终态方向出边 — pending/blocked/single 构成的环(''↔pending↔blocked)不困死
+      (每态直接出边中含通往终态的路径首步或环出口)。"""
+    from graphd.gd.gates import DUAL_SIGN_STATES, DUAL_SIGN_TRANSITIONS
+    finals = {"signed", "rejected"}
+    for start in DUAL_SIGN_STATES:
+        seen, queue = {start}, [start]
+        while queue:
+            s = queue.pop(0)
+            for nxt in DUAL_SIGN_TRANSITIONS.get(s, ()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    queue.append(nxt)
+        assert seen & finals, f"{start!r} 无法到达任何终态 {sorted(finals)} — 收敛性破坏(冷读 A1 死路复现)"
+    for f in sorted(finals):
+        assert f in DUAL_SIGN_STATES, f
+        assert tuple(DUAL_SIGN_TRANSITIONS.get(f, ())) == (), f"终态 {f!r} 必须无出边(到达即停)"
+    # disputed 出边直达终态(一步收敛 — 人工仲裁后无后续动作)
+    assert set(DUAL_SIGN_TRANSITIONS["disputed"]) <= finals
+    # 环上态(''↔pending↔blocked↔single 邻接)每态可达终态(②的全源断言已覆盖, 此处锚关键路径)
+    assert "signed" in DUAL_SIGN_TRANSITIONS["pending"], "环出口: pending→signed"
+
+
+def test_fix1_dual_sign_state_enumeration_growth_guard():
+    """枚举扩展守卫: rejected 入 DUAL_SIGN_STATES(端点 to 形态预检 :1157 白名单随之放行);
+    新态只增不删 — 既有六态全在(向后兼容硬约束的枚举面)。"""
+    from graphd.gd.gates import DUAL_SIGN_STATES
+    for s in ("", "pending", "signed", "disputed", "blocked", "single"):
+        assert s in DUAL_SIGN_STATES, f"既有态 {s!r} 不得删除"
+    assert "rejected" in DUAL_SIGN_STATES, "FIX-1 A1 人工否决终态必须入枚举"
 
 
 def _t433_post(base_url, path, payload, token):
@@ -5410,3 +5453,179 @@ def test_wrap3_tr39_skeleton_pure_function():
     assert skeleton_fold("plain-ascii.com") == "plain-ascii.com", "ASCII 直通"
     assert skeleton_fold("") == ""
     assert skeleton_fold(None) is None, "空安全(None 原样)"
+
+
+# ---- FIX-1: A1 disputed 仲裁回灌(adjudicate 扩展) + A3 暂停门全写面 ----
+
+def test_fix1_adjudicate_disputed_confirm_and_reject(tmp_path, monkeypatch):
+    """A1 仲裁双路径: dual_sign='disputed' 对象经 disputed_confirm → dual_sign=signed +
+    gate_status=verified(维持第一签, triaged/candidate 起点两态都过既有八态门) /
+    disputed_reject → dual_sign=rejected + gate_status=rejected(否决双列终态);
+    同锁窗双列原子; last_transition 轨迹 + 审计带 ds_from/ds_to 双签轨迹;
+    人工身份(operator)三面留痕(_audit_event+transition-log+last_transition)。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    tlog = tmp_path / "transition-log.jsonl"
+    monkeypatch.setenv("P2P_TRANSITION_LOG", str(tlog))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    try:
+        conn.execute("CREATE (f:Finding {id:'f-disp-c', eng:'eng-a', title:'disputed confirm probe', "
+                     "severity:'critical', repro:'r', gate_status:'triaged', dual_sign:'disputed'})")
+        conn.execute("CREATE (f:Finding {id:'f-disp-r', eng:'eng-a', title:'disputed reject probe xx', "
+                     "severity:'high', repro:'r', gate_status:'candidate', dual_sign:'disputed'})")
+        s1, o1 = _wrap2_post(base_url, {"kind": "finding", "action": "disputed_confirm",
+                                        "id": "f-disp-c", "operator": "仲裁员甲",
+                                        "reason": "双签争议复核: 第二签误判, 维持第一签"})
+        assert s1 == 200 and o1["ok"] is True and o1["to"] == "verified", o1
+        row = conn.execute("MATCH (f:Finding {id:'f-disp-c'}) RETURN f.gate_status, "
+                           "f.dual_sign, f.last_transition").get_next()
+        assert str(row[0]) == "verified" and str(row[1]) == "signed", "确认=signed+verified(维持第一签)"
+        traj = json.loads(str(row[2]))
+        assert traj["actor"] == "仲裁员甲" and traj["from"] == "triaged" and traj["to"] == "verified"
+        s2, o2 = _wrap2_post(base_url, {"kind": "finding", "action": "disputed_reject",
+                                        "id": "f-disp-r", "operator": "仲裁员乙",
+                                        "reason": "双签争议复核: 第一签结论不成立"})
+        assert s2 == 200 and o2["to"] == "rejected", o2
+        row2 = conn.execute("MATCH (f:Finding {id:'f-disp-r'}) RETURN f.gate_status, f.dual_sign").get_next()
+        assert str(row2[0]) == "rejected" and str(row2[1]) == "rejected", "否决=rejected+rejected(双列终态)"
+        ok, _e, _t = transition_gate("rejected", "candidate", "op", "try")
+        assert not ok, "仲裁否决后 rejected 终态不可迁(不可逆)"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    adj = [e for e in events if e["kind"] == "adjudicate"]
+    assert len(adj) == 2, [e["kind"] for e in events]
+    assert adj[0]["detail"]["ds_from"] == "disputed" and adj[0]["detail"]["ds_to"] == "signed"
+    assert adj[1]["detail"]["ds_from"] == "disputed" and adj[1]["detail"]["ds_to"] == "rejected"
+    assert all(d["detail"]["operator"] for d in adj), "人工身份审计链(operator 必填必留)"
+    tl = [json.loads(l) for l in tlog.read_text().splitlines() if l.strip()]
+    assert sum(1 for t in tl if t.get("source_batch") == "adjudicate"
+               and str(t.get("node_id", "")).startswith("f-disp")) == 2, "transition 旁路日志两落"
+
+
+def test_fix1_adjudicate_disputed_guards_and_backward_compat(tmp_path, monkeypatch):
+    """A1 守卫与向后兼容: disputed 分支仅收 dual_sign='disputed'(signed/'' 对象 409+
+    adjudicate-illegal 审计); action 越枚举 400 话术含四枚举; worker token 403(仲裁同
+    host-only); 既有 verified-only 路径零变化 — 非 verified revoke 的 409 话术兼容
+    (WRAP-2 既有测试 :test_wrap2_* 全量锁定 revoke/false_positive 行为)。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    try:
+        # ①f-wrap2 是 dual_sign='signed' → disputed_confirm 409(非 disputed 对象)
+        s1, o1 = _wrap2_post(base_url, {"kind": "finding", "action": "disputed_confirm",
+                                        "id": "f-wrap2", "operator": "op", "reason": "不该收"})
+        assert s1 == 409 and "disputed" in o1["error"], o1
+        # ②f-triaged dual_sign='' → 409 同款
+        s2, o2 = _wrap2_post(base_url, {"kind": "finding", "action": "disputed_reject",
+                                        "id": "f-triaged", "operator": "op", "reason": "不该收"})
+        assert s2 == 409 and "disputed" in o2["error"], o2
+        # ③action 越枚举 400(话术含新枚举)
+        s3, o3 = _wrap2_post(base_url, {"kind": "finding", "action": "weird", "id": "f-wrap2",
+                                        "operator": "op", "reason": "x"})
+        assert s3 == 400 and "disputed_confirm" in o3["error"], o3
+        # ④worker token 403(仲裁分支同 host-only)
+        s4, _o4 = _wrap2_post(base_url, {"kind": "finding", "action": "disputed_confirm",
+                                         "id": "f-wrap2", "operator": "op", "reason": "x"},
+                              token="t-wrap2-worker")
+        assert s4 == 403
+        # ⑤既有 verified-only 409 话术兼容(revoke on 非 verified 对象)
+        s5, o5 = _wrap2_post(base_url, {"kind": "finding", "action": "revoke", "id": "f-triaged",
+                                        "operator": "op", "reason": "x"})
+        assert s5 == 409 and "verified" in o5["error"], o5
+        # ⑥被拒形态状态零变更
+        row = conn.execute("MATCH (f:Finding {id:'f-wrap2'}) RETURN f.gate_status, f.dual_sign").get_next()
+        assert str(row[0]) == "verified" and str(row[1]) == "signed", "守卫拒收后状态零变更"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    assert len([e for e in events if e["kind"] == "adjudicate-illegal"]) >= 3, "非法对象审计可追溯"
+
+
+def test_fix1_global_pause_full_write_surface(tmp_path, monkeypatch):
+    """A3 暂停门全写面(冷读 A3 差距表闭合实证): 全局暂停后 — 结构化 4 端点(既有 :615 面)+
+    8 个既有绕过 /write/* + /reset + host /query 写型全部 409; 豁免面 /write/adjudicate
+    与 /write/transition-log 保持可用(停机人工裁决/审计追加通道); host 只读 /query 放行
+    (停机调查需读图); 解除暂停后写面恢复(409 消失 — 门解除实证)。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    (tmp_path / "paused.json").write_text(json.dumps({"paused": True}))
+    try:
+        # ①既有绕过端点 + /reset 全 409(载荷最小 — 暂停门在路由体之前触发)
+        for p, payload in (
+            ("/write/experience", {"eng_id": "eng-a", "title": "t", "content": "c",
+                                   "category": "success", "provenance_hash": "ph"}),
+            ("/write/experience-transition", {"experience_id": "exp-wrap2",
+                                              "target_status": "deprecated", "reviewer_note": "r"}),
+            ("/write/experience-consensus", {"experience_id": "exp-wrap2",
+                                             "consensus_status": "consistent"}),
+            ("/write/dual-sign-transition", {"id": "f-wrap2", "to": "pending"}),
+            ("/write/frontier", {"eng_id": "eng-a", "direction": "d", "proposed_by": "w",
+                                 "refs": ["s-1"]}),
+            ("/write/frontier-transition", {"frontier_id": "fr-x", "target_status": "accepted",
+                                            "review_note": "r"}),
+            ("/write/transition", {"id": "f-wrap2", "to": "reported", "actor": "a", "reason": "r"}),
+            ("/reset", {}),
+        ):
+            s, o = _wrap3_raw_post(base_url, p, payload, token="t-wrap2-host")
+            assert s == 409 and "d2d-paused" in o.get("error", ""), (p, s, o)
+        # ②host /query: 写型 409(host-write-paused 审计) / 只读 200
+        s_w, _ow = _wrap3_raw_post(base_url, "/query",
+                                   {"cypher": "MERGE (n:Probe {id:'p1'}) RETURN n"},
+                                   token="t-wrap2-host")
+        assert s_w == 409
+        s_r, o_r = _wrap3_raw_post(base_url, "/query",
+                                   {"cypher": "MATCH (f:Finding {id:'f-wrap2'}) RETURN f.gate_status"},
+                                   token="t-wrap2-host")
+        assert s_r == 200 and o_r.get("rows"), "只读查询放行(停机调查需读图)"
+        # ③豁免面: adjudicate 照常工作(停机裁决写回 — A1 仲裁的操作前提)
+        s_a, o_a = _wrap2_post(base_url, {"kind": "finding", "action": "revoke", "id": "f-wrap2",
+                                          "operator": "停机仲裁员", "reason": "停机期人工裁决"})
+        assert s_a == 200 and o_a["to"] == "isolated", o_a
+        # ④豁免面: transition-log 审计追加通道(审计链不属「停写」对象)
+        s_t, o_t = _wrap3_raw_post(base_url, "/write/transition-log",
+                                   {"node_id": "f-wrap2", "from_status": "verified",
+                                    "to_status": "isolated", "actor": "停机仲裁员",
+                                    "reason": "停机期审计追加"}, token="t-wrap2-host")
+        assert s_t == 200, o_t
+        # ⑤解除暂停: 门解除实证(同一端点从 409 变既有参数语义)
+        (tmp_path / "paused.json").unlink()
+        s_u, o_u = _wrap3_raw_post(base_url, "/write/transition", {"id": "f-wrap2"},
+                                   token="t-wrap2-host")
+        assert s_u == 400 and "d2d-paused" not in o_u.get("error", ""), o_u
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    assert len([e for e in events if e["kind"] == "host-write-paused"]) == 1, "host 写通道暂停审计恰一"
+
+
+def test_fix1_per_eng_pause_experience_and_frontier(tmp_path, monkeypatch):
+    """A3 per-eng 门补挂: 冻结 engagement 的 experience/frontier worker 写 409
+    (结构化 4 端点 :640 先例同款「停 A 不误伤 B」语义对所有 worker 写端点成立);
+    未冻结 eng 正常写入(精准性负例)。"""
+    monkeypatch.setattr(graphd_app, "_D2D_PAUSE_DIR", str(tmp_path))
+    (tmp_path / "paused-eng-a.json").write_text(json.dumps({"paused": True}))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    try:
+        s1, o1 = _wrap3_raw_post(base_url, "/write/experience",
+                                 {"eng_id": "eng-a", "title": "frozen probe", "content": "c",
+                                  "category": "success", "provenance_hash": "ph"},
+                                 token="t-wrap2-worker")
+        assert s1 == 409 and "eng-a" in o1.get("error", ""), o1
+        s2, o2 = _wrap3_raw_post(base_url, "/write/frontier",
+                                 {"eng_id": "eng-a", "direction": "probe frozen",
+                                  "proposed_by": "w1", "refs": ["s-1"]},
+                                 token="t-wrap2-worker")
+        assert s2 == 409 and "eng-a" in o2.get("error", ""), o2
+        s3, o3 = _wrap3_raw_post(base_url, "/write/experience",
+                                 {"eng_id": "eng-b", "title": "unfrozen probe", "content": "c",
+                                  "category": "pitfall", "provenance_hash": "ph"},
+                                 token="t-wrap2-worker")
+        assert s3 == 200, o3
+    finally:
+        srv.shutdown()
+        srv.server_close()
