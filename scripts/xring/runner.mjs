@@ -23,16 +23,23 @@ export function renderPrompt(xringDir, { runId, workspace, extraTask = '' }) {
  * env 剥除图 token（进程级; 返回 restore）。
  * adapter.spawnWorker 的 env 从 process.env 拷贝: 剥 P2P_WORKER_TOKEN + 把
  * P2P_WORKER_TOKEN_FILE 指到必不存在路径（防 :237 的文件回退读到真 token）。
+ * FIX-2 A7(白名单制双层防线之进程级层): 并剥 P2P_HOST_TOKEN_FILE 与全部 P2P_HOST_* —
+ * 冷读 A7 实锚: 宿主 env 的 P2P_HOST_TOKEN_FILE 原样穿透, worker 侧 `cat $P2P_HOST_TOKEN_FILE`
+ * 一行即得 host token(xring worker 是隔离沙箱里的不可信会话, host 凭据面默认不进 env)。
+ * spawn 级第二层=adapter buildWorkerEnv(host 面白名单剥离, 两层语义一致)。
  */
 export function stripGraphTokenEnv(sentinelDir) {
+  // FIX-2 A7: 全部 P2P_HOST_* 键进 saved 快照(不止已知四键) —— strip 删掉的一切
+  // restore 都能还原(replace 语义对未知 host 变量同样闭环)。
   const saved = {
     P2P_WORKER_TOKEN: process.env.P2P_WORKER_TOKEN,
     P2P_WORKER_TOKEN_FILE: process.env.P2P_WORKER_TOKEN_FILE,
-    P2P_HOST_TOKEN: process.env.P2P_HOST_TOKEN,
+  }
+  for (const k of Object.keys(process.env)) {
+    if (/^P2P_HOST_/i.test(k)) saved[k] = process.env[k]
   }
   const sentinel = path.join(sentinelDir, '.xring-no-token-sentinel') // 必不存在路径
-  delete process.env.P2P_WORKER_TOKEN
-  delete process.env.P2P_HOST_TOKEN
+  for (const k of Object.keys(saved)) delete process.env[k]
   process.env.P2P_WORKER_TOKEN_FILE = sentinel
   return () => {
     for (const [k, v] of Object.entries(saved)) {
