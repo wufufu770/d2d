@@ -757,16 +757,24 @@ def experience_consensus_status_rejected(status) -> bool:
 #               模型死亡) / single(:467,:484 未配置降级/终态残留清扫)
 #   blocked   → pending(:514 0915 B1 解冻边 — backup 恢复存活自动重派) / single(:467,:484)
 #   single    → pending(8-2 方案卡白名单预留; 现无写侧)
-#   signed / disputed = 真终态(无出边, 自动结果不得翻转 — 0914 仲裁锁定先例);
-#   blocked 非终态(可解冻挂起态)。NULL 归一 ''(列 DEFAULT ''+T4-3-2 回填全量)。
-DUAL_SIGN_STATES = ("", "pending", "signed", "disputed", "blocked", "single")
+#   signed / rejected = 终态(无出边); blocked 非终态(可解冻挂起态)。NULL 归一 ''(列 DEFAULT ''+T4-3-2 回填全量)。
+# FIX-1 A1(人工仲裁出口): disputed → signed(人工确认维持结论) / rejected(人工否决)。
+#   0914 仲裁锁定先例的语义边界随之精确化: 「自动结果不得翻转」约束的是**自动面** — scheduler
+#   11 处直写对账集零变化(上方逐处行号仍完整覆盖, 无 disputed 出边调用点), 双签不一致后自动
+#   结果(即使过 Gate-V)依旧消费不采纳(gates.mjs dual-sign-disputed-locked 留痕); 人工出口
+#   仅经 /write/adjudicate 的 disputed_confirm/disputed_reject 两 action(operator+reason 必填
+#   +三面审计), 端点输入域校验 dual_sign=='disputed' 才收。冷读 A1 死路根因即 disputed 无出边
+#   +adjudicate 仅收 verified — 人工仲裁无系统内写路径, 三门永不收敛; 本出边是收敛性修复的
+#   状态机层(收敛性构造证明: 全态 BFS 可达终态集 {signed, rejected}, tests/test_graphd_gates.py)。
+DUAL_SIGN_STATES = ("", "pending", "signed", "disputed", "rejected", "blocked", "single")
 DUAL_SIGN_TRANSITIONS = {
     "": ("pending", "single", "blocked"),
     "pending": ("signed", "disputed", "blocked", "single"),
     "blocked": ("pending", "single"),
     "single": ("pending",),
     "signed": (),
-    "disputed": (),
+    "disputed": ("signed", "rejected"),
+    "rejected": (),
 }
 
 

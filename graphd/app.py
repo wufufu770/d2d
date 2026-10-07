@@ -204,6 +204,13 @@ try:
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import dual_sign_transition_gate, DUAL_SIGN_STATES
 
+# FIX-1 A3: host /query 写型判定复用 worker 门变更关键字正则(单一真源, gates.py WORKER_MUTATION_RE;
+# CALL 已由 host_query_gate 单拦, 正则含 CALL 与之重复无妨 — 同方向收紧)。
+try:
+    from graphd.gd.gates import WORKER_MUTATION_RE
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import WORKER_MUTATION_RE
+
 # 3.6-4 段 C(C-1 反馈闭环): 转态端点带参回填的格式门与 utility 键合并(纯函数, gates.py
 # 3.6-4 段 C 区块)。同 3C 哲学: 直接从子模块导入, 两种运行形态都接住。
 try:
@@ -607,6 +614,22 @@ class Handler(BaseHTTPRequestHandler):
                 if _hit:
                     _audit_event("denylist-hit", {"path": self.path, "asset": _hit})
                     return self._send(403, {"ok": False, "error": f"excluded asset (denylist 红线): {_hit} — 排除资产禁测/禁枚举/禁引用, 载荷含之即拒绝"})
+        # ---- FIX-1 A3: 全局暂停门上提全写面(「全停写」语义对所有写端点成立) ----
+        # 既有暂停检查仅覆盖结构化 4 端点(下方 :615/:640), /write/experience 等 9 路由与
+        # host /query 写分支+/reset 全部绕过(冷读 A3: 「全停写」语义不完整)。形态=共享门区
+        # 一刀切(denylist 扫描 :565 同位先例), 挂在 denylist 之后=红线扫描优先于暂停响应
+        # (拒绝次序与既有审计语义一致, 暂停期红线载荷照样落 audit 可追溯)。
+        # 豁免两路由=人工裁决与审计追加通道: /write/adjudicate(A1 人工仲裁入口 — 停机冻结
+        # 图面正是为了人工审查, 审查结论需要写回) / /write/transition-log(审计 append-only
+        # 追加通道 — 审计链不属「停写」对象, _audit_event/_log_transition 旁路在暂停期照常
+        # 工作, 同一哲学)。/write/dual-sign-transition **不豁免**: 它是 scheduler 自动簿记面
+        # (11 处直写收编端点), 暂停期僵尸调度器的簿记写同样该拦(:613 worker 侧通道同语义);
+        # 人工仲裁走 adjudicate 扩展分支(disputed_confirm/disputed_reject), 不经此端点。
+        # host /query 写分支与 worker 只读查询的暂停语义见 /query 分支内注释(FIX-1 A3)。
+        if (self.path.startswith("/write/") or self.path == "/reset") and \
+                self.path not in ("/write/adjudicate", "/write/transition-log"):
+            if _d2d_paused():
+                return self._send(409, {"ok": False, "error": "d2d-paused — 全局暂停中(stopAll/熔断), 写面已冻结(人工裁决/审计追加通道除外)"})
         # ---- 结构化写端点: 参数校验替代内联 cypher 正则扫描(根治 #21 死门与 params 旁路) ----
 
         if self.path in ("/write/finding", "/write/signal", "/write/hypothesis", "/write/endpoint"):
@@ -1003,6 +1026,12 @@ class Handler(BaseHTTPRequestHandler):
             with _locked():  # V-11: 锁带 5s deadline
                 try:
                     conn = kuzu.Connection(db())
+                    # FIX-1 A3: per-eng 暂停门补挂(worker 数据写面 — 结构化 4 端点 :640 先例
+                    # 同款, 「停 A 不误伤 B」语义对所有 worker 写端点成立; eng_id 可空=跨 eng
+                    # 通用经验, 空值不判 _eng_paused 直接放行)。host 评审面(experience-transition
+                    # /consensus 等)不挂 per-eng 门: 冻结正是为了人工处理, 全局门+豁免面已覆盖。
+                    if _eng_id and _eng_paused(_eng_id):
+                        return self._send(409, {"ok": False, "error": f"d2d-paused({_eng_id}) — 该 engagement 已冻结, 经验写入停收"})
                     # ③3.5-4-3 端点侧 per-eng_id 写入配额(粗兜底): 计数与 CREATE 同一 _locked()
                     # 窗口原子完成(engagement_cap_gate 的 H12 TOCTOU 教训同款); 含 quarantined
                     # 隔离行 — 评审出池前同样占池。超限 429(水位门同款)+ 审计。
@@ -1277,6 +1306,10 @@ class Handler(BaseHTTPRequestHandler):
             with _locked():  # V-11: 锁带 5s deadline
                 try:
                     conn = kuzu.Connection(db())
+                    # FIX-1 A3: per-eng 暂停门补挂(worker 数据写面 — 结构化 4 端点 :640 先例
+                    # 同款; eng_id 必填已在上方 400 门保证, 此处非空恒成立)。
+                    if _eng_id and _eng_paused(_eng_id):
+                        return self._send(409, {"ok": False, "error": f"d2d-paused({_eng_id}) — 该 engagement 已冻结, frontier 提案停收"})
                     # ---- 3.6-2 v4.1 增强①(续): refs 终检(锁内 — 服务端不信自报, 数据终值裁决)。
                     # 逐 id 存在性 + eng 同源校验(两表各自字面量语句 + IN 列表绑定 — kuzu 0.11.3
                     # 列表参数绑定形态现场实证可用; 空列表已在格式门拒绝不会到达此处)。
@@ -1598,10 +1631,24 @@ class Handler(BaseHTTPRequestHandler):
         #   路径 B(false_positive 标假阳性): finding verified→isolated→rejected 组合两跳(既有边
         #     各自过门, 同一锁窗)——rejected 终态不可迁=误报判定不可逆, dual_sign 不动(signed 终态
         #     语义不混用)。false_positive 标注载体=审计+transition 轨迹 reason 前缀(拍板: 不加列)。
+        # FIX-1 A1(仲裁路径 C/D): disputed_confirm/disputed_reject —— dual_sign='disputed' 对象的
+        #   人工仲裁回灌(冷读 A1: 旧入口仅收 verified, 双签不一致留人工仲裁后无系统内写路径, 三门
+        #   永不收敛)。状态机层: dual_sign 走既有 dual_sign_transition_gate 新出边 disputed→signed
+        #   (人工确认维持第一签结论)/disputed→rejected(人工否决终态, FIX-1 gates.py 新增); gate_status
+        #   走既有八态门 transition_gate(disputed 态的 gate_status 起点 ∈ {candidate, triaged}
+        #   — pending 只从这两态派出且第二签否决仅写 dual_sign 列, 两态到 verified/rejected 的
+        #   既有出边覆盖两分支, 状态机零扩展)。同锁窗双列原子 SET(gate_status+dual_sign+
+        #   last_transition)。人工身份审计链: operator 必填(1-40)三面留痕 — _audit_event(
+        #   adjudicate 事件含 ds_from/ds_to 双签轨迹)+_log_transition(transition-log.jsonl)+
+        #   Finding.last_transition(transition_gate 产物); 与 WRAP-2 双轨纪律一致(agent 记录轨
+        #   +人工裁决轨)。既有 revoke/false_positive 路径零改动(向后兼容硬约束: verified-only
+        #   流程行为逐字节不变, 测试锁定)。
         # 审计三面全 append-only: _audit_event(audit.log)+_log_transition(transition-log.jsonl)+
         # Finding.last_transition 轨迹列(transition_gate 产物)——无任何删除路径(拍板: 审计不可删)。
-        # 非法迁移/非 verified 对象 409+'adjudicate-illegal' 审计(#73 同款可追溯)。
-        # 共享门自动生效(Content-Length 门/legacy token/R6 denylist 红线扫描——本 path 以 /write/ 开头)。
+        # 非法迁移/非 verified 对象/disputed 分支非 disputed 对象 409+'adjudicate-illegal' 审计
+        # (#73 同款可追溯)。
+        # 共享门自动生效(Content-Length 门/legacy token/R6 denylist 红线扫描——本 path 以 /write/ 开头;
+        # FIX-1 A3: 全局暂停豁免本路由 — 停机冻结图面正是为了人工审查, 审查结论需要写回)。
         if self.path == "/write/adjudicate":
             if not self._auth("host"):
                 return self._send(403, {"ok": False, "error": "adjudication requires host token"})
@@ -1612,44 +1659,83 @@ class Handler(BaseHTTPRequestHandler):
             reason = str(req.get("reason") or "").strip()
             if kind not in ("finding", "experience"):
                 return self._send(400, {"ok": False, "error": "kind required (finding|experience)"})
-            if action not in ("revoke", "false_positive"):
-                return self._send(400, {"ok": False, "error": "action required (revoke|false_positive)"})
+            # FIX-1 A1: action 枚举扩四 — 既有 revoke/false_positive(verified-only 零改动)+
+            # disputed_confirm/disputed_reject(dual_sign='disputed' 人工仲裁, 见上方路径 C/D 注释)。
+            if action not in ("revoke", "false_positive", "disputed_confirm", "disputed_reject"):
+                return self._send(400, {"ok": False, "error": "action required (revoke|false_positive|disputed_confirm|disputed_reject)"})
             if not ident:
                 return self._send(400, {"ok": False, "error": "id required"})
             if not (1 <= len(operator) <= 40):
                 return self._send(400, {"ok": False, "error": "operator required (1-40 字符)"})
             if not (1 <= len(reason) <= 80):
                 return self._send(400, {"ok": False, "error": "reason required (1-80 字符)"})
+            ds_to = ""  # FIX-1 A1: 仲裁分支才写(锁外审计事件带双签轨迹; experience/既有路径恒空串)
             with _locked():  # V-11 同一锁窗: 读旧态→门判定→组合写入(路径 B 两跳原子)
                 try:
                     conn = kuzu.Connection(db())
                     if kind == "finding":
-                        r = conn.execute("MATCH (f:Finding {id:$id}) RETURN f.gate_status",
+                        # FIX-1 A1: 读两列(gate_status+dual_sign — 仲裁分支按 dual_sign 分流,
+                        # 既有路径对 dual_sign 列零触碰, 行为逐字节不变)
+                        r = conn.execute("MATCH (f:Finding {id:$id}) RETURN f.gate_status, f.dual_sign",
                                          parameters={"id": ident})
                         if not r.has_next():
                             return self._send(404, {"ok": False, "error": "finding not found"})
-                        cur = str(r.get_next()[0] or "candidate")
+                        _frow = r.get_next()
+                        cur = str(_frow[0] or "candidate")
+                        ds = "" if len(_frow) < 2 or _frow[1] is None else str(_frow[1])
                         orig = cur
-                        if cur != "verified":
-                            _err = f"裁决入口仅收 verified 对象(当前 {cur!r})——撤销语义=撤 verified 结论"
-                            _audit_event("adjudicate-illegal",
-                                         {"kind": kind, "action": action, "id": ident, "cur": cur,
-                                          "operator": operator[:80], "err": _err})
-                            return self._send(409, {"ok": False, "error": _err})
-                        hops = [("isolated",)] if action == "revoke" else [("isolated",), ("rejected",)]
-                        traj = None
-                        for (to,) in hops:
-                            ok, err, traj = transition_gate(cur, to, operator, reason)
-                            if not ok:
+                        if action in ("disputed_confirm", "disputed_reject"):
+                            # FIX-1 A1 仲裁分支: 仅收 dual_sign='disputed' 对象(pending→disputed
+                            # 入边的产物; 其他态走 revoke/false_positive 既有语义)。
+                            if ds != "disputed":
+                                _err = (f"disputed 仲裁仅收 dual_sign='disputed' 对象(当前 {ds!r}) — "
+                                        f"撤销/假阳性请走 revoke/false_positive(verified-only)")
                                 _audit_event("adjudicate-illegal",
                                              {"kind": kind, "action": action, "id": ident, "cur": cur,
-                                              "to": to, "operator": operator[:80], "err": err})
-                                return self._send(409, {"ok": False, "error": err})
+                                              "ds": ds, "operator": operator[:80], "err": _err})
+                                return self._send(409, {"ok": False, "error": _err})
+                            ds_to = "signed" if action == "disputed_confirm" else "rejected"
+                            gst_to = "verified" if action == "disputed_confirm" else "rejected"
+                            ok_d, err_d = dual_sign_transition_gate(ds, ds_to)
+                            if not ok_d:
+                                _audit_event("adjudicate-illegal",
+                                             {"kind": kind, "action": action, "id": ident, "cur": cur,
+                                              "ds": ds, "to": ds_to, "operator": operator[:80], "err": err_d})
+                                return self._send(409, {"ok": False, "error": err_d})
+                            ok_g, err_g, traj = transition_gate(cur, gst_to, operator, reason)
+                            if not ok_g:
+                                _audit_event("adjudicate-illegal",
+                                             {"kind": kind, "action": action, "id": ident, "cur": cur,
+                                              "to": gst_to, "operator": operator[:80], "err": err_g})
+                                return self._send(409, {"ok": False, "error": err_g})
+                            # 同锁窗双列原子 SET(gate_status+dual_sign+last_transition 轨迹)
                             conn.execute(
-                                "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.last_transition=$traj",
-                                parameters={"id": ident, "to": to, "traj": json.dumps(traj, ensure_ascii=False)})
-                            cur = to
-                        final = cur
+                                "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.dual_sign=$ds, f.last_transition=$traj",
+                                parameters={"id": ident, "to": gst_to, "ds": ds_to,
+                                            "traj": json.dumps(traj, ensure_ascii=False)})
+                            final = gst_to
+                        else:
+                            # 既有 verified-only 路径(路径 A/B): 零改动 — 判定/审计/hops/SET 全原样
+                            if cur != "verified":
+                                _err = f"裁决入口仅收 verified 对象(当前 {cur!r})——撤销语义=撤 verified 结论"
+                                _audit_event("adjudicate-illegal",
+                                             {"kind": kind, "action": action, "id": ident, "cur": cur,
+                                              "operator": operator[:80], "err": _err})
+                                return self._send(409, {"ok": False, "error": _err})
+                            hops = [("isolated",)] if action == "revoke" else [("isolated",), ("rejected",)]
+                            traj = None
+                            for (to,) in hops:
+                                ok, err, traj = transition_gate(cur, to, operator, reason)
+                                if not ok:
+                                    _audit_event("adjudicate-illegal",
+                                                 {"kind": kind, "action": action, "id": ident, "cur": cur,
+                                                  "to": to, "operator": operator[:80], "err": err})
+                                    return self._send(409, {"ok": False, "error": err})
+                                conn.execute(
+                                    "MATCH (f:Finding {id:$id}) SET f.gate_status=$to, f.last_transition=$traj",
+                                    parameters={"id": ident, "to": to, "traj": json.dumps(traj, ensure_ascii=False)})
+                                cur = to
+                            final = cur
                     else:  # experience
                         r = conn.execute("MATCH (x:Experience {id:$id}) RETURN x.status",
                                          parameters={"id": ident})
@@ -1676,10 +1762,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
                 except Exception as e:
                     return self._send(500, {"ok": False, "error": str(e)[:200]})
-            _audit_event("adjudicate",
-                         {"kind": kind, "action": action, "id": ident, "from": orig, "to": final,
-                          "operator": operator[:80], "reason": reason,
-                          "ts": datetime.now(timezone.utc).isoformat()})
+            # FIX-1 A1: 仲裁分支事件带双签轨迹(ds_from→ds_to); 既有路径 ds_to 恒 ''(零新增字段,
+            # 审计行文向后兼容)。operator=人工裁决轨身份(agent 记录轨+人工裁决轨 双轨纪律)。
+            _aud = {"kind": kind, "action": action, "id": ident, "from": orig, "to": final,
+                    "operator": operator[:80], "reason": reason,
+                    "ts": datetime.now(timezone.utc).isoformat()}
+            if ds_to:
+                _aud["ds_from"] = "disputed"
+                _aud["ds_to"] = ds_to
+            _audit_event("adjudicate", _aud)
             _log_transition({"node_id": ident, "from_status": orig,
                              "to_status": final, "actor": operator, "reason": reason,
                              "source_batch": "adjudicate"})
@@ -1963,6 +2054,15 @@ class Handler(BaseHTTPRequestHandler):
                     _audit_event("host-call-denied", {"path": self.path, "peer": self._peer(),
                                                       "cypher_head": cypher[:80]})
                     return self._send(403, {"ok": False, "error": err_h})
+                # FIX-1 A3: host 写通道停写 — /query 是调度器合法写通道(AgentIdentity/
+                # Engagement MERGE 等), 全局暂停期僵尸调度器的写型查询同样拦(冷读 A3: 原暂停
+                # 门只覆盖 /write/*, 经 /query 的变更语句绕过「全停写」)。判定复用
+                # WORKER_MUTATION_RE(单一真源); 只读查询放行 — 停机调查需要读图(worker 侧
+                # 本就只读, worker_query_allowed 拦变更, 零影响)。拒绝留审计可追溯。
+                if _d2d_paused() and WORKER_MUTATION_RE.search(cypher):
+                    _audit_event("host-write-paused", {"path": self.path, "peer": self._peer(),
+                                                       "cypher_head": cypher[:80]})
+                    return self._send(409, {"ok": False, "error": "d2d-paused — 全局暂停中, host 写通道已冻结(只读查询不受限)"})
             with _locked():  # V-11: 锁带 5s deadline
                 try:
                     conn = kuzu.Connection(db())
