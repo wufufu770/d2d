@@ -98,7 +98,7 @@ async function fire({ label, withEngagement, hostToken, idx }) {
 // ---- 主流程 ----
 if (!fs.existsSync(HOST_TOKEN_FILE)) throw new Error(`host token 缺失: ${HOST_TOKEN_FILE}`)
 const hostToken = fs.readFileSync(HOST_TOKEN_FILE, 'utf8').trim()
-const dvwaUp = await fetch('http://127.0.0.1/login.php', { signal: AbortSignal.timeout(8000) })
+const dvwaUp = await fetch('http://127.0.0.1/login.php', { signal: AbortSignal.timeout(8000) }) // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request — 本地受控靶（DVWA 无 https 面），http=设计内形态非降级
 if (!dvwaUp.ok) throw new Error(`DVWA 不就绪: ${dvwaUp.status}`)
 
 const r12 = await fire({ label: '证①②(预建+注入)', withEngagement: true, hostToken, idx: 1 })
