@@ -209,19 +209,35 @@ function hostAllowed(host) {
 // host 字符串比对防不住; 放行前先解一层, 解析失败或任一解析结果命中硬黑面 → fail-closed 拒绝。
 const _dnsCache = new Map()
 const _dnsLookupAll = (h) => dns.promises.lookup(h, { all: true, verbatim: true })
+// FIX-2 A4: resolve once / connect validated —— 校验解析与建连绑定合一。旧形态两步:
+// resolvedIpsAllowed(host) 校验(解析+保留段判定) → 转发点 net.connect(port, host)/
+// http.request({host}) 再对域名二次解析 —— 两次解析之间 DNS 记录可被切换(TOCTOU rebinding
+// 窗口, 冷读 A4 三转发点逐点定位)。修法: 校验通过时把**已校验的合法 IP**返回给调用方直接
+// 用于建连(转发点只解一次), 二次解析窗口消除; 企业代理转发点建连对象是代理本身(目标 DNS
+// 在代理侧), 绑定目标 IP 无意义 → 该点保持校验+登记(拍板边界: hosts 级绑定可行即做)。
+// 缓存语义保留(30s 窗, gap GW-GW23-D-001 的既有登记面不变): 缓存条目加 ips, 命中时返回
+// 与校验同源的 IP —— 校验与建连共用一次解析结果, 缓存窗内也不产生第二次解析。
+async function resolveValidatedIp(host, resolve = _dnsLookupAll) {
+  const h = normalizeHost(host)
+  if (!h) return { ok: false, ip: '' }
+  const c = _dnsCache.get(h)
+  if (c && Date.now() - c.ts < 30_000) return { ok: c.ok, ip: c.ok ? (c.ips?.[0] ?? '') : '' }
+  let ok = false
+  let ips = []
+  try {
+    const addrs = await resolve(h)
+    ips = (Array.isArray(addrs) ? addrs : []).map((a) => a?.address ?? a).filter((a) => typeof a === 'string' && a)
+    ok = ips.length > 0 && ips.every((a) => !isForbiddenTarget(a))
+  } catch { ok = false; ips = [] } // 解析失败/超时 → fail-closed
+  _capMap(_dnsCache) // 中危审计修复(9): 容量上限(旧版过期条目也永不回收)
+  _dnsCache.set(h, { ts: Date.now(), ok, ips })
+  return { ok, ip: ok ? (ips[0] ?? '') : '' }
+}
 async function resolvedIpsAllowed(host, resolve = _dnsLookupAll) {
   const h = normalizeHost(host)
   if (!h) return false
-  const c = _dnsCache.get(h)
-  if (c && Date.now() - c.ts < 30_000) return c.ok
-  let ok = false
-  try {
-    const addrs = await resolve(h)
-    ok = Array.isArray(addrs) && addrs.length > 0 && addrs.every((a) => !isForbiddenTarget(a?.address ?? a))
-  } catch { ok = false } // 解析失败/超时 → fail-closed
-  _capMap(_dnsCache) // 中危审计修复(9): 容量上限(旧版过期条目也永不回收)
-  _dnsCache.set(h, { ts: Date.now(), ok })
-  return ok
+  const r = await resolveValidatedIp(h, resolve)
+  return r.ok
 }
 const _clearDnsCache = () => _dnsCache.clear()
 // 测试注入口(mocha 直接 import 本模块, 不走 main)
@@ -293,7 +309,10 @@ const server = http.createServer(async (req, res) => {
   if (isForbiddenTarget(host)) return deny(res, host, 'metadata/link-local/CGNAT/0-net 硬黑面(H14), scope 声明也不放行')
   if (!hostAllowed(host)) return deny(res, host, 'host not in scope (V-08 egress enforcement)')
   if (!allowRate(host)) return deny(res, host, 'rate limit', 429)
-  if (!(await resolvedIpsAllowed(host))) return deny(res, host, 'DNS 解析失败或解析到保留/元数据地址(H14 fail-closed)')
+  // FIX-2 A4: resolve once / connect validated —— 校验解析返回的合法 IP 直接用于建连,
+  // 消除「校验解析→建连二次解析」的 rebinding TOCTOU 窗口(三转发点统一形态)。
+  const _rv = await resolveValidatedIp(host)
+  if (!_rv.ok) return deny(res, host, 'DNS 解析失败或解析到保留/元数据地址(H14 fail-closed)')
   audit({ event: 'http', host, path: u.pathname, method: req.method })
   try {
     // M6 企业代理链: D2D_UPSTREAM_PROXY 配置时经企业代理转发(http 代理语义 = 绝对 URL 打到代理);
@@ -302,9 +321,12 @@ const server = http.createServer(async (req, res) => {
     const upstreamFor = UPSTREAM && !isLocalHost(host) ? UPSTREAM : null
     // 连接用归一化 host(去方括号/mapped 还原后的 v4) — net.connect 不吃 "[::ffff:..]" 带括号字面量;
     // Host 头保持 u.host(URL 规范形态, v6 带方括号)。
+    // FIX-2 A4: 直连分支绑定已校验 IP(_rv.ip); 企业代理分支建连对象是代理本身(目标 DNS 在
+    // 代理侧解析, 绑定目标 IP 无意义)——该点保持校验+登记, 不构成窗口收紧缺口(代理侧有自己的
+    // 解析时刻, 本网关可见性止于 CONNECT/绝对 URL——边界登记)。
     const reqOpts = upstreamFor
       ? { host: upstreamFor.host, port: upstreamFor.port, path: `http://${u.host}${u.pathname}${u.search}`, method: req.method, headers: { ...req.headers, host: u.host } }
-      : { host, port: u.port || 80, path: u.pathname + u.search, method: req.method, headers: { ...req.headers, host: u.host } }
+      : { host: _rv.ip || host, port: u.port || 80, path: u.pathname + u.search, method: req.method, headers: { ...req.headers, host: u.host } }
     // 中危审计修复(9): 上游超时 — timeout 只报警不销毁, 必须显式 destroy → 走 error → 502
     reqOpts.timeout = UPSTREAM_TIMEOUT_MS
     const up = http.request(reqOpts, (r) => {
@@ -338,7 +360,10 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
   if (!hostAllowed(host)) { audit({ event: 'deny', host, why: 'CONNECT not in scope' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
   if (!connectPortAllowed(port, host)) { audit({ event: 'deny', host, port, why: 'CONNECT port not pinned (gap 24)' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
   if (!allowRate(host)) { sock.end('HTTP/1.1 429 Too Many Requests\r\n\r\n'); return }
-  if (!(await resolvedIpsAllowed(host))) return _sockDeny(sock, host, 'DNS 解析失败或解析到保留/元数据地址(H14 fail-closed)')
+  // FIX-2 A4: resolve once / connect validated —— 校验通过即持有已校验 IP, 直连分支绑定建连
+  // (企业代理分支建连对象是代理本身, 目标 DNS 在代理侧——保持校验+登记)。
+  const _rv = await resolveValidatedIp(host)
+  if (!_rv.ok) return _sockDeny(sock, host, 'DNS 解析失败或解析到保留/元数据地址(H14 fail-closed)')
   audit({ event: 'connect', host })
   // ---- 4.5-1 解密分支(D2D_EGRESS_MITM=1; 每连接读取 env 便于运行时切换/回归, 默认不设=不走此处) ----
   // 隧道回环到内部 TLS 服务(tls-intercept: 自签 CA + 按 SNI 动态签叶子), worker 侧 TLS 在此终结,
@@ -378,7 +403,8 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
     // 中危审计修复(9): 隧道两侧都挂超时 — 上游挂住/握手不回时销毁, socket 不再永久悬挂
     const upstreamFor = UPSTREAM && !isLocalHost(host) ? UPSTREAM : null
     if (!upstreamFor) {
-      const up = net.connect(port, host, () => {
+      // FIX-2 A4: 绑定已校验 IP 建连(_rv.ip) —— 建连不再对域名二次解析, rebinding TOCTOU 窗消除
+      const up = net.connect(port, _rv.ip || host, () => {
         up.setTimeout(0) // 隧道已建立: 解除握手超时(长连接空闲属正常, 挂死风险只在握手窗口)
         sock.write('HTTP/1.1 200 Connection Established\r\n\r\n'); up.write(head); up.pipe(sock); sock.pipe(up)
       })
@@ -451,7 +477,10 @@ async function mitmHandle(req, res) {
   if (isForbiddenTarget(host)) return deny(res, host, 'metadata/link-local/CGNAT/0-net 硬黑面(H14), scope 声明也不放行')
   if (!hostAllowed(host)) return deny(res, host, 'host not in scope (V-08 egress enforcement)')
   if (!allowRate(host)) return deny(res, host, 'rate limit', 429)
-  if (!(await resolvedIpsAllowed(host))) return deny(res, host, 'DNS 解析失败或解析到保留/元数据地址(H14 fail-closed)')
+  // FIX-2 A4: resolve once / connect validated(解密面第三转发点) —— 校验 IP 直接用于 https
+  // 转发, servername 保持目标 host(TLS SNI 由 host 名驱动, 证书校验语义零变化)。
+  const _rv = await resolveValidatedIp(host)
+  if (!_rv.ok) return deny(res, host, 'DNS 解析失败或解析到保留/元数据地址(H14 fail-closed)')
   let reqBytes = 0, resBytes = 0
   const started = Date.now()
   // T2-2b-1: 头+体捕获(体上限 MITM_TXN_BODY_CAP, 只多记 truncated 标记) — 仅进加密事务文件,
@@ -464,7 +493,9 @@ async function mitmHandle(req, res) {
   })
   const audited = (status) => audit({ event: 'mitm-http', host, method: req.method, path, status, reqContentType: String(req.headers['content-type'] ?? ''), reqBytes, resBytes })
   try {
-    const reqOpts = { host, port: u.port || 443, path, method: req.method, headers: { ...req.headers, host: u.host }, rejectUnauthorized: false }
+    // FIX-2 A4: host=已校验 IP(建连不二次解析); servername=目标 host(TLS SNI 保真——证书
+    // 校验/虚拟主机路由语义与域名建连完全一致, 仅解析时刻收敛为校验那一次)。
+    const reqOpts = { host: _rv.ip || host, servername: host, port: u.port || 443, path, method: req.method, headers: { ...req.headers, host: u.host }, rejectUnauthorized: false }
     // 中危审计修复(9)同口径: 上游超时 — timeout 只报警不销毁, 必须显式 destroy → 走 error → 502
     reqOpts.timeout = UPSTREAM_TIMEOUT_MS
     const up = https.request(reqOpts, (r) => {
@@ -505,4 +536,4 @@ if (IS_MAIN) {
   server.listen(PORT, '127.0.0.1', () => console.log(`[egress-gateway] :${PORT} allow=${[...STATIC_ALLOW]} + dynamic scope from ${GRAPHS.join(',')}`))
 }
 
-export { normalizeHost, isForbiddenTarget, hostAllowed, allowRate, resolvedIpsAllowed, refreshScope, server, _setDynScope, _clearDnsCache, UPSTREAM_TIMEOUT_MS, MAP_CAP, buckets as _buckets, _dnsCache, noteUpstreamStatus, parseRetryAfter, mitmHandle, logFile as _auditLog, MITM_ENC_DIR as _mitmEncDir, MITM_TXN_BODY_CAP, connectPortAllowed, _setConnectPorts, _connectPortsView }
+export { normalizeHost, isForbiddenTarget, hostAllowed, allowRate, resolvedIpsAllowed, resolveValidatedIp, refreshScope, server, _setDynScope, _clearDnsCache, UPSTREAM_TIMEOUT_MS, MAP_CAP, buckets as _buckets, _dnsCache, noteUpstreamStatus, parseRetryAfter, mitmHandle, logFile as _auditLog, MITM_ENC_DIR as _mitmEncDir, MITM_TXN_BODY_CAP, connectPortAllowed, _setConnectPorts, _connectPortsView }
