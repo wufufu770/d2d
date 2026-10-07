@@ -14,7 +14,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createXRingRunner, stripGraphTokenEnv } from './runner.mjs'
+import { createXRingRunner, stripGraphTokenEnv, ensureXRingEngagement, releaseXRingEngagement } from './runner.mjs'
 import { startMonitor, collectTranscriptUsage, readEvents, sessionsBucketFor, appendEvent, BUDGET_LIMITS } from './monitor.mjs'
 import { reflow } from './reflow.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
@@ -112,7 +112,18 @@ for (const [k, cy] of Object.entries({
 log('图内基线:', JSON.stringify(baseCounts))
 
 // ---- 发射（token 剥除 env 下直调 runner——系统正规通道）----
+// XR-G1（拍板 1 方案 A）: 发射预建 engagement 上下文——图内真实节点（scope=受控靶 127.0.0.1）
+// + worker env P2P_ENGAGEMENT 精准归属（resolveEngagement ①路径）→ OPSEC 门放行靶集内、
+// 照拦靶集外（门判据零触碰）。建立失败=发射中止（S3 停下留证——不降级为无上下文发射）。
 fs.mkdirSync(WORKSPACE, { recursive: true })
+const xringEng = await ensureXRingEngagement({
+  graphdUrl: GRAPHD_URL, hostToken, runId: RUN_ID, scope: '127.0.0.1',
+  target: 'DVWA http://127.0.0.1 (X-Ring 受控靶)',
+  objective: 'XR-P4 阶段 B X-Ring 受控首跑（靶集绑定, 时限=run 预算窗, runId 关联）',
+})
+appendEvent(EVENTS, { event: 'xring-eng-created', name: xringEng.name, scope: xringEng.scope, runId: RUN_ID, ts: new Date().toISOString() })
+log('XR-G1 engagement 预建:', JSON.stringify(xringEng))
+process.env.P2P_ENGAGEMENT = xringEng.name // 编排进程 env → adapter 拷贝 → worker 会话（resolveEngagement ①路径）
 const restore = stripGraphTokenEnv(RECORD)
 const runner = createXRingRunner({ home: path.join(REPO, 'plugin', 'pentest-dsh') })
 const started = runner.start({ runId: RUN_ID, workspace: WORKSPACE, recordRoot: RECORD, extraTask: EXTRA_TASK })
@@ -145,7 +156,17 @@ const result = await Promise.race([
 const elapsedMs = Date.now() - t0
 mon.stop()
 restore()
+delete process.env.P2P_ENGAGEMENT
 log(`worker 终态: ${result.kind} code=${result.code ?? '-'} 耗时=${(elapsedMs / 60000).toFixed(1)}min 熔断=${termInfo ? termInfo.reason : 'no'}`)
+// XR-G1 收尾释放: 冻结+清租约（stopAll 同款终态语义——不留 active 僵尸, adoptRequested 防线双保险）
+try {
+  await releaseXRingEngagement({ graphdUrl: GRAPHD_URL, hostToken, name: xringEng.name })
+  appendEvent(EVENTS, { event: 'xring-eng-released', name: xringEng.name, runId: RUN_ID, ts: new Date().toISOString() })
+  log('XR-G1 engagement 释放:', xringEng.name, '→ frozen')
+} catch (e) {
+  log('XR-G1 释放失败（如实留痕, 不阻塞结果处理）:', String(e?.message ?? e).slice(0, 160))
+  appendEvent(EVENTS, { event: 'xring-eng-release-failed', name: xringEng.name, runId: RUN_ID, err: String(e?.message ?? e).slice(0, 160) })
+}
 
 // ---- 五项观察②③④: PDEATHSIG 孤儿检查 / wall-clock / 会话态语法 ----
 let orphans = []
@@ -195,6 +216,7 @@ log('图内对比（基线→后）:', JSON.stringify({ baseCounts, afterCounts,
 const summary = {
   runId: RUN_ID, headSha: execFileSync('git', ['-C', REPO, 'rev-parse', 'HEAD']).toString().trim(),
   startedAt: new Date(t0).toISOString(), finishedAt: new Date().toISOString(),
+  engagement: { name: xringEng.name, scope: xringEng.scope, mode: 'XR-G1 预建（方案 A）' },
   budget: { maxHours: MAX_HOURS, maxTokens: MAX_TOKENS, elapsedMin: +(elapsedMs / 60000).toFixed(1), tokensUsed: usage.totalTokens, terminated: termInfo?.reason ?? null },
   worker: { kind: result.kind, code: result.code ?? null, pid: workerPid },
   observations: { envScan, orphans, wallClockMs: elapsedMs, sessionParse: { totalTokens: usage.totalTokens, files: usage.files, idleMs: usage.idleMs } },
