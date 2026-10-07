@@ -467,3 +467,13 @@ allowlist 落地（部署态，用户模型政策已拍板）：roles.xring.allo
 关键裁决：**方案 A 落地=图内真实节点而非旁路 env**（resolveEngagement 的 P2P_ENGAGEMENT env 优先路径 + 图内 active 节点=既有机制零对接成本——"上下文只能由 dsh 主会话建立"的架构性不合预判被证伪：engagement 是图内数据，任何 host token 持有者可按授权建立）；** leased_by 占位是防认领的关键**（xring engagement 在跑窗内是 active 无主态——web 调度器 adoptRequested 15s 轮询会认领跑起来；占位租约=新鲜他属→不认领，release 清租约完成终态）
 教训沉淀：**首跑发现→修复→三证回归的闭环仅用一发修复批**（XR-G1/G2 从定位到双向验证 ~1 天——真首跑的价值兑现路径：系统发现定位准了修复就薄）；**三证 smoke 的负例形态=保留段目标**（203.0.113.9 TEST-NET-3——worker 被指示尝试真实动作但零外联风险，门拦截在 pre-exec 层命令根本没出）
 开放项：第二次真首跑（XR-G1 修复后自主测试效能验证——A 级 findings 的真实产出）；xring engagement 面板可见性（frozen 后在面板历史区可查——够用不扩）；LBD-2 观察期；冷读余项——排批归用户
+
+## 2026-10-07 · XR-P4b 第二次真首跑批（效能验证——同协议对照重跑，A 级产出+verify 链真实运行+token 真实计账）
+底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **428**（单轨豁免——零代码改动）/ mocha **2151+1 pending** / panel **96** 全持平
+产出：**对照重跑执行**（run-xrp4b-10071527：对照硬约束全兑现[同任务书逐字/同靶集/同预算 0.5h/100 万/同 U2 queue 档/冷启动保持——第一次三条 lessons quarantined 未 promote]）+**双轮对照表回填**（xrp4-acceptance.md 阶段 B 第二次首跑全段）+**效能结论正式答卷**
+双轮对照核心数字：A 级 findings **0→9**（全部真实命中 DVWA 漏洞模块：UNION 注入取 users 表/盲注/OS 命令注入等 critical/high，target 形态合规）/ verifyRunner **未触发→真实运行 9 次**（verdict 全 manual——步骤叙述形态不可机械解析转人工，fail-safe 方向不伪造通过）/ token 计账 **0→41657/100 万**（G2 复活）/ wall-clock 4.6→5.7min（真实探索）/ bash 调用 **107→253**（触达释放）
+engagement 生命周期闭环：xring-eng-created/released 事件成对落 events.jsonl，图终态 frozen 零 active 僵尸（泄漏止损规则未触发）；五项观察第二次数据点全采（envScan hits=[] 两轮 A7 实战通过/孤儿 0/熔断未触发双路径在线/R4c findings delta=0 如实记录）
+XR-G3（新系统级发现，记开放项不修）：A 级工件 steps 叙述形态（"Authenticate to …"）vs verifyRunner 机械语法（"METHOD /path"）接口缝隙——9/9 manual 转人工；verify 通过率 0/9 根因=工件格式与重放器解析的缝隙而非通道缺陷（链路真实运行）；修复两选一（任务书格式指引/verifyRunner 叙述降级解析）归用户排批——不硬凑数字
+关键裁决：**held=9 是 queue 档语义的正确执行**（A 级不经验证不回流——第一次首跑拍板 2 的硬线在真实 A 级产出下的首次实战兑现：宁可人工不假通过）；**效能归因边界**（触达+发现能力已由 XR-G1 修复完整释放=效能问题答卷成立；残余 0/9 是新独立缝隙 XR-G3——归因清晰不混谈）
+教训沉淀：**对照实验的可比性靠"差异唯一化"纪律保住**（同任务书逐字/冷启动不 promote/护栏参数不调——唯一差异=修复本身，效能归因才唯一）；**真实 A 级产出暴露的接口缝隙是 smoke 测不出的**（三证 smoke 的 probes 是编排任务书格式，worker 自主工件的叙述形态第一次显形——效能验证批的价值）
+开放项：XR-G3 修复批（工件格式指引或 verifyRunner 降级解析——A 级 verify 通过率提升的前置）+第二次 held=9 的人工验收（9 条 manual 发现的真伪判定=宿主侧工作）；LBD-2 观察期中点（~10-11 落窗临近）；冷读余项——排批归用户
