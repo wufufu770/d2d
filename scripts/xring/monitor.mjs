@@ -29,11 +29,15 @@ export function budgetCheck({ elapsedMs, tokensUsed, maxHours, maxTokens }) {
 
 /**
  * 转录单行 → usage.totalTokens（非 usage 行/坏行 = 0）。
+ * XR-G2 修复: dsh v3 会话 assistant/message 行的 usage 嵌套于 `data.usage`（XR-P4 首跑实证:
+ * 16 条 usage 行全在 data.usage, 顶层读 0 → token 熔断路径本形态盲, 计账恒 0）。兼容两层:
+ * 顶层 usage 优先（既有语义零变化——旧会话/其他行形态）, 缺失时回退 data.usage。
  */
 export function parseUsageLine(line) {
   try {
     const j = JSON.parse(line)
-    return Number.isFinite(j?.usage?.totalTokens) ? j.usage.totalTokens : 0
+    const u = j?.usage ?? j?.data?.usage
+    return Number.isFinite(u?.totalTokens) ? u.totalTokens : 0
   } catch {
     return 0
   }
