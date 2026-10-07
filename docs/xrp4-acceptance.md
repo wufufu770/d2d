@@ -110,3 +110,46 @@ propose_direction=7 · burp_comparer/decoder/intruder=3 · apk-reverse=3 · crea
 **通道机制验收达成**（发射/预算/回流/图写/审计/隔离/白名单全链真实走通，零越界零违规）；
 **自主测试效能未达成**（XR-G1 阻断——首跑的侦察假设链[14 条]与认知失败留痕[3 条]证明模型
 质量在位，系统门是唯一瓶颈）。XR-G1 修复批=真首跑成果转化的前置。
+
+## 阶段 B 第二次首跑（效能验证——XR-G1 修复后同协议对照重跑，2026-10-07 · run-xrp4b-10071527）
+
+> 对照硬约束兑现：同任务书（EXTRA_TASK 逐字零改动）/同靶集（DVWA 重置后 200）/同预算窗
+> （0.5h/100 万 tok）/同 U2 档（queue 缺省）——唯一差异=XR-G1（engagement 上下文预建）
+> +XR-G2（token 计账修复）。第一次回流三条 lessons 保持 quarantined 未 promote（冷启动
+> 归因唯一化）。
+
+### 双轮对照表（效能答卷核心）
+| 环节 | 第一次（run-…10070540） | 第二次（run-…10071527） | 读法 |
+|------|------------------------|------------------------|------|
+| engagement 上下文 | 无（XR-G1 缺口） | 预建 xring-run-xrp4b-10071527→frozen 成对 | 修复在位 |
+| 触达能力 | 0（OPSEC 全拦，连靶场未触达） | **DVWA 实际触达+9 模块探索**（bash 253 次） | 效能解锁 |
+| A 级 findings 产出 | **0** | **9**（F-1~F-9：UNION 注入取 users 表/盲注/命令注入…全部 critical/high，target 形态正确） | **效能答卷主数字** |
+| verifyRunner 运行 | 未触发（零 A 级工件） | **真实运行 9 次**——verdict 全 manual（步骤叙述形态不可机械解析，转人工未伪造入图=queue 档语义正确） | 链路通、格式缝隙（XR-G3 开放项） |
+| 回流 | written 17（C3+B14）held 0 | written 17（C5+B12）held 9 | held=A 级 manual 留人工 |
+| 图内 delta | exp+3/hyp+14/find+0 | exp+5/hyp+12/find+0 | findings+0=manual 未入图（正确） |
+| token 计账 | 0（XR-G2 盲区；实耗估 ~24 万） | **41657/1000000**（修复后真实计账在线） | G2 复活实证 |
+| wall-clock | 4.6min（撞门后诚实转向） | 5.7min（真实探索） | 预算窗 19%，自主收敛 |
+| 熔断 | 未触发 | 未触发（时长+token 双路径在线） | 护栏正常 |
+| env 白名单（观察①） | hits=[] | hits=[] | A7 两轮实战通过 |
+| 孤儿 | 0 | 0 | PDEATHSIG 正常 |
+| engagement 泄漏 | N/A | 0（created/released 事件成对，图终态 frozen） | 生命周期闭环 |
+
+### 效能结论（正式答卷）
+**XR-G1 修复=效能问题的正确答案**：触达能力与发现能力完整释放（0→9 条真实 A 级发现，
+全部命中 DVWA 真实漏洞模块，target/repro 工件形态合规）；**残余缝隙=XR-G3（新开放项）**：
+worker 步骤产出为叙述式（"Authenticate to …"/"Authenticated session."），verifyRunner
+机械重放语法要求"METHOD /path"形态——9 条全 manual 转人工（fail-safe 方向正确：不伪造
+verify 通过）。verify 通过率 0/9 的根因=工件步骤格式与重放器解析的接口缝隙，非通道缺陷
+（链路本身真实运行）；修复方向=prompt 工件格式指引或 verifyRunner 叙述步骤降级解析——
+归验收侧排批，不硬凑数字。
+
+### 三项收口触发实录（第二次）
+disputed 仲裁未触发（A 级全 manual 未入图→无双签链活动）；暂停门未触发；env 白名单
+两轮实战通过。能力统计对照读法：第一次被拦的 burp 族 29 次→第二次 burp_repeater 等
+各 1 次+探索主通道 bash 107→253（受抑需求向 bash 重放释放；burp 低频主因=worker 自主
+选型 curl 形态，如实记录不美化）。
+
+### XR-G3（新系统级发现——记开放项不修）
+A 级工件 steps 叙述形态 vs verifyRunner 机械语法（"METHOD /path"）的接口缝隙：9/9 manual。
+fail-safe 方向（宁可人工不假通过）；修复=两选一（任务书工件格式指引 / verifyRunner 叙述
+降级解析），设计权衡归用户排批。

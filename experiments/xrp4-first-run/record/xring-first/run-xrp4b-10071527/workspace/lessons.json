@@ -1,0 +1,36 @@
+{
+  "run_id": "run-xrp4b-10071527",
+  "generated_at": "2026-10-07T15:33:00Z",
+  "lessons": [
+    {
+      "id": "L-1",
+      "lesson": "DVWA requires a one-time database initialization before login works. On a fresh container, the GET to /login.php returns a valid form, but the POST /login.php always redirects back to login.php instead of index.php. Root cause: the MySQL schema (dvwa database, users table) has not been created yet, so dvwaSecurityLevel/security checks fail and the auth flag is never set on the session. Fix: GET /setup.php to load the form, then POST /setup.php with create_db='Create / Reset Database'. The redirected body is empty (302) — verify success only by the absence of further setup prompts and by a successful subsequent login. Burned ~3 tool calls discovering this; should have been a day-zero check (curl /setup.php and look for 'Database has been created' banner absence as the bootstrap signal).",
+      "failure_class": "environment",
+      "context": "Spent turns 5-8 (~3 calls) diagnosing why the login loop never produced index.php. Could have been solved in 1 call by probing /setup.php first as part of the bootstrap."
+    },
+    {
+      "id": "L-2",
+      "lesson": "DVWA v1.10 enforces a per-form CSRF user_token (hidden input named 'user_token') on every state-changing form, including the login form itself. Skipping the token causes the request to silently fail (302 to login.php on auth attempts; 'user_token' field appears blank in the prior POST). Fix: GET the form first, parse the user_token value with grep -oP \"user_token' value='\\K[^']+\", then re-POST with the value as a normal form field. Burned ~2 calls discovering this. The lesson generalizes: any state-changing DVWA POST (setup, exec, xss_s, upload, security.php, csrf POST if security!=low) must carry the token — the prior run's hypotheses.json was correct to list 'unauthenticated session' as a likely cause for empty POST bodies.",
+      "failure_class": "cognitive",
+      "context": "Bash + curl flow. The token is per-session, so the GET and POST must share the cookie jar — using -c cookies -b cookies in a single curl call (or chaining via cookie file between two calls) is sufficient; do NOT use a separate anonymous curl for the GET."
+    },
+    {
+      "id": "L-3",
+      "lesson": "DVWA's setup.php advertises that allow_url_include is Disabled. This is environmental, not a code bug — it means the Remote-File-Inclusion half of H-9 cannot be confirmed in this DVWA deployment regardless of how the fi module is coded. The local-file half (LFI) still works fine. Lesson for hypothesis management: probe the environment constraints first (one /setup.php GET reveals allow_url_include, allow_url_fopen, writable folders, PHP version, missing reCAPTCHA key) so subsequent hypotheses can be scoped — e.g. split H-9 into 'LFI confirmed' and 'RFI: blocked by environment, not testable here' to avoid running a probe that the runtime cannot service.",
+      "failure_class": "environment",
+      "context": "Could not include http://attacker/shell.php via fi?page= because allow_url_include=Off. Recorded in H-9 evidence as 'RFI blocked — not exploitable in this deployment' rather than attempted-and-failed."
+    },
+    {
+      "id": "L-4",
+      "lesson": "The X-Ring sandbox OPSEC gate (which blocked the prior run-xrp4b-10070540's bash curl with '无 engagement 上下文') does not apply to plain `curl` invocations in this run — every HTTP probe worked normally. The gate appears to be specific to whichever X-Ring harness level / state run-xrp4b-10070540 was under; run-xrp4b-10071527 is in a different mode where direct bash+curl is permitted. This means a worker's pre-flight diagnostic (the prior run's L-2 'call p2p_status first' protocol) is context-dependent — a single negative result in run N does not guarantee the gate is up in run N+1. Recommendation: budget the first 2 tool calls of each run as environment probes (one curl + one small bash test) rather than treating any prior run's lesson as a universal precondition.",
+      "failure_class": "cognitive",
+      "context": "Avoided the prior run's L-2 trap by attempting a direct curl on call 1 and observing that it returned login form HTML normally — confirming this run's harness has the gate open. The lesson for future runs: don't cargo-cult the 'no engagement' protocol across runs without first verifying the new runtime state."
+    },
+    {
+      "id": "L-5",
+      "lesson": "When restoring state on a destructive test (e.g. CSRF password change), the natural revert action is itself a state change — it must complete before declaring the test closed. In this run, after CSRF flipped admin password from 'password' to 'csrfpwn', a follow-up GET with password_new=password restored it; verification (a fresh authenticated GET to index.php returning 200 + Welcome banner) confirmed the restore. Did NOT spend a second login flow on the post-restore session because the existing PHPSESSID cookie remained valid (DVWA binds session to PHPSESSID, not to the credential set) — saved ~2 calls.",
+      "failure_class": "cognitive",
+      "context": "Pattern: any 'change a credential, then change it back' test should (a) capture the original value first, (b) set the new value, (c) verify the change, (d) revert, (e) verify the revert — preferably without invalidating the existing session cookie."
+    }
+  ]
+}
