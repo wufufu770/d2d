@@ -1,114 +1,119 @@
 {
- "runId": "run-xrp4b-10070540",
- "headSha": "e3735ac06a56437daee41536475ba1dbc1c77faf",
- "startedAt": "2026-10-07T05:42:06.435Z",
- "finishedAt": "2026-10-07T05:46:46.648Z",
+ "runId": "run-xrp4b-10071527",
+ "headSha": "3b0a2b934183bc7602e26f8f872ed4869dc37c44",
+ "startedAt": "2026-10-07T15:29:26.833Z",
+ "finishedAt": "2026-10-07T15:35:11.380Z",
+ "engagement": {
+  "name": "xring-run-xrp4b-10071527",
+  "scope": "127.0.0.1",
+  "mode": "XR-G1 预建（方案 A）"
+ },
  "budget": {
   "maxHours": 0.5,
   "maxTokens": 1000000,
-  "elapsedMin": 4.6,
-  "tokensUsed": 0,
+  "elapsedMin": 5.7,
+  "tokensUsed": 41657,
   "terminated": null
  },
  "worker": {
   "kind": "exited",
   "code": 0,
-  "pid": 600343
+  "pid": 705149
  },
  "observations": {
   "envScan": {
    "hits": [],
-   "scannedAt": "2026-10-07T05:42:06.434Z",
+   "scannedAt": "2026-10-07T15:29:26.833Z",
    "note": "worker pid+一层子进程 /proc/environ 扫描（P2P_HOST_*|HOST_*TOKEN/KEY/SECRET）"
   },
   "orphans": [],
-  "wallClockMs": 278306,
+  "wallClockMs": 342856,
   "sessionParse": {
-   "totalTokens": 0,
-   "files": 3,
-   "idleMs": 811.57666015625
+   "totalTokens": 41657,
+   "files": 1,
+   "idleMs": 1110.056884765625
   }
  },
  "capabilityLog": [
   {
    "tool": "bash",
-   "count": 107
+   "count": 253
   },
   {
-   "tool": "glob",
-   "count": 63
+   "tool": "todo_write",
+   "count": 17
   },
   {
    "tool": "read",
-   "count": 27
-  },
-  {
-   "tool": "burp_repeater",
-   "count": 19
+   "count": 13
   },
   {
    "tool": "write",
-   "count": 19
-  },
-  {
-   "tool": "p2p_graph",
-   "count": 15
-  },
-  {
-   "tool": "p2p_status",
-   "count": 11
-  },
-  {
-   "tool": "subagent",
-   "count": 11
-  },
-  {
-   "tool": "burp_http_log",
-   "count": 7
-  },
-  {
-   "tool": "burp_scan_status",
-   "count": 7
-  },
-  {
-   "tool": "p2p_js_scan",
-   "count": 7
-  },
-  {
-   "tool": "propose_direction",
-   "count": 7
+   "count": 13
   },
   {
    "tool": "apk-reverse",
-   "count": 3
+   "count": 1
   },
   {
    "tool": "burp_comparer",
-   "count": 3
+   "count": 1
   },
   {
    "tool": "burp_decoder",
-   "count": 3
+   "count": 1
+  },
+  {
+   "tool": "burp_http_log",
+   "count": 1
   },
   {
    "tool": "burp_intruder",
-   "count": 3
+   "count": 1
+  },
+  {
+   "tool": "burp_repeater",
+   "count": 1
+  },
+  {
+   "tool": "burp_scan_status",
+   "count": 1
   },
   {
    "tool": "create_goal",
-   "count": 3
+   "count": 1
   },
   {
    "tool": "edit",
-   "count": 3
+   "count": 1
   },
   {
    "tool": "exit_plan_mode",
-   "count": 3
+   "count": 1
   },
   {
    "tool": "get_goal",
-   "count": 3
+   "count": 1
+  },
+  {
+   "tool": "glob",
+   "count": 1
+  },
+  {
+   "tool": "grep",
+   "count": 1
+  },
+  {
+   "tool": "interrupt_agent",
+   "count": 1
+  },
+  {
+   "tool": "job_kill",
+   "count": 1
+  },
+  {
+   "tool": "job_list",
+   "count": 1
   }
  ],
  "reflow": {
@@ -127,6 +132,16 @@
    {
     "level": "C",
     "id": "L-3",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-4",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-5",
     "status": "quarantined"
    },
    {
@@ -176,37 +191,84 @@
    {
     "level": "B",
     "id": "H-12"
-   },
-   {
-    "level": "B",
-    "id": "H-13"
-   },
-   {
-    "level": "B",
-    "id": "H-14"
    }
   ],
-  "held": [],
+  "held": [
+   {
+    "level": "A",
+    "id": "F-1",
+    "verdict": "manual",
+    "evidence": "步骤 0: 不可解析形态（\"Authenticate to http://127.0.0.1/login.php as admin/password\"）——歧义留人工验收"
+   },
+   {
+    "level": "A",
+    "id": "F-2",
+    "verdict": "manual",
+    "evidence": "步骤 0: 不可解析形态（\"Authenticated session with PHPSESSID cookie.\"）——歧义留人工验收"
+   },
+   {
+    "level": "A",
+    "id": "F-3",
+    "verdict": "manual",
+    "evidence": "步骤 0: 不可解析形态（\"Authenticated session with PHPSESSID cookie.\"）——歧义留人工验收"
+   },
+   {
+    "level": "A",
+    "id": "F-4",
+    "verdict": "manual",
+    "evidence": "步骤 0: 不可解析形态（\"Authenticated session.\"）——歧义留人工验收"
+   },
+   {
+    "level": "A",
+    "id": "F-5",
+    "verdict": "manual",
+    "evidence": "步骤 0: 不可解析形态（\"Authenticated session.\"）——歧义留人工验收"
+   },
+   {
+    "level": "A",
+    "id": "F-6",
+    "verdict": "manual",
+    "evidence": "步骤 0: 不可解析形态（\"Authenticated session.\"）——歧义留人工验收"
+   },
+   {
+    "level": "A",
+    "id": "F-7",
+    "verdict": "manual",
+    "evidence": "步骤 0: 不可解析形态（\"Authenticated session. Fetch a fresh user_token from GET /vu\"）——歧义留人工验收"
+   },
+   {
+    "level": "A",
+    "id": "F-8",
+    "verdict": "manual",
+    "evidence": "步骤 0: 不可解析形态（\"Authenticated session.\"）——歧义留人工验收"
+   },
+   {
+    "level": "A",
+    "id": "F-9",
+    "verdict": "manual",
+    "evidence": "步骤 0: 不可解析形态（\"Authenticated session.\"）——歧义留人工验收"
+   }
+  ],
   "errors": []
  },
  "graphDelta": {
   "baseCounts": {
    "findings": 777,
-   "experiences": 9,
-   "hypotheses": 435,
-   "quarantined": 9
-  },
-  "afterCounts": {
-   "findings": 777,
    "experiences": 12,
    "hypotheses": 449,
    "quarantined": 12
   },
+  "afterCounts": {
+   "findings": 777,
+   "experiences": 17,
+   "hypotheses": 461,
+   "quarantined": 17
+  },
   "delta": {
    "findings": 0,
-   "experiences": 3,
-   "hypotheses": 14,
-   "quarantined": 3
+   "experiences": 5,
+   "hypotheses": 12,
+   "quarantined": 5
   }
  }
 }
