@@ -43,18 +43,25 @@
     /** WRAP-2 回灌两路(verified 专用, 拍板 1): 显式两步确认(arm→confirm 防误触)→
      *  POST /d2d/api/adjudicate(kind=finding; 后端分流 revoke|false_positive;
      *  host-only+审计+既有门在 graphd 校验)。revoke=隔离待裁(可重开);
-     *  false_positive=拒真终态不可逆。 */
+     *  false_positive=拒真终态不可逆。
+     *  FIX-1 A1 仲裁分支: dual_sign='disputed' 行(双签不一致留人工)显示
+     *  disputed_confirm(人工确认维持第一签→signed+verified)/disputed_reject(人工否决→
+     *  rejected 终态)两钮 — 同组件同审计形态, 只扩入口不重设计; 门与审计在 graphd。 */
     function AdjudicateOps({ f, refresh }) {
       const [reason, setReason] = useState('')
       const [arm, setArm] = useState(null)
       const [busy, setBusy] = useState(false)
       const [err, setErr] = useState(null)
       const [done, setDone] = useState(null)
-      if (f.state !== 'verified') return null
+      const disputed = f.dual_sign === 'disputed'
+      if (f.state !== 'verified' && !disputed) return null
       const go = async (action) => {
         setBusy(true); setErr(null)
         try {
-          const fallback = action === 'revoke' ? 'panel 撤销: 复验未复现, 隔离待裁' : 'panel 标假阳性: 鉴权档位/证据复核不成立'
+          const fallback = action === 'revoke' ? 'panel 撤销: 复验未复现, 隔离待裁'
+            : action === 'false_positive' ? 'panel 标假阳性: 鉴权档位/证据复核不成立'
+            : action === 'disputed_confirm' ? 'panel 仲裁确认: 双签争议人工复核, 维持第一签结论'
+            : 'panel 仲裁否决: 双签争议人工复核, 第一签结论不成立'
           await postJson('adjudicate', { kind: 'finding', action, id: f.id, operator: 'panel', reason: (reason.trim() || fallback).slice(0, 80) })
           setDone(action); setArm(null); setReason('')
           refresh()
@@ -65,11 +72,18 @@
         disabled: busy,
         onClick: () => (arm === action ? go(action) : setArm(action)),
       }, arm === action ? `确认${label}?(再点一次)` : label)
+      const doneMsg = done === 'revoke' ? '已回灌(撤销→isolated 可重开)'
+        : done === 'false_positive' ? '已回灌(假阳性→rejected 终态)'
+        : done === 'disputed_confirm' ? '已仲裁(确认→signed+verified 维持结论)'
+        : done === 'disputed_reject' ? '已仲裁(否决→rejected 终态)' : null
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '4px' } },
         h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' } },
-          btn('revoke', '回灌·撤销(隔离待裁)', false),
-          btn('false_positive', '回灌·标假阳性(终态不可逆)', true),
-          h('span', panel.muted(0.45), 'host-only · 全量审计留痕')),
+          disputed
+            ? [btn('disputed_confirm', '仲裁·确认(维持第一签→verified)', false),
+               btn('disputed_reject', '仲裁·否决(→rejected 终态)', true)]
+            : [btn('revoke', '回灌·撤销(隔离待裁)', false),
+               btn('false_positive', '回灌·标假阳性(终态不可逆)', true)],
+          h('span', panel.muted(0.45), disputed ? '双签 disputed · host-only · 人工身份审计' : 'host-only · 全量审计留痕')),
         h('input', {
           ...panel.input({ flex: 1 }),
           placeholder: '裁决理由(回灌必填, 缺省自动填; 1-80 字符)',
@@ -78,7 +92,7 @@
           onChange: (ev) => setReason(ev.target.value),
         }),
         err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null,
-        done ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-ok)' } }, `已回灌(${done === 'revoke' ? '撤销→isolated 可重开' : '假阳性→rejected 终态'}); 审计 operator=panel`) : null)
+        done ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-ok)' } }, `${doneMsg}; 审计 operator=panel`) : null)
     }
 
     /** 人工裁决: 合法转移按钮 + reason 输入 → POST /d2d/api/transition(actor=panel)。 */

@@ -66,7 +66,7 @@ const Q = {
   workersByEng: `MATCH (a:AgentIdentity) WHERE a.status = 'running' RETURN a.eng AS eng, count(a) AS n`,
   agents: `MATCH (a:AgentIdentity) WHERE a.eng = $eng RETURN a.worker_id AS worker_id, a.ring AS ring, a.chain AS chain, a.status AS status, a.checkpoint AS checkpoint, a.todo AS todo, a.updated_at AS updated_at ORDER BY coalesce(a.updated_at, '') DESC LIMIT ${MAX.workers}`,
   findingsByState: `MATCH (f:Finding) WHERE f.eng = $eng RETURN f.gate_status AS state, count(f) AS n`,
-  findingsList: `MATCH (f:Finding) WHERE f.eng = $eng RETURN f.id AS id, f.title AS title, f.severity AS severity, f.cvss AS cvss, f.gate_status AS state, f.category AS category, f.ts AS ts, f.verified_at AS verified_at, f.last_transition AS last_transition ORDER BY coalesce(f.ts, '') DESC LIMIT ${MAX.findings}`,
+  findingsList: `MATCH (f:Finding) WHERE f.eng = $eng RETURN f.id AS id, f.title AS title, f.severity AS severity, f.cvss AS cvss, f.gate_status AS state, f.category AS category, f.ts AS ts, f.verified_at AS verified_at, f.last_transition AS last_transition, f.dual_sign AS dual_sign ORDER BY coalesce(f.ts, '') DESC LIMIT ${MAX.findings}`,
   // WRAP-2 #18: 幻觉抽检人口=Experience 表 quarantined 隔离池(与 ExperienceWeight 先验表异表)——
   // 面板抽检浏览面数据源; 裁决回流经 /write/adjudicate(experience revoke)。
   quarantine: `MATCH (x:Experience) WHERE x.status='quarantined' RETURN x.id AS id, x.title AS title, x.created_at AS created_at ORDER BY coalesce(x.created_at, '') DESC LIMIT 12`,
@@ -1360,6 +1360,9 @@ export async function buildSnapshot(query, { fleet = null, runEvents = null, mod
         ts: String(f?.ts ?? ''),
         verified_at: String(f?.verified_at ?? ''),
         last_transition: cap(f?.last_transition, MAX.traj),
+        // FIX-1 A1: 双签态透出 — disputed 行的仲裁入口显示条件(AdjudicateOps 分流; 其余行
+        // 恒 ''/pending/signed 等, 零消费零影响)
+        dual_sign: String(f?.dual_sign ?? ''),
       })),
     },
     agents: markZombie((agents ?? []).map((a) => ({
