@@ -20,11 +20,11 @@
   gates 37127595793/dsh-compat 37127595782+底账顺延笔 f9f1148c 三绿；本批收官 run 以
   `gh run list` 实测为准——CI 绿以**分支 push** 为准，tag push 仅触发 ci.yml
   [gates/dsh-compat 的 push.branches 过滤不含 tag refs，.github/workflows on: 实测]）
-- 测试基线（FIX-1 时点更新）：pytest **428**（**双轨 kuzu/ladybug 各 428 两轨等值**——
-  生产代码批双轨强制；前值链 T4-3-4 414/1971 → KEYS-1 422/2053 → WF-1 2099 → WF-2 2122
-  → FIX-1 428[+6 收敛性/仲裁/暂停门]见各批 ✅ 段）/ mocha **2122+1 pending** / panel **96**
-  （口径 = `pytest tests/` 全目录双轨 / `npx mocha "test/*.test.mjs"`[CI 同款——`mocha test/`
-  目录参数在 mocha 12 下仅 13 例非全量] / panel `npm test`）
+- 测试基线（FIX-2 时点更新）：pytest **428**（**FIX-2 单轨豁免成立：graphd 零 diff**——改动面
+  =scheduler/xring/egress/test；kuzu 轨全量跑作回归核实。FIX-1 时点曾双轨 kuzu/ladybug 各 428
+  等值）/ mocha **2145+1 pending**（+23: A7 env 断言 2+A2 四例+A8 误归属负例 5+A4 绑定双证 2
+  +B10 forbidden-target 6+lease 直调 4+B7 既有例内加断言）/ panel **96**
+  （口径 = `pytest tests/` 全目录 / `npx mocha "test/*.test.mjs"`[CI 同款] / panel `npm test`）
 - CI 依赖（HYG-1 统一）：python 轨=3.12+requirements.txt（kuzu==0.11.3+pytest==9.1.1 单一
   来源）；node 轨=24（ci/gates 测试轨）+22（dsh-compat 最低支持轨）；panel 入库 lockfile
   （npm ci 确定性安装）
