@@ -1,0 +1,212 @@
+{
+ "runId": "run-xrp4b-10070540",
+ "headSha": "e3735ac06a56437daee41536475ba1dbc1c77faf",
+ "startedAt": "2026-10-07T05:42:06.435Z",
+ "finishedAt": "2026-10-07T05:46:46.648Z",
+ "budget": {
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "elapsedMin": 4.6,
+  "tokensUsed": 0,
+  "terminated": null
+ },
+ "worker": {
+  "kind": "exited",
+  "code": 0,
+  "pid": 600343
+ },
+ "observations": {
+  "envScan": {
+   "hits": [],
+   "scannedAt": "2026-10-07T05:42:06.434Z",
+   "note": "worker pid+一层子进程 /proc/environ 扫描（P2P_HOST_*|HOST_*TOKEN/KEY/SECRET）"
+  },
+  "orphans": [],
+  "wallClockMs": 278306,
+  "sessionParse": {
+   "totalTokens": 0,
+   "files": 3,
+   "idleMs": 811.57666015625
+  }
+ },
+ "capabilityLog": [
+  {
+   "tool": "bash",
+   "count": 107
+  },
+  {
+   "tool": "glob",
+   "count": 63
+  },
+  {
+   "tool": "read",
+   "count": 27
+  },
+  {
+   "tool": "burp_repeater",
+   "count": 19
+  },
+  {
+   "tool": "write",
+   "count": 19
+  },
+  {
+   "tool": "p2p_graph",
+   "count": 15
+  },
+  {
+   "tool": "p2p_status",
+   "count": 11
+  },
+  {
+   "tool": "subagent",
+   "count": 11
+  },
+  {
+   "tool": "burp_http_log",
+   "count": 7
+  },
+  {
+   "tool": "burp_scan_status",
+   "count": 7
+  },
+  {
+   "tool": "p2p_js_scan",
+   "count": 7
+  },
+  {
+   "tool": "propose_direction",
+   "count": 7
+  },
+  {
+   "tool": "apk-reverse",
+   "count": 3
+  },
+  {
+   "tool": "burp_comparer",
+   "count": 3
+  },
+  {
+   "tool": "burp_decoder",
+   "count": 3
+  },
+  {
+   "tool": "burp_intruder",
+   "count": 3
+  },
+  {
+   "tool": "create_goal",
+   "count": 3
+  },
+  {
+   "tool": "edit",
+   "count": 3
+  },
+  {
+   "tool": "exit_plan_mode",
+   "count": 3
+  },
+  {
+   "tool": "get_goal",
+   "count": 3
+  }
+ ],
+ "reflow": {
+  "ok": true,
+  "written": [
+   {
+    "level": "C",
+    "id": "L-1",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-2",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-3",
+    "status": "quarantined"
+   },
+   {
+    "level": "B",
+    "id": "H-1"
+   },
+   {
+    "level": "B",
+    "id": "H-2"
+   },
+   {
+    "level": "B",
+    "id": "H-3"
+   },
+   {
+    "level": "B",
+    "id": "H-4"
+   },
+   {
+    "level": "B",
+    "id": "H-5"
+   },
+   {
+    "level": "B",
+    "id": "H-6"
+   },
+   {
+    "level": "B",
+    "id": "H-7"
+   },
+   {
+    "level": "B",
+    "id": "H-8"
+   },
+   {
+    "level": "B",
+    "id": "H-9"
+   },
+   {
+    "level": "B",
+    "id": "H-10"
+   },
+   {
+    "level": "B",
+    "id": "H-11"
+   },
+   {
+    "level": "B",
+    "id": "H-12"
+   },
+   {
+    "level": "B",
+    "id": "H-13"
+   },
+   {
+    "level": "B",
+    "id": "H-14"
+   }
+  ],
+  "held": [],
+  "errors": []
+ },
+ "graphDelta": {
+  "baseCounts": {
+   "findings": 777,
+   "experiences": 9,
+   "hypotheses": 435,
+   "quarantined": 9
+  },
+  "afterCounts": {
+   "findings": 777,
+   "experiences": 12,
+   "hypotheses": 449,
+   "quarantined": 12
+  },
+  "delta": {
+   "findings": 0,
+   "experiences": 3,
+   "hypotheses": 14,
+   "quarantined": 3
+  }
+ }
+}
