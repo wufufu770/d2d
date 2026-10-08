@@ -421,7 +421,7 @@ aa00a0af9f329c6fbdcc27f5cb9bf31563228493052ef9815437ba9f05e54918  plugin/pentest
 2cd27ccda356eef183efea4d155678a5e032cbaffc30cec1296d260167e58632  plugin/pentest-dsh/test/write-gate.test.mjs
 692988bd9b7bdc54bdf2abc74b3d24f8319bfb2a3e482e335c9e8f19333e2f0d  plugin/pentest-dsh/test/xring-p1.test.mjs
 1cdfd62bdb35bd99b42bf6301dc779ec9b2b2b21648ac8ab70ce30952a832ff4  plugin/pentest-dsh/test/xring-p3.test.mjs
-1a00bc899c8f9270283bf9a826b24aaaa145a1b5cea1935fab37176cc1d6aef9  plugin/pentest-dsh/test/xring-p4.test.mjs
+0896f9ea43125b6d8310861cba98e3a00dc7c2ae0d0973f10c00fc73fbd77d0a  plugin/pentest-dsh/test/xring-p4.test.mjs
 18711eaf3e1af9f40cd45046f815f44e6391fc0eb119a2af96776575d5f9bf51  plugin/pentest-dsh/test/xring.test.mjs
 c3baabd16d31cbf70280d9561989dec44210d1f4f46073c691c97f81a400492d  plugin/pentest-dsh/tools/comparer.mjs
 88ee25d9abb43b5dec012dfc4a1386ec2b1d63bf48451a7eb41948c117184c9e  plugin/pentest-dsh/tools/decoder.mjs
