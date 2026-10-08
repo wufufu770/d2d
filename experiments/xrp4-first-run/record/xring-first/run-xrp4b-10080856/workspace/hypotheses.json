@@ -1,0 +1,69 @@
+{
+  "run_id": "run-xrp4b-10080856",
+  "generated_at": "2026-10-08T08:59:30Z",
+  "hypotheses": [
+    {
+      "id": "H-1",
+      "statement": "DVWA /vulnerabilities/sqli/ on security=low accepts UNION SELECT credential dumping (numeric GET id, raw user/password returned, 5 DB rows open)",
+      "priority": "high",
+      "status": "confirmed",
+      "evidence_refs": ["evidence/sqli_union.html"]
+    },
+    {
+      "id": "H-2",
+      "statement": "DVWA /vulnerabilities/exec/ on security=low allows OS command injection via semicolon in ip POST field (uid=33 www-data observed)",
+      "priority": "high",
+      "status": "confirmed",
+      "evidence_refs": ["evidence/exec_rce.html"]
+    },
+    {
+      "id": "H-3",
+      "statement": "DVWA /vulnerabilities/fi/ on security=low supports local file inclusion via absolute path in page param (/etc/passwd dumped)",
+      "priority": "high",
+      "status": "confirmed",
+      "evidence_refs": ["evidence/fi_lfi.html"]
+    },
+    {
+      "id": "H-4",
+      "statement": "DVWA /vulnerabilities/xss_r/ on security=low reflects user-supplied name param without HTML escaping (raw <script>alert(1)</script> in body)",
+      "priority": "high",
+      "status": "confirmed",
+      "evidence_refs": ["evidence/xss_r.html"]
+    },
+    {
+      "id": "H-5",
+      "statement": "DVWA /vulnerabilities/xss_s/ on security=low stores user-supplied mtxMessage without sanitization and re-renders raw HTML to all visitors (persistent XSS)",
+      "priority": "high",
+      "status": "confirmed",
+      "evidence_refs": ["evidence/xss_s.html"]
+    },
+    {
+      "id": "H-6",
+      "statement": "DVWA /vulnerabilities/sqli_blind/ on security=low allows boolean blind SQLi (true condition 'User ID exists' vs false 'MISSING from the database')",
+      "priority": "high",
+      "status": "confirmed",
+      "evidence_refs": ["evidence/sqlib_true.html", "evidence/sqlib_false.html"]
+    },
+    {
+      "id": "H-7",
+      "statement": "DVWA /vulnerabilities/upload/ on security=low accepts .php upload without validation (shell.php uploaded to hackable/uploads/, server-side executes PHP -> full RCE via phpinfo marker)",
+      "priority": "high",
+      "status": "confirmed",
+      "evidence_refs": ["evidence/upload_ok.html", "evidence/shell_exec.html"]
+    },
+    {
+      "id": "H-8",
+      "statement": "DVWA /vulnerabilities/csrf/ on security=low lacks anti-CSRF token on password-change form (form action='#' method='GET', password_new/password_conf change accepted without origin validation)",
+      "priority": "medium",
+      "status": "confirmed",
+      "evidence_refs": ["evidence/csrf_post.html"]
+    },
+    {
+      "id": "H-9",
+      "statement": "DVWA /vulnerabilities/brute/ on security=low has no lockout/throttling on login; wrong creds returns 'Username and/or password incorrect.' enabling ad-hoc password guessing",
+      "priority": "medium",
+      "status": "confirmed",
+      "evidence_refs": ["evidence/brute_wrong.html"]
+    }
+  ]
+}
