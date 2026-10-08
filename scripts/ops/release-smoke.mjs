@@ -17,7 +17,7 @@ const AS_JSON = process.argv.includes('--json')
 const TAIL = 900
 
 const REQUIRED = [
-  'README.md', 'install.sh', 'graphd/app.py', 'ops/start-all.sh', 'package.json', 'requirements.txt',
+  'README.md', 'install.sh', 'graphd/app.py', 'scripts/ops/start-all.sh', 'package.json', 'requirements.txt',
   'plugin/pentest-dsh/index.js', 'plugin/pentest-dsh/scheduler.js', 'plugin/pentest-dsh/adapter-dsh.mjs',
   'plugin/pentest-dsh/domain/briefs.mjs', 'plugin/pentest-dsh/domain/scope.mjs', 'plugin/pentest-dsh/domain/failover.mjs',
   'plugin/pentest-dsh/domain/strategy-card.mjs', 'plugin/pentest-dsh/domain/verify-verdicts.mjs',
