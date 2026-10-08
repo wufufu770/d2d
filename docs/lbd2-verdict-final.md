@@ -44,3 +44,44 @@ restart+部署后验收；第二把锁待指认）。
 
 ## 零改动纪律声明
 本批零代码/零部署/零重启/零配置；双轨复测=tmp 测试实例零生产写。
+
+---
+
+## TRANS-1 执行实录（变更窗口开启 · 2026-10-08 20:42-20:44 CST · 加速令下第一次开刀）
+
+> 加速令已下（缩短观察期+GO+全速）——满期字面被豁免，本批 N-0 当日快测补封口。
+> E1 第四采样 84.9MB（书档维持零爬升）/E3 复扫 0/E2 16.6-17.7ms/双轨第六书档点
+> （TRANS-1 批内 429=429 实测）——判定门四面前置全绿后开刀。
+
+### G5 生产部署实录（拍板 1）
+- 部署前快照：findings=778/active=0；unit Invocation=8b2676f7…（Active since 10-04 23:49:09）
+- `systemctl --user restart d2d-graphd` → 新 pid=890333（started 2026-10-08T12:43:32Z）
+  → /health 200 ok → 新 Invocation=bb1de0f2…
+- 部署后图快检：findings=**778 保持**（零损）/active=0（零僵尸）
+- **held-finding admit 生产首录**：xring-run-xrp4b-10071527-f-4（XR-G3 裁决表 F-4=true）
+  → 200 {"to":"candidate"} → 图内核验 gate_status=candidate/sev=high/eng=xring-run-xrp4b-10071527
+  → **审计三面全落**（audit.log adjudicate 事件 operator=host-main-agent+transition-log
+  source_batch=adjudicate-held+Finding 本体 provenance）——XR-G4 版本差 404 清账，
+  XR-G5 通道生产面闭合。
+
+### 重大口径澄清（N-0 三源对齐——修正前两报告的世代注记）
+systemd ActiveEnterTimestamp（10-04 23:49:09 CST）与 /health started_at（同刻）**双源一致**
+——现役 unit 世代=**10-04 23:49 起 3 天+零重启**（含整个观察期）；此前两报告以 ps lstart
+（10-05 22:34）为准系**时钟基准漂移 ~23h 的显示假象**（E3 结论不受影响：任一口径下窗口
+内零崩溃；"零重启"结论反而更强）。ps lstart 漂移登记为观测工具注记。
+
+### 引擎转正行政面（拍板 2）
+- **观察期关闭声明**：LBD-2 观察期（10-04~10-08，加速令豁免满期）正式关闭——
+  **ladybug=正式引擎**；E 面终值书档：E1 四采样 84.7-84.9MB 平/E2 六项+抽测全同量级/
+  E3 全期零原生崩溃/E4 六书档等值点（428,429,429,429,429,429）。
+- **kuzu 回滚资产保留**（0.11.3+backup-graph.sh 不删——退役另批）；unit 回滚形态维持
+  （删三行 Environment+daemon-reload+restart）。
+
+### "第二把锁"幽灵词处置（拍板 3）
+**幽灵词删除**：仓内零命中实录（LBD-2-F docs/code 全查）+加速令授权——变更窗口三件
+缩两件（引擎转正行政面+G5 部署）的事实书档；**召回条款**：用户日后指认其实体则重新
+立项评估（decision-archive 同步登记）。
+
+### GO 生效书档（拍板 4）
+加速令时间戳=2026-10-08（本批 N-0 时点 20:42 CST 前下达）；终版数据引用=lbd2-verdict.md
+（前置包）+本报告（F2 增补+TRANS-1 实录）——**判定门关闭，变更窗口开启**。
