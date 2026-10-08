@@ -1,0 +1,146 @@
+[
+ {
+  "ts": "2026-10-08T10:12:37.886Z",
+  "event": "xring-eng-created",
+  "name": "xring-run-xrp4b-10081011",
+  "scope": "127.0.0.1",
+  "runId": "run-xrp4b-10081011"
+ },
+ {
+  "ts": "2026-10-08T10:12:37.999Z",
+  "event": "worker-spawned",
+  "pid": 796513,
+  "workspace": "/home/kali/d2d/experiments/xrp4-first-run/record/xring-first/run-xrp4b-10081011/workspace",
+  "runId": "run-xrp4b-10081011"
+ },
+ {
+  "ts": "2026-10-08T10:13:38.114Z",
+  "event": "monitor-start",
+  "runId": "run-xrp4b-10081011",
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "mode": "queue"
+ },
+ {
+  "ts": "2026-10-08T10:14:08.246Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.01h/0.5h, 16633/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 16633,
+  "transcriptBytes": 40929,
+  "idleMs": 2903.57275390625
+ },
+ {
+  "ts": "2026-10-08T10:14:38.231Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.02h/0.5h, 19586/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 19586,
+  "transcriptBytes": 54482,
+  "idleMs": 233.393798828125
+ },
+ {
+  "ts": "2026-10-08T10:15:08.186Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.03h/0.5h, 20973/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 20973,
+  "transcriptBytes": 60095,
+  "idleMs": 10063.645263671875
+ },
+ {
+  "ts": "2026-10-08T10:15:38.194Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.03h/0.5h, 25103/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 25103,
+  "transcriptBytes": 73462,
+  "idleMs": 3668.37353515625
+ },
+ {
+  "ts": "2026-10-08T10:16:08.193Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.04h/0.5h, 27305/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 27305,
+  "transcriptBytes": 81430,
+  "idleMs": 9292.31298828125
+ },
+ {
+  "ts": "2026-10-08T10:16:38.206Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.05h/0.5h, 29415/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 29415,
+  "transcriptBytes": 87701,
+  "idleMs": 1465.48095703125
+ },
+ {
+  "ts": "2026-10-08T10:17:08.209Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.06h/0.5h, 31805/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 31805,
+  "transcriptBytes": 93818,
+  "idleMs": 4203.591064453125
+ },
+ {
+  "ts": "2026-10-08T10:17:38.200Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.07h/0.5h, 35462/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 35462,
+  "transcriptBytes": 104694,
+  "idleMs": 791.13037109375
+ },
+ {
+  "ts": "2026-10-08T10:18:08.229Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.08h/0.5h, 38595/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 38595,
+  "transcriptBytes": 109735,
+  "idleMs": 10200.341796875
+ },
+ {
+  "ts": "2026-10-08T10:18:38.242Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.08h/0.5h, 43139/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 43139,
+  "transcriptBytes": 128853,
+  "idleMs": 155.711669921875
+ },
+ {
+  "ts": "2026-10-08T10:18:53.256Z",
+  "event": "xring-eng-released",
+  "name": "xring-run-xrp4b-10081011",
+  "runId": "run-xrp4b-10081011"
+ },
+ {
+  "ts": "2026-10-08T10:18:54.095Z",
+  "event": "reflow-start",
+  "runId": "run-xrp4b-10081011",
+  "workspace": "/home/kali/d2d/experiments/xrp4-first-run/record/xring-first/run-xrp4b-10081011/workspace",
+  "mode": "queue"
+ },
+ {
+  "ts": "2026-10-08T10:18:56.309Z",
+  "event": "reflow-done",
+  "runId": "run-xrp4b-10081011",
+  "mode": "queue",
+  "written": 17,
+  "held": 9,
+  "errors": 0
+ }
+]

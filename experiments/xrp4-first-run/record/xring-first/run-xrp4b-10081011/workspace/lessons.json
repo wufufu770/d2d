@@ -1,0 +1,36 @@
+{
+  "run_id": "run-xrp4b-10081011",
+  "generated_at": "2026-10-08T10:30:00Z",
+  "lessons": [
+    {
+      "id": "L-1",
+      "lesson": "CSRF tokens are present on the DVWA login form (user_token hidden field) even at security=low — the per-session token is enforced. The naive regex r'user_token\"\\s*value=\"([^\"]+)\"' missed it because the source uses single-quoted attribute syntax (user_token' value='...'). A broader pattern (r\"user_token['\\\"]\\s*value=['\\\"]\\s*([a-f0-9]+)\") finds it. This is a recurring sink: attribute-quote styles in DVWA vary, so the extractor must be quote-agnostic.",
+      "failure_class": "cognitive",
+      "context": "Initial login attempt failed silently because the CSRF token was empty in the POST body. Several iterations of debugging regex were needed; the bug was the regex, not the auth flow."
+    },
+    {
+      "id": "L-2",
+      "lesson": "DVWA's file-upload module places the uploaded file in a path that, when resolved from /vulnerabilities/upload/, is ../../hackable/uploads/<filename>. From the web root, that resolves to /hackable/uploads/<filename>. The DVWA v1.10 source does not require a leading / for the include in the upload HTML, so the response is a relative URL. Hardcoding /vulnerabilities/upload/<filename> or the raw ../../hackable/uploads/<filename> returned 404 — the correct base is the web root, i.e. /hackable/uploads/<filename>. Worth remembering: a 'succesfully uploaded!' message followed by a relative URL means the file is web-accessible at the path *relative to the document root*, not relative to the upload form.",
+      "failure_class": "cognitive",
+      "context": "First attempt to GET the uploaded PHP shell at /vulnerabilities/upload/../../hackable/uploads/cmd.php returned 404; the actual accessible path is /hackable/uploads/cmd.php. The RCE was confirmed once the path was corrected."
+    },
+    {
+      "id": "L-3",
+      "lesson": "A self-referential LFI payload (e.g. ?page=/var/www/html/vulnerabilities/fi/index.php) causes PHP to include itself, which includes itself, ... and hangs the connection. This is a denial-of-service trap even at security=low. It would be wise to either (a) always set a low HTTP read-timeout and treat timeout as evidence the include succeeded, or (b) never feed an LFI target with its own source path during automation. In this run the 10-second read timeout was hit, and the lesson was recorded before any persistent damage was done — but in a longer run or a multi-tenant environment, this would be an easy way to leak request slots.",
+      "failure_class": "destructive",
+      "context": "Tested GET /vulnerabilities/fi/?page=/var/www/html/vulnerabilities/fi/index.php — the request never returned; had to be killed by timeout. No permanent state damage, but consumed a full ~10s of budget on a non-finding test."
+    },
+    {
+      "id": "L-4",
+      "lesson": "Repro paths in DVWA all require authentication, but the DVWA login enforces a per-session CSRF token. The mechanical replayer described in the contract has a cookie jar but no per-response token extraction, so any finding whose steps include a DVWA login will replay to a 302 redirect to login.php — which is the contract-honest 'fail' outcome and was the expected verification data, not a finding bug. This should be acknowledged up-front in any future DVWA-target run: most findings will replay as 302 unless the verifier gains a token-extraction step.",
+      "failure_class": "environment",
+      "context": "The replayer contract explicitly states '需要登录态的步骤会重放出未认证响应（如 302 跳登录页）, 其 EXPECT 断言将如实判 fail —— fail 是有效的验证数据, 不是失败耻辱'. So I encoded the login flow as POST steps with user_token=PLACEHOLDER to make the auth requirement explicit and to surface the limitation honestly. Each finding's expected/observed text describes the live-run behavior; the replay will fail and that is correct."
+    },
+    {
+      "id": "L-5",
+      "lesson": "Initial reconnaissance that blindly runs SQLi UNION probes with non-numeric placeholders (id=1) can miss the boolean false branch. The literal string '1' is in fact the FIRST user row (admin), so the 'User ID exists' check returned False for an unrelated reason (response was showing a different test page). A robust probe should always (a) confirm baseline id=1 returns the expected 'User ID exists' AND the first-name 'admin', and (b) try id='1' to confirm string-quoting semantics. In this run the UNION test still worked because UNION 1,2 returned a row, but the baseline 'normal id=1' assertion was confusing until clarified — recorded for future runs.",
+      "failure_class": "cognitive",
+      "context": "Initial assertion 'normal id=1: False' was misleading: it was a residual from a previous test that left dvwaPageNewGrab's state inconsistent. The actual SQLi behavior is correct; the assertion needed rephrasing."
+    }
+  ]
+}
