@@ -1,0 +1,256 @@
+{
+ "runId": "run-xrp4b-10080856",
+ "headSha": "ee073e2bea198b3b287f9d2080c35f2b5ce58dc9",
+ "startedAt": "2026-10-08T08:57:48.672Z",
+ "finishedAt": "2026-10-08T09:02:17.675Z",
+ "engagement": {
+  "name": "xring-run-xrp4b-10080856",
+  "scope": "127.0.0.1",
+  "mode": "XR-G1 预建（方案 A）"
+ },
+ "budget": {
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "elapsedMin": 4.5,
+  "tokensUsed": 33006,
+  "terminated": null
+ },
+ "worker": {
+  "kind": "exited",
+  "code": 0,
+  "pid": 752098
+ },
+ "observations": {
+  "envScan": {
+   "hits": [],
+   "scannedAt": "2026-10-08T08:57:48.671Z",
+   "note": "worker pid+一层子进程 /proc/environ 扫描（P2P_HOST_*|HOST_*TOKEN/KEY/SECRET）"
+  },
+  "orphans": [],
+  "wallClockMs": 267003,
+  "sessionParse": {
+   "totalTokens": 33006,
+   "files": 1,
+   "idleMs": 807.37109375
+  }
+ },
+ "capabilityLog": [
+  {
+   "tool": "bash",
+   "count": 145
+  },
+  {
+   "tool": "write",
+   "count": 13
+  },
+  {
+   "tool": "edit",
+   "count": 5
+  },
+  {
+   "tool": "apk-reverse",
+   "count": 1
+  },
+  {
+   "tool": "burp_comparer",
+   "count": 1
+  },
+  {
+   "tool": "burp_decoder",
+   "count": 1
+  },
+  {
+   "tool": "burp_http_log",
+   "count": 1
+  },
+  {
+   "tool": "burp_intruder",
+   "count": 1
+  },
+  {
+   "tool": "burp_repeater",
+   "count": 1
+  },
+  {
+   "tool": "burp_scan_status",
+   "count": 1
+  },
+  {
+   "tool": "create_goal",
+   "count": 1
+  },
+  {
+   "tool": "exit_plan_mode",
+   "count": 1
+  },
+  {
+   "tool": "get_goal",
+   "count": 1
+  },
+  {
+   "tool": "glob",
+   "count": 1
+  },
+  {
+   "tool": "grep",
+   "count": 1
+  },
+  {
+   "tool": "interrupt_agent",
+   "count": 1
+  },
+  {
+   "tool": "job_kill",
+   "count": 1
+  },
+  {
+   "tool": "job_list",
+   "count": 1
+  },
+  {
+   "tool": "job_output",
+   "count": 1
+  },
+  {
+   "tool": "list_agents",
+   "count": 1
+  }
+ ],
+ "reflow": {
+  "ok": false,
+  "written": [
+   {
+    "level": "C",
+    "id": "L-1",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-2",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-3",
+    "status": "quarantined"
+   },
+   {
+    "level": "B",
+    "id": "H-1"
+   },
+   {
+    "level": "B",
+    "id": "H-2"
+   },
+   {
+    "level": "B",
+    "id": "H-3"
+   },
+   {
+    "level": "B",
+    "id": "H-4"
+   },
+   {
+    "level": "B",
+    "id": "H-5"
+   },
+   {
+    "level": "B",
+    "id": "H-6"
+   },
+   {
+    "level": "B",
+    "id": "H-7"
+   },
+   {
+    "level": "B",
+    "id": "H-8"
+   },
+   {
+    "level": "B",
+    "id": "H-9"
+   }
+  ],
+  "held": [
+   {
+    "level": "A",
+    "id": "F-1",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"Surname: 5f4dcc3b5aa765d61d8327deb882cf99\" 不在响应体（0B, statuses=200,200,302)"
+   },
+   {
+    "level": "A",
+    "id": "F-2",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"uid=33(www-data) gid=33(www-data) groups=33(www-data)\" 不在响应体（0B, statuses=200,200,302)"
+   },
+   {
+    "level": "A",
+    "id": "F-3",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"root:x:0:0:root:/root:/bin/bash\" 不在响应体（0B, statuses=200,200,302)"
+   },
+   {
+    "level": "A",
+    "id": "F-4",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"Hello <script>alert(1)</script>\" 不在响应体（0B, statuses=200,200,302)"
+   },
+   {
+    "level": "A",
+    "id": "F-5",
+    "verdict": "fail",
+    "evidence": "步骤 5: 期望特征未复现——EXPECT \"Message: <script>alert(1)</script>\" 不在响应体（0B, statuses=200,200,302,302)"
+   },
+   {
+    "level": "A",
+    "id": "F-6",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"User ID exists in the database.\" 不在响应体（0B, statuses=200,200,302)"
+   },
+   {
+    "level": "A",
+    "id": "F-8",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"New password:\" 不在响应体（0B, statuses=200,200,302)"
+   },
+   {
+    "level": "A",
+    "id": "F-9",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"Username and/or password incorrect.\" 不在响应体（0B, statuses=200,200,302)"
+   }
+  ],
+  "errors": [
+   {
+    "file": "repro_paths.json",
+    "id": "F-7",
+    "status": 400,
+    "body": {
+     "ok": false,
+     "error": "high/critical Finding 必须注明鉴权档位 — 在 repro 首行写 「鉴权档位: 零cookie|游客态|登录态」(三档都测: 零cookie 直连 / 游客系统匿名凭据 / 登录态未测则标注; 零cookie 才可 high/critical, 游客态可达且有超出游客UI的增量最高 medium)"
+    }
+   }
+  ]
+ },
+ "graphDelta": {
+  "baseCounts": {
+   "findings": 777,
+   "experiences": 17,
+   "hypotheses": 461,
+   "quarantined": 17
+  },
+  "afterCounts": {
+   "findings": 777,
+   "experiences": 20,
+   "hypotheses": 470,
+   "quarantined": 20
+  },
+  "delta": {
+   "findings": 0,
+   "experiences": 3,
+   "hypotheses": 9,
+   "quarantined": 3
+  }
+ }
+}
