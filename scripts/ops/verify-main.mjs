@@ -8,7 +8,7 @@ const set = new Set(files)
 const REQUIRED = [
   'README.md', 'install.sh', 'manifest.sha256', 'requirements.txt',
   'graphd/app.py', 'graphd/audit.py',
-  'ops/start-all.sh',
+  'scripts/ops/start-all.sh',
   'plugin/pentest-dsh/scheduler.js', 'plugin/pentest-dsh/validator.js',
   'plugin/pentest-dsh/domain/lifecycle.mjs', 'plugin/pentest-dsh/domain/briefs.mjs',
   'plugin/pentest-dsh/domain/triage.mjs', 'plugin/pentest-dsh/domain/failover.mjs',
