@@ -526,3 +526,13 @@ N-0 实测校正：远程分支 36（提示词口径 38 含 head 引用差异—
 关键裁决：**书档即判定力**（三采样同世代零爬升是趋势证据而非单点快照——E1 的"稳定"结论从两采样升级为三采样书档；但满期条件的时点诚实不因数据充分而放松）
 教训沉淀：**前置包→增补采样→终版的三段式**（LBD-2-F 交付完整决策包后，F2 的增量价值=第二时点书档+第五等值点——每批只交付真增量，不重印旧结论）
 开放项：同 LBD-2-F（第二把锁指认/真实 10-18 复测/变更窗口执行批/拍板点①-⑦）——终裁与排批归用户
+
+## 2026-10-08 · TRANS-1 变更窗口执行批（加速令下第一次开刀——G5 生产部署+引擎转正行政面+幽灵词处置）
+底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线=本批双轨复测 429=429（第六书档点）
+N-0 终版确认：E1 第四采样 84.9MB（书档维持）/E3 复扫 0/E2 16.6-17.7ms/双轨第六书档点——判定门四面前置全绿后开刀
+**重大口径澄清（三源对齐）**：systemd ActiveEnterTimestamp（10-04 23:49:09 CST）与 /health started_at **双源一致**——现役 unit 世代=10-04 23:49 起 3 天+零重启（含整个观察期）；此前以 ps lstart（10-05 22:34）为准系**时钟基准漂移 ~23h 显示假象**（E3 结论不受影响任一口径零崩溃；"零重启"反而更强）——ps lstart 漂移登记观测工具注记
+**G5 生产部署实录**：部署前快照（findings=778/active=0/Invocation 8b2676f7）→ systemctl --user restart d2d-graphd → 新 pid=890333（12:43:32Z）→ /health 200 → 部署后图快检 findings=778 保持/active=0 → **held-finding admit 生产首录**：xring-run-xrp4b-10071527-f-4（XR-G3 裁决表 F-4=true）→ 200 to=candidate → 图内核验（candidate/high/eng 一致）→ **审计三面全落**（audit.log adjudicate+transition-log adjudicate-held+Finding 本体 provenance）——XR-G4 版本差 404 清账、XR-G5 通道生产面闭合
+行政面：**观察期关闭声明**（state.md TRANS-1 段：ladybug=正式引擎+unit 三件维持+E 面终值四采样平/E4 六书档点）+**kuzu 回滚资产保留**（0.11.3+backup-graph.sh 不删，退役另批）+**幽灵词处置**（decision-archive §八：第二把锁删除+召回条款——变更窗口三件缩两件）+**GO 生效书档**（加速令时间戳+终版数据引用——判定门关闭）
+关键裁决：**三源对齐修正世代口径**（systemd+health 双源一致 vs ps lstart 孤证——E3 结论两口径下均成立故修正无损，"零重启"更强）；**部署窗口选择**（四跑全终态零 worker 活跃=安全窗口，Restart=on-failure 语义下 restart 即部署）
+教训沉淀：**生产部署的完整闭环=部署+功能实测+审计核对三段**（restart/health 只是前两步——admit 生产首录+审计三面核对才是"G5 通道生产面闭合"的证据）；**口径冲突时信独立双源不信孤证**（systemd+health 互证 vs ps 单源）
+开放项：WRAP-4b（拍板点①-⑦+结构相+发布相）；kuzu 退役批（资产保留状态）；held 剩余 8 条 admit（裁决表在库逐条可走 G5 通道）；XR-G8；冷读余项——排批归用户
