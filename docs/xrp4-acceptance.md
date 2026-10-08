@@ -199,3 +199,45 @@ fail-safe 方向（宁可人工不假通过）；修复=两选一（任务书工
 9/9 true（0 假阳性）——逐条 verdict+理由+证据引用留档 docs/xrp4-held-verdicts.md；抽验
 2 条（F-4/F-6）DVWA 实际复现特征原文命中。通道缺口定谳：held 裁决结论无系统内入图写面
 （XR-G5 登记开放项，本批不新建写面）。
+
+## 阶段 B 第四次首跑（XR-G4 四件套生效证明，2026-10-08 · run-xrp4b-10081011）
+
+> 同协议同靶集同预算+冷启动保持（三轮 lessons 未 promote）；唯一有意差异=四件套（G4 会话
+> 态/载荷表达+G6 档位行+G5 held 通道+G7 分层）。第四跑实录=experiments/results/
+> xrp4-first-run-run-xrp4b-10081011.json（runId 命名空间化第二跑生效）。
+
+### 四跑对照表（四件套生效证明核心）
+| 维度 | 跑 1 | 跑 2 | 跑 3 | 跑 4（本跑） |
+|------|------|------|------|------|
+| A 级产出 | 0 | 9 叙述式 | 9 机械式 | 10 机械式（F-10 新模块+契约内化） |
+| verify 形态 | 未触发 | 9/9 manual | 8 fail+1 pass | **9 fail（全部带"认证墙/空响应——XR-G4 会话态边界"显式标注）+1 pass（F-6）** |
+| 机械解析率 | — | 0% | 100% | 100% |
+| **A 级机械入图** | 0 | 0 | 0 | **1（F-6 上传 RCE——G4+G6 联通证据, gate_status=candidate 图内核验）** |
+| token | 0（盲区） | 41657 | 33006 | 44586 |
+| wall-clock | 4.6min | 5.7min | 4.5min | 5.3min |
+| engagement 生命周期 | N/A | 成对 | 成对 | 成对（第四轮零泄漏） |
+| env 白名单 | hits=[] | hits=[] | hits=[] | hits=[]（四轮实战通过） |
+
+### 四件套逐件生效证据
+- **G4 会话态/载荷**：步骤语法 `POST /path --data <固定串>` +cookie jar（内存, verify 调用=
+  engagement run 生命周期, 不落盘）实测通过（fake 靶认证墙后 EXPECT 命中 pass）；DVWA 动态
+  user_token 与固定值重放原则冲突→登录仍失败（fail 链显式标注"XR-G4 会话态边界"——表达力
+  在位, 动态 token 提取=EXTRACT 机械原语提案记开放项 XR-G8[参数化边界裁量归用户]）；判定
+  逻辑零改动（四形态话术逐字回归绿）。
+- **G6 档位行**：reflow repro 首行"鉴权档位: 登录态（X-Ring 受控靶机械重放）"——F-6 pass 后
+  经 /write/finding 入图成功（第三跑 F-7 曾被 0917 门 400——pass→入图链打通实证）。
+- **G5 held 通道**：adjudicate 扩 kind=held-finding（action=admit/dismiss, FIX-1 同构：host-
+  only+operator 审计链+provenance 绑定+入图起点态=candidate 不发明新态）；测试实例 11 例
+  完整通过（admit 正例/409 幂等/必填 400/垃圾门复用/dismiss 零图写/既有路径零触碰）；
+  **生产实例实测=部署窗口待办**（生产 graphd 仍跑旧代码——实测请求 404 "unknown"=版本差
+  实录, 重启生产加载未推送代码越流程, 归 CI 三绿后部署动作）。
+- **G7 pass 分层**：baseline 探测+独立复现语义标注（pass=证据链存在语义不变；baseline 已含
+  特征=effectPreExisted 嫌疑标注进 evidence）——F-6 pass 即教科书案例（worker bash 真实
+  上传 webshell 预置受控靶, 重放 GET 命中遗留文件→EXPECT 命中；分层标注使判定权打折语义
+  可见, 人工面终裁）。reflow written 补 evidence 留档（pass 侧信息不再丢失）。
+
+### 原则三条遵守证明
+1. 表达力≠容忍度：判定逻辑/判据/manual 旗标/目标面硬边界逐字零改动（零改动回归例锁定）；
+2. 验证语义两分：pass=证据链存在+G7 标注=独立复现另行声明（分层是标注不是否决）；
+3. scope 绑定：重放动作 URL=base.origin+相对路径（非 '/' 开头=manual 既有硬边界）——
+   靶外零新增出网面; cookie jar 内存生命周期=engagement run（不落盘不跨 run）。

