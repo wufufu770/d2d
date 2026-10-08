@@ -5629,3 +5629,76 @@ def test_fix1_per_eng_pause_experience_and_frontier(tmp_path, monkeypatch):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ---- XR-G4 G5: adjudicate 扩 held 工件面（FIX-1 同构——admit=入图 candidate 起点态/dismiss=零图写） ----
+
+def test_xrg4_g5_adjudicate_held_finding_admit_and_dismiss(tmp_path, monkeypatch):
+    """G5 通道: held-finding/admit —— 载荷 finding 结构化字段（title/severity/repro/provenance）
+    过 /write/finding 同门面（finding_gates/repro_gate/config_reject/auth_tier_gate）后
+    CREATE（gate_status='candidate' 入图起点态——不发明新态）+审计三面（audit 事件
+    operator+provenance/transition-log/Finding 本体）；dismiss=零图写审计留档；
+    重复 admit=409 幂等；既有 kind/action 路径零触碰（向后兼容）。"""
+    audit_log = tmp_path / "audit.log"
+    monkeypatch.setenv("P2P_AUDIT_LOG", str(audit_log))
+    tlog = tmp_path / "transition-log.jsonl"
+    monkeypatch.setenv("P2P_TRANSITION_LOG", str(tlog))
+    base_url, conn, srv = _wrap2_spawn_server(tmp_path, monkeypatch)
+    try:
+        # ① admit: 正常入图（candidate 起点态——repro 带"登录态"档位行过 0917 门）
+        s1, o1 = _wrap2_post(base_url, {
+            "kind": "held-finding", "action": "admit", "id": "xring-run-x-f-7",
+            "operator": "裁决员甲", "reason": "held 工件人工验收: 特征复现确凿",
+            "finding": {"title": "UNION 注入取 users 表（X-Ring held 裁决）",
+                        "severity": "critical",
+                        "repro": "鉴权档位: 登录态\nGET /login.php && GET /vuln?id=1' UNION SELECT user,password FROM users-- -",
+                        "provenance": "run-xrp4b-10071527 F-7 | docs/xrp4-held-verdicts.md"},
+            "eng": "xring-run-x"})
+        assert s1 == 200 and o1["ok"] is True and o1["to"] == "candidate", o1
+        row = conn.execute("MATCH (f:Finding {id:'xring-run-x-f-7'}) RETURN f.gate_status, "
+                           "f.dual_sign, f.severity, f.eng").get_next()
+        assert str(row[0]) == "candidate", "入图起点态=candidate（图 schema 既有语义, 不冒充 verified）"
+        assert str(row[1]) == "", "dual_sign 空串缺省（无双签链活动）"
+        assert str(row[2]) == "critical" and str(row[3]) == "xring-run-x"
+        # ② 重复 admit: 409 幂等
+        s2, o2 = _wrap2_post(base_url, {
+            "kind": "held-finding", "action": "admit", "id": "xring-run-x-f-7",
+            "operator": "裁决员甲", "reason": "重复裁决",
+            "finding": {"title": "dup", "severity": "high", "repro": "鉴权档位: 登录态\nGET /x EXPECT y",
+                        "provenance": "dup"}})
+        assert s2 == 409 and "幂等" in o2["error"], o2
+        # ③ 必填缺失: 400
+        s3, o3 = _wrap2_post(base_url, {
+            "kind": "held-finding", "action": "admit", "id": "xring-run-x-f-8",
+            "operator": "op", "reason": "r",
+            "finding": {"title": "t", "severity": "high", "repro": "鉴权档位: 登录态\nGET /x EXPECT y"}})
+        assert s3 == 400 and "provenance" in o3["error"], o3
+        # ④ 垃圾清单门复用: low+config 类拒出
+        s4, o4 = _wrap2_post(base_url, {
+            "kind": "held-finding", "action": "admit", "id": "xring-run-x-f-9",
+            "operator": "op", "reason": "r",
+            "finding": {"title": "security header missing", "severity": "low",
+                        "repro": "鉴权档位: 登录态\nGET /x EXPECT header", "provenance": "p"}})
+        assert s4 == 400, o4
+        # ⑤ dismiss: 零图写（dismiss 后无该 id Finding）
+        s5, o5 = _wrap2_post(base_url, {
+            "kind": "held-finding", "action": "dismiss", "id": "xring-run-x-f-11",
+            "operator": "裁决员乙", "reason": "证据不支持: observed 与靶行为不符"})
+        assert s5 == 200 and "dismissed" in o5["to"], o5
+        dup = conn.execute("MATCH (f:Finding {id:'xring-run-x-f-11'}) RETURN count(f)").get_next()
+        assert int(dup[0]) == 0, "dismiss 零图写"
+        # ⑥ 既有路径零触碰: kind=finding revoke 仍工作（f-wrap2 verified→isolated）
+        s6, o6 = _wrap2_post(base_url, {"kind": "finding", "action": "revoke",
+                                        "id": "f-wrap2", "operator": "op", "reason": "既有路径回归"})
+        assert s6 == 200 and o6["to"] == "isolated", o6
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    events = [json.loads(l) for l in audit_log.read_text().splitlines() if l.strip()]
+    adj = [e for e in events if e["kind"] == "adjudicate" and "held" in str(e["detail"].get("kind", ""))]
+    assert len(adj) == 2, f"held 审计恰二（admit+dismiss）: {[e['detail'].get('kind') for e in events if e['kind'] == 'adjudicate']}"
+    assert adj[0]["detail"]["operator"] == "裁决员甲" and adj[0]["detail"]["from"] == "held(workspace)"
+    assert adj[1]["detail"]["action"] == "dismiss"
+    tl = [json.loads(l) for l in tlog.read_text().splitlines() if l.strip()]
+    assert any(t.get("source_batch") == "adjudicate-held" and t["node_id"] == "xring-run-x-f-7"
+               for t in tl), "transition 旁路日志 append（provenance 绑定 reason 字段）"
