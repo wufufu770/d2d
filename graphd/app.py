@@ -1657,12 +1657,16 @@ class Handler(BaseHTTPRequestHandler):
             ident = str(req.get("id") or "").strip()
             operator = str(req.get("operator") or "").strip()
             reason = str(req.get("reason") or "").strip()
-            if kind not in ("finding", "experience"):
-                return self._send(400, {"ok": False, "error": "kind required (finding|experience)"})
+            if kind not in ("finding", "experience", "held-finding"):
+                return self._send(400, {"ok": False, "error": "kind required (finding|experience|held-finding)"})
             # FIX-1 A1: action 枚举扩四 — 既有 revoke/false_positive(verified-only 零改动)+
             # disputed_confirm/disputed_reject(dual_sign='disputed' 人工仲裁, 见上方路径 C/D 注释)。
-            if action not in ("revoke", "false_positive", "disputed_confirm", "disputed_reject"):
-                return self._send(400, {"ok": False, "error": "action required (revoke|false_positive|disputed_confirm|disputed_reject)"})
+            # XR-G4 G5: action 枚举扩六 — admit/dismiss(held 工件裁决: 人工验收 workspace 工件后
+            # admit=入图(candidate 起点态)/dismiss=否决零图写; FIX-1 同构=host-only+operator
+            # 审计链+provenance 绑定; 不新建写面, 扩展既有接受域)。held-finding 分支见下。
+            if action not in ("revoke", "false_positive", "disputed_confirm", "disputed_reject",
+                              "admit", "dismiss"):
+                return self._send(400, {"ok": False, "error": "action required (revoke|false_positive|disputed_confirm|disputed_reject|admit|dismiss)"})
             if not ident:
                 return self._send(400, {"ok": False, "error": "id required"})
             if not (1 <= len(operator) <= 40):
@@ -1673,6 +1677,76 @@ class Handler(BaseHTTPRequestHandler):
             with _locked():  # V-11 同一锁窗: 读旧态→门判定→组合写入(路径 B 两跳原子)
                 try:
                     conn = kuzu.Connection(db())
+                    # XR-G4 G5: held 工件裁决分支(FIX-1 同构——host-only+operator 审计链+provenance
+                    # 绑定; 不新建写面, 扩展既有 adjudicate 接受域)。id=xring-<runId>-<f-n>(与
+                    # reflow 入图 id 同构)。admit=人工验收后入图——入图起点态=gate_status'candidate'
+                    # (图 schema 既有语义: 候选态, 不发明新态; 不冒充 verified——verify 语义标注
+                    # 在 repro 尾注"XR-G3 裁决表"引用); 判定门复用 finding_gates/repro_gate/
+                    # config_reject/auth_tier_gate(与 /write/finding 同门面); id 已存在=409 幂等拒。
+                    # dismiss=否决零图写(审计 dismiss 留档——裁决结论经本事件链可追溯, 工件本体
+                    # 留 workspace 不动)。
+                    if kind == "held-finding":
+                        if action == "dismiss":
+                            _audit_event("adjudicate", {
+                                "kind": kind, "action": action, "id": ident, "operator": operator[:80],
+                                "reason": reason, "ds_to": "", "from": "held(workspace)", "to": "dismissed(不入图)",
+                                "ts": datetime.now(timezone.utc).isoformat()})
+                            _log_transition({"node_id": ident, "from_status": "held",
+                                             "to_status": "dismissed", "actor": operator,
+                                             "reason": reason, "source_batch": "adjudicate-held"})
+                            return self._send(200, {"ok": True, "kind": kind, "action": action,
+                                                    "id": ident, "to": "dismissed(不入图)"})
+                        # admit: 结构化字段(载荷 finding 对象——host 侧编排读 workspace 工件后提交,
+                        # 图服务不读文件系统=架构边界)
+                        hf = req.get("finding") if isinstance(req.get("finding"), dict) else {}
+                        hf_title = str(hf.get("title") or "").strip()
+                        hf_repro = str(hf.get("repro") or "").strip()
+                        hf_sev = str(hf.get("severity") or "medium").lower()
+                        hf_prov = str(hf.get("provenance") or "").strip()
+                        hf_eng = str(hf.get("eng") or req.get("eng") or "").strip()  # eng 兼容两层（finding 对象内或顶层）
+                        if not hf_title or not hf_repro or not hf_prov:
+                            return self._send(400, {"ok": False, "error": "finding.title/repro/provenance required (provenance=runId+裁决表引用)"})
+                        if hf_sev not in ("critical", "high", "medium", "low", "info"):
+                            return self._send(400, {"ok": False, "error": f"invalid severity: {hf_sev}"})
+                        _hf_repro, _k = redact_pii(hf_repro[:2000])
+                        ok_fg, err_fg = finding_gates(_hf_repro)
+                        if not ok_fg:
+                            return self._send(400, {"ok": False, "error": err_fg})
+                        _ok_rp, _err_rp = repro_gate(hf_sev, _hf_repro)
+                        if not _ok_rp:
+                            return self._send(400, {"ok": False, "error": _err_rp})
+                        _crej, _crej_reason = config_reject(hf_sev, str(hf.get("category") or ""), hf_title)
+                        if _crej:
+                            return self._send(400, {"ok": False, "error": _crej_reason})
+                        _ok_tier, _err_tier = auth_tier_gate(hf_sev, hf_title, _hf_repro)
+                        if not _ok_tier:
+                            return self._send(400, {"ok": False, "error": _err_tier})
+                        _dup = conn.execute("MATCH (f:Finding {id:$id}) RETURN count(f)", parameters={"id": ident})
+                        if int(list(_dup.get_next())[0]) > 0:
+                            return self._send(409, {"ok": False, "error": "held finding 已入图(admit 幂等拒绝——重复裁决)"})
+                        _hf_ts = datetime.now(timezone.utc).isoformat()
+                        conn.execute(
+                            "CREATE (f:Finding {id:$id, title:$t, severity:$s, cvss:0.0, evidence_dir:'', "
+                            "repro:$r, category:$c, gate_status:'candidate', ts:$ts, "
+                            "verified_at:'', verified_log:'', notify_sent:false, last_transition:'', "
+                            "eng:$e, dual_sign:'', replay_matrix:'', content_hash:'', source_hash:'', "
+                            "evidence_ref:'', report_status:'', repairability:''})",
+                            parameters={"id": ident, "t": hf_title[:200], "s": hf_sev, "r": _hf_repro,
+                                        "c": dedup_cat(str(hf.get("category") or "")), "ts": _hf_ts,
+                                        "e": hf_eng})
+                        _log_transition({"node_id": ident, "from_status": "held",
+                                         "to_status": "candidate", "actor": operator,
+                                         "reason": f"{reason} | provenance: {hf_prov[:120]}",
+                                         "source_batch": "adjudicate-held"})
+                        # FIX-1 同构: 锁内早退路径审计就地落（operator=人工裁决轨身份三面留痕
+                        # ——audit 事件+transition-log+Finding 本体 repro provenance 尾注）
+                        _audit_event("adjudicate", {
+                            "kind": kind, "action": action, "id": ident, "operator": operator[:80],
+                            "reason": reason, "from": "held(workspace)", "to": "candidate",
+                            "provenance": hf_prov[:160], "severity": hf_sev,
+                            "ts": datetime.now(timezone.utc).isoformat()})
+                        return self._send(200, {"ok": True, "kind": kind, "action": action,
+                                                "id": ident, "to": "candidate"})
                     if kind == "finding":
                         # FIX-1 A1: 读两列(gate_status+dual_sign — 仲裁分支按 dual_sign 分流,
                         # 既有路径对 dual_sign 列零触碰, 行为逐字节不变)
