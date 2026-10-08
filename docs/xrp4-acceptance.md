@@ -153,3 +153,49 @@ disputed 仲裁未触发（A 级全 manual 未入图→无双签链活动）；�
 A 级工件 steps 叙述形态 vs verifyRunner 机械语法（"METHOD /path"）的接口缝隙：9/9 manual。
 fail-safe 方向（宁可人工不假通过）；修复=两选一（任务书工件格式指引 / verifyRunner 叙述
 降级解析），设计权衡归用户排批。
+
+## 阶段 B 第三次首跑（XR-G3 格式契约生效证明，2026-10-08 · run-xrp4b-10080856）
+
+> 同协议同靶集同预算同 U2 档+冷启动保持（前两轮回流 lessons 均未 promote）；唯一有意差异=
+> 任务书格式契约增量（XR-G3 方案 A）。第三跑实录=experiments/results/xrp4-first-run-
+> run-xrp4b-10080856.json（runId 命名空间化——XR-G3 顺手项首跑即生效）。
+
+### 三跑对照表（契约生效证明核心）
+| 维度 | 跑 1（…10070540） | 跑 2（…10071527） | 跑 3（…10080856） |
+|------|-------------------|-------------------|-------------------|
+| A 级 findings 产出 | 0 | 9（步骤全叙述式） | 9（**步骤全机械式，遵守率 9/9=100%**） |
+| verifyRunner 形态 | 未触发 | 9/9 manual（"不可解析形态"——零真实重放） | **8/9 fail（真实重放执行：statuses=200,200,302 认证墙如实 fail）+1/9 pass（F-7）** |
+| 机械解析率 | — | 0% | **100%**（零"不可解析"manual） |
+| 机械验证通过率 | 0 | 0 | **1/9**（拍板 4 验收指标"≥1 条经机械验证"达成） |
+| findings 入图 | 0 | 0 | 0（F-7 pass 后被 graphd 0917 鉴权档位门 400 拦——XR-G6） |
+| token 计账 | 0（XR-G2 盲区） | 41657 | 33006 |
+| wall-clock | 4.6min | 5.7min | 4.5min |
+| 回流 | written 17 | written 17 held 9 | written 12 held 8 errors 1 |
+| engagement 生命周期 | N/A | created/released 成对 | created/released 成对（零泄漏，第三轮） |
+| env 白名单（观察①） | hits=[] | hits=[] | hits=[]（三轮实战通过） |
+
+### 契约生效证明（XR-G3 验收结论）
+**格式契约 100% 生效**：第二次 9/9 叙述式 → 第三次 9/9 机械式（"GET /login.php"+"EXPECT
+特征"形态）——契约遵守率本身即数据（拍板 4 预设），实测 100%。fail 的 8 条=有效验证数据
+（fail-safe 保持实证：EXPECT 在认证墙 302 空 body 上如实 fail，无一伪造通过；evidence 从
+"不可解析"升级为具体请求序列 statuses 链——验证数据的信息量实质提升）。
+
+### 新系统级发现（拍板边界：记开放项不修）
+- **XR-G4（verifyRunner 无会话态/载荷表达力——N-0 预判证实）**：步骤语法仅 METHOD /path
+  （无 header/cookie/body）——DVWA 认证墙后 8/9 真实重放 fail。机械验证可行面=无需认证
+  端点或 worker 副作用遗留资源。修复方向（重放器带 cookie jar 注入/POST 载荷表达）归用户
+  排批——verifyRunner 本体本批零触碰（方案 B 否决的执行面延伸）。
+- **XR-G6（reflow 构造 repro 无鉴权档位标注）**：F-7 verify pass 后入图 /write/finding 被
+  graphd 0917 鉴权档位门 400（high/critical 必须注明"鉴权档位: …"）——pass→入图链的新
+  阻断点，根因=reflow 构造 repro=steps.join(' && ') 不含档位标注。修复=reflow 侧补档位行
+  （一处 diff）归后续批。
+- **XR-G7（verify pass 的副作用依赖形态——reward-hacking 边缘观察）**：F-7 的 pass 部分
+  依赖 worker 会话在受控靶上留下的 shell.php（重放器 POST 无载荷→上传步骤实际未独立复现，
+  GET 命中 worker 预置文件→EXPECT 命中）。重放器语义如实（GET+EXPECT 确实复现）但"上传→
+  执行"链的独立验证力不完整——R9 视角的边界样本：受控靶隔离使该形态无安全后果，但效应
+  依赖型 pass 的判定权应打折扣。归 verifyRunner 语义强化议题（用户排批）。
+
+### held=9 人工裁决（XR-G3 族 2）
+9/9 true（0 假阳性）——逐条 verdict+理由+证据引用留档 docs/xrp4-held-verdicts.md；抽验
+2 条（F-4/F-6）DVWA 实际复现特征原文命中。通道缺口定谳：held 裁决结论无系统内入图写面
+（XR-G5 登记开放项，本批不新建写面）。
