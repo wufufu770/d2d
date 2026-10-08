@@ -123,7 +123,10 @@ export async function reflow(opts) {
           held.push({ level: 'A', id: f.id, verdict: verdict.verdict, evidence: verdict.evidence })
           continue // A 级必经 verify: manual/fail 不入图（编排位固化, P3/P4 接真执行器）
         }
-        const repro = (f.steps ?? []).join(' && ')
+        // XR-G6: repro 首行补鉴权档位标注（一处 diff）——graphd 0917 鉴权档位门（high/critical
+        // 必须注明档位, 结构化 JSON 路径同规）曾把 F-7 verify pass 的入图拦在 400。xring 工件
+        // 步骤通常含登录序列, 标注"登录态"=如实（AUTH_TIER_MARKER_RE 既有词表命中即可）。
+        const repro = `鉴权档位: 登录态（X-Ring 受控靶机械重放）\n${(f.steps ?? []).join(' && ') || String(f.observed ?? '').slice(0, 500)}`
         const r = await post(graphdUrl, '/write/finding', {
           id: `xring-${runId}-${f.id.toLowerCase()}`,
           title: String(f.title).slice(0, 200),
@@ -131,7 +134,9 @@ export async function reflow(opts) {
           repro: repro || String(f.observed ?? '').slice(0, 500),
           eng: eng || runId,
         }, hostToken)
-        if (r.status === 200 && r.body?.ok) written.push({ level: 'A', id: f.id })
+        // XR-G7: written 带 verdict evidence（G7 分层标注/请求链落档——判定权打折语义的可见载体;
+        // 之前 pass 只留 id, evidence 信息丢失）
+        if (r.status === 200 && r.body?.ok) written.push({ level: 'A', id: f.id, evidence: verdict.evidence })
         else errors.push({ file: 'repro_paths.json', id: f.id, status: r.status, body: r.body })
       }
     }

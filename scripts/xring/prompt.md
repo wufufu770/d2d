@@ -32,9 +32,12 @@
 - 未知字段不要添加（schema 拒绝额外属性）。
 - `repro_paths.json` 的 `steps[]` 会被宿主侧重放器逐行机械执行（不猜、不解析散文）：
   请求行写 `"METHOD /path?query"` 形态（方法大写+空格+以 / 开头的相对路径），
-  断言行写 `"EXPECT <响应体特征子串>"`。叙述式步骤（"Authenticate to …"、
-  "Authenticated session."、"Send the payload …"）无法被机械执行，整单转人工；
-  重放不携带会话 cookie，需登录态的步骤会如实得到未认证响应（fail 是有效验证数据）。
+  断言行写 `"EXPECT <响应体特征子串>"`。带载荷的请求写 `"POST /path --data <固定表单串>"`
+  （载荷为固定值原样重放，不支持变量或参数化构造）。重放器内建 cookie jar：响应
+  Set-Cookie 自动入 jar 并随后续请求回放（会话跟随=浏览器自然语义）。叙述式步骤
+  （"Authenticate to …"、"Authenticated session."、"Send the payload …"）无法被机械
+  执行，整单转人工；需要登录态但登录序列无法用固定值表达的步骤会如实 fail
+  （fail 是有效验证数据）。
 
 ## 运行标识
 
