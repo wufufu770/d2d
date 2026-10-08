@@ -30,6 +30,11 @@
 
 - 三份文件的 `run_id` 一致，由启动器在渲染本模板时注入下方占位。
 - 未知字段不要添加（schema 拒绝额外属性）。
+- `repro_paths.json` 的 `steps[]` 会被宿主侧重放器逐行机械执行（不猜、不解析散文）：
+  请求行写 `"METHOD /path?query"` 形态（方法大写+空格+以 / 开头的相对路径），
+  断言行写 `"EXPECT <响应体特征子串>"`。叙述式步骤（"Authenticate to …"、
+  "Authenticated session."、"Send the payload …"）无法被机械执行，整单转人工；
+  重放不携带会话 cookie，需登录态的步骤会如实得到未认证响应（fail 是有效验证数据）。
 
 ## 运行标识
 
