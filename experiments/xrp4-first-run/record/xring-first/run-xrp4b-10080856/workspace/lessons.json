@@ -1,0 +1,24 @@
+{
+  "run_id": "run-xrp4b-10080856",
+  "generated_at": "2026-10-08T08:59:30Z",
+  "lessons": [
+    {
+      "id": "L-1",
+      "lesson": "DVWA security=low lets an authenticated session be established once (admin/password default) and reused for ~all vuln modules via cookie jar (curl -c/-b). This is the correct operating mode for this target — without the session every probe 302-redirects to login.php and 0 vulns become mechanically reproducible. The replay verifier contract (no cookies, no payload) will therefore reproduce-as-fail for every login-gated step; the EXPECT substrings document what an auth'd response looks like for that hand-held judgement layer.",
+      "failure_class": "environment",
+      "context": "DVWA v1.10 *Development* on http://127.0.0.1, security=low (Set-Cookie: security=low). Initial /vulnerabilities/exec/ GET returned empty body because exec is POST; switched to POST after one wasted probe."
+    },
+    {
+      "id": "L-2",
+      "lesson": "Wasted ~1 step on assuming /vulnerabilities/exec/ uses GET because most other DVWA modules do — exec is strictly POST and the form action posts back to /vulnerabilities/exec/. Quick scan of <form method=...> in the index page would have caught this earlier.",
+      "failure_class": "cognitive",
+      "context": "exec module — first probe with GET returned empty <pre></pre>, second probe with POST yielded ping output + 'uid=33(www-data)' marker."
+    },
+    {
+      "id": "L-3",
+      "lesson": "OWASP-style step format constrains 'present step' to two literal shapes (request line / EXPECT line). For a 100% login-gated app like DVWA there is no auth-free path that demonstrates a vuln — every meaningful step requires a session. The verifier's no-cookie/no-payload replay policy guarantees mechanical fail for the gated findings; this is contract-allowed ('fail 是有效的验证数据') but a future improvement is to add an explicit 'replay will fail without session cookie' note per finding rather than burying the caveat here.",
+      "failure_class": "cognitive",
+      "context": "All 9 findings need a logged-in session to demonstrate. Format-required first step 'GET /login.php' + 'POST /login.php' is the only fully cookie-free attestation path (login form HTML body)."
+    }
+  ]
+}
