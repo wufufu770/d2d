@@ -1,0 +1,51 @@
+# release.yml — WRAP-4b 发布相（拍板②④⑤）：tag 触发 OIDC Trusted Publishing
+# 零本地 token 纪律：publish 仅凭 GitHub Actions OIDC（id-token: write + npm ≥11.5.1），
+# 仓库零 npm token（环境 secret 面空置）；provenance 由 npm --provenance 自动附。
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # GitHub Release 创建与资产上传
+  id-token: write   # npm OIDC trusted publishing（provenance）
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install runtime deps (SBOM dependency tree)
+        working-directory: plugin/pentest-dsh
+        run: npm ci --omit=dev
+
+      - name: Generate SBOM (CycloneDX)
+        working-directory: plugin/pentest-dsh
+        run: npx -y @cyclonedx/cyclonedx-npm --output-file /tmp/sbom.cdx.json .
+
+      - name: Publish to npm (OIDC trusted publishing, provenance auto-attached)
+        working-directory: plugin/pentest-dsh
+        run: npm publish --provenance --access public
+
+      - name: GitHub Release (SBOM + report templates + redacted A/B report)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          cp /tmp/sbom.cdx.json ./sbom.cdx.json
+          gh release create "$TAG" \
+            --title "d2d ${TAG} — 首个公开发布" \
+            --notes-file .github/release-notes-v1.0.0.md \
+            sbom.cdx.json \
+            docs/report-templates/butian.sample.json \
+            docs/report-templates/vulbox.sample.json \
+            docs/report-templates/edu-src.sample.json \
+            experiments/results/ab-report-20260928-190531.md
+          rm -f sbom.cdx.json
