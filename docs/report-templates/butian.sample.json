@@ -1,0 +1,23 @@
+{
+  "platform": "butian（补天）——字段映射样例（拍板④，数据=A/B 报告 A 组 verified，已脱敏）",
+  "findings": [
+    {
+      "漏洞名称": "DVWA SQL 注入——UNION SELECT 用户凭据哈希提取（security=low）",
+      "漏洞类型": "sqli",
+      "危害等级": "HIGH",
+      "漏洞详情": "授权靶场应用（DVWA，本地部署）sqli 模块 id 参数字符串拼接进 SQL，UNION SELECT user,password FROM users 可枚举全部用户与 MD5 哈希；注入前缀回显证实反射。",
+      "复现步骤": "登录会话内 GET /vulnerabilities/sqli/?id=0' UNION SELECT user,password FROM users-- -&Submit=Submit → 响应枚举五用户及哈希（id=1 基线对照行在位）。",
+      "网站": "授权靶场应用（DVWA，本地部署，127.0.0.1）",
+      "评分": null
+    },
+    {
+      "漏洞名称": "DVWA 反射 XSS——name 参数未编码脚本回显（security=low）",
+      "漏洞类型": "xss-reflected",
+      "危害等级": "HIGH",
+      "漏洞详情": "xss_r 模块 name 参数原样渲染进响应体，可注入活动脚本（宿主抽验复现实证）。",
+      "复现步骤": "GET /vulnerabilities/xss_r/?name=<script>alert(1)</script> → 响应体含该脚本原样渲染。",
+      "网站": "授权靶场应用（DVWA，本地部署，127.0.0.1）",
+      "评分": null
+    }
+  ]
+}
