@@ -30,3 +30,16 @@ held 态（verify manual/fail）的人工裁决结论**无系统内入图写面*
 修复方向（归用户排批）：adjudicate 扩 kind=repro-artifact（以 runId+finding-id 引用
 workspace 工件入图）或 held 复审通道（裁决结论随下轮 reflow 合流）。本批不新建写面
 （拍板 3 边界）。
+
+## 通道缺口闭合与全清（held-admit-8 · 2026-10-09）
+上节登记的缺口已由 **XR-G4 G5** 闭合：adjudicate 扩 kind=held-finding（admit=入图起点态
+candidate，FIX-1 同构 host-only+operator 审计三面；dismiss=否决零图写）。**TRANS-1**
+以 F-4 生产首录（id=`xring-run-xrp4b-10071527-f-4`）。本批（held-admit-8）将其余 8 条
+（F-1/F-2/F-3/F-5/F-6/F-7/F-8/F-9）逐条 admit 收口：provenance 绑本表
+（`run-xrp4b-10071527 F-<n> | docs/xrp4-held-verdicts.md | held-admit-8 批量收口`），
+载荷 title/severity/observed 取自第二跑 workspace 工件 repro_paths.json，repro 首行
+鉴权档位（G6 形态），逐条过 finding_gates/repro_gate/config_reject/auth_tier_gate 四门。
+**终态：held 管道全清**——9/9 true 全部落图 candidate（findings 779→787），逐条图内核验
+（gate_status/severity/eng 三字段）+审计三面（audit.log/transition-log.jsonl/Finding 本体）
+全过；四源对账（总数 787+分布求和 787+第二跑节点 9 条+迁移账 9 条=F-4+8）。reject 样本 0
+（裁决表 9/9 true；verify 链负例样本由第三跑 fail 形态承接）。
