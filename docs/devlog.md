@@ -556,4 +556,10 @@ N-0 终版确认：E1 第四采样 84.9MB（书档维持）/E3 复扫 0/E2 16.6-
 **3-3 app.py docstring**：头行 Kuzu→ladybug（TRANS-1 引擎转正后的事实描述，唯一命中处）。
 **3-4 scan-clean exit 1+verify-main 接线**：本体=命中 exit 1+git 跟踪面语义（入库面=扫描对象）+规则精修（/home 排除 runner/尖括号占位/段首点+md 记录面 targets·64hex 豁免+description-baselines 哈希文件豁免）+tests?/ 夹具豁免；接线=verify-main 在 P2P_SCAN_TARGETS 非空时调用 scan-clean 并消费退出码（目标名单走 env 不入代码/CI）。三场景实测：命中 rc=1/干净 rc=0/repo 三域复扫 rc=0；接线实测=verify-main 尾行"✓ 无泄露命中"。
 **延后登记**：3-2/3-5 归后续批（主会话清单原议）；verify-main 45/46 缺项+technique_cards.json JUNK 检出=既有态（SWEEP-1 实测发现，登记不扩 scope，处置归后续批）。
+
+## 2026-10-09 · SWEEP-2 pentest-dsh 1.0.1 补丁发布（召回窗内唯一授权 tag+publish 批）
+**发布语义**：1.0.1=SWEEP-1 脱敏补扫的包面落地——SWEEP-1 清的是 repo 面注释/文档，1.0.0 tarball 内残留（loop.mjs changyan 注释/eng-ID 等）随 1.0.1 重打包消除；unpublish 一切版本禁触（npm 版本号永久禁复用政策），召回窗 10-12 08:48 UTC 截止对包整体（含 1.0.1）适用。
+**3-1 教训自动修法实证**：`npm version 1.0.1 --no-git-tag-version` 自动同步 package.json+lockfile root 两处（SWEEP-1 手工同步的根因=手工 checkout 还原丢弃了 npm version 的 lockfile 联动）。
+**release.yml notes 参数化**（OIDC 流零触碰）：notes-file 硬编码 v1.0.0 文件名会使 v1.0.1 Release 挂错版 notes——改 `${TAG}` 按文件名约定取 `.github/release-notes-<tag>.md`（存在用专属/缺省 --generate-notes 回退）+新增 release-notes-v1.0.1.md（对外口径=安全卫生补丁零功能变更）。
+**发布核验**（tag v1.0.1 push 后）：npm view 1.0.1 latest 指向/tarball 下载解包 grep（changyan|ztgame|Mimosa 零命中+eng-ID 仅豁免夹具面 25 处=SWEEP-1 裁定残余非新缺口）/新 provenance logIndex/Release 资产与 SBOM 同步——实录归收官回报。
 **发布工件（拍板②③⑤）**：CHANGELOG [Unreleased]→[1.0.0]+pentest-dsh 0.2.0→1.0.0（tag 对齐）；release.yml=tag 触发 OIDC Trusted Publishing（id-token: write+--provenance，零本地 token 纪律）+CycloneDX SBOM+Release 双通道资产（SBOM/三格式样例/A/B 报告脱敏版）；发布实录（npm URL/召回窗起算时间戳）=tag push 后 CI release run 产物，收官回报点名。
