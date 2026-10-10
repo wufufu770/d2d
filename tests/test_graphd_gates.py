@@ -90,7 +90,7 @@ def test_junk_titles_rejected(title):
 def test_real_titles_pass_junk_gate(title):
     assert not junk_rejected(f'CREATE (f:Finding {{id:"r", title:"{title}", severity:"high"}})')
 
-# ---- T1.8.1(eng-0928-2340-127-1l) 实战回归: 21 条真 finding title 不得被垃圾门误拒 ----
+# ---- T1.8.1(本地靶场实战场) 实战回归: 21 条真 finding title 不得被垃圾门误拒 ----
 # 词表扩展的对照实证集: 扩表前 22 条全过(漏放 1 条噪声), 扩表后必须精确命中且零误伤。
 T181_REAL_TITLES = [
     'dvwa command injection - rce via ip parameter (security=low)',

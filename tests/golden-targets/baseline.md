@@ -113,7 +113,7 @@ $ bash scripts/ops/spa-start.sh stop                               # 幂等
 ## 4. DVWA 基线引用
 
 - 来源: `experiments/results/ab-report-20260928-190531.md`(历史场 A/B 对比报告, T2-1-4)
-- A 组 = eng-0928-2340-127-1l(T1.8.1, 五旋钮全开任务口径, P2P_DISTILL_LLM=on)
+- A 组 = engagement-A（形式化）(T1.8.1, 五旋钮全开任务口径, P2P_DISTILL_LLM=on)
 - 基线数字: **Finding 22 条 / verified 9 条**(报告"汇总对比"表, 第 11/14 行); Signal_ 55, Hypothesis 10
 - 9 条 verified 明细见该报告"A 组 Finding 明细"表(sqli、sqli-blind、rce-exec-low、lfi、uploads 持久化、xss-reflected、setup 信息泄露、view_source 泄露、目录列举+备份泄露)
 - 本文件第 1 节 truth 表即以该 22/9 为 DVWA 侧 ground truth 的核对依据; 22 条中 triaged/needs-scope 条目(存储 XSS、CSRF、弱会话、上传 RCE 本体等)同样是有效攻击面, 只是未过 verify 门

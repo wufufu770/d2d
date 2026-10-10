@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""graphd - Kuzu 单写者 sidecar。三环+插件全部经 HTTP 读写图,规避多进程锁。
+"""graphd - ladybug 单写者 sidecar。三环+插件全部经 HTTP 读写图,规避多进程锁。
 stdlib only (kuzu 除外). GET /health GET /authorized POST /query POST /reset
 """
 import hmac
