@@ -40,12 +40,11 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
           cp /tmp/sbom.cdx.json ./sbom.cdx.json
-          gh release create "$TAG" \
-            --title "d2d ${TAG} — 首个公开发布" \
-            --notes-file .github/release-notes-v1.0.0.md \
-            sbom.cdx.json \
-            docs/report-templates/butian.sample.json \
-            docs/report-templates/vulbox.sample.json \
-            docs/report-templates/edu-src.sample.json \
-            experiments/results/ab-report-20260928-190531.md
+          NOTES=".github/release-notes-${TAG}.md"
+          ASSETS=(sbom.cdx.json docs/report-templates/butian.sample.json docs/report-templates/vulbox.sample.json docs/report-templates/edu-src.sample.json experiments/results/ab-report-20260928-190531.md)
+          if [ -f "$NOTES" ]; then
+            gh release create "$TAG" --title "d2d ${TAG}" --notes-file "$NOTES" "${ASSETS[@]}"
+          else
+            gh release create "$TAG" --generate-notes "${ASSETS[@]}"
+          fi
           rm -f sbom.cdx.json
