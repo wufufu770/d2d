@@ -2,9 +2,9 @@
 // experiments/historical-ab.mjs — 历史场 A/B 对比(T2-1-4, 只读编排: 不跑新 engagement)。
 //
 // 对比对象(任务给定, 历史已冻结场, 本脚本零派发零写图):
-//   · A 组 = eng-0928-2340-127-1l(T1.8.1, 任务口径五旋钮全开; 开场时池内可注入历史经验 6 条 —
+//   · A 组 = engagement-A(形式化, 运行时字面量见 L31)(T1.8.1, 任务口径五旋钮全开; 开场时池内可注入历史经验 6 条 —
 //     实测 Experience 全量 9 条中 3 条 created_at 晚于 A 场开始, 属 A 场自身蒸馏产出)
-//   · B 组 = eng-0928-0850-127-jl(T1.6.1, 开场时池内可注入经验 0 条)
+//   · B 组 = engagement-B(形式化, 运行时字面量见 L32)(T1.6.1, 开场时池内可注入经验 0 条)
 //
 // 数据源(全部只读):
 //   · graphd POST /query(仅 http/https, X-Auth 走 P2P_HOST_TOKEN_FILE/默认 ~/.config/d2d/host-token):

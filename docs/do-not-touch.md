@@ -92,3 +92,22 @@ T3-2-5 澄清（边界裁决沉淀）：环内子 Agent 是**进程内受控实�
   SQL 注入/SSRF 高危行）+ validator.js:334 extractCurlArgs curl 黑名单防线区
 - 处理口径：实施员 commit 被拦 → 变更就绪、移交提交 → 工作流 world.run
   通道落 commit（既有成功形态，非绕过）；绝不 --no-verify；存量零触碰
+
+## 豁免登记表（SWEEP-1 · 机械扫描豁免——逐条含定性依据，新增须同格式）
+> 语境：scan-clean 三域复扫与 grep 四连验收的"零命中"判据=**非豁免命中为零**；
+> 本表各条=已定性保留的对象（动它们=破坏测试/工具/记录语义）。泄露兜底双保险=
+> gitleaks 全史（发布决议书附录 A）+发布相 pack 泄露机械验证。
+
+| 对象 | 豁免规则 | 定性依据 |
+|---|---|---|
+| tests?/ 目录（scan-clean SKIP） | 夹具合成域 by-design | ztgame/changyan/gamm3.demo-src 等域在测试夹具中做 scope/redact/match 断言数据（形式化=破坏断言本体） |
+| .md 记录面（scan-clean targets/64hex 豁免） | 记录/报告面按设计携带目标与哈希引用 | 报告/决议/devlog 的处置记录必引目标名与证据哈希；人工审查域 |
+| eng-ID 运行时字面量 ×2（historical-ab.mjs:31,32） | 保留 | A/B 历史场查图工具参数——形式化=工具废；ID=本地靶场场次（127 回环），非真实目标 |
+| eng-ID 测试夹具 23 处（cnsr/eval-dataset/experience-consensus/experience-metrics） | 保留 | redactTrace/CNSR/consensus/metrics 测试以真形态 ID 为输入数据与断言参数 |
+| gamm3（demo-src 合成演示域子域标签） | 保留 | match-site.test/scope.test 夹具+match-site.mjs:3 用法示例；demo-src=R6 语境合成授权域 |
+| ztgame test 夹具 8 处 | 同 tests?/ 豁免 | WRAP-4b 发布相登记延续 |
+| DVWA/crAPI/AspGoat/127.0.0.1/8766 | 保留级字段 | 公开教育靶件+回环语义（release-decisions 附录 C） |
+| .mimosa 磁盘目录（全仓 9 处） | 活工具链状态不清理 | gitignore 挡库+pack 白名单不含=零公开面；rm 实时重建实证（SWEEP-1：删 8 处后 find 9 处） |
+| npm registry 0.0.0-stage+stage 队列 0.0.1 占位 | stage 机制产物 | 发布收官批登记；处置（保留/unpublish/reject）归用户召回窗内决定 |
+| /home/kali docs 记录性引用 6 处 | .md 记录面豁免 | devlog/hook-design/lbd2/release-decisions/wf-incident 的处置记录语义（描述动作非泄露本体） |
+| verify-main 45/46 缺项+technique_cards.json JUNK 检出 | 既有态登记 | 非本批引入（SWEEP-1 实测发现）；处置归后续批 |
