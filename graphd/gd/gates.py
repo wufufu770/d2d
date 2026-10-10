@@ -61,7 +61,7 @@ def cvss_or_default(raw):
     return min(10.0, max(0.0, v))
 
 
-# T1.8.1(eng-0928-2340-127-1l) rate-limit 同义改写绕过补丁: 实战噪声 finding
+# T1.8.1(本地靶场实战场) rate-limit 同义改写绕过补丁: 实战噪声 finding
 # 「DVWA 登录无速率限制与锁定,暴力破解窗口全开」落图 — title 含「无速率限制」, 而中文
 # 词表仅有「限速缺失/未限速」两种否定构词, any(j in tv) 纯子串匹配全 miss。本补丁只扩
 # 词表(13→20 条), 匹配机制与两出口(finding_gates :344-346 / app.py 结构化 /write/finding)

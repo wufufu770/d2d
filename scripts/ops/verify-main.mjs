@@ -2,6 +2,7 @@
 // verify-main.mjs — 发布后终验: main 分支关键交付物在位 + 数据泄露零命中
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const files = execFileSync('gh', ['api', 'repos/wufufu770/d2d/git/trees/main?recursive=1', '--jq', '.tree[].path'], { encoding: 'utf8' }).trim().split('\n')
 const set = new Set(files)
@@ -34,4 +35,17 @@ for (const f of REQUIRED) {
 const JUNK = files.filter((f) => /kuzu_db|technique_cards|^output\/|\.d2d-data|\.mimosa|node_modules|^runs\/|eng-\d{4}-\d{4}/i.test(f))
 console.log('\n运行数据/挖掘记录残留:', JUNK.length ? JUNK.join(', ') : '无 ✓')
 console.log(`\n关键交付物: ${REQUIRED.length - miss}/${REQUIRED.length} 在位 | 总文件: ${files.length} | 分支: 仅 main`)
+// SWEEP-1 3-4: 泄露面扫描接线 —— P2P_SCAN_TARGETS 非空时对本地工作树跑 scan-clean 并
+// 消费其退出码(命中 exit 1 → 本脚本同步 fail)。目标名单走 env 不入代码/CI。
+if (process.env.P2P_SCAN_TARGETS) {
+  const scanPath = fileURLToPath(new URL('./scan-clean.mjs', import.meta.url))
+  try {
+    const scan = execFileSync('node', [scanPath], { encoding: 'utf8', env: process.env })
+    console.log(scan.trim())
+  } catch (e) {
+    console.error(String(e.stdout ?? ''))
+    console.error('✗ 泄露面扫描命中 — verify-main fail')
+    process.exit(1)
+  }
+}
 process.exit(miss || JUNK.length ? 1 : 0)
