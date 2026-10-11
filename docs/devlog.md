@@ -563,3 +563,10 @@ N-0 终版确认：E1 第四采样 84.9MB（书档维持）/E3 复扫 0/E2 16.6-
 **release.yml notes 参数化**（OIDC 流零触碰）：notes-file 硬编码 v1.0.0 文件名会使 v1.0.1 Release 挂错版 notes——改 `${TAG}` 按文件名约定取 `.github/release-notes-<tag>.md`（存在用专属/缺省 --generate-notes 回退）+新增 release-notes-v1.0.1.md（对外口径=安全卫生补丁零功能变更）。
 **发布核验**（tag v1.0.1 push 后）：npm view 1.0.1 latest 指向/tarball 下载解包 grep（changyan|ztgame|Mimosa 零命中+eng-ID 仅豁免夹具面 25 处=SWEEP-1 裁定残余非新缺口）/新 provenance logIndex/Release 资产与 SBOM 同步——实录归收官回报。
 **发布工件（拍板②③⑤）**：CHANGELOG [Unreleased]→[1.0.0]+pentest-dsh 0.2.0→1.0.0（tag 对齐）；release.yml=tag 触发 OIDC Trusted Publishing（id-token: write+--provenance，零本地 token 纪律）+CycloneDX SBOM+Release 双通道资产（SBOM/三格式样例/A/B 报告脱敏版）；发布实录（npm URL/召回窗起算时间戳）=tag push 后 CI release run 产物，收官回报点名。
+
+
+## 外部贡献候选 D2D-04（2026-10-11）
+
+针对 https://github.com/wufufu770/d2d/issues/104 准备独立 PR；尚未合并或部署。
+验证：23 Mocha passed, 10 temporary Kuzu/pause pytest passed, 4 existing pause-gate tests passed。限制：No Ladybug engine or production world.run available. Protected watchdog fixtures encode old foreign/unowned stop semantics and are unchanged; no full CI-green claim. Global asynchronous experience/study hooks after successful freeze do not have strict per-write epoch fencing. D2D-01 and D2D-02 touch overlapping graphd/scheduler files and need integration review.
+维护者生产 Mimosa/world.run、Ladybug 双轨与远端 CI 仍须按项目协议验收；本次环境没有生产运行时，未关闭或改写钩子。

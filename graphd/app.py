@@ -369,7 +369,7 @@ def _d2d_paused() -> bool:
 _D2D_PAUSE_DIR = os.path.dirname(_D2D_PAUSE_FILE)
 
 
-def _eng_paused(eng: str) -> bool:
+def _eng_paused(eng: str, conn=None) -> bool:
     """W5: per-engagement 暂停开关 — stopAll(该 engagement 的 runner/调度器)写
     config/paused-<eng>.json, 只有归属该 engagement 的写入被 409; 多开互不误伤。
     旧版全局 paused.json 仍生效(向后兼容), 但新停机路径只写 per-eng 文件。
@@ -380,7 +380,20 @@ def _eng_paused(eng: str) -> bool:
     p = f"{_D2D_PAUSE_DIR}/paused-{eng}.json"
     try:
         with open(p) as f:
-            return bool(json.load(f).get("paused"))
+            pause = json.load(f)
+        if not pause.get("paused") or (pause.get("v") == 2 and pause.get("eng") != eng):
+            return False
+        # 生产调用传入既有 _locked() 窗内 conn，核验与该请求写入原子排序。
+        # 旧无世代文件只在不覆盖其他 active owner 时兼容；v2 缺上下文绝不采纳。
+        if conn is None:
+            return pause.get("v") != 2
+        try:
+            from graphd.gd.pause_fence import pause_applies
+        except ModuleNotFoundError:
+            from gd.pause_fence import pause_applies
+        result = conn.execute("MATCH (e:Engagement {name:$n}) RETURN e.status, e.cancel, e.leased_by, e.lease_at", parameters={"n": eng})
+        row = list(result.get_next()) if result.has_next() else None
+        return pause_applies(pause, row)
     except (OSError, ValueError):
         return False
 
@@ -660,7 +673,7 @@ class Handler(BaseHTTPRequestHandler):
                             except Exception:
                                 pass
                     _eng = pick_write_eng(str(req.get("eng") or ""), _actives, _hosts)
-                    if _eng and _eng_paused(_eng):
+                    if _eng and _eng_paused(_eng, conn):
                         return self._send(409, {"ok": False, "error": f"d2d-paused({_eng}) — 该 engagement 已冻结, 任务立即收尾退出"})
                     # 0913 审查 H13: 结构化写入的 scope fail-closed — 载荷带 URL 但无活跃 engagement
                     # 认领(=不在任何活跃 scope)时拒绝, 防 worker 把 scope 外目标写进黑板(原 eng='' 落库)
@@ -1030,7 +1043,7 @@ class Handler(BaseHTTPRequestHandler):
                     # 同款, 「停 A 不误伤 B」语义对所有 worker 写端点成立; eng_id 可空=跨 eng
                     # 通用经验, 空值不判 _eng_paused 直接放行)。host 评审面(experience-transition
                     # /consensus 等)不挂 per-eng 门: 冻结正是为了人工处理, 全局门+豁免面已覆盖。
-                    if _eng_id and _eng_paused(_eng_id):
+                    if _eng_id and _eng_paused(_eng_id, conn):
                         return self._send(409, {"ok": False, "error": f"d2d-paused({_eng_id}) — 该 engagement 已冻结, 经验写入停收"})
                     # ③3.5-4-3 端点侧 per-eng_id 写入配额(粗兜底): 计数与 CREATE 同一 _locked()
                     # 窗口原子完成(engagement_cap_gate 的 H12 TOCTOU 教训同款); 含 quarantined
@@ -1308,7 +1321,7 @@ class Handler(BaseHTTPRequestHandler):
                     conn = kuzu.Connection(db())
                     # FIX-1 A3: per-eng 暂停门补挂(worker 数据写面 — 结构化 4 端点 :640 先例
                     # 同款; eng_id 必填已在上方 400 门保证, 此处非空恒成立)。
-                    if _eng_id and _eng_paused(_eng_id):
+                    if _eng_id and _eng_paused(_eng_id, conn):
                         return self._send(409, {"ok": False, "error": f"d2d-paused({_eng_id}) — 该 engagement 已冻结, frontier 提案停收"})
                     # ---- 3.6-2 v4.1 增强①(续): refs 终检(锁内 — 服务端不信自报, 数据终值裁决)。
                     # 逐 id 存在性 + eng 同源校验(两表各自字面量语句 + IN 列表绑定 — kuzu 0.11.3
