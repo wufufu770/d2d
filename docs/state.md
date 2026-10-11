@@ -710,3 +710,10 @@ plugin/pentest-dsh/domain/{card-schema,
 experience-consensus,knowledge-gaps,experience-metrics,memory-store,sanitize-ingest,
 mcp-discovery,role-card-filter}.mjs · plugin/pentest-dsh/har-capture.mjs
 （路径均经 HD-1 审计核实存在）
+
+
+## 外部贡献候选 D2D-03（2026-10-11）
+
+针对 https://github.com/wufufu770/d2d/issues/103 准备独立 PR；尚未合并或部署。
+验证：252 offline targeted regressions passed; source syntax and diff whitespace passed。限制：Missing baseline, unknown severity, plaintext evidence or unmatched identity fail closed to manual review; marker differential alone is not a universal causal vulnerability proof. Cross-endpoint/identity/OOB workflows need explicit manual handling. Existing Windows SSH-path case fails in full gatewarden file; no production graph, world.run or dual-engine test.
+维护者生产 Mimosa/world.run、Ladybug 双轨与远端 CI 仍须按项目协议验收；本次环境没有生产运行时，未关闭或改写钩子。
