@@ -19,6 +19,7 @@ import { loadStore, saveStore, renewCards, sweepExpired } from '../../plugin/pen
 import { evolutionStats, downgradeReview } from '../../plugin/pentest-dsh/domain/strategy-evolution.mjs'
 // T3-1-2 A-MemGuard 共识验证 v1(纯函数; 输入行由本文件 gq() 只读拉取, 零写通道零加列)
 import { consensusCheck } from '../../plugin/pentest-dsh/domain/experience-consensus.mjs'
+import { bindKnowledgeVersion, bindKnowledgePool, evaluateShadowEvidence } from '../../plugin/pentest-dsh/domain/knowledge-version.mjs'
 
 const REPO = process.env.D2D ?? `${os.homedir()}/d2d`
 const DATA_DIR = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
@@ -111,24 +112,16 @@ function fieldEvidence() {
   })
 }
 function gate3(ev) {
-  const refuted = gq(`MATCH (s:Signal_) WHERE s.status IN ['refuted','pruned'] RETURN DISTINCT s.type AS t LIMIT 60`).map((r) => _norm(r.t))
-  const shadowCards = (() => { try { return JSON.parse(fs.readFileSync(`${BRAIN}/shadow/techniques.json`, 'utf8')).cards ?? [] } catch { return [] } })()
-  const dirty = new Set(shadowCards
-    .filter((c) => (c.applies_to ?? []).some((k) => refuted.some((r) => r && (r.includes(_norm(k)) || _norm(k).includes(r)))))
-    .map((c) => c.id))
-  const pass = [], detail = []
-  for (const e of ev) {
-    const ok = e.wins >= 3 || (e.wins >= 2 && !dirty.has(e.id))
-    detail.push(`${e.id}(wins=${e.wins}, laplace=${e.prior}${dirty.has(e.id) ? ', 撞refuted' : ''})${ok ? '✓' : '✗'}`)
-    if (ok) pass.push(`${e.id}(wins=${e.wins}, laplace=${e.prior})`)
-  }
-  return { ok: pass.length > 0, pass, detail }
+  const refuted = gq(`MATCH (s:Signal_) WHERE s.status IN ['refuted','pruned'] RETURN DISTINCT s.type AS t LIMIT 60`).map((r) => r.t)
+  const raw = JSON.parse(fs.readFileSync(`${BRAIN}/shadow/techniques.json`, 'utf8'))
+  const cards = Array.isArray(raw) ? raw : (raw.cards ?? [])
+  return evaluateShadowEvidence(cards, ev, refuted)
 }
 
 // #86 进化显式回路(消费端): 晋级检查附加「降级复审」报告 — 进化台账 refuted≥3 且 validated=0
 // 的卡(多面被证伪且无一次实证背书)列入清单输出; 只报告不自动删, 留人工决定下架/改写。
 function downgradeReviewReport(poolCards) {
-  const inPool = new Set((poolCards ?? []).map((c) => String(c.id ?? '').toLowerCase().replace(/^card:/, '')).filter(Boolean))
+  const inPool = new Set(bindKnowledgePool(poolCards ?? []).map((c) => c.id.toLowerCase().replace(/^card:/, '')))
   const review = downgradeReview(evolutionStats(BRAIN)).filter((id) => inPool.has(id.replace(/^card:/, '')))
   if (review.length) console.log(`⚠️ 降级复审清单(进化台账 refuted≥3 且 validated=0, 不自动删): ${review.join(', ')}`)
   return review
@@ -185,15 +178,16 @@ if (cmd === '--to-current') {
     const store = loadStore(memPath)
     const raw = JSON.parse(fs.readFileSync(`${shadowLink}/techniques.json`, 'utf8'))
     const pool = Array.isArray(raw) ? raw : (raw.cards ?? [])
-    const { keep, deleted } = sweepExpired(pool, store)
+    const sourceByVersion = new Map(pool.map((card) => [bindKnowledgeVersion(card).id, card]))
+    const { keep, deleted } = sweepExpired(bindKnowledgePool(pool), store)
     if (deleted.length) {
-      fs.writeFileSync(`${shadowLink}/techniques.json`, JSON.stringify({ cards: keep }, null, 1))
+      fs.writeFileSync(`${shadowLink}/techniques.json`, JSON.stringify({ cards: keep.map((c) => sourceByVersion.get(c.id)) }, null, 1))
       console.log(`🧹 过期清扫: 检测类超 30 天物理删 ${deleted.length} 张(${deleted.slice(0, 5).join(', ')}${deleted.length > 5 ? ' …' : ''})`)
     }
     renewCards(store, keep)
     saveStore(memPath, store)
   } catch (e) { console.error('memory sweep:', e?.message) }
-  console.log(`✅ ${vdir} 已晋级 current${g3.pass.length ? `; 实战证据: ${g3.pass.join(', ')}` : ''}`)
+  console.log(`✅ ${vdir} 已晋级 current${g3.pass.length ? `; 实战证据: ${g3.pass.map((x) => x.id).join(', ')}` : ''}`)
   prune()
   process.exit(0)
 }
@@ -270,7 +264,7 @@ if (cmd === '--to-shadow') {
   try {
     const memPath = `${BRAIN}/memory-usage.json`
     const store = loadStore(memPath)
-    const renewed = renewCards(store, finalCards)
+    const renewed = renewCards(store, bindKnowledgePool(finalCards))
     saveStore(memPath, store)
     console.log(`🧠 记忆账本续期 ${renewed.length} 张`)
   } catch (e) { console.error('memory renew:', e?.message) }

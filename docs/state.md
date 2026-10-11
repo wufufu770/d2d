@@ -710,3 +710,10 @@ plugin/pentest-dsh/domain/{card-schema,
 experience-consensus,knowledge-gaps,experience-metrics,memory-store,sanitize-ingest,
 mcp-discovery,role-card-filter}.mjs · plugin/pentest-dsh/har-capture.mjs
 （路径均经 HD-1 审计核实存在）
+
+
+## 外部贡献候选 D2D-05（2026-10-11）
+
+针对 https://github.com/wufufu770/d2d/issues/105 准备独立 PR；尚未合并或部署。
+验证：6 offline regressions passed, including real creditKnowledgeCards graph-write parameters and shadow gate roundtrip。限制：Preserves existing package promotion threshold; version hash does not prove causation. Historical bare card IDs remain hit-only and cannot authorize new versions. No live promotion or production graph mutation executed.
+维护者生产 Mimosa/world.run、Ladybug 双轨与远端 CI 仍须按项目协议验收；本次环境没有生产运行时，未关闭或改写钩子。
