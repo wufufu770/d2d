@@ -114,7 +114,7 @@ try:
                            endpoint_sig_duplicate, auth_tier_gate,
                            eng_time_windows, finding_gates, host_in_scope, hostport_of,
                            init_schema, is_engagement_create, l1_gate, legacy_token_ok,
-                           normalize_title, parse_scope_allows, pick_write_eng,
+                           normalize_title, parse_scope_allows, pick_write_eng, payload_target_hosts,
                            prose_denylist_hit, redact_pii, repro_gate, title_tokens,
                            titles_duplicate, transition_gate, url_sig, worker_query_allowed,
                            SCHEMA_DEGRADED)
@@ -131,7 +131,7 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
                     endpoint_sig_duplicate, auth_tier_gate,
                     eng_time_windows, finding_gates, host_in_scope, hostport_of,
                     init_schema, is_engagement_create, l1_gate, legacy_token_ok,
-                    normalize_title, parse_scope_allows, pick_write_eng,
+                    normalize_title, parse_scope_allows, pick_write_eng, payload_target_hosts,
                     prose_denylist_hit, redact_pii, repro_gate, title_tokens,
                     titles_duplicate, transition_gate, url_sig, worker_query_allowed,
                     SCHEMA_DEGRADED)
@@ -649,22 +649,17 @@ class Handler(BaseHTTPRequestHandler):
                     while _ar.has_next():
                         _row = _ar.get_next()
                         _actives.append({"name": str(_row[0] or ""), "scope": str(_row[1] or "") if len(_row) > 1 else ""})
-                    _hosts = []
-                    for _fld in ("endpoint_url", "url", "repro", "title"):
-                        for _m in _URL_RE.finditer(str(req.get(_fld) or "")):
-                            try:
-                                from urllib.parse import urlparse as _up
-                                _h = _up(_m.group(0)).hostname
-                                if _h and _h not in ("127.0.0.1", "localhost"):
-                                    _hosts.append(str(_h).lower())
-                            except Exception:
-                                pass
+                    # Target declarations are checked independently of task attribution.
+                    try:
+                        _hosts = payload_target_hosts(req)
+                    except ValueError as exc:
+                        return self._send(400, {"ok": False, "error": str(exc)})
                     _eng = pick_write_eng(str(req.get("eng") or ""), _actives, _hosts)
                     if _eng and _eng_paused(_eng):
                         return self._send(409, {"ok": False, "error": f"d2d-paused({_eng}) — 该 engagement 已冻结, 任务立即收尾退出"})
                     # 0913 审查 H13: 结构化写入的 scope fail-closed — 载荷带 URL 但无活跃 engagement
                     # 认领(=不在任何活跃 scope)时拒绝, 防 worker 把 scope 外目标写进黑板(原 eng='' 落库)
-                    if not _eng and _hosts:
+                    if not _eng and (_hosts or str(req.get("eng") or "").strip()):
                         return self._send(403, {"ok": False, "error": "write rejected: payload URLs match no active engagement scope (fail-closed)"})
                     if self.path == "/write/finding":
                         title = str(req.get("title") or "").strip()

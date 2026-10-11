@@ -4,6 +4,8 @@
 app.py 侧 re-export 保持 `from graphd.app import X` 既有导入路径不变。"""
 import re
 import sys
+import ipaddress
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 
 SCHEMA = [
@@ -381,13 +383,63 @@ def parse_scope_allows(scope) -> list:
     return out
 
 
+def _scope_host(value):
+    value = str(value or "").strip().lower()
+    try:
+        return str(ipaddress.ip_address(value.strip("[]")))
+    except ValueError:
+        pass
+    try:
+        return (urlsplit(value if "://" in value else "//" + value).hostname or "").rstrip(".")
+    except ValueError:
+        return ""
+
+
 def host_in_scope(host, scope) -> bool:
-    """host 是否落在 scope 授权条目内(纯函数) — 后缀匹配, 与写门控同口径。"""
-    h = re.sub(r"^[a-z][a-z0-9+.-]*://", "", str(host or "").strip().lower()).split("/")[0]
-    for a in parse_scope_allows(scope):
-        if h == a or h.endswith("." + a):
-            return True
-    return False
+    """Positive target authorization, including exact IPs/CIDRs and exclusions."""
+    h = _scope_host(host)
+    if not h:
+        return False
+    def matches(entry):
+        entry = entry.strip().lower()
+        try:
+            if "/" in entry and "://" not in entry:
+                return ipaddress.ip_address(h) in ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            pass
+        a = _scope_host(entry.lstrip("*."))
+        if not a:
+            return False
+        try:
+            ipaddress.ip_address(a)
+            return h == a
+        except ValueError:
+            return h == a or h.endswith("." + a)
+    entries = [x.strip() for x in str(scope or "").split(",") if x.strip()]
+    if any(matches(x[1:]) for x in entries if x.startswith("!") and ("/" not in x[1:] or re.search(r"/\d+$", x))):
+        return False
+    return any(matches(x) for x in entries if not x.startswith("!"))
+
+
+def payload_target_hosts(payload):
+    """Explicit target fields take priority; legacy prose is a conservative fallback.
+
+    evidence/evidence_url are references, not target declarations. With an explicit
+    target_url, callers may include third-party documentation in repro/title.
+    """
+    values = [str(payload.get(k) or "").strip() for k in ("target_url", "endpoint_url", "url", "target")]
+    values = [v for v in values if v]
+    if values:
+        hosts = []
+        for value in values:
+            host = _scope_host(value)
+            if not host:
+                raise ValueError("invalid target URL/host")
+            hosts.append(host)
+        return list(dict.fromkeys(hosts))
+    text = " ".join(str(payload.get(k) or "") for k in ("repro", "title"))
+    return list(dict.fromkeys(_scope_host(m.group(0)) for m in
+        re.finditer(r"https?://[^\s<>'\"]+", text, re.I) if _scope_host(m.group(0))))
 
 
 def _parse_ts_ms(v):
@@ -443,29 +495,21 @@ def attribute_by_time(ts, windows) -> str:
 
 
 def pick_write_eng(explicit, active_rows, hosts) -> str:
-    """写入打标归属决策(纯函数): ①显式 eng 字段且在 active 列表内 → 采用
-    ②恰一个 active → 它 ③多 active 时按载荷 host 命中 scope 投票(唯一命中者胜)
-    ④兜底 ''(面板按 eng='' 也可视, 不丢数据)。"""
-    names = []
-    for r in active_rows or []:
-        n = r.get("name") if isinstance(r, dict) else r[0]
-        names.append(str(n))
+    """Attribute only when every declared target is authorized by that engagement."""
+    rows = [{"name": str(r.get("name") if isinstance(r, dict) else r[0]),
+             "scope": r.get("scope", "") if isinstance(r, dict) else (r[1] if len(r) > 1 else "")}
+            for r in active_rows or []]
+    def authorized(row):
+        return all(host_in_scope(h, row["scope"]) for h in hosts or [])
     if explicit:
-        e = str(explicit).strip()
-        if e in names:
-            return e
-    if len(names) == 1:
-        return names[0]
+        selected = next((r for r in rows if r["name"] == str(explicit).strip()), None)
+        return selected["name"] if selected and authorized(selected) else ""
+    if len(rows) == 1:
+        return rows[0]["name"] if authorized(rows[0]) else ""
     if hosts:
-        votes = {}
-        for r in active_rows or []:
-            n = r.get("name") if isinstance(r, dict) else r[0]
-            sc = r.get("scope") if isinstance(r, dict) else (r[1] if len(r) > 1 else "")
-            hit = sum(1 for h in hosts if host_in_scope(h, sc))
-            if hit:
-                votes[str(n)] = votes.get(str(n), 0) + hit
-        if len(votes) == 1:
-            return next(iter(votes))
+        eligible = [r["name"] for r in rows if authorized(r)]
+        if len(eligible) == 1:
+            return eligible[0]
     return ""
 
 

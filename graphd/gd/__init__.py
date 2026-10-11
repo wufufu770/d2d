@@ -14,4 +14,4 @@ from .gates import (CONFIG_ADVICE_RE, DENYLIST, FINDING_STATES, FINDING_TRANSITI
                     url_sig, worker_query_allowed)
 from .queries import FINDING_DEDUP_SCAN_SQL, MAX_QUERY_ROWS, _jsonify, bounded_rows  # noqa: F401
 from .schema import (SCHEMA, SCHEMA_DEGRADED, _backfill_eng, attribute_by_time,  # noqa: F401
-                     eng_time_windows, host_in_scope, init_schema, parse_scope_allows, pick_write_eng)
+                     eng_time_windows, host_in_scope, init_schema, parse_scope_allows, pick_write_eng, payload_target_hosts)
