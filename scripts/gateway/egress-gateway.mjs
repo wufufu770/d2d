@@ -23,6 +23,7 @@ import { pathToFileURL } from 'node:url'
 import { startTlsIntercept } from './tls-intercept.mjs'
 // T2-2b-1: 证据存储加密壳(密钥=SHA-256(host-token), aes-256-gcm) — 解密分支事务捕获走同一 sink
 import { createEvidenceSink, keyFromFile } from './evidence-crypto.mjs'
+import { proxyCapability, scopeHash } from '../../plugin/pentest-dsh/domain/gateway-capability.mjs'
 
 // 中危审计修复(13): env 解析 NaN 兜底 — 旧版 parseInt/parseFloat 无回退, env 填垃圾 →
 // listen(NaN) 启动即崩 / RATE=NaN 使 allowRate 恒 false(全限死)。非法值一律回退默认。
@@ -120,10 +121,13 @@ const FORBIDDEN_CIDRS = _FORBIDDEN_CIDRS
 
 // ---- 动态 scope: control 图的活跃 Engagement.scope, 30s 刷新 ----
 let dynScope = new Set()
+let engScopes = new Map()
+const mitmContexts = new Map()
 let token = ''
 try { token = readFileSync(TOKEN_FILE, 'utf8').trim() } catch { /* 已记因: 降级路径——token 文件缺失时空令牌启动, scope 取不到按拒处理 */ }
 async function refreshScope() {
   const next = new Set()
+  const nextEngScopes = new Map()
   const nextPathDeny = new Set() // 4.5-1: 本轮 '!host/path' 条目解析出的 path deny 集(与 dynScope 同生命周期)
   const activeEngs = [] // T3-3-3: active engagement 的 {name,target,scope}(授权契约整集校验用)
   for (const G of GRAPHS) {
@@ -135,6 +139,7 @@ async function refreshScope() {
       })
       const data = await res.json()
       for (const r of data.rows ?? []) {
+        nextEngScopes.set(String(r.n ?? ''), String(r.s ?? ''))
         activeEngs.push({ name: String(r.n ?? ''), target: String(r.t ?? ''), scope: String(r.s ?? '') }) // T3-3-3
         for (const s of String(r.s ?? '').split(',')) {
           const v = s.trim().toLowerCase()
@@ -164,6 +169,7 @@ async function refreshScope() {
       if (g.decision === 'deny') {
         audit({ event: 'scope-contract-rejected', eng: eng.name.slice(0, 40), state: g.state, reason: String(g.reason ?? '').slice(0, 100) })
         next.clear()
+        nextEngScopes.clear()
         nextPathDeny.clear()
         break
       }
@@ -172,6 +178,7 @@ async function refreshScope() {
   } catch (e) {
     audit({ event: 'scope-contract-channel-error', reason: String(e?.message ?? e).slice(0, 100) }) // 放行 + warn
   }
+  engScopes = nextEngScopes
   dynScope = next
   dynPathDeny = nextPathDeny // 4.5-1: 与 dynScope 同步生效(全图不可达 → 空集, path-deny 退回 P2P_PATH_DENY 静态集)
 }
@@ -190,21 +197,52 @@ function ipInCidr(ip, cidr) {
   const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0
   return (v & mask) === (b & mask)
 }
-function hostAllowed(host) {
+function matchesHost(host, entry) {
+  const value = String(entry ?? '').trim().toLowerCase().replace(/^https?:\/\//, '')
+  if (/\/\d+$/.test(value)) return ipInCidr(host, value)
+  const base = value.split('/')[0].replace(/^\*?\./, '')
+  return host === base || (!/^\d+\.\d+\.\d+\.\d+$/.test(base) && host.endsWith('.' + base))
+}
+function hostAllowed(host, claims = null) {
   const h = normalizeHost(host)
-  if (isForbiddenTarget(h)) return false // 硬黑面双保险(处理器层已先拒一次)
-  // 0911: 模型 API 豁免(基础设施, 非目标流量)——scope 只约束目标侧; LLM 端点不豁免会被
-  // engagement scope 全拦(worker 模型调用全部 TRANSPORT error)。硬黑面仍优先于本豁免。
-  if (MODEL_HOSTS.has(h)) return true
-  if (OSINT_HOSTS.has(h)) return true // T3-2-1: osint 情报源豁免(令牌桶/审计照常)
-  if (STATIC_ALLOW.has(h)) return true
-  for (const a of [...STATIC_ALLOW, ...dynScope]) {
-    if (a.includes('/')) { if (ipInCidr(h, a)) return true }
-    else if (a.startsWith('.')) { if (h.endsWith(a) || h === a.slice(1)) return true }
-    else if (h === a) return true
+  if (isForbiddenTarget(h)) return false
+  // Infrastructure has a separate explicit host allowlist, never target scope union.
+  if (MODEL_HOSTS.has(h) || OSINT_HOSTS.has(h)) return true
+  if (!claims) {
+    // Legacy unit-test injection does not exist in refreshScope/production.
+    return STATIC_ALLOW.has(h) || (engScopes.has('__test__') && scopeAllows(h, engScopes.get('__test__')))
+  }
+  const scope = engScopes.get(claims.eng)
+  if (!scope || claims.exp <= Date.now() || claims.scope !== scopeHash(scope)) return false
+  return scopeAllows(h, scope)
+}
+function scopeAllows(host, scope) {
+  const entries = String(scope ?? '').split(',').map(x => x.trim()).filter(Boolean)
+  const domainDenies = entries.filter(x => x.startsWith('!') && (!x.includes('/') || /\/\d+$/.test(x)))
+  if (domainDenies.some(x => matchesHost(host, x.slice(1)))) return false
+  return entries.filter(x => !x.startsWith('!')).some(x => matchesHost(host, x))
+}
+function requestClaims(req) {
+  return proxyCapability(req.headers?.['proxy-authorization'], token)
+}
+function forwardHeaders(headers, host) {
+  const clean = { ...headers, host }
+  delete clean['proxy-authorization']; delete clean['proxy-connection']
+  return clean
+}
+function requestPathDenied(host, pathname, claims) {
+  for (const prefix of PATH_DENY) if (pathname.toLowerCase().startsWith(prefix)) return true
+  if (!claims) return false
+  for (const entry of String(engScopes.get(claims.eng) ?? '').split(',')) {
+    const v = entry.trim().toLowerCase()
+    if (!v.startsWith('!')) continue
+    const i = v.indexOf('/')
+    if (i > 1 && matchesHost(host, v.slice(1, i)) && pathname.toLowerCase().startsWith(v.slice(i))) return true
   }
   return false
 }
+export const _setEngScopes = (rows) => { engScopes = new Map(rows); }
+export const _setCapabilityKey = (key) => { token = String(key ?? '') }
 // ---- H14: DNS 解析后校验 — scope 内域名可被(被挟持的)权威 DNS 解到元数据/链路本地等保留段,
 // host 字符串比对防不住; 放行前先解一层, 解析失败或任一解析结果命中硬黑面 → fail-closed 拒绝。
 const _dnsCache = new Map()
@@ -241,7 +279,7 @@ async function resolvedIpsAllowed(host, resolve = _dnsLookupAll) {
 }
 const _clearDnsCache = () => _dnsCache.clear()
 // 测试注入口(mocha 直接 import 本模块, 不走 main)
-const _setDynScope = (s) => { dynScope = s instanceof Set ? s : new Set() }
+const _setDynScope = (s) => { dynScope = s instanceof Set ? s : new Set(); engScopes = new Map([['__test__', [...dynScope].join(',')]]) }
 
 const buckets = new Map()
 // T2-2b-1 目标限速回灌: 桶结构加 penalty 维度(有效速率 = RATE/penalty)。上游 429/503 → penalty
@@ -307,13 +345,15 @@ const server = http.createServer(async (req, res) => {
   }
   // H14 顺序: 硬黑面 → scope → 限速 → DNS 解析校验(逐请求逐 host, prompt 注入改 URL 也逃不过)
   if (isForbiddenTarget(host)) return deny(res, host, 'metadata/link-local/CGNAT/0-net 硬黑面(H14), scope 声明也不放行')
-  if (!hostAllowed(host)) return deny(res, host, 'host not in scope (V-08 egress enforcement)')
+  const claims = requestClaims(req)
+  if (!hostAllowed(host, claims)) return deny(res, host, 'host not in scope (V-08 egress enforcement)')
+  if (requestPathDenied(host, u.pathname, claims)) return deny(res, host, 'path excluded for engagement')
   if (!allowRate(host)) return deny(res, host, 'rate limit', 429)
   // FIX-2 A4: resolve once / connect validated —— 校验解析返回的合法 IP 直接用于建连,
   // 消除「校验解析→建连二次解析」的 rebinding TOCTOU 窗口(三转发点统一形态)。
   const _rv = await resolveValidatedIp(host)
   if (!_rv.ok) return deny(res, host, 'DNS 解析失败或解析到保留/元数据地址(H14 fail-closed)')
-  audit({ event: 'http', host, path: u.pathname, method: req.method })
+  audit({ event: 'http', eng: claims?.eng ?? 'infrastructure', host, path: u.pathname, method: req.method })
   try {
     // M6 企业代理链: D2D_UPSTREAM_PROXY 配置时经企业代理转发(http 代理语义 = 绝对 URL 打到代理);
     // 回环/私有目标直连(CDP proxy/graphd 等本地面不过企业网)。scope/限速/审计仍在本网关强制 —
@@ -325,8 +365,8 @@ const server = http.createServer(async (req, res) => {
     // 代理侧解析, 绑定目标 IP 无意义)——该点保持校验+登记, 不构成窗口收紧缺口(代理侧有自己的
     // 解析时刻, 本网关可见性止于 CONNECT/绝对 URL——边界登记)。
     const reqOpts = upstreamFor
-      ? { host: upstreamFor.host, port: upstreamFor.port, path: `http://${u.host}${u.pathname}${u.search}`, method: req.method, headers: { ...req.headers, host: u.host } }
-      : { host: _rv.ip || host, port: u.port || 80, path: u.pathname + u.search, method: req.method, headers: { ...req.headers, host: u.host } }
+      ? { host: upstreamFor.host, port: upstreamFor.port, path: `http://${u.host}${u.pathname}${u.search}`, method: req.method, headers: forwardHeaders(req.headers, u.host) }
+      : { host: _rv.ip || host, port: u.port || 80, path: u.pathname + u.search, method: req.method, headers: forwardHeaders(req.headers, u.host) }
     // 中危审计修复(9): 上游超时 — timeout 只报警不销毁, 必须显式 destroy → 走 error → 502
     reqOpts.timeout = UPSTREAM_TIMEOUT_MS
     const up = http.request(reqOpts, (r) => {
@@ -357,14 +397,15 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
   const host = normalizeHost(cm?.[1] ?? cm?.[2] ?? '')
   const port = _envInt(cm?.[3], 443) // 中危审计修复(13): 端口 NaN/越界兜底(旧版 parseInt 原样透传给 net.connect)
   if (isForbiddenTarget(host)) return _sockDeny(sock, host, 'metadata/link-local/CGNAT/0-net 硬黑面(H14), scope 声明也不放行')
-  if (!hostAllowed(host)) { audit({ event: 'deny', host, why: 'CONNECT not in scope' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
+  const claims = requestClaims(req)
+  if (!hostAllowed(host, claims)) { audit({ event: 'deny', host, why: 'CONNECT not in scope' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
   if (!connectPortAllowed(port, host)) { audit({ event: 'deny', host, port, why: 'CONNECT port not pinned (gap 24)' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
   if (!allowRate(host)) { sock.end('HTTP/1.1 429 Too Many Requests\r\n\r\n'); return }
   // FIX-2 A4: resolve once / connect validated —— 校验通过即持有已校验 IP, 直连分支绑定建连
   // (企业代理分支建连对象是代理本身, 目标 DNS 在代理侧——保持校验+登记)。
   const _rv = await resolveValidatedIp(host)
   if (!_rv.ok) return _sockDeny(sock, host, 'DNS 解析失败或解析到保留/元数据地址(H14 fail-closed)')
-  audit({ event: 'connect', host })
+  audit({ event: 'connect', eng: claims?.eng ?? 'infrastructure', host })
   // ---- 4.5-1 解密分支(D2D_EGRESS_MITM=1; 每连接读取 env 便于运行时切换/回归, 默认不设=不走此处) ----
   // 隧道回环到内部 TLS 服务(tls-intercept: 自签 CA + 按 SNI 动态签叶子), worker 侧 TLS 在此终结,
   // 解密后的明文 HTTP 进 mitmHandle — host 级判定链已在上(硬黑面/scope/限速/DNS, 与直通分支完全同序),
@@ -386,6 +427,9 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
     if (await _mitmP) {
       import('node:net').then(({ default: net }) => {
         const up = net.connect(_mitm.port(), '127.0.0.1', () => {
+          const tunnelPort = up.localPort
+          mitmContexts.set(tunnelPort, { claims, host })
+          up.once('close', () => mitmContexts.delete(tunnelPort))
           up.setTimeout(0) // 隧道已建立: 解除握手超时(与直通分支同口径)
           sock.write('HTTP/1.1 200 Connection Established\r\n\r\n')
           if (head.length) up.write(head)
@@ -467,7 +511,9 @@ async function mitmHandle(req, res) {
   const path = u.pathname + u.search
   // 路径级 scope(仅解密模式可达此处 — path 只在解密后可见): P2P_PATH_DENY / scope '!host/path' 命中
   // → 403 + path-deny 审计, 不触上游、不耗令牌桶。
-  const denyRule = pathDenied(path)
+  const context = mitmContexts.get(req.socket?.remotePort)
+  const claims = context?.claims ?? null
+  const denyRule = claims ? requestPathDenied(host, path, claims) : pathDenied(path)
   if (denyRule) {
     audit({ event: 'path-deny', host, path, method: req.method, rule: denyRule })
     res.writeHead(403, { 'Content-Type': 'application/json' })
@@ -475,7 +521,8 @@ async function mitmHandle(req, res) {
   }
   // 同一判定链(与主 handler 逐条同序同义): 硬黑面 → scope → 限速 → DNS 解析校验
   if (isForbiddenTarget(host)) return deny(res, host, 'metadata/link-local/CGNAT/0-net 硬黑面(H14), scope 声明也不放行')
-  if (!hostAllowed(host)) return deny(res, host, 'host not in scope (V-08 egress enforcement)')
+  if (context && context.host !== host) return deny(res, host, 'CONNECT target changed')
+  if (!hostAllowed(host, claims)) return deny(res, host, 'host not in scope (V-08 egress enforcement)')
   if (!allowRate(host)) return deny(res, host, 'rate limit', 429)
   // FIX-2 A4: resolve once / connect validated(解密面第三转发点) —— 校验 IP 直接用于 https
   // 转发, servername 保持目标 host(TLS SNI 由 host 名驱动, 证书校验语义零变化)。
@@ -495,7 +542,7 @@ async function mitmHandle(req, res) {
   try {
     // FIX-2 A4: host=已校验 IP(建连不二次解析); servername=目标 host(TLS SNI 保真——证书
     // 校验/虚拟主机路由语义与域名建连完全一致, 仅解析时刻收敛为校验那一次)。
-    const reqOpts = { host: _rv.ip || host, servername: host, port: u.port || 443, path, method: req.method, headers: { ...req.headers, host: u.host }, rejectUnauthorized: false }
+    const reqOpts = { host: _rv.ip || host, servername: host, port: u.port || 443, path, method: req.method, headers: forwardHeaders(req.headers, u.host), rejectUnauthorized: false }
     // 中危审计修复(9)同口径: 上游超时 — timeout 只报警不销毁, 必须显式 destroy → 走 error → 502
     reqOpts.timeout = UPSTREAM_TIMEOUT_MS
     const up = https.request(reqOpts, (r) => {
@@ -512,7 +559,7 @@ async function mitmHandle(req, res) {
         // 只审计不碍转发(证据是尽力而为, 明文永不落盘)。明文 chunk 局部量, 写后即弃。
         try {
           mitmEncCapture({
-            eng: '', durMs: Date.now() - started,
+            eng: claims?.eng ?? '', durMs: Date.now() - started,
             req: { method: req.method, host, port: u.port || 443, path, httpVersion: req.httpVersion, headers: headOut(req.headers) },
             reqBody: { size: reqBytes, truncated: reqBytes > MITM_TXN_BODY_CAP, text: reqChunks.length ? Buffer.concat(reqChunks).toString('utf8') : '' },
             res: { status: r.statusCode, headers: headOut(r.headers) },
