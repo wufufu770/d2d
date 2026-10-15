@@ -24,17 +24,21 @@ const argv = process.argv.slice(2)
 const argOf = (k, dflt = null) => { const i = argv.indexOf(k); return i >= 0 ? (argv[i + 1] ?? dflt) : dflt }
 const GRAPHD_URL = argOf('--graphd-url', 'http://127.0.0.1:8766')
 const SKIP_RESET = argv.includes('--skip-reset')
-const RUN_ID = `run-xrp4b-${new Date().toISOString().slice(5, 16).replace(/[-T:]/g, '')}`
-const ROOT = path.join(REPO, 'experiments', 'xrp4-first-run')
+// E11a#3: 目标参数化（无参=现状逐字节——DVWA 缺省任务书/127.0.0.1/仓内 record/0.5h）
+const TASK_FILE = argOf('--task-file', null)
+const TARGET_BASE = argOf('--target', 'http://127.0.0.1')
+const SCOPE = argOf('--scope', '127.0.0.1')
+const MAX_HOURS = Number(argOf('--max-hours', '0.5')) || 0.5
+const RECORD_ROOT = argOf('--record-root', path.join(REPO, 'experiments', 'xrp4-first-run'))
+const RUN_ID = `${TASK_FILE ? 'run-r2b' : 'run-xrp4b'}-${new Date().toISOString().slice(5, 16).replace(/[-T:]/g, '')}`
+const ROOT = RECORD_ROOT
 const RECORD = path.join(ROOT, 'record', 'xring-first', RUN_ID)
 const WORKSPACE = path.join(RECORD, 'workspace')
 const EVENTS = path.join(RECORD, 'events.jsonl')
-// 预算护栏双保险（拍板 3）: 时长 0.5h（验收表 A8 收敛口径）×token 100 万（BUDGET_LIMITS 缺省,
-// 硬 cap 200 万由 monitor 拒绝不 clamp）——超限任一触发即熔断=S3 停下留证（护栏即终点）。
-const MAX_HOURS = 0.5
+// 预算护栏双保险（拍板 3）: 时长（E11a#3 参数化, 缺省 0.5h=A8 收敛口径）×token 100 万
+// （BUDGET_LIMITS 缺省, 硬 cap 200 万由 monitor 拒绝不 clamp）——超限任一触发即熔断。
 const MAX_TOKENS = BUDGET_LIMITS.maxTokens.default
 const HOST_TOKEN_FILE = process.env.P2P_HOST_TOKEN_FILE ?? `${os.homedir()}/.config/d2d/host-token`
-const TARGET_BASE = 'http://127.0.0.1'
 
 const log = (...a) => { const line = '[first-run] ' + a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); console.error(line); try { fs.appendFileSync('/tmp/xrp4-first-run.log', line + '\n') } catch { /* 已记因: 另面留痕——stderr 已出, /tmp 镜像写失败静默 */ } }
 
@@ -62,6 +66,37 @@ const EXTRA_TASK = [
   '  验证数据, 不是失败耻辱; 完整真伪裁决由人工在 held 面完成。请把 EXPECT 子串选为该步骤',
   '  响应体的真实特征文本, 并至少保留一条 EXPECT（无断言=整单转人工）。',
 ].join('\n')
+
+// ---- E11a#3/#5: 任务书文件模式（--task-file 给出时 extraTask=文件内容, 内置 DVWA 任务书
+// 仅无参缺省）; allowed_endpoints 结构段解析 → P2P_ALLOWED_ENDPOINTS（编排 env →
+// buildWorkerEnv 透传 → scope.checkBash 白名单层消费——零通配零继承, 换目标重登记）。
+function parseAllowedEndpoints(text) {
+  const seg = /^## allowed_endpoints[^\n]*\n([\s\S]*?)(?=\n## |\s*$)/m.exec(text)
+  if (!seg) return []
+  return [...seg[1].matchAll(/^- (https?:\/\/\S+)$/gm)].map((m) => m[1])
+}
+let EXTRA_TASK_RUNTIME = EXTRA_TASK
+if (TASK_FILE) {
+  EXTRA_TASK_RUNTIME = fs.readFileSync(TASK_FILE, 'utf8')
+  const eps = parseAllowedEndpoints(EXTRA_TASK_RUNTIME)
+  if (eps.length) {
+    process.env.P2P_ALLOWED_ENDPOINTS = eps.join(',')
+    log('allowed_endpoints 登记:', JSON.stringify(eps))
+  }
+}
+
+// ---- E11a#3: 目标探活（curl 统一——https 自签 -k; 3 试重试=r2b 网络窗口实证固化）----
+async function probeTarget() {
+  const args = ['-sk', '-m', '10', '-o', '/dev/null', '-w', '%{http_code}', `${TARGET_BASE}/`]
+  for (let i = 1; i <= 3; i++) {
+    try {
+      const code = execFileSync('curl', args).toString().trim()
+      if (/^\d{3}$/.test(code)) return code
+    } catch { /* 已记因: 网络窗口——重试 */ }
+    if (i < 3) await new Promise((r) => setTimeout(r, 3000))
+  }
+  return null
+}
 
 // ---- 五项观察①: worker 进程树 env 扫描（私钥运行时探测——A7 实战数据点）----
 function scanProcEnv(pid) {
@@ -107,13 +142,19 @@ const allow = JSON.parse(fs.readFileSync(process.env.D2D_DATA_DIR ?? `${os.homed
 const xringAllow = allow?.roles?.xring?.allowlist ?? []
 if (!xringAllow.length || xringAllow.some((m) => m.includes('<'))) throw new Error(`allowlist 占位/缺失: ${JSON.stringify(xringAllow)}（阶段 B 前置）`)
 log('allowlist:', JSON.stringify(xringAllow))
-if (!SKIP_RESET) {
+if (!SKIP_RESET && !TASK_FILE) {
   log('DVWA 重置（dvwa-reset.sh）...')
   execFileSync('bash', [path.join(REPO, 'scripts', 'ops', 'dvwa-reset.sh')], { stdio: 'inherit' })
 }
-const dvwaUp = await fetch(`${TARGET_BASE}/login.php`, { signal: AbortSignal.timeout(8000) }) // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request — 本地受控靶（DVWA 无 https 面），http=设计内形态非降级
-if (!dvwaUp.ok) throw new Error(`DVWA 不就绪: login.php=${dvwaUp.status}（先跑 scripts/ops/dvwa-reset.sh）`)
-log('DVWA 就绪: login.php', dvwaUp.status)
+if (TASK_FILE) {
+  const code = await probeTarget()
+  if (!code) throw new Error(`目标不就绪（3 试探活失败）: ${TARGET_BASE}`)
+  log(`目标就绪: ${TARGET_BASE} HTTP ${code}`)
+} else {
+  const dvwaUp = await fetch(`${TARGET_BASE}/login.php`, { signal: AbortSignal.timeout(8000) }) // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request — 本地受控靶（DVWA 无 https 面），http=设计内形态非降级
+  if (!dvwaUp.ok) throw new Error(`DVWA 不就绪: login.php=${dvwaUp.status}（先跑 scripts/ops/dvwa-reset.sh）`)
+  log('DVWA 就绪: login.php', dvwaUp.status)
+}
 
 // ---- 图内基线（R4c 空闲图观察面+回流量分母）----
 const baseCounts = {}
@@ -131,16 +172,16 @@ log('图内基线:', JSON.stringify(baseCounts))
 // 照拦靶集外（门判据零触碰）。建立失败=发射中止（S3 停下留证——不降级为无上下文发射）。
 fs.mkdirSync(WORKSPACE, { recursive: true })
 const xringEng = await ensureXRingEngagement({
-  graphdUrl: GRAPHD_URL, hostToken, runId: RUN_ID, scope: '127.0.0.1',
-  target: 'DVWA http://127.0.0.1 (X-Ring 受控靶)',
-  objective: 'XR-P4 阶段 B X-Ring 受控首跑（靶集绑定, 时限=run 预算窗, runId 关联）',
+  graphdUrl: GRAPHD_URL, hostToken, runId: RUN_ID, scope: SCOPE,
+  target: TASK_FILE ? `${TARGET_BASE} (实弹靶场 r2b 系)` : 'DVWA http://127.0.0.1 (X-Ring 受控靶)',
+  objective: TASK_FILE ? 'r2b 实弹受控跑（任务书文件绑定, 时限=run 预算窗, runId 关联）' : 'XR-P4 阶段 B X-Ring 受控首跑（靶集绑定, 时限=run 预算窗, runId 关联）',
 })
 appendEvent(EVENTS, { event: 'xring-eng-created', name: xringEng.name, scope: xringEng.scope, runId: RUN_ID, ts: new Date().toISOString() })
 log('XR-G1 engagement 预建:', JSON.stringify(xringEng))
 process.env.P2P_ENGAGEMENT = xringEng.name // 编排进程 env → adapter 拷贝 → worker 会话（resolveEngagement ①路径）
 const restore = stripGraphTokenEnv(RECORD)
 const runner = createXRingRunner({ home: path.join(REPO, 'plugin', 'pentest-dsh') })
-const started = runner.start({ runId: RUN_ID, workspace: WORKSPACE, recordRoot: RECORD, extraTask: EXTRA_TASK })
+const started = runner.start({ runId: RUN_ID, workspace: WORKSPACE, recordRoot: RECORD, extraTask: EXTRA_TASK_RUNTIME })
 const { liveWorkerPids } = await import('../../plugin/pentest-dsh/adapter-dsh.mjs')
 const pids = liveWorkerPids()
 const workerPid = pids[pids.length - 1] ?? null
@@ -213,7 +254,7 @@ log('能力调用统计（top20）:', JSON.stringify(capabilityLog))
 
 // ---- 回流（queue 档: B/C quarantine、A 级 verifyRunner 必经——DVWA targetBase）----
 log('进入回流阶段（mode=queue, verifyRunner targetBase=' + TARGET_BASE + '）')
-const rf = await reflow({ workspace: WORKSPACE, runId: RUN_ID, graphdUrl: GRAPHD_URL, hostToken, eventsFile: EVENTS, eng: `xring-${RUN_ID}`, mode: 'queue', verifyRunner: createVerifyRunner({ targetBase: TARGET_BASE }) })
+const rf = await reflow({ workspace: WORKSPACE, runId: RUN_ID, graphdUrl: GRAPHD_URL, hostToken, eventsFile: EVENTS, eng: `xring-${RUN_ID}`, mode: 'queue', verifyRunner: createVerifyRunner({ targetBase: TARGET_BASE, eng: `xring-${RUN_ID}` }) })
 log('reflow:', JSON.stringify({ ok: rf.ok, written: rf.written, held: rf.held, errors: rf.errors }))
 
 // ---- 图内对比（回流量+R4c 空闲图观察面）----

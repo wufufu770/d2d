@@ -71,6 +71,11 @@
 - token 仅存 verify-runner 进程内存 session；**禁止**写入任何文件/日志/事件流/回报；
   进程退出即消失。
 - EXPERT 断言行照旧作用于上一请求响应体。
+- **A0a 修正（E11a-P2 追加）**：AUTH 提取失败转 manual 的条目，reflow 标记
+  `failure_class: auth-failure`（既有 failure_class 语义扩展——环境性验证受阻而非
+  发现真伪问题）；**L-1 机械验证率统计双列**：`总验证率`（含 auth-failure）与
+  `剔后验证率`（剔除 auth-failure 条目后）——**L-1 定谳采用剔后口径**（主会话
+  裁定：验证器凭据能力缺失不应惩罚发现质量）。
 
 **验收**：合成登录→JWT→越权链 repro（本地 mock 服务）全过；全库 grep 凭据值
 零命中（凭据值只存在于 creds 文件）；token 泄漏面测试（事件流/stdout/落盘 grep）零命中。
@@ -169,6 +174,17 @@ repro_paths F-2=avatar 端点）——报告链对账断裂。
   可选字段，如 `["H-2"]`）与 hypotheses[].evidence_refs 中 F-* 引用，落
   `(Finding)-[:RELATES {kind:'evidence-of'}]->(Hypothesis)` 边——图内可查
   发现↔假设证据链。
+- **A0b 修正（E11a-P2 追加，两条约束）**：
+  ① repro_paths.json **每场唯一权威文件+append-only**——多 worker 并行产出必须
+  合并为单文件后交回流（编排侧合并），禁止同场多份 repro_paths 并存；
+  ② **图内 finding ID 一经分配永久绑定**——`xring-<runId>-f-<N>` 禁复用禁重排
+  （N 与 repro_paths 序号的绑定在入图时刻固化，后续追加 finding 用新 N 顺延，
+  已占用 N 不回收）。
+  ③ 对账闸增**差集报告**：`图内已分配 ID 集 − repro_paths 引用集 = 孤儿 finding
+  清单`——非空即报警（审计链可见哪些已入图 finding 失去了 repro 出处）。
+- **A0c 修正（E11a-P2 追加，语义确认）**：#5 白名单放行**不豁免黑名单面**——
+  DESTRUCTIVE/状态保护/host-token 读取等黑名单判定在白名单命中后照跑，双层
+  防护取严（白名单只解决"合法目标被字面检测误拦"，不构成任何黑名单豁免）。
 
 **验收**：漂移产出（handoff 多一个 F-5）被闸拦截+差异报告正确；一致产出放行+
 RELATES 边落图可查。
