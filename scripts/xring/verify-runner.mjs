@@ -159,7 +159,7 @@ async function replayHttp(artifact, { targetBase, fetchImpl = fetch, timeoutMs =
   // E11a#2: token session（进程内存——零落盘零日志零 evidence 回显）
   const session = { token: null }
   const request = async (method, fullPath, body) => {
-    const headers = {}
+    const headers = { connection: 'close' } // E11a: 逐请求关连——测试进程不被 keep-alive 句柄挂住（mocha 退出语义）
     if (cookieJar.size) headers.cookie = cookieHeader()
     if (session.token) headers.authorization = `Bearer ${session.token}`
     if (body !== undefined) {
