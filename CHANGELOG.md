@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0-alpha] - 2026-10-15
+
+> 预发布版（npm dist-tag=alpha；latest 保持 1.0.1 不动直至 Phase 3 实弹验收达标转正）。
+
+### Added
+- verify-runner TLS 分层：repro `env.tls`（insecure 子进程隔离路径/ca 注入）——https 自签靶场机械验证恢复（E11a#1）。
+- verify-runner AUTH 原语：`AUTH <loginPath> <credRef> <tokenExtract>` 登录→token 会话链；凭据实体 `~/.d2d-data/creds/<eng>.env` 间接引用，token 进程内存零落盘（E11a#2）。
+- first-run 目标参数化：`--target/--scope/--task-file/--record-root/--max-hours`，无参缺省零行为变化（E11a#3）。
+- scope gate 端点白名单：task-file 内嵌 `allowed_endpoints` 三元组登记，循环变量展开模拟后前缀匹配放行；黑名单面零豁免取严（E11a#5）。
+- 回流 ID 对账闸：handoff/repro_paths/图内三集合一致性校验，漂移整场拒落+差集报告（E11a#7）。
+- DSH 0.2.0-rc.2 兼容性支持：会话文件候选表前插 v4 代会话名（v4/v3/旧名回退序，0.1.x 下零行为变化；dsh-022 盘点零 blocking 并入）。
+
+### Fixed
+- 回流条目级容错：单条 schema 失败不再拖死整文件——超长 evidence 截断（总长含尾标≤上限）+`partial` 标记入图（E11a#4）。
+
+### Security
+- AUTH 失败语义：登录/token 提取失败整单转 manual 且标 `failure_class: auth-failure`（不降级为无凭据伪验证）；凭据值全链零落盘零回显（E11a#2 伴生，A0a 修正）。
+
 ## [1.0.1] - 2026-10-09
 
 ### Security
