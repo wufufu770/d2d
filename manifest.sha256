@@ -410,7 +410,7 @@ a8a95781cb61608f2ac33cdf3a27883c0c8cc1d2864ba66a5705e859792e545e  plugin/pentest
 f4801b50c7b60958932a5680f49b3721256c82251f1e695e8d7ea023f1b09153  plugin/pentest-dsh/test/role-routing-boundary.test.mjs
 e04aefc0fb7c37dac8864ef1836af70ba1b223a5a77457f79573a41ff8670ee1  plugin/pentest-dsh/test/routing-score-v2.test.mjs
 e9fb02849c3c9dc5b73a1095fcca8ef7e01c9747c83ae3e9ef9c7aa2169f9e44  plugin/pentest-dsh/test/safe-url.test.mjs
-a7593ad6d0ebce0a6359f87e336e71a9e9e12fbe5279f97cbf61104a0e304212  plugin/pentest-dsh/test/sanitize-truncate-order.test.mjs
+e8b2a76f6271274d669f694baf32c19fb1116093f37e2772948534a0a185df3b  plugin/pentest-dsh/test/sanitize-truncate-order.test.mjs
 7c2f2fbeb888fcbca6ab031f75ee7c94e5bc8fa5dbbef05598fd9241a419450e  plugin/pentest-dsh/test/sanitize.test.mjs
 b8da727057caedfcbe1ba3575b01c75a975cc62ce43c57d0615a6579545f73dc  plugin/pentest-dsh/test/scheduler-dual-keyring.test.mjs
 07333497d9f127f0402bd517ac509bea7896fe3295affffa9b18364cee412e54  plugin/pentest-dsh/test/scheduler-workers.test.mjs
