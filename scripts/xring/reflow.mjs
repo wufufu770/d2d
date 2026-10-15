@@ -7,9 +7,64 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { validateFile } from './validate.mjs'
+import { validateFile, validateHypotheses } from './validate.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
 import { XRING_MODES } from './monitor.mjs'
+
+// E11a#4: 条目级容错——单条 schema 失败不再拖死整文件。超长 evidence_refs 条目截断
+// 至 500+尾标后重校（过=partial 入图）; 仍失败=条目拒（只拒该条）。结构性损坏
+// （JSON parse/根类型错）仍由 validateFile 的文件级拒处理（无从逐条）。
+const EVIDENCE_MAX = 500
+export function tolerantHypothesisEntries(doc, fileErrors = []) {
+  const out = { pass: [], partial: [], rejected: [] }
+  const items = Array.isArray(doc?.hypotheses) ? doc.hypotheses : null
+  if (!items) return { ...out, rejected: [{ id: '(root)', reason: fileErrors.join(' | ').slice(0, 200) }] }
+  for (const [idx, h] of items.entries()) {
+    // schema root required（run_id/generated_at）——单条构造补占位根字段（items 校验语义）
+    const single = { run_id: 'e11a', generated_at: '2026-01-01T00:00:00Z', hypotheses: [h] }
+    let v = validateHypotheses(single)
+    if (v.ok) { out.pass.push(h); continue }
+    const isLengthOnly = (v.errors ?? []).every((e) => /evidence_refs\/\d+ (must NOT have more than|maxLength)/i.test(e))
+    if (isLengthOnly && Array.isArray(h.evidence_refs)) {
+      // 截断语义（E11a#4）: 总长含尾标 ≤ EVIDENCE_MAX（schema maxLength 硬上限——截断后仍超
+      // 上限=截断无意义, 故 slice 长度预扣尾标）; 重校构造同 single（root required 补占位）。
+      const trimmed = { ...h, evidence_refs: h.evidence_refs.map((r) => {
+        const s2 = String(r)
+        if (s2.length <= EVIDENCE_MAX) return r
+        const tail = `[truncated:原长${s2.length}]`
+        return s2.slice(0, Math.max(0, EVIDENCE_MAX - tail.length)) + tail
+      }) }
+      v = validateHypotheses({ run_id: 'e11a', generated_at: '2026-01-01T00:00:00Z', hypotheses: [trimmed] })
+      if (v.ok) { out.partial.push({ ...trimmed, partial: true, _origLens: h.evidence_refs.map((r) => String(r).length) }); continue }
+    }
+    out.rejected.push({ id: h?.id ?? `(idx:${idx})`, reason: (v.errors ?? []).join(' | ').slice(0, 200) })
+  }
+  return out
+}
+
+// E11a#7: ID 对账闸——repro_paths 为 findings 权威清单（F-N 连续无重）; handoff.md
+// 战果表 ID 集合（存在时）与之一致, 不一致=整场拒落+差异报告。handoff 缺失=退化自洽校验。
+export function idReconcile({ reproIds, handoffPath }) {
+  const errs = []
+  const ids = reproIds ?? []
+  if (ids.some((x) => !/^F-\d+$/.test(x))) errs.push(`repro_paths 存在非 F-N 形态 id: ${ids.filter((x) => !/^F-\d+$/.test(x)).join(',')}`)
+  const nums = ids.map((x) => Number(x.slice(2)))
+  if (new Set(nums).size !== nums.length) errs.push(`repro_paths id 重复: ${ids.join(',')}`)
+  if (nums.length && (Math.min(...nums) !== 1 || Math.max(...nums) !== nums.length)) errs.push(`repro_paths id 非连续（期望 F-1..F-${nums.length}）: ${ids.join(',')}`)
+  let handoffIds = null
+  if (handoffPath && fs.existsSync(handoffPath)) {
+    handoffIds = []
+    for (const line of fs.readFileSync(handoffPath, 'utf8').split('\n')) {
+      const m = /^\s*\|\s*(F-\d+)\s*\|/.exec(line)
+      if (m && !handoffIds.includes(m[1])) handoffIds.push(m[1])
+    }
+    const onlyHandoff = handoffIds.filter((x) => !ids.includes(x))
+    const onlyRepro = ids.filter((x) => !handoffIds.includes(x))
+    if (onlyHandoff.length || onlyRepro.length)
+      errs.push(`ID 漂移: handoff 多出 [${onlyHandoff.join(',')}] repro 多出 [${onlyRepro.join(',')}]——权威源=repro_paths, handoff 需对齐后重交`)
+  }
+  return { ok: errs.length === 0, errs, handoffIds }
+}
 
 async function post(graphdUrl, apiPath, payload, token) {
   const res = await fetch(graphdUrl + apiPath, {
@@ -90,24 +145,36 @@ export async function reflow(opts) {
     }
   }
 
-  // ---- B 级: hypotheses.json → /write/hypothesis ----
+  // ---- B 级: hypotheses.json → /write/hypothesis（E11a#4: 条目级容错——超长 evidence
+  // 截断+partial 入图, 条目拒只拒该条; 文件级拒仅留结构性损坏）----
   if (found['hypotheses.json']) {
     const v = validateFile(found['hypotheses.json'])
-    if (!v.ok) {
-      errors.push({ file: 'hypotheses.json', errors: v.errors })
-    } else {
-      const doc = JSON.parse(fs.readFileSync(found['hypotheses.json'], 'utf8'))
-      for (const h of doc.hypotheses) {
-        const r = await post(graphdUrl, '/write/hypothesis', {
-          id: `xring-${runId}-${h.id.toLowerCase()}`,
-          text: String(h.statement).slice(0, 1500),
-          strategy: String(h.priority ?? ''),
-          eng: eng || runId,
-        }, hostToken)
-        if (r.status === 200 && r.body?.ok) written.push({ level: 'B', id: h.id })
-        else errors.push({ file: 'hypotheses.json', id: h.id, status: r.status, body: r.body })
-      }
+    const doc = JSON.parse(fs.readFileSync(found['hypotheses.json'], 'utf8'))
+    let entries = { pass: doc.hypotheses ?? [], partial: [], rejected: [] }
+    if (!v.ok) entries = tolerantHypothesisEntries(doc, v.errors)
+    for (const h of entries.pass) {
+      const r = await post(graphdUrl, '/write/hypothesis', {
+        id: `xring-${runId}-${h.id.toLowerCase()}`,
+        text: String(h.statement).slice(0, 1500),
+        strategy: String(h.priority ?? ''),
+        eng: eng || runId,
+      }, hostToken)
+      if (r.status === 200 && r.body?.ok) written.push({ level: 'B', id: h.id })
+      else errors.push({ file: 'hypotheses.json', id: h.id, status: r.status, body: r.body })
     }
+    for (const h of entries.partial) {
+      const r = await post(graphdUrl, '/write/hypothesis', {
+        id: `xring-${runId}-${h.id.toLowerCase()}`,
+        text: String(h.statement).slice(0, 1500),
+        strategy: String(h.priority ?? ''),
+        eng: eng || runId,
+      }, hostToken)
+      if (r.status === 200 && r.body?.ok) {
+        written.push({ level: 'B', id: h.id, partial: true, evidenceTruncatedTo: EVIDENCE_MAX })
+        emit({ event: 'partial-entry', runId, file: 'hypotheses.json', id: h.id, truncatedTo: EVIDENCE_MAX })
+      } else errors.push({ file: 'hypotheses.json', id: h.id, status: r.status, body: r.body })
+    }
+    for (const rej of entries.rejected) errors.push({ file: 'hypotheses.json', id: rej.id, entryRejected: true, reason: rej.reason })
   }
 
   // ---- A 级: repro_paths.json → verifyRunner（必经）→ /write/finding ----
@@ -117,10 +184,18 @@ export async function reflow(opts) {
       errors.push({ file: 'repro_paths.json', errors: v.errors })
     } else {
       const doc = JSON.parse(fs.readFileSync(found['repro_paths.json'], 'utf8'))
+      // E11a#7: ID 对账闸（入图前置）——repro 自洽+handoff 一致性; 漂移=整场拒落+差异报告
+      const rec = idReconcile({ reproIds: (doc.findings ?? []).map((f) => f.id), handoffPath: path.join(workspace, 'handoff.md') })
+      if (!rec.ok) {
+        errors.push({ file: 'id-reconcile', gate: 'blocked', errs: rec.errs })
+        emit({ event: 'id-reconcile-blocked', runId, errs: rec.errs })
+        return { ok: false, written, held, errors, idDrift: rec.errs }
+      }
+      if (rec.handoffIds) emit({ event: 'id-reconcile-ok', runId, repro: (doc.findings ?? []).map((f) => f.id).length, handoff: rec.handoffIds.length })
       for (const f of doc.findings) {
         const verdict = await verifyRunner.verify(f)
         if (verdict.verdict !== 'pass') {
-          held.push({ level: 'A', id: f.id, verdict: verdict.verdict, evidence: verdict.evidence })
+          held.push({ level: 'A', id: f.id, verdict: verdict.verdict, failureClass: verdict.failureClass ?? null, evidence: verdict.evidence })
           continue // A 级必经 verify: manual/fail 不入图（编排位固化, P3/P4 接真执行器）
         }
         // XR-G6: repro 首行补鉴权档位标注（一处 diff）——graphd 0917 鉴权档位门（high/critical
@@ -139,6 +214,17 @@ export async function reflow(opts) {
         if (r.status === 200 && r.body?.ok) written.push({ level: 'A', id: f.id, evidence: verdict.evidence })
         else errors.push({ file: 'repro_paths.json', id: f.id, status: r.status, body: r.body })
       }
+      // E11a#7 差集审计: 图内已分配 ID − repro 引用集 = 孤儿 finding 清单（非空即报警）
+      try {
+        const orphRows = await post(graphdUrl, '/query', { cypher: `MATCH (f:Finding) WHERE f.id STARTS WITH 'xring-${runId}-f-' RETURN f.id AS id` }, hostToken)
+        const graphIds = (orphRows.body?.rows ?? []).map((r) => r.id)
+        const reproRefs = new Set((doc.findings ?? []).map((f) => `xring-${runId}-${f.id.toLowerCase()}`))
+        const orphans = graphIds.filter((g) => !reproRefs.has(g))
+        if (orphans.length) {
+          emit({ event: 'orphan-findings', runId, orphans })
+          errors.push({ file: 'id-reconcile', audit: 'orphan-findings', orphans })
+        }
+      } catch (e) { errors.push({ file: 'id-reconcile', audit: 'orphan-query-failed', err: String(e?.message ?? e).slice(0, 120) }) }
     }
   }
 

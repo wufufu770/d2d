@@ -32,7 +32,15 @@ jobs:
 
       - name: Publish to npm (OIDC trusted publishing, provenance auto-attached)
         working-directory: plugin/pentest-dsh
-        run: npm publish --provenance --access public
+        # E11a 批授权改动（dist-tag 策略行——OIDC 认证流零触碰）: 预发布版（semver 含 '-'，
+        # 如 v1.1.0-alpha）→ --tag alpha; 正式版走缺省 latest。latest 只随正式 tag 移动。
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == *-* ]]; then
+            npm publish --provenance --access public --tag alpha
+          else
+            npm publish --provenance --access public
+          fi
 
       - name: GitHub Release (SBOM + report templates + redacted A/B report)
         env:
