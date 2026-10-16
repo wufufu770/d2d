@@ -1,0 +1,65 @@
+# 1.2.0 需求池（E12 冻结 · 2026-10-16）
+
+> 性质：纯文档批冻结件——只定稿不实施；排批切分与条目启动归批次提示词显式授权。
+> 池基线=E11b 收官树（远端 main a64ce2a）。逐条带实证来源/锚点+一句话方案+改动量
+> （S=单文件级 / M=跨文件模块级 / L=架构级——本池最大 M，无 L）。
+
+## 一、与转正批关系声明
+
+1. **1.2.0 不含转正动作**：1.1.0-alpha→latest 转正为独立批，前置=靶场形态确认
+   （宿主侧：192.168.132.14 是否切防护模式/真 honeypot）+L-1 验证率线在可比较语境
+   重测达标（devlog E11a-P2e 段双列定谳）。
+2. **E11b 笔属转正批内容**：GRAPHD/brainDir 守卫、4-3a 内容锚修正、对账台账已随
+   v1.1.0-alpha 发布链入包——不在本池重复立项。
+3. 本池全部条目为 1.2.0 候选；与 roadmap.md 主编排（T 系梯队）互不替代。
+
+## 二、池总表（22 条：P0×2 / P1×3 / P2×17）
+
+| ID | 层 | 条目 | 实证来源/锚点 | 一句话方案 | 量 |
+|----|----|------|--------------|-----------|----|
+| R-01 | P0 | mocha flaky 挂死根因定位（--exit 债到期） | E11a-P2 收官 mocha rc=124 两轮（组合 B 去 e11a 仍挂=非新增引入的测试间干扰，mock server 句柄非确定性挂源）；ci.yml 已加 --exit=绕过非治愈 | 定位测试间干扰源（句柄泄漏面）根修；根修后摘除 --exit 旗标（摘除=本条验收线，此前 --exit 标注"技术债到期"） | M |
+| R-02 | P0 | manifest fold 内建于 docs 类工作流 | V-16 两犯（E11a-P2 回归段 12 文件失配+E11b devlog 笔 1 文件失配，各补 manifest regen 笔）——治流程不靠记忆 | docs 类笔的落库工作流模板默认带 manifest regen 步：内容笔+regen 笔原子成对（E12 本批自践行） | S |
+| R-03 | P1 | tarpit/环境一致性检验产品化（单列亮点） | Phase 3 run-r2b-10160333 tarpit 反转（lessons L-1~L-4：同路径响应 md5/size/content-type 指纹漂移=快速判据、CSP 外部 origin=环境线索、首探头复读可即时捕获翻转、锁出分支前兆）——worker 自发行为升格产品语义 | 探针级环境一致性检验原语：同路径双探比对+指纹漂移告警+honeypot 嫌疑标注入 lessons/假设图；L-3/L-4 判据固化 | M |
+| R-04 | P1 | #9 report.mjs 三格式自动生成 | r2b-feedback（三格式手工生成于 /tmp）+docs/report-templates/ 三模板已在缺接线；design-1.1.0 曾注"#9 单议"→E12 定谳入 P1 | report.mjs 增 --format butian\|vulbox\|edu-src：repro_paths+裁决态→模板字段映射自动出报告 | M |
+| R-05 | P1 | #6 跨 run 接力（handoff 契约化） | r2b2 handoff.md 已自发产出；Phase 3 L-1 实证必要性（前轮发现=leads 非 facts——注入须带怀疑语义） | first-run 增 --from-record：run N 产物（handoff/假设态/裁决）契约化注入 run N+1 任务书，leads 语义显式标注 | M |
+| R-06 | P2 | #8 编排探活重试与实录落点统一 | r2b-feedback 卡点 3（3 试重试已固化进 first-run probeTarget）——余项=重试参数化+实录落点约定分散（/tmp 编排 vs record root） | 探活次数/间隔参数化+record 落点统一约定进编排文档 | S |
+| R-07 | P2 | #10 egress 限流语义入任务书模板 | Phase 3 L-2（worker 自学 1.5s 间隔+Proxy CONNECT aborted 识别）——应显式下发 | 任务书模板 egress 节：间隔基线/限流识别/abort 语义 | S |
+| R-08 | P2 | #11 held 裁决的验证补录字段 | held-admit-8（G5 admit/dismiss 实操 8 条）——人工验证结论无回写位 | adjudicate 增 verification 补录字段（结论+证据引用），闭 held→人工→图内验证链 | S |
+| R-09 | P2 | #12 schema 长度策略余项 | E11a #4 evidence 截断（总长含尾标≤500）已进——余项=其余自由文本字段长度策略未统一 | 全产物（handoff/lessons/repro）自由文本字段统一长度上限+截断语义表 | S |
+| R-10 | P2 | first-run 收尾段图查询整体超时 | Phase 3 实录（devlog E11a-P2e 段）：reflow 后图内验证查询无整体超时→编排进程挂起（数据已全落盘，kill 收割无损） | 收尾段查询包整体超时+超时即落盘收割报告 | S |
+| R-11 | P2 | 行号锚断言脆弱性治理（内容锚模式推广） | 4-3a 两轮 CI/本地行号漂移 ±3（E11b 内容锚修正 a0814c5 首验通过+③④等价性测试背书）——模式未推广 | 内容锚断言模式成文（恰此一处+唯一命中行内容验证+等价性测试背书惯例），存量静态断言审查 | S |
+| R-12 | P2 | auth 探测锁出感知 | Phase 3 L-2：锁出分支（HTTP 200+JSON 锁定文案）吞掉后续全部探测窗口（~8 步浪费+session 报废） | 锁出响应识别+auth 试探步进语义（操作者凭据单试+非 auth 端点预探形态）入任务书/教训卡 | S |
+| R-13 | P2 | info 严重级入图拒收语义 | Phase 3 reflow errors 1=info 入图被拒（devlog E11a-P2e 段）——severity 域不含 info 态 | 图 schema severity 域增 info 态，或拒收显式报告化（非静默 error） | S |
+| R-14 | P2 | T-4 hypotheses eng 归属 | r2b-feedback 卡点 4（worker 产出 hypotheses.json 无 eng 字段→落图后 engagement 维度检索 0 条） | reflow 落图强制补 eng=engagement 上下文 | S |
+| R-15 | P2 | T-5 verify-runner header/逐请求表达力 | r2b-feedback T-5（F-2 路径遍历需逐文件探测——现有 METHOD/POST --data/EXPECT 语法无 header 行表达） | verify-runner 增 HEADER 行/逐请求覆盖语法 | S |
+| R-16 | P2 | T-6 NAS/SPA 类任务书模板 | r2b-feedback T-6（前端路由 fallback 坑每类新目标冷启动）+Phase 3 判据佐证（R-03 同源） | 任务书模板家族增 NAS/SPA 形态节（指纹差异/fallback 坑/环境一致性判据提示） | S |
+| R-17 | P2 | kuzu 退役批 | T4-2/T4-3/LBD-2 决策链（state.md：观察期满 clean→缺省引擎翻转+kuzu 退役；退役复评=观察期满 clean 后另批） | 前置=观察期（10-18）收官 clean；执行=缺省引擎翻转+kuzu 依赖退役+回滚资产归档复核 | M |
+| R-18 | P2 | 3-2/3-5 折并项 | SWEEP-1 延后登记（devlog SWEEP-1 段：主会话清单原议归后续批） | 按原议折并推进（切面归排批） | S |
+| R-19 | P2 | verify-main 45/46 缺项+technique_cards.json JUNK 检出 | SWEEP-1 实测既有态（do-not-touch.md 登记不扩 scope，处置归后续批） | 缺项补齐核查+JUNK 定性清理 | S |
+| R-20 | P2 | improve/burp-oob-jwt-cred-matrix 分支定性 | origin 遗留分支（远端在位未定性） | 定性三选一：吸收/归档/删除（归排批裁决） | S |
+| R-21 | P2 | docs 终版精简（13 活引用收缩） | clean-repo-blueprint.md（断链风险>精简收益，终版收缩归执行相后段） | 活引用清单复核+收缩执行（发布相后段时点） | M |
+| R-22 | P2 | XR-G8 EXTRACT 机械原语 | wrap4-execution-plan 跨判定独立项+xrp4-acceptance（动态 token 场景参数化边界裁量归用户） | 用户拍板参数化边界后实施 EXTRACT 原语 | M |
+
+## 三、排期建议（主会话终裁）
+
+- **P0 工程卫生（先行小批）**：R-01/R-02——两犯/两挂实证，量小杠杆大；R-02 即时生效
+  于后续每批落库。
+- **P1 产品（工程主线）**：R-03 tarpit 检测（Phase 3 产品级亮点）→ R-04 报告自动化
+  （交付闭环）→ R-05 跨 run 接力（连续作战能力）——三者构成"实战反馈→交付→复战"产品环。
+- **P2（随批搭车/排批）**：R-06~R-16 多为 S 量尾巴，按"同文件同族"折并搭车
+  （R-07/R-12/R-16 同属任务书模板族；R-13/R-14 同属 reflow 落图族）；R-17~R-22 为
+  独立决策/登记项，前置条件成熟才启动。
+- **排批禁忌**：本池只冻结不排期——任何条目启动仍需批次提示词显式授权。
+
+## 附则 A：Mimosa 采样性偶拦处置预案（E11b 验收校准点落账）
+
+- 单拦处置=**间隔重试一发即判**（两次实证可过：E11a 分层探针两发全过/E11b tag 面
+  间隔单发过检）；两次同拦才升级止损（分层拆族/主会话通道）。
+- 禁止项不变：换通道伪装、改扫描面、hook/台账触碰、--no-verify、gh api 旁路。
+- 采样模型定谳（mimosa-ledger §一/二）：拦截面与改动集构成+时点采样相关，非通道差异。
+
+## 附则 B：Mimosa 上游反馈草案定稿状态（只定稿不代发）
+
+- 草案全文已在 docs/mimosa-ledger.md §三（三请求：baseline/存量告警接受 API、
+  test/fixture 目录扫描降权或内联标注语法、扫描覆盖度声明）。
+- E12 定谳=草案内容定稿（对账台账 §一 7H+30H 实证背书）；**代发动作归用户裁决**。
