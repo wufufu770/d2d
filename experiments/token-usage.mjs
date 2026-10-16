@@ -24,7 +24,7 @@ import { pathToFileURL } from 'node:url'
 
 // 与 plugin/pentest-dsh/scheduler/workers.mjs SESSION_FILE_CANDIDATES 同款约定(v3 优先, 旧名兼容);
 // 独立声明以保持 experiments/ 零业务依赖的编排边界, 测试侧断言两者一致。
-export const SESSION_FILE_CANDIDATES = ['session.v3.jsonl.zstd', 'session.jsonl.zstd']
+export const SESSION_FILE_CANDIDATES = ['session.v4.jsonl.zstd', 'session.v3.jsonl.zstd', 'session.jsonl.zstd'] // dsh-022: v4 前插（E11a 并入, 0.1.x 零行为变化）
 
 // ── 纯函数: worker 前缀分组 — terminal 行按 worker.startsWith(eng) 归组, 去重保序 ──
 // 空 eng 直接返回空(空串前缀会误收全量账本, 防呆)。
