@@ -17,8 +17,8 @@
 
 | ID | 层 | 条目 | 实证来源/锚点 | 一句话方案 | 量 |
 |----|----|------|--------------|-----------|----|
-| R-01 | P0 | mocha flaky 挂死根因定位（--exit 债到期） | E11a-P2 收官 mocha rc=124 两轮（组合 B 去 e11a 仍挂=非新增引入的测试间干扰，mock server 句柄非确定性挂源）；ci.yml 已加 --exit=绕过非治愈 | 定位测试间干扰源（句柄泄漏面）根修；根修后摘除 --exit 旗标（摘除=本条验收线，此前 --exit 标注"技术债到期"） | M |
-| R-02 | P0 | manifest fold 内建于 docs 类工作流 | V-16 两犯（E11a-P2 回归段 12 文件失配+E11b devlog 笔 1 文件失配，各补 manifest regen 笔）——治流程不靠记忆 | docs 类笔的落库工作流模板默认带 manifest regen 步：内容笔+regen 笔原子成对（E12 本批自践行） | S |
+| R-01 | P0 | mocha flaky 挂死根因定位（--exit 债到期）【✅ E13 落地：根因=xring-p1 真子进程弃管，收割笔+--exit 摘除，4 轮验收+句柄=0，devlog E13 段】 | E11a-P2 收官 mocha rc=124 两轮（组合 B 去 e11a 仍挂=非新增引入的测试间干扰，mock server 句柄非确定性挂源）；ci.yml 已加 --exit=绕过非治愈 | 定位测试间干扰源（句柄泄漏面）根修；根修后摘除 --exit 旗标（摘除=本条验收线，此前 --exit 标注"技术债到期"） | M |
+| R-02 | P0 | manifest fold 内建于 docs 类工作流【✅ E13 落地：scripts/ops/manifest-regen.mjs+.zcode/workflows/docs-fold-land.dwf.ts 模板，本批三族笔践行】 | V-16 两犯（E11a-P2 回归段 12 文件失配+E11b devlog 笔 1 文件失配，各补 manifest regen 笔）——治流程不靠记忆 | docs 类笔的落库工作流模板默认带 manifest regen 步：内容笔+regen 笔原子成对（E12 本批自践行） | S |
 | R-03 | P1 | tarpit/环境一致性检验产品化（单列亮点） | Phase 3 run-r2b-10160333 tarpit 反转（lessons L-1~L-4：同路径响应 md5/size/content-type 指纹漂移=快速判据、CSP 外部 origin=环境线索、首探头复读可即时捕获翻转、锁出分支前兆）——worker 自发行为升格产品语义 | 探针级环境一致性检验原语：同路径双探比对+指纹漂移告警+honeypot 嫌疑标注入 lessons/假设图；L-3/L-4 判据固化 | M |
 | R-04 | P1 | #9 report.mjs 三格式自动生成 | r2b-feedback（三格式手工生成于 /tmp）+docs/report-templates/ 三模板已在缺接线；design-1.1.0 曾注"#9 单议"→E12 定谳入 P1 | report.mjs 增 --format butian\|vulbox\|edu-src：repro_paths+裁决态→模板字段映射自动出报告 | M |
 | R-05 | P1 | #6 跨 run 接力（handoff 契约化） | r2b2 handoff.md 已自发产出；Phase 3 L-1 实证必要性（前轮发现=leads 非 facts——注入须带怀疑语义） | first-run 增 --from-record：run N 产物（handoff/假设态/裁决）契约化注入 run N+1 任务书，leads 语义显式标注 | M |
