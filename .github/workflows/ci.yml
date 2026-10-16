@@ -19,7 +19,9 @@ jobs:
         # 其 ajv/ajv-formats 在根 package.json(CI 须先 npm ci 根, 否则 ERR_MODULE_NOT_FOUND)
         # E11b: mocha --exit —— mock server 句柄的非确定性挂源(1.2.0 池)不再阻塞 CI 退出;
         # fail 语义保持(有 failing 仍非零退出)。
-        run: npm ci --no-audit --no-fund && cd plugin/pentest-dsh && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npx mocha --exit "test/*.test.mjs"
+        # E13/R-01 摘除 --exit（技术债到期日）: 挂源根因定谳=xring-p1 真子进程弃管
+        # （收割笔同批落库, 单文件 3/3+全量多轮 rc=0 验收实录见 docs/devlog.md E13 段）。
+        run: npm ci --no-audit --no-fund && cd plugin/pentest-dsh && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npx mocha "test/*.test.mjs"
       - name: 面板测试(d2d-panel)
         run: cd plugin/d2d-panel && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && node scripts/build-client.mjs && npm test
       - name: graphd 门禁测试(全目录 tests/ 含 gatewarden/, 基线 406 例)
