@@ -21,7 +21,7 @@ addFormats(ajv)
 
 // 模块级预编译（ajv 同实例按 $id 缓存，重复 compile 同 id 会抛 already exists）
 const COMPILED = {}
-for (const name of ['hypotheses.schema.json', 'repro_paths.schema.json', 'lessons.schema.json']) {
+for (const name of ['hypotheses.schema.json', 'repro_paths.schema.json', 'lessons.schema.json', 'handoff.schema.json']) {
   COMPILED[name] = ajv.compile(loadSchema(name))
 }
 
@@ -37,6 +37,7 @@ export function validateAgainst(schemaName, doc) {
 export const validateHypotheses = (doc) => validateAgainst('hypotheses.schema.json', doc)
 export const validateReproPaths = (doc) => validateAgainst('repro_paths.schema.json', doc)
 export const validateLessons = (doc) => validateAgainst('lessons.schema.json', doc)
+export const validateHandoff = (doc) => validateAgainst('handoff.schema.json', doc)
 
 /** 产出文件名 → 校验函数（回流管道用）。未知文件名拒绝。 */
 export const VALIDATORS = {

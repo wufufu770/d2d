@@ -9,6 +9,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { validateFile, validateHypotheses } from './validate.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
+import { collectFromReflow, writeHandoff, HANDOFF_FILE } from './relay.mjs'
 import { XRING_MODES } from './monitor.mjs'
 
 // E11a#4: 条目级容错——单条 schema 失败不再拖死整文件。超长 evidence_refs 条目截断
@@ -109,6 +110,13 @@ export async function reflow(opts) {
   const written = []
   const held = []
   const errors = []
+  // E15/R-05: 全量载体收集（verifiedFindings=A 级 pass 全文; hypothesisDocs=B 级文档原文——
+  // handoff 组装消费; 仅 emitHandoff 路径读取, 既有返回面零变化）
+  const aVerified = []
+  const hypothesisDocs = []
+  // E15 复战语义: 上轮 fact 本轮复验失败=refuted（形态突变嫌疑——ECC 跨轮漂移为解释源）
+  const refuted = []
+  const prevFactMap = new Map((Array.isArray(opts.prevFacts) ? opts.prevFacts : []).map((x) => [String(x.id), String(x.title ?? '')]))
   const emit = (event) => { if (eventsFile) { try { fs.appendFileSync(eventsFile, JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n') } catch { /* 已记因: 尽力而为——单条事件落盘失败静默, 不阻断回流写入主流程 */ } } }
 
   if (mode === 'off') {
@@ -150,6 +158,7 @@ export async function reflow(opts) {
   if (found['hypotheses.json']) {
     const v = validateFile(found['hypotheses.json'])
     const doc = JSON.parse(fs.readFileSync(found['hypotheses.json'], 'utf8'))
+    hypothesisDocs.push(doc)
     let entries = { pass: doc.hypotheses ?? [], partial: [], rejected: [] }
     if (!v.ok) entries = tolerantHypothesisEntries(doc, v.errors)
     for (const h of entries.pass) {
@@ -195,7 +204,8 @@ export async function reflow(opts) {
       for (const f of doc.findings) {
         const verdict = await verifyRunner.verify(f)
         if (verdict.verdict !== 'pass') {
-          held.push({ level: 'A', id: f.id, verdict: verdict.verdict, failureClass: verdict.failureClass ?? null, evidence: verdict.evidence })
+          held.push({ level: 'A', id: f.id, verdict: verdict.verdict, failureClass: verdict.failureClass ?? null, evidence: verdict.evidence, ...(prevFactMap.has(String(f.id)) ? { prevFact: true } : {}) })
+          if (prevFactMap.has(String(f.id))) refuted.push({ id: f.id, statement: prevFactMap.get(String(f.id)) || f.title, reason: `复验 ${verdict.verdict}（上轮 fact——形态突变嫌疑, 见 ECC 跨轮信号）` })
           continue // A 级必经 verify: manual/fail 不入图（编排位固化, P3/P4 接真执行器）
         }
         // XR-G6: repro 首行补鉴权档位标注（一处 diff）——graphd 0917 鉴权档位门（high/critical
@@ -213,6 +223,7 @@ export async function reflow(opts) {
         // 之前 pass 只留 id, evidence 信息丢失）
         if (r.status === 200 && r.body?.ok) written.push({ level: 'A', id: f.id, evidence: verdict.evidence })
         else errors.push({ file: 'repro_paths.json', id: f.id, status: r.status, body: r.body })
+        if (r.status === 200 && r.body?.ok) aVerified.push({ ...f, verifyEvidence: verdict.evidence })
       }
       // E11a#7 差集审计: 图内已分配 ID − repro 引用集 = 孤儿 finding 清单（非空即报警）
       try {
@@ -229,7 +240,30 @@ export async function reflow(opts) {
   }
 
   emit({ event: 'reflow-done', runId, mode, written: written.length, held: held.length, errors: errors.length })
-  return { ok: errors.length === 0, written, held, errors }
+
+  // ---- E15/R-05: 可选跨 run 接力（emitHandoff=true 时产出 handoff.json 与产物同址;
+  // 缺省 false=既有调用零行为变化——向后兼容契约）。verifiedFindings 随返回值外带（R-04 收尾报告消费）。----
+  let handoffPath = null
+  const verifiedFindings = aVerified ?? []
+  if (opts.emitHandoff) {
+    try {
+      const handoff = collectFromReflow({
+        runId,
+        target: String(opts.target ?? ''),
+        verifiedFindings,
+        written,
+        held,
+        hypothesesDocs: hypothesisDocs,
+        refuted,
+        env: opts.handoffEnv ?? null,
+      })
+      handoffPath = writeHandoff(workspace, handoff)
+      emit({ event: 'handoff-emitted', runId, file: HANDOFF_FILE })
+    } catch (e) {
+      errors.push({ file: HANDOFF_FILE, emit: String(e?.message ?? e).slice(0, 200) })
+    }
+  }
+  return { ok: errors.length === 0, written, held, errors, ...(opts.emitHandoff ? { handoffPath } : {}), verifiedFindings }
 }
 
 /**
