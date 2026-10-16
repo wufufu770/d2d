@@ -60,7 +60,12 @@ if (chk.exitCode !== 0) {
     };
   }
   await world.run("git", [...G, "add", "manifest.sha256"]);
-  folded = true;
+  const mStaged = await world.run("git", [...G, "diff", "--cached", "--name-only"]);
+  if (mStaged.stdout.split("\n").map((s) => s.trim()).includes("manifest.sha256")) {
+    folded = true;
+  } else {
+    log("fold 后 manifest 无实际差异（他族脏文件所致的 --check 失配）——零冗余 regen 笔");
+  }
 } else {
   const stagedNow = await world.run("git", [...G, "diff", "--cached", "--name-only"]);
   if (stagedNow.stdout.split("\n").map((s) => s.trim()).includes("manifest.sha256")) {
