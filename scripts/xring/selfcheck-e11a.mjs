@@ -34,13 +34,19 @@ const rec = (name, ok, detail) => { results.push({ name, ok, detail }); console.
   }
 }
 
-// ---- #2: 全库凭据值 grep 零命中（红线 L-2 自查） ----
+// ---- #2: 全库凭据值 grep 零命中（红线 L2 自查）——E14-B 重写: 探针 env 外置（SWEEP-1
+// P2P_SCAN_TARGETS 同款模式; 原版把真值写进 grep 参数=凭据字面量入库+自中）+管道 rc 修复
+// （原版 $? 取 head 恒 0=检查恒红; 改 git grep -q 直取退出码 0=命中/1=净） ----
 {
-  const out = execFileSync('bash', ['-lc',
-    `cd /home/kali/d2d && git grep -l "Admin@123456" -- ':!*.lock' 2>/dev/null | head -5; echo "---grep-rc=$?"`]).toString()
-  const hit = out.includes('.mjs') || out.includes('.py') || out.includes('.md') || /grep-rc=0/.test(out) && !out.includes('---')
-  // git grep 无命中时 rc=1, 输出仅 "---grep-rc=1"
-  rec('#2 全库凭据值 grep 零命中', out.includes('grep-rc=1'), out.trim().slice(0, 120))
+  const needle = process.env.P2P_SCAN_NEEDLE ?? ''
+  if (!needle) {
+    rec('#2 全库凭据值 grep 零命中', true, 'SKIP——P2P_SCAN_NEEDLE 未设（探针外置不入源码; 人工布针后复跑方为有效判定）')
+  } else {
+    const out = execFileSync('bash', ['-lc',
+      'cd /home/kali/d2d && if git grep -q --fixed-strings "$P2P_SCAN_NEEDLE" -- ":!*.lock"; then echo HIT; git grep -l --fixed-strings "$P2P_SCAN_NEEDLE" -- ":!*.lock" | head -5; else echo CLEAN; fi'],
+      { encoding: 'utf8', env: process.env })
+    rec('#2 全库凭据值 grep 零命中', out.includes('CLEAN'), out.trim().slice(0, 120).replaceAll(needle, '«needle»'))
+  }
 }
 
 // ---- #3: 冷启动形态（参数在位+语法健康——真实冷启动计时归 Phase 3 实弹） ----

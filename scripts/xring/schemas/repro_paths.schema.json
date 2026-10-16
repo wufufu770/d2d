@@ -30,6 +30,18 @@
           "repro_artifacts": {
             "type": "array", "maxItems": 20,
             "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+          },
+          "env": {
+            "type": "object", "additionalProperties": false, "required": ["tls"],
+            "properties": {
+              "tls": {
+                "type": "object", "additionalProperties": false, "required": ["mode"],
+                "properties": {
+                  "mode": { "enum": ["insecure", "ca"] },
+                  "caPath": { "type": "string", "minLength": 1, "maxLength": 500 }
+                }
+              }
+            }
           }
         }
       }
