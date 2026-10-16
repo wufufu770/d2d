@@ -39,6 +39,11 @@
 | R-20 | P2 | improve/burp-oob-jwt-cred-matrix 分支定性 | origin 遗留分支（远端在位未定性） | 定性三选一：吸收/归档/删除（归排批裁决） | S |
 | R-21 | P2 | docs 终版精简（13 活引用收缩） | clean-repo-blueprint.md（断链风险>精简收益，终版收缩归执行相后段） | 活引用清单复核+收缩执行（发布相后段时点） | M |
 | R-22 | P2 | XR-G8 EXTRACT 机械原语 | wrap4-execution-plan 跨判定独立项+xrp4-acceptance（动态 token 场景参数化边界裁量归用户） | 用户拍板参数化边界后实施 EXTRACT 原语 | M |
+| R-23 | P2 | mitm-capture 单跑顺序依赖（反向 flaky） | E14-B 冒烟单文件扫描实测：单跑确定性 2 failing（全量恒绿——依赖先序文件状态），登记不修（E13 同款范围纪律） | 定位依赖源（先序文件建立的目录/env 态）→测试自足化 | S |
+| R-24 | P2 | createXRingRunner 真 worker 测试的集成轨拆分或 fake 化 | E13/E14-B 实录：族1 start 测试拉真 dsh worker（LLM 调用+时长方差）——E13 收割笔已消挂死，测试架构优化项 | 集成轨（真 spawn）与单测轨（fake adapter）拆分，单测零 LLM 依赖 | S |
+
+> E14-B 增补（2026-10-16）：R-23/R-24 为转正批冒烟/根修实录衍生登记；R-01/R-02 已于
+> E13 落地（✅ 注记在表）；R-03/R-04/R-05（P1 产品环）自 1.1.0 转正起解锁待启。
 
 ## 三、排期建议（主会话终裁）
 
