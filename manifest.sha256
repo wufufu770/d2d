@@ -133,7 +133,7 @@ c4987db7461ae40440a1245bda5b04e20f2f6d8f679b3b8a0ea971455ac85bbf  experiments/re
 4903fd63bb7ff861354509b394f67cad7d0a3cc8d3d8529ece7194ce70725d78  experiments/results/xrp4-first-run-run-xrp4b-10081011.json
 4efe29c3929744f01caf0f56b33ece79aac6ac9ca2d1656c21febda0b5d1e91a  experiments/results/xrp4-first-run.json
 56a635f51dac8e0e0e85f959486d0368d7fab97a892a8e623882d347a3149507  experiments/targets/example.json
-d45571d72aed1c8e87cca38a886083b8a245d8d029d57a9ba04c14fcf366e8c6  experiments/token-usage.mjs
+1fd53f1e7378e6518b56a62405af3f3786f498569610bf187cb09c4a251ff54a  experiments/token-usage.mjs
 e7351941aae3073fd61518941bf5d5bf02c8fb75bf562ac2b370c5e215b6b32e  experiments/xrp4-first-run/record/xrg-proof/xrg-proof-1-82877/record/xring-proof/xrg-proof-1-82877/workspace/login_body.txt
 60ce14ca71c0e2e4cd27d7a6c1399d1574c98eb22a17c83e4d4c86c8f2ff7f66  experiments/xrp4-first-run/record/xrg-proof/xrg-proof-1-82877/record/xring-proof/xrg-proof-1-82877/workspace/probes.json
 b0fd8548cc55f88cc3e70556839e2225ff1d5cb0a8e3f61bc894eb84a65aa4a0  experiments/xrp4-first-run/record/xrg-proof/xrg-proof-2-53322/record/xring-proof/xrg-proof-2-53322/workspace/probes.json
@@ -335,11 +335,11 @@ d9dd0e53c3f0724220c050826dcc696840bc2d137c9a884211d23eb7794afe95  plugin/pentest
 61335a98bb4874b1e5e7f09a4f7590c984f4b0beb92a2514a88cb91bdc26165b  plugin/pentest-dsh/test/caps.test.mjs
 9f50c2f0fbf739edc5e78ef11c65cc145b02d111f4943e8b4a8a7053d0c59070  plugin/pentest-dsh/test/card-schema.test.mjs
 15d94cb3a4567c53fc2d5f194cc9573ec0242460e4c162bcf116e5ff2a013b67  plugin/pentest-dsh/test/cdp-scope.test.mjs
-50015605e0e1cbdd25c197f614a66207d94e0f0bd1019eb00e24236021323e3b  plugin/pentest-dsh/test/cnsr.test.mjs
+af3e2d3bdd71b96142ee0c1bd14bc0fb549ca7bcc701c0bdc9e9b242d4b0f2bf  plugin/pentest-dsh/test/cnsr.test.mjs
 b3ca46cf66db20bc7ba22dd397b8af64f7e6d04d50f3f8433c8404ecb7f2acec  plugin/pentest-dsh/test/cross-eng-isolation.test.mjs
 18479456922957d219682ea36290483140b54529e483d02e465e18a67021031d  plugin/pentest-dsh/test/description-audit.test.mjs
 623da333d9de3b537706f807918b5ce7126e91c9ac06ed22e69c18cb8dd01cf9  plugin/pentest-dsh/test/distill-experience.test.mjs
-463e8fb2dd9a44dba405fb14c8b739d13bf0e39bc19e9459f1795d17a172deb5  plugin/pentest-dsh/test/e11a.test.mjs
+f5ab6e44aa8b98c5290cc201dd6036c7108ca7ca54a7fdcf74334ce2f0e80c96  plugin/pentest-dsh/test/e11a.test.mjs
 723acfd90ed152b1c859b8d2e0072c83849cdace0fc39e415df9a847a2ab5db9  plugin/pentest-dsh/test/egress-gateway.test.mjs
 5027729e6882b5ce677901d85c30b24ee8dfd3099875d52af687ba5286965c0b  plugin/pentest-dsh/test/egress-rebinding-window.test.mjs
 e956bb7e072481ce95d80676ea05c1bc694b79dd6ca4302e1ae49b783d016e84  plugin/pentest-dsh/test/embed.test.mjs
@@ -410,7 +410,7 @@ e9fb02849c3c9dc5b73a1095fcca8ef7e01c9747c83ae3e9ef9c7aa2169f9e44  plugin/pentest
 a7593ad6d0ebce0a6359f87e336e71a9e9e12fbe5279f97cbf61104a0e304212  plugin/pentest-dsh/test/sanitize-truncate-order.test.mjs
 7c2f2fbeb888fcbca6ab031f75ee7c94e5bc8fa5dbbef05598fd9241a419450e  plugin/pentest-dsh/test/sanitize.test.mjs
 b8da727057caedfcbe1ba3575b01c75a975cc62ce43c57d0615a6579545f73dc  plugin/pentest-dsh/test/scheduler-dual-keyring.test.mjs
-45c92ff8bc0c0ba3ea6986c5fed9600ce801151fca0f4a1700ff324c54e78876  plugin/pentest-dsh/test/scheduler-workers.test.mjs
+07333497d9f127f0402bd517ac509bea7896fe3295affffa9b18364cee412e54  plugin/pentest-dsh/test/scheduler-workers.test.mjs
 55cbb9ca7ca1e088a1ce87ad8f6ce3527228bab28bfca6b44badb01ac5d6002a  plugin/pentest-dsh/test/scope.test.mjs
 28a2c582a0aea3230a5060491ecbe36e39545c572ab1cfb2258c1a4f87f4772f  plugin/pentest-dsh/test/seed-cards.test.mjs
 e33141a614d7b4fa3b228c20d9726d3e226a6d3b5161bf264f3c53d695470a50  plugin/pentest-dsh/test/skill-upgrade.test.mjs
@@ -436,9 +436,9 @@ aa00a0af9f329c6fbdcc27f5cb9bf31563228493052ef9815437ba9f05e54918  plugin/pentest
 527847c9c8e3aa136d51d5becbb244dd9ec14e2e5d08f63916839df21e20886b  plugin/pentest-dsh/test/wf-lint.test.mjs
 413ae97a0e2a0876f9a1901491b7cec9b0463708d2da0e419b6903281964bd93  plugin/pentest-dsh/test/wordlists.test.mjs
 2cd27ccda356eef183efea4d155678a5e032cbaffc30cec1296d260167e58632  plugin/pentest-dsh/test/write-gate.test.mjs
-692988bd9b7bdc54bdf2abc74b3d24f8319bfb2a3e482e335c9e8f19333e2f0d  plugin/pentest-dsh/test/xring-p1.test.mjs
+7e27f132f6a532da485922eace23f76a23f765677dadc56f42a5e7304fff820e  plugin/pentest-dsh/test/xring-p1.test.mjs
 1cdfd62bdb35bd99b42bf6301dc779ec9b2b2b21648ac8ab70ce30952a832ff4  plugin/pentest-dsh/test/xring-p3.test.mjs
-0896f9ea43125b6d8310861cba98e3a00dc7c2ae0d0973f10c00fc73fbd77d0a  plugin/pentest-dsh/test/xring-p4.test.mjs
+bc51b8d89778b0836b18a7002004ca6b604e77661b8f02f8f5188da0076daeb7  plugin/pentest-dsh/test/xring-p4.test.mjs
 18711eaf3e1af9f40cd45046f815f44e6391fc0eb119a2af96776575d5f9bf51  plugin/pentest-dsh/test/xring.test.mjs
 c3baabd16d31cbf70280d9561989dec44210d1f4f46073c691c97f81a400492d  plugin/pentest-dsh/tools/comparer.mjs
 88ee25d9abb43b5dec012dfc4a1386ec2b1d63bf48451a7eb41948c117184c9e  plugin/pentest-dsh/tools/decoder.mjs
@@ -579,7 +579,7 @@ e2d8660d5524b05402acbf07bfb7870b36de92a2da364ea12421c4eeda0af812  scripts/xring/
 a1d3f4c64e346096cc588cddfe9bdedab0d9a1148141e9dbac31f4e0c73a2244  scripts/xring/smoke-budget.mjs
 96adc31507da204d6e5021e310cef9594323ee1aa7376a0e66d62d332242710d  scripts/xring/smoke-e2e.mjs
 47c3194793f883ca458b824f1b7008439f6ef9616df91450780f45ef64213126  scripts/xring/validate.mjs
-e783c83c9093800724b8dc0d65d53a22ae8758367d5e10fc09931a66374c3303  scripts/xring/verify-runner.mjs
+c9af7d0a9efbedc8b78b404a23baf172d5274317f5bec8c7a2e1394373e22f73  scripts/xring/verify-runner.mjs
 6c6a7ef907fe0d2328a3e683f024d5e8460a8d133a1947fb253f63ea8855f0a3  scripts/xring/xrg-proof.mjs
 710c98303def0535eba5f534cff7921007878ba3c852dd0d157851a65104764e  technique_cards.json
 5def071904b5a920649a4bb9519a462209817251d91b0a061c15522cae78b95c  tests/gate-failures/README.md
