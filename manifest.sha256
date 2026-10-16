@@ -339,7 +339,7 @@ af3e2d3bdd71b96142ee0c1bd14bc0fb549ca7bcc701c0bdc9e9b242d4b0f2bf  plugin/pentest
 b3ca46cf66db20bc7ba22dd397b8af64f7e6d04d50f3f8433c8404ecb7f2acec  plugin/pentest-dsh/test/cross-eng-isolation.test.mjs
 18479456922957d219682ea36290483140b54529e483d02e465e18a67021031d  plugin/pentest-dsh/test/description-audit.test.mjs
 623da333d9de3b537706f807918b5ce7126e91c9ac06ed22e69c18cb8dd01cf9  plugin/pentest-dsh/test/distill-experience.test.mjs
-f5ab6e44aa8b98c5290cc201dd6036c7108ca7ca54a7fdcf74334ce2f0e80c96  plugin/pentest-dsh/test/e11a.test.mjs
+24dadaeb31e1f97fee64b82f4b3afee8f1de6e927422e7d260cebc17c28af63f  plugin/pentest-dsh/test/e11a.test.mjs
 723acfd90ed152b1c859b8d2e0072c83849cdace0fc39e415df9a847a2ab5db9  plugin/pentest-dsh/test/egress-gateway.test.mjs
 5027729e6882b5ce677901d85c30b24ee8dfd3099875d52af687ba5286965c0b  plugin/pentest-dsh/test/egress-rebinding-window.test.mjs
 e956bb7e072481ce95d80676ea05c1bc694b79dd6ca4302e1ae49b783d016e84  plugin/pentest-dsh/test/embed.test.mjs
