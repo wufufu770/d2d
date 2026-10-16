@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-16
+
+> 1.1.0-alpha 转正（latest 移动至本版；alpha dist-tag 保留指 1.1.0-alpha）。
+> **诚实口径**：L-1 验证率线（A 级机械验证率 ≥70%）因第三轮靶场形态突变（tarpit
+> 特征，A 级真漏洞零出现、仅 2 条 info 环境特征）悬置——分母缺失使该线无现场语义，
+> 工具未被考到而非考砸。自本版起转为**持续验证契约**：此后每次实弹验证率入
+> docs/devlog.md 台账，1.1.1 兑现定谳。换目标冷启动 1m37s（线 15min）与零 /tmp 手写
+> 两线达标；验证机器本身经离线合成 e2e 闭环实证（AUTH 合成链/TLS 双模式/reflow
+> env.tls 载体全链真网络重放入图）。
+
+### Added（承 1.1.0-alpha 全量）
+- verify-runner TLS 分层：repro `env.tls`（insecure 子进程隔离路径/ca 注入）——https 自签靶场机械验证恢复（E11a#1）。
+- verify-runner AUTH 原语：`AUTH <loginPath> <credRef> <tokenExtract>` 登录→token 会话链；凭据实体间接引用，token 进程内存零落盘（E11a#2）。
+- first-run 目标参数化：`--target/--scope/--task-file/--record-root/--max-hours`（E11a#3）。
+- reflow 条目级容错+超长 evidence 截断+`partial` 标记（E11a#4）。
+- scope gate 端点白名单：三元组登记+循环变量展开+前缀匹配；黑名单面零豁免（E11a#5）。
+- 回流 ID 对账闸：三集合一致性校验+漂移拒落+孤儿差集审计（E11a#7）。
+- DSH 0.2.0-rc.2 兼容：会话文件候选表前插 v4 代（0.1.x 零行为变化）。
+- **repro schema `findings[].env` 载体补全（本转正批）**：design#1 契约要求的新增可选字段落 schema——env.tls 发现可带 TLS 模式入回流管道（此前 schema additionalProperties 拒收=管道内恒 manual 的断链；离线合成 e2e 闭环实证 A 级直写）。
+
+### Fixed
+- E11b：GRAPHD 值启动校验+brainDir 归一守卫（宿主配置面真修，行为零变化）；4-3a 切点断言行号锚→内容锚。
+- E13：mocha 挂死根修（xring-p1 真子进程弃管→killAllWorkers 收割+有界等 close）——ci 摘除 `--exit`（技术债到期），套件时长方差收敛。
+- E14-B：selfcheck #2 凭据探针外置（`P2P_SCAN_NEEDLE` env，SWEEP-1 同款模式；原版真值字面量入库+管道 rc 恒 0 双缺陷）。
+
+### Security
+- AUTH 失败语义：登录/token 提取失败整单转 manual 且标 `auth-failure`（不降级）；凭据全链零落盘零回显（承 alpha）。
+- E11b：GRAPHD 配置注入面 fail-closed 启动校验（协议白名单+host 非空）。
+
 ## [1.1.0-alpha] - 2026-10-15
 
 > 预发布版（npm dist-tag=alpha；latest 保持 1.0.1 不动直至 Phase 3 实弹验收达标转正）。
