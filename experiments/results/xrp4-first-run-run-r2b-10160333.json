@@ -1,0 +1,197 @@
+{
+ "runId": "run-r2b-10160333",
+ "headSha": "1915337e2f37dc8f665fe8733263ad5541d26e22",
+ "startedAt": "2026-10-16T03:34:33.119Z",
+ "finishedAt": "2026-10-16T03:40:22.585Z",
+ "engagement": {
+  "name": "xring-run-r2b-10160333",
+  "scope": "192.168.132.14",
+  "mode": "XR-G1 预建（方案 A）"
+ },
+ "budget": {
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "elapsedMin": 5.8,
+  "tokensUsed": 37561,
+  "terminated": null
+ },
+ "worker": {
+  "kind": "exited",
+  "code": 0,
+  "pid": 710790
+ },
+ "observations": {
+  "envScan": {
+   "hits": [],
+   "scannedAt": "2026-10-16T03:34:33.119Z",
+   "note": "worker pid+一层子进程 /proc/environ 扫描（P2P_HOST_*|HOST_*TOKEN/KEY/SECRET）"
+  },
+  "orphans": [],
+  "wallClockMs": 348156,
+  "sessionParse": {
+   "totalTokens": 37561,
+   "files": 1,
+   "idleMs": 975.04638671875
+  }
+ },
+ "capabilityLog": [
+  {
+   "tool": "bash",
+   "count": 213
+  },
+  {
+   "tool": "write",
+   "count": 17
+  },
+  {
+   "tool": "todo_write",
+   "count": 13
+  },
+  {
+   "tool": "apk-reverse",
+   "count": 1
+  },
+  {
+   "tool": "burp_comparer",
+   "count": 1
+  },
+  {
+   "tool": "burp_decoder",
+   "count": 1
+  },
+  {
+   "tool": "burp_http_log",
+   "count": 1
+  },
+  {
+   "tool": "burp_intruder",
+   "count": 1
+  },
+  {
+   "tool": "burp_repeater",
+   "count": 1
+  },
+  {
+   "tool": "burp_scan_status",
+   "count": 1
+  },
+  {
+   "tool": "create_goal",
+   "count": 1
+  },
+  {
+   "tool": "edit",
+   "count": 1
+  },
+  {
+   "tool": "exit_plan_mode",
+   "count": 1
+  },
+  {
+   "tool": "get_goal",
+   "count": 1
+  },
+  {
+   "tool": "glob",
+   "count": 1
+  },
+  {
+   "tool": "grep",
+   "count": 1
+  },
+  {
+   "tool": "interrupt_agent",
+   "count": 1
+  },
+  {
+   "tool": "job_kill",
+   "count": 1
+  },
+  {
+   "tool": "job_list",
+   "count": 1
+  },
+  {
+   "tool": "job_output",
+   "count": 1
+  }
+ ],
+ "reflow": {
+  "ok": false,
+  "written": [
+   {
+    "level": "C",
+    "id": "L-1",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-2",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-3",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-4",
+    "status": "quarantined"
+   },
+   {
+    "level": "B",
+    "id": "H-1"
+   },
+   {
+    "level": "B",
+    "id": "H-2"
+   },
+   {
+    "level": "B",
+    "id": "H-3"
+   },
+   {
+    "level": "B",
+    "id": "H-4"
+   },
+   {
+    "level": "B",
+    "id": "H-5"
+   }
+  ],
+  "held": [],
+  "errors": [
+   {
+    "file": "repro_paths.json",
+    "errors": [
+     "/findings/0 must NOT have additional properties",
+     "/findings/0 must NOT have additional properties",
+     "/findings/0/title must NOT have more than 200 characters",
+     "/findings/1 must NOT have additional properties",
+     "/findings/1 must NOT have additional properties"
+    ]
+   }
+  ]
+ },
+ "graphDelta": {
+  "baseCounts": {
+   "findings": 787,
+   "experiences": 34,
+   "hypotheses": 487,
+   "quarantined": 34
+  },
+  "afterCounts": {
+   "findings": 787,
+   "experiences": 38,
+   "hypotheses": 492,
+   "quarantined": 38
+  },
+  "delta": {
+   "findings": 0,
+   "experiences": 4,
+   "hypotheses": 5,
+   "quarantined": 4
+  }
+ }
+}

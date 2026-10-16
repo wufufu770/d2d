@@ -1,0 +1,156 @@
+[
+ {
+  "ts": "2026-10-16T03:33:33.056Z",
+  "event": "xring-eng-created",
+  "name": "xring-run-r2b-10160333",
+  "scope": "192.168.132.14",
+  "runId": "run-r2b-10160333"
+ },
+ {
+  "ts": "2026-10-16T03:33:33.107Z",
+  "event": "worker-spawned",
+  "pid": 710790,
+  "workspace": "/tmp/e11a-p3/record/xring-first/run-r2b-10160333/workspace",
+  "runId": "run-r2b-10160333"
+ },
+ {
+  "ts": "2026-10-16T03:34:33.121Z",
+  "event": "monitor-start",
+  "runId": "run-r2b-10160333",
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "mode": "queue"
+ },
+ {
+  "ts": "2026-10-16T03:35:03.182Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.01h/0.5h, 13653/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 13653,
+  "transcriptBytes": 40743,
+  "idleMs": 112.869873046875
+ },
+ {
+  "ts": "2026-10-16T03:35:33.171Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.02h/0.5h, 14959/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 14959,
+  "transcriptBytes": 49778,
+  "idleMs": 5844.210693359375
+ },
+ {
+  "ts": "2026-10-16T03:36:03.173Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.03h/0.5h, 17808/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 17808,
+  "transcriptBytes": 58560,
+  "idleMs": 1370.287353515625
+ },
+ {
+  "ts": "2026-10-16T03:36:33.180Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.03h/0.5h, 21592/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 21592,
+  "transcriptBytes": 71733,
+  "idleMs": 352.4462890625
+ },
+ {
+  "ts": "2026-10-16T03:37:03.197Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.04h/0.5h, 23829/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 23829,
+  "transcriptBytes": 80800,
+  "idleMs": 1310.862060546875
+ },
+ {
+  "ts": "2026-10-16T03:37:33.191Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.05h/0.5h, 26174/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 26174,
+  "transcriptBytes": 89578,
+  "idleMs": 2223.05517578125
+ },
+ {
+  "ts": "2026-10-16T03:38:03.203Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.06h/0.5h, 28210/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 28210,
+  "transcriptBytes": 94588,
+  "idleMs": 5249.1875
+ },
+ {
+  "ts": "2026-10-16T03:38:33.214Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.07h/0.5h, 30318/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 30318,
+  "transcriptBytes": 103830,
+  "idleMs": 2007.3388671875
+ },
+ {
+  "ts": "2026-10-16T03:39:03.215Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.08h/0.5h, 30988/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 30988,
+  "transcriptBytes": 107054,
+  "idleMs": 20676.8466796875
+ },
+ {
+  "ts": "2026-10-16T03:39:33.250Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.08h/0.5h, 34506/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 34506,
+  "transcriptBytes": 118406,
+  "idleMs": 835.62353515625
+ },
+ {
+  "ts": "2026-10-16T03:40:03.230Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.09h/0.5h, 35925/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 35925,
+  "transcriptBytes": 125381,
+  "idleMs": 4861.96142578125
+ },
+ {
+  "ts": "2026-10-16T03:40:21.324Z",
+  "event": "xring-eng-released",
+  "name": "xring-run-r2b-10160333",
+  "runId": "run-r2b-10160333"
+ },
+ {
+  "ts": "2026-10-16T03:40:22.071Z",
+  "event": "reflow-start",
+  "runId": "run-r2b-10160333",
+  "workspace": "/tmp/e11a-p3/record/xring-first/run-r2b-10160333/workspace",
+  "mode": "queue"
+ },
+ {
+  "ts": "2026-10-16T03:40:22.516Z",
+  "event": "reflow-done",
+  "runId": "run-r2b-10160333",
+  "mode": "queue",
+  "written": 9,
+  "held": 0,
+  "errors": 1
+ }
+]
