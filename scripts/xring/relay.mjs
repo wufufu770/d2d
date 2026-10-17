@@ -10,8 +10,8 @@ import { validateHandoff } from './validate.mjs'
 export const HANDOFF_FILE = 'handoff.json'
 export const HANDOFF_SCHEMA = 'xring/handoff@1'
 
-/** 四类载体收集（reflow 收尾传参; 全字段截断对齐 schema 上限）。 */
-export function collectHandoff({ runId, target, verified = [], leads = [], falsified = [], env = null, generatedAt = null }) {
+/** 四类载体收集（reflow 收尾传参; 全字段截断对齐 schema 上限）。E15 起含 intents（R-18 吸收：意图运行时——已决定的行动方向, 与 leads[未验证假设]语义互斥）。 */
+export function collectHandoff({ runId, target, verified = [], leads = [], falsified = [], intents = [], env = null, generatedAt = null }) {
   return {
     schema: HANDOFF_SCHEMA,
     run_id: String(runId ?? '').slice(0, 64),
@@ -29,12 +29,18 @@ export function collectHandoff({ runId, target, verified = [], leads = [], falsi
         id: String(l.id).slice(0, 16),
         statement: String(l.statement ?? '').slice(0, 1500),
         priority: ['high', 'medium', 'low'].includes(l.priority) ? l.priority : 'medium',
-        origin: ['held-manual', 'hypothesis', 'prev-lead'].includes(l.origin) ? l.origin : 'hypothesis',
+        origin: ['held-manual', 'hypothesis', 'prev-lead', 'advisor'].includes(l.origin) ? l.origin : 'hypothesis',
       })),
       falsified: falsified.slice(0, 200).map((f) => ({
         id: String(f.id).slice(0, 16),
         statement: String(f.statement ?? '').slice(0, 1500),
         reason: String(f.reason ?? '').slice(0, 500),
+      })),
+      intents: intents.slice(0, 100).map((i) => ({
+        id: String(i.id).slice(0, 16),
+        direction: String(i.direction ?? '').slice(0, 500),
+        status: ['pending', 'completed', 'abandoned'].includes(i.status) ? i.status : 'pending',
+        ...(i.spawned_from ? { spawned_from: String(i.spawned_from).slice(0, 32) } : {}),
       })),
       env: {
         fingerprint: (env?.fingerprint ?? []).slice(0, 50).map((p) => ({
@@ -78,7 +84,7 @@ export function loadHandoffFrom(fromRecord) {
 }
 
 /** 注入语义（预裁 3）: leads=假设形态（复验优先不采信）; falsified=排除表; facts=底账。 */
-export function injectBrief(handoff, { maxLeads = 8, maxFacts = 10, maxFalsified = 8 } = {}) {
+export function injectBrief(handoff, { maxLeads = 8, maxFacts = 10, maxFalsified = 8, maxIntents = 6 } = {}) {
   if (!handoff) return ''
   const c = handoff.carriers ?? {}
   const lines = [
@@ -88,6 +94,12 @@ export function injectBrief(handoff, { maxLeads = 8, maxFacts = 10, maxFalsified
   if (c.facts?.length) {
     lines.push('### facts（上轮已机械验证——免重扫, 可作已确立底账引用; 引用须带原 id）')
     for (const f of c.facts.slice(0, maxFacts)) lines.push(`- [${f.id}] ${f.title}（${f.severity}）`)
+    lines.push('')
+  }
+  const pendingIntents = (c.intents ?? []).filter((i) => i.status === 'pending')
+  if (pendingIntents.length) {
+    lines.push('### intents（上轮未竟的探索方向——**已决定的行动方向, 优先级低于 facts 复验、高于新 leads**; 继承执行, 完成或放弃须如实声明）')
+    for (const i of pendingIntents.slice(0, maxIntents)) lines.push(`- [${i.id}] ${i.direction}${i.spawned_from ? `（spawned_from: ${i.spawned_from}）` : ''}`)
     lines.push('')
   }
   if (c.leads?.length) {
@@ -108,17 +120,21 @@ export function injectBrief(handoff, { maxLeads = 8, maxFacts = 10, maxFalsified
   return lines.length > 5 ? lines.join('\n') : ''
 }
 
-/** reflow 侧组装: 由回流产物导出四类载体（A pass=facts; held+hypotheses=leads; falsified 态+refuted=falsified）。 */
-export function collectFromReflow({ runId, target, verifiedFindings, written, held, hypothesesDocs = [], refuted = [], env = null }) {
+/** reflow 侧组装: 由回流产物导出五类载体（A pass=facts; held+hypotheses=leads; falsified 态+refuted=falsified; intents.json=pending intents 继承）。 */
+export function collectFromReflow({ runId, target, verifiedFindings, written, held, hypothesesDocs = [], intentsDocs = [], refuted = [], env = null, extraLeads = [] }) {
   const facts = (verifiedFindings ?? []).map((f) => ({ ...f, verified_in: runId }))
   const hypById = new Map()
   for (const d of hypothesesDocs) for (const h of (d.hypotheses ?? [])) hypById.set(String(h.id), h)
-  const leads = []
+  const leads = [...(extraLeads ?? [])]
+  // E18 吸收（意图运行时）: pending intents 继承——上轮 pending → 本轮原样继承（completed/abandoned 不传）;
+  // intentsDocs 形态: {run_id, intents:[{id,direction,status,spawned_from?}]}（worker 收尾自声明, 缺文件=无 intents）。
+  const pendingIntents = []
+  for (const d of intentsDocs) for (const i of (d.intents ?? [])) if (i.status === 'pending') pendingIntents.push(i)
   for (const h of (held ?? [])) leads.push({ id: h.id, statement: h.statement ?? String(h.evidence ?? h.verdict ?? 'held 条目').slice(0, 200), priority: 'medium', origin: 'held-manual' })
   for (const w of (written ?? [])) if (w.level === 'B') leads.push({ id: w.id, statement: String(hypById.get(String(w.id))?.statement ?? `假设 ${w.id}（上轮已入图未验证）`).slice(0, 1500), priority: ['high', 'medium', 'low'].includes(hypById.get(String(w.id))?.priority) ? hypById.get(String(w.id)).priority : 'medium', origin: 'hypothesis' })
   const falsified = [
     ...(refuted ?? []).map((r) => ({ id: r.id, statement: r.statement ?? `fact ${r.id}（上轮已验证本轮复验失败）`, reason: r.reason ?? 're-verify failed' })),
   ]
   for (const d of hypothesesDocs) for (const h of (d.hypotheses ?? [])) if (h.status === 'falsified') falsified.push({ id: h.id, statement: String(h.statement ?? '').slice(0, 1500) || `假设 ${h.id}`, reason: 'worker 自证伪（上轮 hypotheses.falsified 态）' })
-  return collectHandoff({ runId, target, verified: facts, leads, falsified, env })
+  return collectHandoff({ runId, target, verified: facts, leads, falsified, intents: pendingIntents, env })
 }

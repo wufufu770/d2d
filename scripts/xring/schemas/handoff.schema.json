@@ -18,11 +18,22 @@
         "facts": { "type": "array", "maxItems": 200, "items": { "$ref": "#/definitions/fact" } },
         "leads": { "type": "array", "maxItems": 200, "items": { "$ref": "#/definitions/lead" } },
         "falsified": { "type": "array", "maxItems": 200, "items": { "$ref": "#/definitions/falsified" } },
+        "intents": { "type": "array", "maxItems": 100, "items": { "$ref": "#/definitions/intent" } },
         "env": { "$ref": "#/definitions/env" }
       }
     }
   },
   "definitions": {
+    "intent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "direction", "status"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^I-[0-9]{1,4}$" },
+        "direction": { "type": "string", "minLength": 8, "maxLength": 500 },
+        "status": { "enum": ["pending", "completed", "abandoned"] },
+        "spawned_from": { "type": "string", "maxLength": 32 }
+      }
+    },
     "fact": {
       "type": "object", "additionalProperties": false,
       "required": ["id", "title", "severity", "verified_in"],
@@ -41,7 +52,7 @@
         "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,16}$" },
         "statement": { "type": "string", "minLength": 8, "maxLength": 1500 },
         "priority": { "enum": ["high", "medium", "low"] },
-        "origin": { "enum": ["held-manual", "hypothesis", "prev-lead"] }
+        "origin": { "enum": ["held-manual", "hypothesis", "prev-lead", "advisor"] }
       }
     },
     "falsified": {

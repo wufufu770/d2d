@@ -27,8 +27,9 @@
 | `hypotheses.json` | 本次运行的假设树 | run_id/generated_at/hypotheses[]{id[H-n],statement,priority[high/medium/low],status[untested/probing/falsified/confirmed],evidence_refs?} |
 | `repro_paths.json` | 可复现漏洞路径（无则 findings 空数组） | run_id/generated_at/findings[]{id[F-n],title,severity[critical/high/medium/low/info],target,steps[],expected,observed} |
 | `lessons.json` | 失败与教训（至少 1 条——什么浪费了时间/什么路径走不通/为什么） | run_id/generated_at/lessons[]{id[L-n],lesson,failure_class[resource/destructive/overreach/cognitive/environment],context?} |
+| `intents.json` | 下轮探索方向声明（可选——收尾时你已决定但未执行完的方向; 不写=无方向继承） | run_id/intents[]{id[I-n],direction[一句话方向],status[pending/completed/abandoned],spawned_from?} |
 
-- 三份文件的 `run_id` 一致，由启动器在渲染本模板时注入下方占位。
+- 各产出文件的 `run_id` 一致，由启动器在渲染本模板时注入下方占位。
 - 未知字段不要添加（schema 拒绝额外属性）。
 - `repro_paths.json` 的 `steps[]` 会被宿主侧重放器逐行机械执行（不猜、不解析散文）：
   请求行写 `"METHOD /path?query"` 形态（方法大写+空格+以 / 开头的相对路径），
