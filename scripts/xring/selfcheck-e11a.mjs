@@ -120,6 +120,22 @@ const rec = (name, ok, detail) => { results.push({ name, ok, detail }); console.
     advisor.failStreak(['fail', 'fail', 'pass', 'fail', 'fail', 'fail']) === 3 && advisor.shouldAdvise(3) && !advisor.shouldAdvise(2),
     'streak=3 触发/2 不触发')
 }
+{
+  // E21 扩面: 三信号（触发源扩展）+hook-guard（0.2.0 静默失败防御）
+  const adv = await import('./advisor.mjs')
+  const sigs = adv.epistemicSignals({ prevHandoff: { run_id: 'p', carriers: { facts: [{ id: 'F-1', title: 'x' }], leads: [], falsified: [], env: { fingerprint: [] } } }, written: [], held: [] })
+  const neg = adv.epistemicSignals({ written: [{ level: 'B', id: 'H-1' }], probes: [{ path: '/a', status: 200 }], falsifiedCount: 1 })
+  rec('E21 Advisor 三信号: 停滞检出+负例零信号（触发源扩展）',
+    sigs.some((s) => s.kind === 'stagnation') && neg.length === 0, `sigs=${sigs.map((s) => s.kind).join(',') || '无'} neg=${neg.length}`)
+  const hg = await import('/home/kali/d2d/plugin/pentest-dsh/hook-guard.mjs')
+  const os = await import('node:os')
+  const tmpd = fs.mkdtempSync(path.join(os.tmpdir(), 'selfcheck-hg-'))
+  hg.setHookLogDir(tmpd)
+  let rethrew = false
+  try { await hg.guardHook('sc', async () => { throw new Error('selfcheck 注入') })() } catch { rethrew = true }
+  rec('E21 hook-guard: 异常落日志+原样重抛（0.2.0 静默吞错防御）',
+    rethrew && fs.existsSync(path.join(tmpd, 'hook-guard.log')), `rethrew=${rethrew}`)
+}
 
 const fails = results.filter((r) => !r.ok)
 console.log(`\nSELF-CHECK: ${results.length - fails.length}/${results.length} 过`)
