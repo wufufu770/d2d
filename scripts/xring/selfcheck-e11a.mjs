@@ -79,6 +79,34 @@ const rec = (name, ok, detail) => { results.push({ name, ok, detail }); console.
   rec('#5/#7 e11a 单测全过', ok, mocha.trim().split('\n')[0])
 }
 
+// ---- E15 扩面（R-05/R-03/R-04——纯函数离线判据, 零网络） ----
+{
+  const relay = await import('./relay.mjs')
+  const { validateHandoff } = await import('./validate.mjs')
+  const h = relay.collectHandoff({ runId: 'selfcheck-r5', target: 'http://127.0.0.1:1', verified: [{ id: 'F-1', title: 'selfcheck 标题足够长', severity: 'high' }], leads: [{ id: 'H-1', statement: 'selfcheck 假设语句足够长', priority: 'high', origin: 'hypothesis' }] })
+  const brief = relay.injectBrief(h)
+  rec('R-05 relay: handoff 组装过契约+leads 假设形态注入语义',
+    validateHandoff(h).ok && /假设形态注入/.test(brief) && /免重扫/.test(brief), `schema=${validateHandoff(h).ok}`)
+}
+{
+  const { assess } = await import('./ecc.mjs')
+  const tarp = Array.from({ length: 4 }, (_, i) => ({ path: `/p${i}`, status: 200, bytes: 2412, hash: 'k'.repeat(16) }))
+  const r = assess({ probes: tarp, targetOrigin: 'http://t' })
+  rec('R-03 ECC: 异构路径同指纹 → homogeneous-response/likely（L-3 冻结判据）',
+    r.signals.some((s) => s.kind === 'homogeneous-response') && r.level === 'likely', `level=${r.level}`)
+}
+{
+  const { emitReports } = await import('./report-face.mjs')
+  const os = await import('node:os')
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'selfcheck-r4-'))
+  const r = emitReports({ verified: [{ id: 'F-1', title: 'selfcheck 报告标题足够长', severity: 'medium', target: 'http://t', steps: ['GET /'], observed: '观察足够长' }], leads: [{ id: 'H-1', statement: 'selfcheck 内部面专属假设足够长', origin: 'hypothesis' }], outDir })
+  const external = ['butian.json', 'vulbox.json', 'edu-src.json'].map((f) => fs.readFileSync(path.join(outDir, f), 'utf8')).join('')
+  const ab = fs.readFileSync(path.join(outDir, 'ab-report.md'), 'utf8')
+  rec('R-04 报告分面: 三格式产出+外部面零 leads+ab-report 含 caveat',
+    r.files.length === 4 && r.warnings.length === 0 && !external.includes('内部面专属') && ab.includes('caveat'),
+    `files=${r.files.length} warnings=${r.warnings.length}`)
+}
+
 const fails = results.filter((r) => !r.ok)
 console.log(`\nSELF-CHECK: ${results.length - fails.length}/${results.length} 过`)
 process.exit(fails.length ? 1 : 0)
