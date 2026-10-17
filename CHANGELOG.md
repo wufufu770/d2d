@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-10-18
+
+> 1.4.0 语义=Advisor 触发源扩展+竞速变体生产契约（修正窗）+P2 折并清债 8 项+hook 静默
+> 失败防御+429 限流退避重启（模型韧性层）。
+> **包面口径（vs 1.2.0/1.3.0 的版本对齐语义——本版含真实包面增量）**：hook-guard.mjs
+> （新增）与四处 hook 入口包裹（index.js/adapter-dsh.mjs/adapter-inprocess.mjs/scheduler/
+> post-execute-gate.mjs）+429 退避（adapter-dsh.mjs，opt-in）；编排层增量（Advisor 三信号/
+> 竞速变体契约/P2 折并 8 项/reflow verdicts 三分）在仓内 scripts/xring——包面不含该层
+> （先例口径维持）。npm pack 对账：本版 vs 1.3.0 增量恰=上述五文件，零意外面。
+> **加性纪律（升级零行为变化）**：429 退避缺省 P2P_WORKER_429_MAX_RETRIES=0（单次 spawn
+> 零变化，缺省对照测试背书）；Advisor 三信号为 opt-in 观察面；竞速变体契约=可选声明面；
+> 探活参数化缺省=既有 3×10s 语义。
+> **包文件集修复**：hook-guard.mjs 入 files 白名单——1.3.0 发布后插件面 hook 入口包裹
+> 引用它而不在白名单（装包即断链的半截实施），本版收尾修复。
+
+### Added
+- **hook 静默失败防御（hook-guard.mjs，包面）**：五处安全链 hook 入口（approval/request、tools/pre-execute ×2、tools/post-execute ×2）guardHook 包裹——hook 异常先落 hook-guard.log（ts/hook/error/stack JSON 行）再原样重抛；宿主吞错形态的定位法产品化。
+- **429 限流退避重启（adapter-dsh.mjs，包面）**：worker 非零退出且输出尾部含 RATE_LIMIT/rate_limit_error 时按指数退避（P2P_WORKER_429_BASE_MS，缺省 60000ms）重启，至多 P2P_WORKER_429_MAX_RETRIES 次（**缺省 0=零行为变化**）；模型面单点环境（无备用 provider）下的关键韧性层。
+- **Advisor 触发源扩展（编排层）**：三信号=①探索停滞（跨轮零新增认识论内容）②封锁检测（401/403/429 ≥3）③证伪连击 ≥2 且零建设；防过触发三件套（单发/阈值可配/与连败信号互斥）。
+- **竞速变体生产契约（编排层）**：prompt.md 引导 worker 自发声明 repro findings[].variants（≤5 组 steps 变体）——竞速模式的生产侧入口（此前只有消费侧）。
+- **verify-runner HEADER 行**：`HEADER <Name>: <value>` 声明式请求头（机械语法解析，坏形态归 manual）——repro 表达力扩展。
+
+### Fixed
+- **files 白名单补 hook-guard.mjs**（包文件集增量对账见上）。
+- reflow verdicts 三分：held∩verdicts pass→facts（verified_in）/fail→falsified（operator 判伪）/未补录→heldUnreviewed 照旧 leads——held 验证补录链闭环。
+- first-run 探活参数化：`--probe-tries`/`--probe-timeout-s`（缺省 3×10s 语义不变）。
+- selfcheck 扩至 12 检（+三信号/hook-guard 两检）；mocha 2205→2208（+429 退避三例：缺省零变化对照/重试成功/非限流零重试）。
+
 ## [1.3.0] - 2026-10-17
 
 > 1.3.0 语义=意图运行时+第二视角+竞速验证+修复后复测（外部调研四源思想的原生实现，零外部依赖）。

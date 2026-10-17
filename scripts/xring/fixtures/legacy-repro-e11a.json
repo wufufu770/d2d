@@ -1,0 +1,15 @@
+{
+  "schema": "xring/repro-paths@1",
+  "note": "E23 语义忠实重建（原 /tmp/r2b-smoke/record/xring-first/run-r2b-10150911 repro 被 /tmp 清扫灭失——E14-B 先例同型）。fixture 仅驱动 selfcheck #1 的 TLS 分层判据（自签 https 重放零证书失败），不承载靶场语义；target 为占位符不参与判据（verify-runner 走 --target 注入的本地自签靶）。",
+  "findings": [
+    {
+      "id": "F-1",
+      "title": "legacy r2b 首轮 bundle 暴露面（E11a 时代语义重建——fixture 判据载体）",
+      "severity": "info",
+      "target": "https://legacy-r2b-target.invalid (重建占位)",
+      "steps": ["GET /", "EXPECT TLS-OK"],
+      "expected": "自签 https 重放在 env.tls=insecure 分层下通过（证书类失败清零）",
+      "observed": "legacy repro fixture——E23 语义重建"
+    }
+  ]
+}
