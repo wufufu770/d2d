@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xring/handoff.schema.json",
+  "title": "X-Ring 跨 run 接力载体（R-05 认识论标签制: facts/leads/falsified/env——标签即语义）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "run_id", "generated_at", "target", "carriers"],
+  "properties": {
+    "schema": { "const": "xring/handoff@1" },
+    "run_id": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "target": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "carriers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["facts", "leads", "falsified", "env"],
+      "properties": {
+        "facts": { "type": "array", "maxItems": 200, "items": { "$ref": "#/definitions/fact" } },
+        "leads": { "type": "array", "maxItems": 200, "items": { "$ref": "#/definitions/lead" } },
+        "falsified": { "type": "array", "maxItems": 200, "items": { "$ref": "#/definitions/falsified" } },
+        "env": { "$ref": "#/definitions/env" }
+      }
+    }
+  },
+  "definitions": {
+    "fact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "severity", "verified_in"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^F-[0-9]{1,4}$" },
+        "title": { "type": "string", "minLength": 4, "maxLength": 200 },
+        "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+        "verified_in": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$" },
+        "steps": { "type": "array", "maxItems": 100, "items": { "type": "string", "minLength": 1, "maxLength": 2000 } }
+      }
+    },
+    "lead": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "statement", "priority", "origin"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,16}$" },
+        "statement": { "type": "string", "minLength": 8, "maxLength": 1500 },
+        "priority": { "enum": ["high", "medium", "low"] },
+        "origin": { "enum": ["held-manual", "hypothesis", "prev-lead"] }
+      }
+    },
+    "falsified": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "statement", "reason"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,16}$" },
+        "statement": { "type": "string", "minLength": 4, "maxLength": 1500 },
+        "reason": { "type": "string", "minLength": 4, "maxLength": 500 }
+      }
+    },
+    "env": {
+      "type": "object", "additionalProperties": false, "required": ["fingerprint"],
+      "properties": {
+        "fingerprint": { "type": "array", "maxItems": 50, "items": { "$ref": "#/definitions/fp" } },
+        "csp_origins": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 200 } },
+        "ecc": { "$ref": "#/definitions/ecc" }
+      }
+    },
+    "ecc": {
+      "type": "object", "additionalProperties": false, "required": ["level", "signals"],
+      "properties": {
+        "level": { "enum": ["none", "suspicious", "likely"] },
+        "signals": {
+          "type": "array", "maxItems": 10,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["kind", "confidence", "detail"],
+            "properties": {
+              "kind": { "enum": ["homogeneous-response", "fingerprint-drift", "foreign-origin"] },
+              "confidence": { "enum": ["low", "medium", "high"] },
+              "detail": { "type": "string", "minLength": 1, "maxLength": 500 }
+            }
+          }
+        }
+      }
+    },
+    "fp": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "status", "bytes", "hash"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "status": { "type": "integer", "minimum": 0, "maximum": 599 },
+        "content_type": { "type": "string", "maxLength": 200 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "hash": { "type": "string", "minLength": 8, "maxLength": 64 }
+      }
+    }
+  }
+}
