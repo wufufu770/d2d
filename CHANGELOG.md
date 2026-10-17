@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-10-17
+
+> 1.3.0 语义=意图运行时+第二视角+竞速验证+修复后复测（外部调研四源思想的原生实现，零外部依赖）。
+> **包面诚实口径（承 1.2.0 先例）**：四项能力为编排层（仓内 scripts/xring）能力——npm 包面
+> 不含该层，本版发布为版本对齐语义；包文件集与 1.2.0 全同。
+> **验证口径**：离线合成断言闭环（Intent 继承/Advisor 触发与缺省零行为/竞速胜出与缺省关/
+> 复测流转——全 fake adapter 零真进程）+三轨全绿；**编排层能力已经两轮单目标授权环境真实
+> 场验**（ECC 判级/接力消费/报告产出的实弹形态见 1.2.0 台账首批数据）；四项新能力的实弹
+> 首考列入持续验证台账待入项。
+
+### Added
+- **Intent 意图运行时（编排层）**：handoff 契约第五载体 intents（id/direction/status[pending|completed|abandoned]/spawned_from）——worker 收尾自声明（可选 intents.json），跨 run 只继承 pending；注入优先级带=低于 facts 复验、高于新 leads（与 leads[未验证假设]语义互斥：leads=有证据没验，intent=已决定方向）。
+- **Advisor 第二视角（编排层）**：验证连败 ≥3 次（可配）触发——同模型新开干净上下文（历史摘要+失败序列+硬边界+上轮建议防重复），只输出建议不执行工具；建议落 workspace/advisor.md（主 worker 可读面）+handoff leads（origin=advisor 传承，防重复同一死法）。
+- **竞速验证（编排层，默认关）**：repro findings[].variants（≤5 组 steps 变体）并行重放——先 pass 者胜、败者结果弃置入档（evidence race✓ 行）；与机械验证互补，ECC 可疑时多策略同答=环境可疑旁证。
+- **修复后复测（编排层）**：remediated.json 人工/上游修复标记（run workspace）+`first-run --retest <run 目录>`——facts∩标记机械重放（零 worker 零 LLM）；语义对偶=falsified 证伪防复测 / remediated 修复后复测（exit 3=存在复测失败）。
+
+### Changed
+- prompt.md 产出契约表加可选 intents.json 行（worker 收尾方向声明——不写=无方向继承）。
+
+### 池登摘要（R-25~R-29，详见 docs/roadmap-1.2.0.md）
+资产图跨任务共享/报告证据与局限字段/长 run 记忆压缩/auto-fix 造修复（攻不守定位观察项）/渐进式披露三层加载。
+
 ## [1.2.0] - 2026-10-17
 
 > 1.2.0 语义=P1 产品环（复战→抗欺骗→交付——R-05/R-03/R-04）。
