@@ -17,6 +17,9 @@ import { fileURLToPath } from 'node:url'
 import { createXRingRunner, stripGraphTokenEnv, ensureXRingEngagement, releaseXRingEngagement } from './runner.mjs'
 import { startMonitor, collectTranscriptUsage, readEvents, sessionsBucketFor, appendEvent, BUDGET_LIMITS } from './monitor.mjs'
 import { reflow } from './reflow.mjs'
+import { assessTarget, briefSection } from './ecc.mjs'
+import { loadHandoffFrom, injectBrief } from './relay.mjs'
+import { emitReports } from './report-face.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
 
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -30,6 +33,8 @@ const TARGET_BASE = argOf('--target', 'http://127.0.0.1')
 const SCOPE = argOf('--scope', '127.0.0.1')
 const MAX_HOURS = Number(argOf('--max-hours', '0.5')) || 0.5
 const RECORD_ROOT = argOf('--record-root', path.join(REPO, 'experiments', 'xrp4-first-run'))
+// E15/R-05: 上一 run record 目录——handoff.json 消费（跨 run 接力; 缺省 null=首战零注入）
+const FROM_RECORD = argOf('--from-record', null)
 const RUN_ID = `${TASK_FILE ? 'run-r2b' : 'run-xrp4b'}-${new Date().toISOString().slice(5, 16).replace(/[-T:]/g, '')}`
 const ROOT = RECORD_ROOT
 const RECORD = path.join(ROOT, 'record', 'xring-first', RUN_ID)
@@ -150,6 +155,37 @@ if (TASK_FILE) {
   const code = await probeTarget()
   if (!code) throw new Error(`目标不就绪（3 试探活失败）: ${TARGET_BASE}`)
   log(`目标就绪: ${TARGET_BASE} HTTP ${code}`)
+
+  // ---- E15/R-05: handoff 消费（认识论标签制注入——leads 假设形态/facts 底账/falsified 排除;
+  // 无 handoff=首战零注入向后兼容）----
+  let prevHandoff = null
+  if (FROM_RECORD) {
+    prevHandoff = loadHandoffFrom(FROM_RECORD)
+    if (prevHandoff) {
+      EXTRA_TASK_RUNTIME += '\n\n' + injectBrief(prevHandoff)
+      log('handoff 消费:', JSON.stringify({ from: FROM_RECORD, run: prevHandoff.run_id, facts: prevHandoff.carriers.facts.length, leads: prevHandoff.carriers.leads.length, falsified: prevHandoff.carriers.falsified.length }))
+    } else {
+      log('from-record 无有效 handoff（首战兼容——零注入）:', FROM_RECORD)
+    }
+  }
+
+  // ---- E15/R-03: ECC 探针期检验（advisory 信号入任务书; 跨轮判据消费 handoff 基线）----
+  let ECC = null
+  if (!argv.includes('--no-ecc')) {
+    try {
+      ECC = await assessTarget({
+        targetBase: TARGET_BASE,
+        insecure: TARGET_BASE.startsWith('https:'),
+        baseline: prevHandoff?.carriers?.env?.fingerprint ?? null,
+        baselineRun: prevHandoff?.run_id ?? null,
+      })
+      EXTRA_TASK_RUNTIME += '\n\n' + briefSection(ECC)
+      log('ECC:', JSON.stringify({ level: ECC.level, signals: ECC.signals.map((s) => s.kind) }))
+    } catch (e) {
+      log('ECC 探针失败（尽力而为——advisory 面不阻断发射）:', String(e?.message ?? e).slice(0, 120))
+    }
+  }
+  var RELAY = { prevHandoff, ECC }
 } else {
   const dvwaUp = await fetch(`${TARGET_BASE}/login.php`, { signal: AbortSignal.timeout(8000) }) // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request — 本地受控靶（DVWA 无 https 面），http=设计内形态非降级
   if (!dvwaUp.ok) throw new Error(`DVWA 不就绪: login.php=${dvwaUp.status}（先跑 scripts/ops/dvwa-reset.sh）`)
@@ -254,8 +290,46 @@ log('能力调用统计（top20）:', JSON.stringify(capabilityLog))
 
 // ---- 回流（queue 档: B/C quarantine、A 级 verifyRunner 必经——DVWA targetBase）----
 log('进入回流阶段（mode=queue, verifyRunner targetBase=' + TARGET_BASE + '）')
-const rf = await reflow({ workspace: WORKSPACE, runId: RUN_ID, graphdUrl: GRAPHD_URL, hostToken, eventsFile: EVENTS, eng: `xring-${RUN_ID}`, mode: 'queue', verifyRunner: createVerifyRunner({ targetBase: TARGET_BASE, eng: `xring-${RUN_ID}` }) })
-log('reflow:', JSON.stringify({ ok: rf.ok, written: rf.written, held: rf.held, errors: rf.errors }))
+const rf = await reflow({
+  workspace: WORKSPACE, runId: RUN_ID, graphdUrl: GRAPHD_URL, hostToken, eventsFile: EVENTS, eng: `xring-${RUN_ID}`, mode: 'queue',
+  verifyRunner: createVerifyRunner({ targetBase: TARGET_BASE, eng: `xring-${RUN_ID}` }),
+  // E15/R-05: 跨 run 接力（仅 task-file 模式——无参缺省零行为变化）
+  ...(TASK_FILE
+    ? {
+        emitHandoff: true,
+        target: TARGET_BASE,
+        prevFacts: RELAY?.prevHandoff?.carriers?.facts ?? [],
+        handoffEnv: RELAY?.ECC
+          ? { fingerprint: RELAY.ECC.probes ?? [], csp_origins: RELAY.ECC.foreignOrigins ?? [], ecc: { level: RELAY.ECC.level, signals: RELAY.ECC.signals ?? [] } }
+          : null,
+      }
+    : {}),
+})
+log('reflow:', JSON.stringify({ ok: rf.ok, written: rf.written, held: rf.held, errors: rf.errors, handoff: rf.handoffPath ?? null }))
+
+// ---- E15/R-04: 收尾报告自动化（verified→三外部格式+ab-report 内部面; task-file 模式, 尽力而为）----
+let REPORT = null
+if (TASK_FILE) {
+  try {
+    REPORT = emitReports({
+      verified: rf.verifiedFindings ?? [],
+      leads: (() => { try { return JSON.parse(fs.readFileSync(rf.handoffPath ?? '', 'utf8'))?.carriers?.leads ?? [] } catch { return [] } })(),
+      ecc: RELAY?.ECC ? { level: RELAY.ECC.level, signals: RELAY.ECC.signals ?? [], checkedAt: RELAY.ECC.checkedAt } : null,
+      relaySummary: {
+        from: FROM_RECORD,
+        consumed: Boolean(RELAY?.prevHandoff),
+        facts: RELAY?.prevHandoff?.carriers?.facts.length ?? 0,
+        leads: RELAY?.prevHandoff?.carriers?.leads.length ?? 0,
+        falsified: RELAY?.prevHandoff?.carriers?.falsified.length ?? 0,
+        baselinePaths: RELAY?.prevHandoff?.carriers?.env?.fingerprint.length ?? 0,
+      },
+      outDir: path.join(ROOT, 'report'),
+    })
+    log('report:', JSON.stringify({ files: REPORT.files.length, warnings: REPORT.warnings }))
+  } catch (e) {
+    log('report 产出失败（尽力而为——不阻断收尾）:', String(e?.message ?? e).slice(0, 160))
+  }
+}
 
 // ---- 图内对比（回流量+R4c 空闲图观察面）----
 const afterCounts = {}
@@ -276,8 +350,15 @@ const summary = {
   worker: { kind: result.kind, code: result.code ?? null, pid: workerPid },
   observations: { envScan, orphans, wallClockMs: elapsedMs, sessionParse: { totalTokens: usage.totalTokens, files: usage.files, idleMs: usage.idleMs } },
   capabilityLog,
-  reflow: { ok: rf.ok, written: rf.written, held: rf.held, errors: rf.errors },
+  reflow: { ok: rf.ok, written: rf.written, held: rf.held, errors: rf.errors, handoffPath: rf.handoffPath ?? null },
   graphDelta: { baseCounts, afterCounts, delta },
+  ...(TASK_FILE
+    ? {
+        relay: { fromRecord: FROM_RECORD, consumed: Boolean(RELAY?.prevHandoff), prevRun: RELAY?.prevHandoff?.run_id ?? null },
+        ecc: RELAY?.ECC ? { level: RELAY.ECC.level, signals: RELAY.ECC.signals, foreignOrigins: RELAY.ECC.foreignOrigins } : null,
+        report: REPORT ? { files: REPORT.files, warnings: REPORT.warnings } : null,
+      }
+    : {}),
 }
 fs.mkdirSync(path.join(REPO, 'experiments', 'results'), { recursive: true })
 // XR-G3 顺手项: 实录落盘 runId 命名空间化（固定名 xrp4-first-run.json 曾被第二次首跑覆盖——
