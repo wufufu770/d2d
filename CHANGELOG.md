@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-17
+
+> 1.2.0 语义=P1 产品环（复战→抗欺骗→交付——R-05/R-03/R-04）。
+> **包面诚实口径**：产品环为编排层（仓内 scripts/xring）能力——npm 包面不含该层，
+> 本版发布为版本对齐语义（npm 版本与仓内里程碑同步）；包文件集与 1.1.0 全同。
+> **验证口径**：离线合成 e2e 七断言闭环（复战环：消费/注入/falsified/ECC 单轮/跨轮漂移/
+> 报告分面/基线再产出）+三轨全绿=机制级证据；实弹面转持续验证台账（ECC 真实目标
+> 假阳率/handoff 复战效用/报告面实弹产出=台账待入项）。
+
+### Added
+- **跨 run 接力（R-05，编排层）**：handoff 契约（xring/handoff@1）——认识论标签制四载体（facts 已验证/leads 未验证假设/falsified 已证伪/env 路径级指纹基线）；reflow 收尾自动产出 handoff.json，first-run `--from-record` 消费注入（leads 以假设形态注入复验不采信；falsified 入排除表防复测；无 handoff=首战零注入向后兼容）。
+- **环境一致性检验 ECC（R-03，编排层）**：tarpit/形态突变 **advisory 信号**（非硬闸）——单轮异构路径指纹趋同/同路径双探翻转（L-3 冻结判据）+跨轮指纹漂移（消费 handoff 基线）+CSP 外部 origin（L-4）；信号入任务书注入+环境画像+报告 caveat，worker 据此自行降档（`--no-ecc` 逃生）。
+- **报告自动化（R-04，编排层）**：run 收尾 verified findings → 三外部格式（butian/vulbox/edu-src，docs/report-templates/ 字段映射）自动产出至 run 目录 report/；**分面规则**=外部面只吃已验证 findings，ab-report.md 内部面吃全量（含 leads/falsified/环境评估/接力消费摘要/caveat）。
+
+### Fixed
+- selfcheck 扩面至 8 检（+R-05 契约与注入语义/R-03 L-3 判据/R-04 分面——纯函数离线判据）。
+
 ## [1.1.0] - 2026-10-16
 
 > 1.1.0-alpha 转正（latest 移动至本版；alpha dist-tag 保留指 1.1.0-alpha）。
