@@ -20,6 +20,7 @@ import { reflow } from './reflow.mjs'
 import { assessTarget, briefSection } from './ecc.mjs'
 import { loadHandoffFrom, injectBrief } from './relay.mjs'
 import { emitReports } from './report-face.mjs'
+import { loadRemediated, retestFacts, writeRetestReport, REMEDIATED_FILE } from './retest.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
 
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -35,6 +36,26 @@ const MAX_HOURS = Number(argOf('--max-hours', '0.5')) || 0.5
 const RECORD_ROOT = argOf('--record-root', path.join(REPO, 'experiments', 'xrp4-first-run'))
 // E15/R-05: 上一 run record 目录——handoff.json 消费（跨 run 接力; 缺省 null=首战零注入）
 const FROM_RECORD = argOf('--from-record', null)
+
+// ---- E18/P1-2: 修复后复测模式（--retest <run 目录>——机械重放 remediated facts, 零 worker 零图写;
+// 对偶语义: falsified=证伪防复测 / remediated=修复后复测。人工/上游在 run workspace 落 remediated.json）----
+const RETEST = argOf('--retest', null)
+if (RETEST) {
+  const handoff = loadHandoffFrom(RETEST)
+  if (!handoff) throw new Error(`--retest: 无有效 handoff @ ${RETEST}`)
+  const ws = RETEST.endsWith('.json') ? path.dirname(RETEST) : path.join(RETEST, 'workspace')
+  const remediated = loadRemediated(ws)
+  if (!remediated.length) throw new Error(`--retest: ${ws} 缺 ${REMEDIATED_FILE}（人工/上游修复标记——形态 {remediated:[{id,note?}]}）`)
+  const report = await retestFacts({
+    facts: handoff.carriers.facts,
+    remediated,
+    targetBase: TARGET_BASE,
+    createVerifyRunnerFn: (o) => createVerifyRunner({ ...o, insecure: TARGET_BASE.startsWith('https:') }),
+  })
+  const rp = writeRetestReport(ws, { ...report, handoffRun: handoff.run_id, retestedAt: new Date().toISOString() })
+  console.log(JSON.stringify({ retest: { handoff: handoff.run_id, total: report.summary.total, pass: report.summary.pass, fail: report.summary.fail, unmatched: report.unmatched, report: rp } }, null, 1))
+  process.exit(report.summary.fail === 0 ? 0 : 3) // 3=存在复测失败（修复未生效——非进程异常）
+}
 const RUN_ID = `${TASK_FILE ? 'run-r2b' : 'run-xrp4b'}-${new Date().toISOString().slice(5, 16).replace(/[-T:]/g, '')}`
 const ROOT = RECORD_ROOT
 const RECORD = path.join(ROOT, 'record', 'xring-first', RUN_ID)
