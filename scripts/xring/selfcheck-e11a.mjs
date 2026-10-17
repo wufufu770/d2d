@@ -106,6 +106,20 @@ const rec = (name, ok, detail) => { results.push({ name, ok, detail }); console.
     r.files.length === 4 && r.warnings.length === 0 && !external.includes('内部面专属') && ab.includes('caveat'),
     `files=${r.files.length} warnings=${r.warnings.length}`)
 }
+{
+  // E18 扩面: Intent 契约（schema 拒坏 status+pending 继承语义）+Advisor 触发条件
+  const { validateHandoff } = await import('./validate.mjs')
+  const raw = { schema: 'xring/handoff@1', run_id: 'selfcheck-i', generated_at: '2026-10-17T00:00:00Z', target: 'http://t', carriers: { facts: [], leads: [], falsified: [], intents: [{ id: 'I-1', direction: 'selfcheck 方向语句足够长', status: 'pending', spawned_from: 'F-1' }], env: { fingerprint: [] } } }
+  raw.carriers.intents[0].status = 'someday'
+  const badOk = validateHandoff(raw).ok
+  raw.carriers.intents[0].status = 'pending'
+  const goodOk = validateHandoff(raw).ok
+  const advisor = await import('./advisor.mjs')
+  rec('E18 Intent 契约: 坏 status 拒/pending 过（意图运行时载体）', !badOk && goodOk, `bad=${badOk} good=${goodOk}`)
+  rec('E18 Advisor 触发: pass 打断连击+阈值 3（连败会诊条件）',
+    advisor.failStreak(['fail', 'fail', 'pass', 'fail', 'fail', 'fail']) === 3 && advisor.shouldAdvise(3) && !advisor.shouldAdvise(2),
+    'streak=3 触发/2 不触发')
+}
 
 const fails = results.filter((r) => !r.ok)
 console.log(`\nSELF-CHECK: ${results.length - fails.length}/${results.length} 过`)
