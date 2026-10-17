@@ -158,8 +158,10 @@ async function replayHttp(artifact, { targetBase, fetchImpl = fetch, timeoutMs =
   }
   // E11a#2: token session（进程内存——零落盘零日志零 evidence 回显）
   const session = { token: null }
+  const extraHeaders = {} // E21/R-15: HEADER 行收集（声明后对后续全部请求生效）
   const request = async (method, fullPath, body) => {
     const headers = { connection: 'close' } // E11a: 逐请求关连——测试进程不被 keep-alive 句柄挂住（mocha 退出语义）
+    Object.assign(headers, extraHeaders) // R-15: 声明式 header（后声明覆盖同名缺省——显式优先）
     if (cookieJar.size) headers.cookie = cookieHeader()
     if (session.token) headers.authorization = `Bearer ${session.token}`
     if (body !== undefined) {
@@ -195,6 +197,15 @@ async function replayHttp(artifact, { targetBase, fetchImpl = fetch, timeoutMs =
   let expectIndex = -1
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i].trim()
+    // E21/R-15: HEADER 声明行——"HEADER <Name>: <value>" 对后续全部请求生效（F-2 路径遍历
+    // 逐文件探测等场景的表达力补充; 判定逻辑零改动）
+    if (step.startsWith('HEADER ')) {
+      const hm = /^HEADER\s+([A-Za-z0-9_-]+)\s*:\s*(.+)$/.exec(step)
+      if (!hm) return { verdict: 'manual', evidence: `步骤 ${i}: HEADER 形态不可解析（"HEADER <Name>: <value>"）——留人工验收` }
+      extraHeaders[hm[1]] = hm[2]
+      evidenceParts.push(`HEADER✓(${hm[1]})`)
+      continue
+    }
     if (step.startsWith('EXPECT ')) {
       if (lastBody === null) return { verdict: 'manual', evidence: `步骤 ${i}: EXPECT 先于任何请求（歧义序）——留人工验收` }
       const needle = step.slice('EXPECT '.length)

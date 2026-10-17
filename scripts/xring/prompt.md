@@ -25,12 +25,19 @@
 | 文件 | 内容 | 关键字段 |
 |------|------|----------|
 | `hypotheses.json` | 本次运行的假设树 | run_id/generated_at/hypotheses[]{id[H-n],statement,priority[high/medium/low],status[untested/probing/falsified/confirmed],evidence_refs?} |
-| `repro_paths.json` | 可复现漏洞路径（无则 findings 空数组） | run_id/generated_at/findings[]{id[F-n],title,severity[critical/high/medium/low/info],target,steps[],expected,observed} |
+| `repro_paths.json` | 可复现漏洞路径（无则 findings 空数组） | run_id/generated_at/findings[]{id[F-n],title,severity[critical/high/medium/low/info],target,steps[],expected,observed,variants?[≤5 组 steps 变体],env?{tls}} |
 | `lessons.json` | 失败与教训（至少 1 条——什么浪费了时间/什么路径走不通/为什么） | run_id/generated_at/lessons[]{id[L-n],lesson,failure_class[resource/destructive/overreach/cognitive/environment],context?} |
+| `intents.json` | 下轮探索方向声明（可选——收尾时你已决定但未执行完的方向; 不写=无方向继承） | run_id/intents[]{id[I-n],direction[一句话方向],status[pending/completed/abandoned],spawned_from?} |
 | `intents.json` | 下轮探索方向声明（可选——收尾时你已决定但未执行完的方向; 不写=无方向继承） | run_id/intents[]{id[I-n],direction[一句话方向],status[pending/completed/abandoned],spawned_from?} |
 
 - 各产出文件的 `run_id` 一致，由启动器在渲染本模板时注入下方占位。
 - 未知字段不要添加（schema 拒绝额外属性）。
+- 竞速重放（可选能力——宿主开关开启时生效）: 单策略重放失败/存在多路径假设/环境可疑时,
+  finding 可带 `variants[]`（≤5 组 steps 变体, 每组与 steps 同语法）——宿主并行重放全部
+  变体, 先通过者胜出入图, 其余弃置; 不带 variants=单策略重放（行为不变）。
+- 节奏与纪律缺省（任务书显式覆盖项以外恒适用）: 单线程、请求间隔 ≥500ms; 收到限流/
+  锁定形态响应（如"失败次数过多/locked/429"）即停该向探测并如实记录——锁出窗内重复
+  尝试=预算浪费+证据污染; 出口阻断信号（Proxy CONNECT aborted 类）=如实记录为环境观察。
 - `repro_paths.json` 的 `steps[]` 会被宿主侧重放器逐行机械执行（不猜、不解析散文）：
   请求行写 `"METHOD /path?query"` 形态（方法大写+空格+以 / 开头的相对路径），
   断言行写 `"EXPECT <响应体特征子串>"`。带载荷的请求写 `"POST /path --data <固定表单串>"`

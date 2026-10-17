@@ -9,6 +9,18 @@ import { validateHandoff } from './validate.mjs'
 
 export const HANDOFF_FILE = 'handoff.json'
 export const HANDOFF_SCHEMA = 'xring/handoff@1'
+export const VERDICTS_FILE = 'verdicts.json'
+
+/** E21/R-08: 人工验证补录读取（held 裁决→操作者回写——verdicts.json {verifications:[{id,result:pass|fail,note?}]}）。 */
+export function loadVerdicts(workspace) {
+  try {
+    const doc = JSON.parse(fs.readFileSync(path.join(workspace, VERDICTS_FILE), 'utf8'))
+    const list = Array.isArray(doc.verifications) ? doc.verifications : []
+    return list.map((x) => ({ id: String(x.id), result: x.result === 'pass' ? 'pass' : 'fail', ...(x.note ? { note: String(x.note).slice(0, 300) } : {}) }))
+  } catch {
+    return []
+  }
+}
 
 /** 四类载体收集（reflow 收尾传参; 全字段截断对齐 schema 上限）。E15 起含 intents（R-18 吸收：意图运行时——已决定的行动方向, 与 leads[未验证假设]语义互斥）。 */
 export function collectHandoff({ runId, target, verified = [], leads = [], falsified = [], intents = [], env = null, generatedAt = null }) {
@@ -121,20 +133,30 @@ export function injectBrief(handoff, { maxLeads = 8, maxFacts = 10, maxFalsified
 }
 
 /** reflow 侧组装: 由回流产物导出五类载体（A pass=facts; held+hypotheses=leads; falsified 态+refuted=falsified; intents.json=pending intents 继承）。 */
-export function collectFromReflow({ runId, target, verifiedFindings, written, held, hypothesesDocs = [], intentsDocs = [], refuted = [], env = null, extraLeads = [] }) {
+export function collectFromReflow({ runId, target, verifiedFindings, written, held, hypothesesDocs = [], intentsDocs = [], verdicts = [], refuted = [], env = null, extraLeads = [] }) {
   const facts = (verifiedFindings ?? []).map((f) => ({ ...f, verified_in: runId }))
   const hypById = new Map()
   for (const d of hypothesesDocs) for (const h of (d.hypotheses ?? [])) hypById.set(String(h.id), h)
   const leads = [...(extraLeads ?? [])]
+  // E21/R-08: 人工验证补录——held∩verdicts: pass→升 facts（operator 补录闭合 held→人工→回写链）,
+  // fail→falsified（operator 判伪——与 worker 自证伪同通道不同来源）; 未补录 held 照旧 leads。
+  const verdictMap = new Map((verdicts ?? []).map((v) => [String(v.id), v]))
+  const falsified = [
+    ...(refuted ?? []).map((r) => ({ id: r.id, statement: r.statement ?? `fact ${r.id}（上轮已验证本轮复验失败）`, reason: r.reason ?? 're-verify failed' })),
+  ]
+  const heldUnreviewed = []
+  for (const h of (held ?? [])) {
+    const v = verdictMap.get(String(h.id))
+    if (!v) { heldUnreviewed.push(h); continue }
+    if (v.result === 'pass') facts.push({ id: String(h.id), title: String(h.statement ?? `held ${h.id}（operator 补录验证通过）`).slice(0, 200), severity: 'medium', verified_in: `${runId}+operator`, steps: [] })
+    else falsified.push({ id: String(h.id), statement: String(h.statement ?? `held ${h.id}`).slice(0, 1500), reason: `operator 判伪${v.note ? `（${v.note}）` : ''}` })
+  }
   // E18 吸收（意图运行时）: pending intents 继承——上轮 pending → 本轮原样继承（completed/abandoned 不传）;
   // intentsDocs 形态: {run_id, intents:[{id,direction,status,spawned_from?}]}（worker 收尾自声明, 缺文件=无 intents）。
   const pendingIntents = []
   for (const d of intentsDocs) for (const i of (d.intents ?? [])) if (i.status === 'pending') pendingIntents.push(i)
-  for (const h of (held ?? [])) leads.push({ id: h.id, statement: h.statement ?? String(h.evidence ?? h.verdict ?? 'held 条目').slice(0, 200), priority: 'medium', origin: 'held-manual' })
+  for (const h of heldUnreviewed) leads.push({ id: h.id, statement: h.statement ?? String(h.evidence ?? h.verdict ?? 'held 条目').slice(0, 200), priority: 'medium', origin: 'held-manual' })
   for (const w of (written ?? [])) if (w.level === 'B') leads.push({ id: w.id, statement: String(hypById.get(String(w.id))?.statement ?? `假设 ${w.id}（上轮已入图未验证）`).slice(0, 1500), priority: ['high', 'medium', 'low'].includes(hypById.get(String(w.id))?.priority) ? hypById.get(String(w.id)).priority : 'medium', origin: 'hypothesis' })
-  const falsified = [
-    ...(refuted ?? []).map((r) => ({ id: r.id, statement: r.statement ?? `fact ${r.id}（上轮已验证本轮复验失败）`, reason: r.reason ?? 're-verify failed' })),
-  ]
   for (const d of hypothesesDocs) for (const h of (d.hypotheses ?? [])) if (h.status === 'falsified') falsified.push({ id: h.id, statement: String(h.statement ?? '').slice(0, 1500) || `假设 ${h.id}`, reason: 'worker 自证伪（上轮 hypotheses.falsified 态）' })
   return collectHandoff({ runId, target, verified: facts, leads, falsified, intents: pendingIntents, env })
 }

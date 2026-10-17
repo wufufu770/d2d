@@ -11,7 +11,7 @@ import { validateFile, validateHypotheses } from './validate.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
 import { collectFromReflow, writeHandoff, HANDOFF_FILE } from './relay.mjs'
 import { raceVerify, raceEvidence } from './verify-race.mjs'
-import { shouldAdvise, runAdvisor, buildAdvisorBrief, applyAdvice } from './advisor.mjs'
+import { shouldAdvise, runAdvisor, buildAdvisorBrief, applyAdvice, epistemicSignals } from './advisor.mjs'
 import { XRING_MODES } from './monitor.mjs'
 
 // E11a#4: 条目级容错——单条 schema 失败不再拖死整文件。超长 evidence_refs 条目截断
@@ -84,7 +84,7 @@ async function post(graphdUrl, apiPath, payload, token) {
 /** 扫描 workspace 产出（缺文件=该级无产出, 合法）。E18: +intents.json（意图运行时——可选产物）。 */
 export function scanArtifacts(workspace) {
   const found = {}
-  for (const f of ['hypotheses.json', 'repro_paths.json', 'lessons.json', 'intents.json']) {
+  for (const f of ['hypotheses.json', 'repro_paths.json', 'lessons.json', 'intents.json', 'verdicts.json']) {
     const p = path.join(workspace, f)
     found[f] = fs.existsSync(p) ? p : null
   }
@@ -117,6 +117,7 @@ export async function reflow(opts) {
   const aVerified = []
   const hypothesisDocs = []
   const intentsDocs = []
+  const verdictsDocs = []
   const advisorLeads = [] // E18/P0-2: Advisor 建议入 handoff leads（origin=advisor）
   // E15 复战语义: 上轮 fact 本轮复验失败=refuted（形态突变嫌疑——ECC 跨轮漂移为解释源）
   const refuted = []
@@ -163,6 +164,14 @@ export async function reflow(opts) {
       intentsDocs.push(JSON.parse(fs.readFileSync(found['intents.json'], 'utf8')))
     } catch (e) {
       errors.push({ file: 'intents.json', parse: String(e?.message ?? e).slice(0, 120) })
+    }
+  }
+  if (found['verdicts.json']) {
+    // E21/R-08: 人工验证补录（操作者/上游回写——缺文件=无补录）
+    try {
+      verdictsDocs.push(JSON.parse(fs.readFileSync(found['verdicts.json'], 'utf8')))
+    } catch (e) {
+      errors.push({ file: 'verdicts.json', parse: String(e?.message ?? e).slice(0, 120) })
     }
   }
 
@@ -287,6 +296,30 @@ export async function reflow(opts) {
   const verifiedFindings = aVerified ?? []
   if (opts.emitHandoff) {
     try {
+      // E21 三信号（E20 空转修正）: A 级连败之外的三触发源——每情节至多一发（advisorLeads 空才发）;
+      // 信号数据源=跨轮 handoff（零增量停滞）+ECC 指纹（封锁模式）+证伪计数（连击零建设）
+      if (opts.advisor && advisorLeads.length === 0) {
+        const sigs = epistemicSignals({
+          prevHandoff: opts.prevHandoff ?? null,
+          written,
+          held,
+          falsifiedCount: refuted.length + hypothesisDocs.reduce((n, d) => n + (d.hypotheses ?? []).filter((h) => h.status === 'falsified').length, 0),
+          probes: opts.handoffEnv?.fingerprint ?? [],
+        })
+        if (sigs.length) {
+          try {
+            const ar = await runAdvisor({ adapter: opts.advisor.adapter, workspace, brief: buildAdvisorBrief({ runId, target: String(opts.target ?? ''), failures: sigs.map((s) => `${s.kind}: ${s.detail}`), historySummary: opts.advisor.historySummary ?? '', signals: sigs }) })
+            const advice = applyAdvice(workspace, ar.advice)
+            if (advice) {
+              advisorLeads.push({ id: 'ADV-1', statement: advice.slice(0, 1500), priority: 'high', origin: 'advisor' })
+              emit({ event: 'advisor-advice', runId, signals: sigs.map((s) => s.kind) })
+            }
+          } catch (e) {
+            errors.push({ file: 'advisor', err: String(e?.message ?? e).slice(0, 120) })
+          }
+        }
+      }
+
       const handoff = collectFromReflow({
         runId,
         target: String(opts.target ?? ''),
@@ -295,6 +328,7 @@ export async function reflow(opts) {
         held,
         hypothesesDocs: hypothesisDocs,
         intentsDocs: intentsDocs,
+        verdicts: verdictsDocs.flatMap((d) => d.verifications ?? []).map((x) => (typeof x === 'string' ? { id: x } : x)),
         refuted,
         env: opts.handoffEnv ?? null,
         extraLeads: advisorLeads,
