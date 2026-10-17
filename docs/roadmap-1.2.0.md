@@ -59,6 +59,22 @@
 > intents.json+锁出后 deferred intent+继承精化全链）/**漂移检出现场命中**（形态真变 5/5
 > 被 ECC live 捕获）/ECC 四数据点序列（判级-形态相关）/Advisor 触发源扩展与竞速变体生产
 > 语义入池观察（devlog E20 段）。
+> E21 折并批（2026-10-17）——R-06~R-16 逐项处置（授权面解冻执行+销项定谳）：
+> **✅ 实施 8 项**：R-06 探活参数化（--probe-tries/--probe-timeout-s，缺省零变化）/R-07+R-12
+> 任务书纪律块（egress 限流+锁出感知入 prompt.md——禁词锁测试背书）/R-08 held 验证补录
+> （verdicts.json→reflow 升 facts/降 falsified——held→人工→回写链闭合）/R-09 长度策略
+> 统一表（docs/schema-length-policy.md）/R-11 内容锚指南成文+存量零实测
+> （docs/content-anchor-guidelines.md）/R-15 verify-runner HEADER 行（声明式 header 表达力，
+> 坏形态 manual）/R-16 NAS/SPA 任务书模板（docs/task-templates/nas-spa.md）/ECC 判级-形态
+> 对账表固化（docs/ecc-form-ledger.md——四点全对账）。
+> **销项 3 项**：R-10 整体超时=既有实现已满足（reflow post 15s+graphdQuery 10s 双层单发
+> 超时——挂起形态已在后续批修复，无存量）；R-13 info 入图=编排侧已显式报告化（errors 面）
+> +graphd severity 域扩展挂 R-25 邻接（服务侧批次）；R-14 eng 归属=既有实现已满足
+> （reflow B 级写面 eng||runId——E11a 时期即落地）。**burp×scope 门定谳**：门禁行为正确
+> （工具非越权通道）+burp MCP 桥接评估素材入 R-25（竞品 MCP 直连形态只入档不实施）。
+> **dsh 0.2.0 应对**：API 面=ctx.on×7+shellEnv（零 ctx.shell.run——主破坏面不在路径）+
+> dsh-* 六包 pin 0.1.1-rc.2 维持（0.2.x 适配进度=shellEnv/hook 契约复核+实跑后解锁）+
+> **hook-guard 静默失败防御**（5 处安全链 hook 入口包裹——异常落 hook-guard.log 再原样重抛）。
 
 ## 三、排期建议（主会话终裁）
 
