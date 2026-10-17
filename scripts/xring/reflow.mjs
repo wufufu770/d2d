@@ -10,6 +10,8 @@ import { createHash } from 'node:crypto'
 import { validateFile, validateHypotheses } from './validate.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
 import { collectFromReflow, writeHandoff, HANDOFF_FILE } from './relay.mjs'
+import { raceVerify, raceEvidence } from './verify-race.mjs'
+import { shouldAdvise, runAdvisor, buildAdvisorBrief, applyAdvice } from './advisor.mjs'
 import { XRING_MODES } from './monitor.mjs'
 
 // E11a#4: 条目级容错——单条 schema 失败不再拖死整文件。超长 evidence_refs 条目截断
@@ -79,10 +81,10 @@ async function post(graphdUrl, apiPath, payload, token) {
   return { status: res.status, body }
 }
 
-/** 扫描 workspace 三产出（缺文件=该级无产出, 合法）。 */
+/** 扫描 workspace 产出（缺文件=该级无产出, 合法）。E18: +intents.json（意图运行时——可选产物）。 */
 export function scanArtifacts(workspace) {
   const found = {}
-  for (const f of ['hypotheses.json', 'repro_paths.json', 'lessons.json']) {
+  for (const f of ['hypotheses.json', 'repro_paths.json', 'lessons.json', 'intents.json']) {
     const p = path.join(workspace, f)
     found[f] = fs.existsSync(p) ? p : null
   }
@@ -114,6 +116,8 @@ export async function reflow(opts) {
   // handoff 组装消费; 仅 emitHandoff 路径读取, 既有返回面零变化）
   const aVerified = []
   const hypothesisDocs = []
+  const intentsDocs = []
+  const advisorLeads = [] // E18/P0-2: Advisor 建议入 handoff leads（origin=advisor）
   // E15 复战语义: 上轮 fact 本轮复验失败=refuted（形态突变嫌疑——ECC 跨轮漂移为解释源）
   const refuted = []
   const prevFactMap = new Map((Array.isArray(opts.prevFacts) ? opts.prevFacts : []).map((x) => [String(x.id), String(x.title ?? '')]))
@@ -150,6 +154,15 @@ export async function reflow(opts) {
         if (r.status === 200 && r.body?.ok) written.push({ level: 'C', id: l.id, status: r.body.status ?? 'quarantined' })
         else errors.push({ file: 'lessons.json', id: l.id, status: r.status, body: r.body })
       }
+    }
+  }
+
+  if (found['intents.json']) {
+    // E18 意图运行时: worker 收尾自声明（可选产物——缺文件=无 intents）; 结构坏文件留 errors 不拖死主流程
+    try {
+      intentsDocs.push(JSON.parse(fs.readFileSync(found['intents.json'], 'utf8')))
+    } catch (e) {
+      errors.push({ file: 'intents.json', parse: String(e?.message ?? e).slice(0, 120) })
     }
   }
 
@@ -201,13 +214,40 @@ export async function reflow(opts) {
         return { ok: false, written, held, errors, idDrift: rec.errs }
       }
       if (rec.handoffIds) emit({ event: 'id-reconcile-ok', runId, repro: (doc.findings ?? []).map((f) => f.id).length, handoff: rec.handoffIds.length })
+      // E18: 失败连击计数（Advisor 触发源）+竞速/Advisor 均为 opt-in（缺省零行为变化）
+      let failStreak = 0
       for (const f of doc.findings) {
-        const verdict = await verifyRunner.verify(f)
+        let verdict
+        let raceNote = ''
+        if (opts.raceEnabled && Array.isArray(f.variants) && f.variants.length) {
+          // E18/P1-1 竞速验证（opt-in）: 多策略变体并行重放, 先 pass 者胜
+          const race = await raceVerify(verifyRunner, { primary: f.steps ?? [], variants: f.variants })
+          verdict = race.winner?.verdict ?? { verdict: 'fail', evidence: raceEvidence(race) }
+          raceNote = raceEvidence(race)
+        } else {
+          verdict = await verifyRunner.verify(f)
+        }
         if (verdict.verdict !== 'pass') {
+          failStreak++
           held.push({ level: 'A', id: f.id, verdict: verdict.verdict, failureClass: verdict.failureClass ?? null, evidence: verdict.evidence, ...(prevFactMap.has(String(f.id)) ? { prevFact: true } : {}) })
           if (prevFactMap.has(String(f.id))) refuted.push({ id: f.id, statement: prevFactMap.get(String(f.id)) || f.title, reason: `复验 ${verdict.verdict}（上轮 fact——形态突变嫌疑, 见 ECC 跨轮信号）` })
+          // E18/P0-2 Advisor（opt-in）: 连败 ≥ 阈值 → 第二上下文会诊（建议非指令, 主循环消化）
+          if (opts.advisor && shouldAdvise(failStreak, { threshold: opts.advisorThreshold })) {
+            try {
+              const ar = await runAdvisor({ adapter: opts.advisor.adapter, workspace, brief: buildAdvisorBrief({ runId, target: String(opts.target ?? ''), failures: held.map((h) => `${h.id}:${h.verdict}`), historySummary: opts.advisor.historySummary ?? '', priorAdvice: advisorLeads.map((l) => l.statement).join('\n') }) })
+              const advice = applyAdvice(workspace, ar.advice)
+              if (advice) {
+                advisorLeads.push({ id: `ADV-${advisorLeads.length + 1}`, statement: advice.slice(0, 1500), priority: 'high', origin: 'advisor' })
+                failStreak = 0 // 建议消化后连击归零（换视角重计——角色互换传承语义）
+                emit({ event: 'advisor-advice', runId, id: advisorLeads[advisorLeads.length - 1].id })
+              }
+            } catch (e) {
+              errors.push({ file: 'advisor', err: String(e?.message ?? e).slice(0, 120) })
+            }
+          }
           continue // A 级必经 verify: manual/fail 不入图（编排位固化, P3/P4 接真执行器）
         }
+        failStreak = 0
         // XR-G6: repro 首行补鉴权档位标注（一处 diff）——graphd 0917 鉴权档位门（high/critical
         // 必须注明档位, 结构化 JSON 路径同规）曾把 F-7 verify pass 的入图拦在 400。xring 工件
         // 步骤通常含登录序列, 标注"登录态"=如实（AUTH_TIER_MARKER_RE 既有词表命中即可）。
@@ -223,7 +263,7 @@ export async function reflow(opts) {
         // 之前 pass 只留 id, evidence 信息丢失）
         if (r.status === 200 && r.body?.ok) written.push({ level: 'A', id: f.id, evidence: verdict.evidence })
         else errors.push({ file: 'repro_paths.json', id: f.id, status: r.status, body: r.body })
-        if (r.status === 200 && r.body?.ok) aVerified.push({ ...f, verifyEvidence: verdict.evidence })
+        if (r.status === 200 && r.body?.ok) aVerified.push({ ...f, verifyEvidence: [verdict.evidence, raceNote].filter(Boolean).join(' ') })
       }
       // E11a#7 差集审计: 图内已分配 ID − repro 引用集 = 孤儿 finding 清单（非空即报警）
       try {
@@ -254,8 +294,10 @@ export async function reflow(opts) {
         written,
         held,
         hypothesesDocs: hypothesisDocs,
+        intentsDocs: intentsDocs,
         refuted,
         env: opts.handoffEnv ?? null,
+        extraLeads: advisorLeads,
       })
       handoffPath = writeHandoff(workspace, handoff)
       emit({ event: 'handoff-emitted', runId, file: HANDOFF_FILE })
