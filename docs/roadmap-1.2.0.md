@@ -41,6 +41,11 @@
 | R-22 | P2 | XR-G8 EXTRACT 机械原语 | wrap4-execution-plan 跨判定独立项+xrp4-acceptance（动态 token 场景参数化边界裁量归用户） | 用户拍板参数化边界后实施 EXTRACT 原语 | M |
 | R-23 | P2 | mitm-capture 单跑顺序依赖（反向 flaky） | E14-B 冒烟单文件扫描实测：单跑确定性 2 failing（全量恒绿——依赖先序文件状态），登记不修（E13 同款范围纪律） | 定位依赖源（先序文件建立的目录/env 态）→测试自足化 | S |
 | R-24 | P2 | createXRingRunner 真 worker 测试的集成轨拆分或 fake 化 | E13/E14-B 实录：族1 start 测试拉真 dsh worker（LLM 调用+时长方差）——E13 收割笔已消挂死，测试架构优化项 | 集成轨（真 spawn）与单测轨（fake adapter）拆分，单测零 LLM 依赖 | S |
+| R-25 | P2 | 资产图跨任务共享（ARTEX 思想，仅公开架构描述） | E18 二轮调研：探索图边语义（spawns/derived_from/yields/proves 血缘链）+Planner 跨轮次共享待办清单+跨 worker 检索执行过程+ScopeSentry 资产同步形态 | handoff→持久图远期演进（intent 节点图内持久化亦挂此——E18 定谳：intent 先行 handoff 载体，图内化归本条） | M |
+| R-26 | P2 | 报告带证据与局限字段（REA 思想，仅公开描述） | E18 调研：报告附证据链引用与已知局限声明（与 ab-report caveat 形态同向） | ab-report 扩证据引用+局限节（外部格式面另议） | S |
+| R-27 | P2 | 长 run 记忆压缩（BUUCTF_Agent 思想，仅公开描述） | E18 调研：长会话记忆压缩保关键态（worker 2-3h 长跑的上下文管理远期参考——dsh 会话自有压缩，编排层摘要另议） | run 中段摘要注入 handoff/intents 的编排层形态探索 | M |
+| R-28 | P2 | auto-fix 造修复语义（strix 思想，仅公开描述） | E18 调研对照声明：strix 做"造修复"（发现→PoC 验证→补丁生成+merge-ready PR）——d2d 定位攻不守；与 R-28 对偶的"验修复"已由 E18 retest.mjs 落地 | 观察项：若未来开防守面（授权修复场景）再启——造修复=补丁生成+PR 全链 | L |
+| R-29 | P2 | 渐进式披露三层加载（ctf-skills 思想，仅公开描述） | E18 调研：元数据→主体→附加文件按需加载（Token 降 60-80% 实证）——d2d 任务书模板按需加载远期参考 | 任务书分层（元数据首屏+按需展开节），配 ECC/intent 注入的优先级带 | S |
 
 > E14-B 增补（2026-10-16）：R-23/R-24 为转正批冒烟/根修实录衍生登记；R-01/R-02 已于
 > E13 落地（✅ 注记在表）；R-03/R-04/R-05（P1 产品环）自 1.1.0 转正起解锁待启。
