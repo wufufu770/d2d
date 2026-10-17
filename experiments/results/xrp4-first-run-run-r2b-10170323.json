@@ -1,0 +1,233 @@
+{
+ "runId": "run-r2b-10170323",
+ "headSha": "c0eaa81ec4ae1e1e00299eeec6841b828a94a047",
+ "startedAt": "2026-10-17T03:24:39.640Z",
+ "finishedAt": "2026-10-17T03:32:35.829Z",
+ "engagement": {
+  "name": "xring-run-r2b-10170323",
+  "scope": "192.168.132.14",
+  "mode": "XR-G1 预建（方案 A）"
+ },
+ "budget": {
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "elapsedMin": 7.9,
+  "tokensUsed": 65868,
+  "terminated": null
+ },
+ "worker": {
+  "kind": "exited",
+  "code": 0,
+  "pid": 467113
+ },
+ "observations": {
+  "envScan": {
+   "hits": [],
+   "scannedAt": "2026-10-17T03:24:39.640Z",
+   "note": "worker pid+一层子进程 /proc/environ 扫描（P2P_HOST_*|HOST_*TOKEN/KEY/SECRET）"
+  },
+  "orphans": [],
+  "wallClockMs": 475605,
+  "sessionParse": {
+   "totalTokens": 65868,
+   "files": 1,
+   "idleMs": 286.860595703125
+  }
+ },
+ "capabilityLog": [
+  {
+   "tool": "bash",
+   "count": 149
+  },
+  {
+   "tool": "todo_write",
+   "count": 21
+  },
+  {
+   "tool": "burp_repeater",
+   "count": 17
+  },
+  {
+   "tool": "read",
+   "count": 17
+  },
+  {
+   "tool": "write",
+   "count": 17
+  },
+  {
+   "tool": "skill",
+   "count": 5
+  },
+  {
+   "tool": "apk-reverse",
+   "count": 1
+  },
+  {
+   "tool": "burp_comparer",
+   "count": 1
+  },
+  {
+   "tool": "burp_decoder",
+   "count": 1
+  },
+  {
+   "tool": "burp_http_log",
+   "count": 1
+  },
+  {
+   "tool": "burp_intruder",
+   "count": 1
+  },
+  {
+   "tool": "burp_scan_status",
+   "count": 1
+  },
+  {
+   "tool": "create_goal",
+   "count": 1
+  },
+  {
+   "tool": "edit",
+   "count": 1
+  },
+  {
+   "tool": "exit_plan_mode",
+   "count": 1
+  },
+  {
+   "tool": "get_goal",
+   "count": 1
+  },
+  {
+   "tool": "glob",
+   "count": 1
+  },
+  {
+   "tool": "grep",
+   "count": 1
+  },
+  {
+   "tool": "interrupt_agent",
+   "count": 1
+  },
+  {
+   "tool": "job_kill",
+   "count": 1
+  }
+ ],
+ "reflow": {
+  "ok": true,
+  "written": [
+   {
+    "level": "C",
+    "id": "L-1",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-2",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-3",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-4",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-5",
+    "status": "quarantined"
+   },
+   {
+    "level": "B",
+    "id": "H-1"
+   },
+   {
+    "level": "B",
+    "id": "H-2"
+   },
+   {
+    "level": "B",
+    "id": "H-3"
+   },
+   {
+    "level": "B",
+    "id": "H-4"
+   },
+   {
+    "level": "B",
+    "id": "H-5"
+   },
+   {
+    "level": "B",
+    "id": "H-6"
+   },
+   {
+    "level": "B",
+    "id": "H-7"
+   },
+   {
+    "level": "B",
+    "id": "H-8"
+   },
+   {
+    "level": "B",
+    "id": "H-9"
+   }
+  ],
+  "held": [],
+  "errors": [],
+  "handoffPath": "/home/kali/e17-field/record/record/xring-first/run-r2b-10170323/workspace/handoff.json"
+ },
+ "graphDelta": {
+  "baseCounts": {
+   "findings": 787,
+   "experiences": 42,
+   "hypotheses": 498,
+   "quarantined": 42
+  },
+  "afterCounts": {
+   "findings": 787,
+   "experiences": 47,
+   "hypotheses": 507,
+   "quarantined": 47
+  },
+  "delta": {
+   "findings": 0,
+   "experiences": 5,
+   "hypotheses": 9,
+   "quarantined": 5
+  }
+ },
+ "relay": {
+  "fromRecord": "/home/kali/e17-field/record/record/xring-first/run-r2b-10170314",
+  "consumed": true,
+  "prevRun": "run-r2b-10170314"
+ },
+ "ecc": {
+  "level": "likely",
+  "signals": [
+   {
+    "kind": "homogeneous-response",
+    "confidence": "high",
+    "detail": "5/5 异构路径同指纹（200 2412B de3707ebbd69…）——同响应/tarpit 嫌疑"
+   }
+  ],
+  "foreignOrigins": []
+ },
+ "report": {
+  "files": [
+   "/home/kali/e17-field/record/report/butian.json",
+   "/home/kali/e17-field/record/report/vulbox.json",
+   "/home/kali/e17-field/record/report/edu-src.json",
+   "/home/kali/e17-field/record/report/ab-report.md"
+  ],
+  "warnings": []
+ }
+}

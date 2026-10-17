@@ -1,0 +1,92 @@
+[
+ {
+  "ts": "2026-10-17T03:14:06.452Z",
+  "event": "xring-eng-created",
+  "name": "xring-run-r2b-10170314",
+  "scope": "192.168.132.14",
+  "runId": "run-r2b-10170314"
+ },
+ {
+  "ts": "2026-10-17T03:14:06.468Z",
+  "event": "worker-spawned",
+  "pid": 461797,
+  "workspace": "/home/kali/e17-field/record/record/xring-first/run-r2b-10170314/workspace",
+  "runId": "run-r2b-10170314"
+ },
+ {
+  "ts": "2026-10-17T03:15:06.493Z",
+  "event": "monitor-start",
+  "runId": "run-r2b-10170314",
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "mode": "queue"
+ },
+ {
+  "ts": "2026-10-17T03:15:36.530Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.01h/0.5h, 18311/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 18311,
+  "transcriptBytes": 61854,
+  "idleMs": 24253.15869140625
+ },
+ {
+  "ts": "2026-10-17T03:16:06.562Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.02h/0.5h, 18311/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 18311,
+  "transcriptBytes": 61854,
+  "idleMs": 54288.15869140625
+ },
+ {
+  "ts": "2026-10-17T03:16:36.580Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.03h/0.5h, 22834/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 22834,
+  "transcriptBytes": 78395,
+  "idleMs": 809.516845703125
+ },
+ {
+  "ts": "2026-10-17T03:17:06.580Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.03h/0.5h, 27223/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 27223,
+  "transcriptBytes": 92667,
+  "idleMs": 4291.77099609375
+ },
+ {
+  "ts": "2026-10-17T03:17:27.714Z",
+  "event": "xring-eng-released",
+  "name": "xring-run-r2b-10170314",
+  "runId": "run-r2b-10170314"
+ },
+ {
+  "ts": "2026-10-17T03:17:27.788Z",
+  "event": "reflow-start",
+  "runId": "run-r2b-10170314",
+  "workspace": "/home/kali/e17-field/record/record/xring-first/run-r2b-10170314/workspace",
+  "mode": "queue"
+ },
+ {
+  "ts": "2026-10-17T03:17:28.190Z",
+  "event": "reflow-done",
+  "runId": "run-r2b-10170314",
+  "mode": "queue",
+  "written": 10,
+  "held": 0,
+  "errors": 0
+ },
+ {
+  "ts": "2026-10-17T03:17:28.196Z",
+  "event": "handoff-emitted",
+  "runId": "run-r2b-10170314",
+  "file": "handoff.json"
+ }
+]
