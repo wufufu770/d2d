@@ -323,6 +323,12 @@ const rf = await reflow({
         handoffEnv: RELAY?.ECC
           ? { fingerprint: RELAY.ECC.probes ?? [], csp_origins: RELAY.ECC.foreignOrigins ?? [], ecc: { level: RELAY.ECC.level, signals: RELAY.ECC.signals ?? [] } }
           : null,
+        // E20 场验接线（加性旗标——缺省零行为变化）: --race 竞速（需 finding.variants 输入）
+        // / --advisor 第二视角（A 级验证连败 ≥3 触发；tarpit 零 finding 语境结构性无触发=观察数据）
+        raceEnabled: argv.includes('--race'),
+        ...(argv.includes('--advisor') && runner?.adapter
+          ? { advisor: { adapter: runner.adapter, historySummary: RELAY?.prevHandoff ? `上轮 ${RELAY.prevHandoff.run_id} leads ${RELAY.prevHandoff.carriers.leads.length} 条已注入` : '' }, advisorThreshold: 3 }
+          : {}),
       }
     : {}),
 })
