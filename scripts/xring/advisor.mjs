@@ -13,6 +13,29 @@ export function shouldAdvise(failStreak, { threshold = DEFAULT_THRESHOLD } = {})
   return Number(failStreak ?? 0) >= threshold
 }
 
+/**
+ * E21 三信号（E20 空转修正——触发源从"A 级验证连败"单信号扩展；防过触发=每情节至多一发由
+ * 调用方（reflow 每轮一次）保证）:
+ * ①探索停滞: 上轮有产出而本轮零新增认识论内容（facts/leads 全零增量）
+ * ②封锁检测: 探针路径 401/403/429 计数 ≥3（ECC 指纹数据复用）
+ * ③证伪连击且零建设: 证伪 ≥2 且本轮零新增入图面
+ */
+export function epistemicSignals({ prevHandoff = null, written = [], held = [], falsifiedCount = 0, probes = [] } = {}) {
+  const signals = []
+  const currentNew = (written ?? []).length + (held ?? []).length
+  if (prevHandoff && currentNew === 0) {
+    signals.push({ kind: 'stagnation', confidence: 'medium', detail: '跨轮零新增认识论内容（上轮有产出而本轮 facts/leads 全零增量）' })
+  }
+  const blocked = (probes ?? []).filter((p) => [401, 403, 429].includes(Number(p.status))).length
+  if ((probes ?? []).length && blocked >= 3) {
+    signals.push({ kind: 'blockade', confidence: 'medium', detail: `封锁模式: ${blocked}/${probes.length} 探针路径 401/403/429（ECC 指纹数据复用）` })
+  }
+  if (Number(falsifiedCount ?? 0) >= 2 && (written ?? []).length === 0) {
+    signals.push({ kind: 'falsify-streak', confidence: 'medium', detail: `证伪连击 ${falsifiedCount} 条且零新增入图面` })
+  }
+  return signals
+}
+
 /** 连击计数: verdict 序列（'pass' 打断连击, 其余累积）。 */
 export function failStreak(verdicts) {
   let streak = 0
@@ -24,12 +47,13 @@ export function failStreak(verdicts) {
 }
 
 /** Advisor 简报（第二上下文的全部输入——历史摘要+失败序列+硬边界声明; 零工具授权语义）。 */
-export function buildAdvisorBrief({ runId, target, failures = [], historySummary = '', priorAdvice = '' } = {}) {
+export function buildAdvisorBrief({ runId, target, failures = [], historySummary = '', priorAdvice = '', signals = [] } = {}) {
   return [
     '## 你的角色（Advisor——只出建议, 不执行任何工具/请求; 你的全部产出=文字建议）',
     '',
-    `主循环（run ${runId}）在同一目标上连续 ${failures.length} 次验证/利用失败, 触发第二视角会诊。`,
+    `主循环（run ${runId}）在同一目标上遇到验证/探索困境, 触发第二视角会诊。`,
     target ? `目标: ${target}` : '',
+    signals.length ? `\n### 触发信号\n${signals.map((s) => `- [${s.kind}] ${s.detail}`).join('\n')}` : '',
     historySummary ? `\n### 历史摘要\n${historySummary.slice(0, 2000)}` : '',
     failures.length ? `\n### 失败序列（按序）\n${failures.slice(0, 10).map((f, i) => `${i + 1}. ${String(f).slice(0, 200)}`).join('\n')}` : '',
     priorAdvice ? `\n### 上轮 Advisor 建议（未被突破——勿重复同建议）\n${priorAdvice.slice(0, 800)}` : '',
