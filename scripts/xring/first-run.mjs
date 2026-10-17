@@ -112,14 +112,17 @@ if (TASK_FILE) {
 }
 
 // ---- E11a#3: 目标探活（curl 统一——https 自签 -k; 3 试重试=r2b 网络窗口实证固化）----
+// E21/R-06: 探活参数化（次数/单发超时——缺省=既有 3×10s 语义零变化）
+const PROBE_TRIES = Math.max(1, Number(argOf('--probe-tries', '3')) || 3)
+const PROBE_TIMEOUT_S = Math.max(1, Number(argOf('--probe-timeout-s', '10')) || 10)
 async function probeTarget() {
-  const args = ['-sk', '-m', '10', '-o', '/dev/null', '-w', '%{http_code}', `${TARGET_BASE}/`]
-  for (let i = 1; i <= 3; i++) {
+  const args = ['-sk', '-m', String(PROBE_TIMEOUT_S), '-o', '/dev/null', '-w', '%{http_code}', `${TARGET_BASE}/`]
+  for (let i = 1; i <= PROBE_TRIES; i++) {
     try {
       const code = execFileSync('curl', args).toString().trim()
       if (/^\d{3}$/.test(code)) return code
     } catch { /* 已记因: 网络窗口——重试 */ }
-    if (i < 3) await new Promise((r) => setTimeout(r, 3000))
+    if (i < PROBE_TRIES) await new Promise((r) => setTimeout(r, 3000))
   }
   return null
 }
