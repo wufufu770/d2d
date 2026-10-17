@@ -1,0 +1,282 @@
+[
+ {
+  "ts": "2026-10-17T07:33:13.923Z",
+  "event": "xring-eng-created",
+  "name": "xring-run-r2b-10170733",
+  "scope": "192.168.132.14",
+  "runId": "run-r2b-10170733"
+ },
+ {
+  "ts": "2026-10-17T07:33:13.940Z",
+  "event": "worker-spawned",
+  "pid": 599532,
+  "workspace": "/home/kali/e20-field/record/record/xring-first/run-r2b-10170733/workspace",
+  "runId": "run-r2b-10170733"
+ },
+ {
+  "ts": "2026-10-17T07:34:13.956Z",
+  "event": "monitor-start",
+  "runId": "run-r2b-10170733",
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "mode": "queue"
+ },
+ {
+  "ts": "2026-10-17T07:34:43.997Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.01h/0.5h, 21020/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 21020,
+  "transcriptBytes": 80233,
+  "idleMs": 2040.159423828125
+ },
+ {
+  "ts": "2026-10-17T07:35:14.036Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.02h/0.5h, 27293/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 27293,
+  "transcriptBytes": 99158,
+  "idleMs": 393.869873046875
+ },
+ {
+  "ts": "2026-10-17T07:35:44.050Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.03h/0.5h, 33214/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 33214,
+  "transcriptBytes": 114682,
+  "idleMs": 504.6123046875
+ },
+ {
+  "ts": "2026-10-17T07:36:14.061Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.03h/0.5h, 33318/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 33318,
+  "transcriptBytes": 115375,
+  "idleMs": 29053.60009765625
+ },
+ {
+  "ts": "2026-10-17T07:36:44.096Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.04h/0.5h, 34608/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 34608,
+  "transcriptBytes": 123023,
+  "idleMs": 9003.673583984375
+ },
+ {
+  "ts": "2026-10-17T07:37:14.120Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.05h/0.5h, 36697/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 36697,
+  "transcriptBytes": 137220,
+  "idleMs": 1102.60595703125
+ },
+ {
+  "ts": "2026-10-17T07:37:44.128Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.06h/0.5h, 46351/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 46351,
+  "transcriptBytes": 177324,
+  "idleMs": 1177.40869140625
+ },
+ {
+  "ts": "2026-10-17T07:38:14.422Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.07h/0.5h, 49999/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 49999,
+  "transcriptBytes": 200264,
+  "idleMs": 2256.5361328125
+ },
+ {
+  "ts": "2026-10-17T07:38:44.215Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.08h/0.5h, 54795/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 54795,
+  "transcriptBytes": 225868,
+  "idleMs": 1524.34912109375
+ },
+ {
+  "ts": "2026-10-17T07:39:14.227Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.08h/0.5h, 58036/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 58036,
+  "transcriptBytes": 244144,
+  "idleMs": 368.766845703125
+ },
+ {
+  "ts": "2026-10-17T07:39:44.233Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.09h/0.5h, 60300/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 60300,
+  "transcriptBytes": 252945,
+  "idleMs": 46.5712890625
+ },
+ {
+  "ts": "2026-10-17T07:40:14.262Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.10h/0.5h, 61104/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 61104,
+  "transcriptBytes": 254290,
+  "idleMs": 27601.311279296875
+ },
+ {
+  "ts": "2026-10-17T07:40:44.262Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.11h/0.5h, 61104/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 61104,
+  "transcriptBytes": 254290,
+  "idleMs": 57616.311279296875
+ },
+ {
+  "ts": "2026-10-17T07:41:14.276Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.12h/0.5h, 64619/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 64619,
+  "transcriptBytes": 271070,
+  "idleMs": 602.46728515625
+ },
+ {
+  "ts": "2026-10-17T07:41:44.303Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.13h/0.5h, 64619/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 64619,
+  "transcriptBytes": 271070,
+  "idleMs": 30631.46728515625
+ },
+ {
+  "ts": "2026-10-17T07:42:14.404Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.13h/0.5h, 64619/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 64619,
+  "transcriptBytes": 271494,
+  "idleMs": 608.260986328125
+ },
+ {
+  "ts": "2026-10-17T07:42:44.446Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.14h/0.5h, 65657/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 65657,
+  "transcriptBytes": 276523,
+  "idleMs": 23935.573486328125
+ },
+ {
+  "ts": "2026-10-17T07:43:14.471Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.15h/0.5h, 65657/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 65657,
+  "transcriptBytes": 276523,
+  "idleMs": 53954.573486328125
+ },
+ {
+  "ts": "2026-10-17T07:43:44.516Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.16h/0.5h, 65657/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 65657,
+  "transcriptBytes": 276523,
+  "idleMs": 84003.57348632812
+ },
+ {
+  "ts": "2026-10-17T07:44:14.641Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.17h/0.5h, 65657/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 65657,
+  "transcriptBytes": 276523,
+  "idleMs": 114101.57348632812
+ },
+ {
+  "ts": "2026-10-17T07:44:44.671Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.18h/0.5h, 65657/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 65657,
+  "transcriptBytes": 276523,
+  "idleMs": 144149.57348632812
+ },
+ {
+  "ts": "2026-10-17T07:45:14.768Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.18h/0.5h, 65657/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 65657,
+  "transcriptBytes": 276523,
+  "idleMs": 174249.57348632812
+ },
+ {
+  "ts": "2026-10-17T07:45:44.805Z",
+  "event": "budget-tick",
+  "ok": true,
+  "detail": "0.19h/0.5h, 69513/1000000 tokens",
+  "transcripts": 1,
+  "tokens": 69513,
+  "transcriptBytes": 292301,
+  "idleMs": 605.169921875
+ },
+ {
+  "ts": "2026-10-17T07:45:57.087Z",
+  "event": "xring-eng-released",
+  "name": "xring-run-r2b-10170733",
+  "runId": "run-r2b-10170733"
+ },
+ {
+  "ts": "2026-10-17T07:45:57.261Z",
+  "event": "reflow-start",
+  "runId": "run-r2b-10170733",
+  "workspace": "/home/kali/e20-field/record/record/xring-first/run-r2b-10170733/workspace",
+  "mode": "queue"
+ },
+ {
+  "ts": "2026-10-17T07:45:57.555Z",
+  "event": "reflow-done",
+  "runId": "run-r2b-10170733",
+  "mode": "queue",
+  "written": 11,
+  "held": 0,
+  "errors": 0
+ },
+ {
+  "ts": "2026-10-17T07:45:57.561Z",
+  "event": "handoff-emitted",
+  "runId": "run-r2b-10170733",
+  "file": "handoff.json"
+ }
+]

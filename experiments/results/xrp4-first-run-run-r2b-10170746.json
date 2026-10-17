@@ -1,0 +1,250 @@
+{
+ "runId": "run-r2b-10170746",
+ "headSha": "7b510b9835787d2c79eabf5ae21ecdc8129c5bc0",
+ "startedAt": "2026-10-17T07:47:42.641Z",
+ "finishedAt": "2026-10-17T07:56:47.456Z",
+ "engagement": {
+  "name": "xring-run-r2b-10170746",
+  "scope": "192.168.132.14",
+  "mode": "XR-G1 预建（方案 A）"
+ },
+ "budget": {
+  "maxHours": 0.5,
+  "maxTokens": 1000000,
+  "elapsedMin": 9.1,
+  "tokensUsed": 77290,
+  "terminated": null
+ },
+ "worker": {
+  "kind": "exited",
+  "code": 0,
+  "pid": 611581
+ },
+ "observations": {
+  "envScan": {
+   "hits": [],
+   "scannedAt": "2026-10-17T07:47:42.641Z",
+   "note": "worker pid+一层子进程 /proc/environ 扫描（P2P_HOST_*|HOST_*TOKEN/KEY/SECRET）"
+  },
+  "orphans": [],
+  "wallClockMs": 543913,
+  "sessionParse": {
+   "totalTokens": 77290,
+   "files": 1,
+   "idleMs": 536.60302734375
+  }
+ },
+ "capabilityLog": [
+  {
+   "tool": "bash",
+   "count": 365
+  },
+  {
+   "tool": "read",
+   "count": 101
+  },
+  {
+   "tool": "burp_repeater",
+   "count": 41
+  },
+  {
+   "tool": "write",
+   "count": 21
+  },
+  {
+   "tool": "todo_write",
+   "count": 13
+  },
+  {
+   "tool": "web_fetch",
+   "count": 9
+  },
+  {
+   "tool": "burp_http_log",
+   "count": 5
+  },
+  {
+   "tool": "skill",
+   "count": 5
+  },
+  {
+   "tool": "WebError",
+   "count": 2
+  },
+  {
+   "tool": "apk-reverse",
+   "count": 1
+  },
+  {
+   "tool": "burp_comparer",
+   "count": 1
+  },
+  {
+   "tool": "burp_decoder",
+   "count": 1
+  },
+  {
+   "tool": "burp_intruder",
+   "count": 1
+  },
+  {
+   "tool": "burp_scan_status",
+   "count": 1
+  },
+  {
+   "tool": "create_goal",
+   "count": 1
+  },
+  {
+   "tool": "edit",
+   "count": 1
+  },
+  {
+   "tool": "exit_plan_mode",
+   "count": 1
+  },
+  {
+   "tool": "get_goal",
+   "count": 1
+  },
+  {
+   "tool": "glob",
+   "count": 1
+  },
+  {
+   "tool": "grep",
+   "count": 1
+  }
+ ],
+ "reflow": {
+  "ok": true,
+  "written": [
+   {
+    "level": "C",
+    "id": "L-1",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-2",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-3",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-4",
+    "status": "quarantined"
+   },
+   {
+    "level": "C",
+    "id": "L-5",
+    "status": "quarantined"
+   },
+   {
+    "level": "B",
+    "id": "H-1"
+   },
+   {
+    "level": "B",
+    "id": "H-2"
+   },
+   {
+    "level": "B",
+    "id": "H-3"
+   },
+   {
+    "level": "B",
+    "id": "H-4"
+   },
+   {
+    "level": "B",
+    "id": "H-5"
+   },
+   {
+    "level": "B",
+    "id": "H-6"
+   },
+   {
+    "level": "B",
+    "id": "H-7"
+   },
+   {
+    "level": "B",
+    "id": "H-8"
+   },
+   {
+    "level": "B",
+    "id": "H-9"
+   },
+   {
+    "level": "B",
+    "id": "H-10"
+   },
+   {
+    "level": "B",
+    "id": "H-11"
+   },
+   {
+    "level": "B",
+    "id": "H-12"
+   }
+  ],
+  "held": [],
+  "errors": [],
+  "handoffPath": "/home/kali/e20-field/record/record/xring-first/run-r2b-10170746/workspace/handoff.json"
+ },
+ "graphDelta": {
+  "baseCounts": {
+   "findings": 787,
+   "experiences": 50,
+   "hypotheses": 515,
+   "quarantined": 50
+  },
+  "afterCounts": {
+   "findings": 787,
+   "experiences": 55,
+   "hypotheses": 527,
+   "quarantined": 55
+  },
+  "delta": {
+   "findings": 0,
+   "experiences": 5,
+   "hypotheses": 12,
+   "quarantined": 5
+  }
+ },
+ "relay": {
+  "fromRecord": "/home/kali/e20-field/record/record/xring-first/run-r2b-10170733",
+  "consumed": true,
+  "prevRun": "run-r2b-10170733"
+ },
+ "ecc": {
+  "level": "likely",
+  "signals": [
+   {
+    "kind": "homogeneous-response",
+    "confidence": "high",
+    "detail": "5/5 异构路径同指纹（200 2412B de3707ebbd69…）——同响应/tarpit 嫌疑"
+   },
+   {
+    "kind": "fingerprint-drift",
+    "confidence": "high",
+    "detail": "跨轮漂移 vs run-r2b-10170733: 5/5 基线路径指纹已变——目标形态突变嫌疑"
+   }
+  ],
+  "foreignOrigins": []
+ },
+ "report": {
+  "files": [
+   "/home/kali/e20-field/record/report/butian.json",
+   "/home/kali/e20-field/record/report/vulbox.json",
+   "/home/kali/e20-field/record/report/edu-src.json",
+   "/home/kali/e20-field/record/report/ab-report.md"
+  ],
+  "warnings": []
+ }
+}
