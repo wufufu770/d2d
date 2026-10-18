@@ -8,6 +8,15 @@
 | 1 | E17-r1 (10170314) | likely | homogeneous-response | 全量 tarpit（5/5 同指纹） | de3707ebbd69 域 | 判级与形态一致 ✓ |
 | 2 | E17-r2 (10170323) | likely | homogeneous-response | 全量 tarpit 持续 | 同上（5/5 同） | 稳定形态不误报漂移 ✓ |
 | 3 | E20-r1 (10170733) | suspicious | homogeneous-response | 部分封锁（3/5 同+2 路 401 层） | ee450095f726 域 | 弱形态=降级判级 ✓（梯度语义生效） |
+
+> **E25 考古修正注（#3 定性回溯修正）**：E20-r1 指纹与 E22 真实恢复态**逐字节同构**
+> （SPA 200 398B ee450095f726+API 401 64B 7d44a2950cc7——E22 时操作者确证 401 层为真
+> auth 层）。#3 原"部分封锁"定性系当时语境偏见（E17 tarpit 后默认怀疑），修正为
+> **真实面**。连带两处：①E20-r1→r2 转变定性升级为"真实面 13min 内被打回 tarpit"（行
+> 为驱动证据增强）；②#3 判级 suspicious 对真实面=**假阳第二例**（先于 #5）——假阳非
+> 随机，与 #5 同为"SPA fallback+auth 层"形态触发的**系统性盲区**（homogeneous 信号在
+> SPA 入口形态上的固有假阳倾向）。校准叙事更新：假阳率 2/5（#3/#5），同型；"API 面
+> 401 抵扣 homogeneous 置信"校准候选（E22 追记）获得第二个支持样本。
 | 4 | E20-r2 (10170746) | likely | homogeneous-response+fingerprint-drift | 形态真变（部分→全量，5/5 漂移） | 域间切换 | **跨轮漂移检出现场命中** ✓ |
 | 5 | E22-r1 (10171337) | likely | homogeneous-response(low 3/5)+fingerprint-drift(high 5/5) | **服务真恢复**（SPA 398B ee450095f726 域+API 401 64B 真 auth 层=正常异构域） | ee450095f726 域（正常） | **首假阳**：SPA 路由 fallback 的同指纹（3/5 路径返同一 index.html）触发 homogeneous 信号——正常形态被疑为 tarpit ✗ |
 
