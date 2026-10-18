@@ -54,7 +54,11 @@ export async function probeFingerprint({ targetBase, paths = DEFAULT_PROBE_PATHS
   return { probes, double, headers: (await (async () => { try { const r = await rawGet(new URL('/', base).href, { insecure, timeoutMs }); return r.headers } catch { return {} } })()) }
 }
 
-/** 单轮判据（L-3）: 异构路径响应指纹趋同=同响应嫌疑。趋同组覆盖 ≥minConverge 条且 ≥ 半数路径触发。 */
+/** 单轮判据（L-3）: 异构路径响应指纹趋同=同响应嫌疑。趋同组覆盖 ≥minConverge 条且 ≥ 半数路径触发。
+ * E26 校准（E25 双样本回测）: SPA fallback 与 tarpit 在"多路径同指纹"上同形, 唯一区分=真实
+ * auth 层在场性。best 组为 200 页面形态且组外存在 401-JSON 异指纹路径 → 置信抵扣一档（low 档
+ * 移除）——真实服务形态证据优先于趋同疑点。真 tarpit（全路径同指纹, 组外空）不触发=不误伤真阳;
+ * 合成 probes（无 content_type）与 401 组为 best 的形态（API-only/全封锁）同样不触发=缺省零变化。 */
 export function assessSingleRound(probes, { minConverge = 3 } = {}) {
   const ok = (probes ?? []).filter((p) => p.status > 0)
   if (ok.length < minConverge) return null
@@ -67,11 +71,21 @@ export function assessSingleRound(probes, { minConverge = 3 } = {}) {
   const [bestKey, best] = [...groups.entries()].sort((a, b) => b[1].length - a[1].length)[0]
   if (best.length < minConverge || best.length * 2 < ok.length) return null
   const confidence = best.length === ok.length ? 'high' : (best.length * 3 >= ok.length * 2 ? 'medium' : 'low')
-  return {
-    kind: 'homogeneous-response',
-    confidence,
-    detail: `${best.length}/${ok.length} 异构路径同指纹（${bestKey.split('|')[0]} ${String(best[0].bytes)}B ${String(best[0].hash).slice(0, 12)}…）——同响应/tarpit 嫌疑`,
+  const baseDetail = `${best.length}/${ok.length} 异构路径同指纹（${bestKey.split('|')[0]} ${String(best[0].bytes)}B ${String(best[0].hash).slice(0, 12)}…）——同响应/tarpit 嫌疑`
+  const bestIsPage = Number(bestKey.split('|')[0]) === 200 && /html/i.test(String(best[0].content_type ?? ''))
+  if (bestIsPage) {
+    const outside = ok.filter((p) => `${p.status}|${p.hash}` !== bestKey)
+    if (outside.some((p) => p.status === 401 && /json/i.test(String(p.content_type ?? '')))) {
+      const next = { high: 'medium', medium: 'low', low: null }[confidence]
+      if (!next) return null
+      return {
+        kind: 'homogeneous-response',
+        confidence: next,
+        detail: `${baseDetail}; E26 校准抵扣: 组外存在 401-JSON auth 层——真实服务形态证据优先, 置信降档`,
+      }
+    }
   }
+  return { kind: 'homogeneous-response', confidence, detail: baseDetail }
 }
 
 /** 双探翻转（L-3 实证形态）: 同路径秒级复读指纹漂移=运行中形态切换前兆。 */
@@ -120,7 +134,10 @@ export function foreignOriginSignals(headers, targetOrigin) {
   }
 }
 
-/** 信号汇诊（advisory 汇总——不产生任何阻断决策）。level: none/suspicious/likely。 */
+/** 信号汇诊（advisory 汇总——不产生任何阻断决策）。level: none/suspicious/likely。
+ * E26 复合校准: drift 在"恢复向切换"上同型假阳（tarpit 基线→真实面=5/5 全变, E22 实录）——
+ * 当前探针含 401-JSON auth 层（真实服务形态证据）时 drift 置信降一档（恢复语义优先于突变
+ * 嫌疑; detail 留痕）。真突变场景（攻击性改面→auth 层消失/诱饵化）不触发=不误伤。 */
 export function assess({ probes, double = null, headers = {}, targetOrigin, baseline = null, baselineRun = null } = {}) {
   const signals = []
   const s1 = assessSingleRound(probes)
@@ -131,6 +148,15 @@ export function assess({ probes, double = null, headers = {}, targetOrigin, base
   if (s3) signals.push(s3)
   const fo = foreignOriginSignals(headers, targetOrigin)
   if (fo.signal) signals.push(fo.signal)
+  const authLayer = (probes ?? []).some((p) => p.status === 401 && /json/i.test(String(p.content_type ?? '')))
+  if (authLayer) {
+    for (const s of signals) {
+      if (s.kind === 'fingerprint-drift' && s.confidence !== 'low') {
+        s.confidence = s.confidence === 'high' ? 'medium' : 'low'
+        s.detail = `${s.detail}; E26 校准: 当前含 401-JSON auth 层——恢复向切换语义优先, 置信降档`
+      }
+    }
+  }
   const high = signals.some((s) => s.confidence === 'high')
   const level = signals.length === 0 ? 'none' : (high || signals.length >= 2 ? 'likely' : 'suspicious')
   return { level, signals, foreignOrigins: fo.origins, checkedAt: new Date().toISOString() }
