@@ -1,34 +1,55 @@
 #!/usr/bin/env node
 // selfcheck-e11a.mjs — E11a 六项自验收（批指令判据逐条; 只读+本地验证, 零写仓面）
-// 用法: node scripts/xring/selfcheck-e11a.mjs [--target https://192.168.132.14] [--repro <r2b repro_paths.json>]
+// 用法: node scripts/xring/selfcheck-e11a.mjs [--repro <repro_paths.json>]
+// E23: #1 自包含化（R-01 根修精神）——原缺省对真靶(192.168.132.14)重放 /tmp 旧 repro，
+// /tmp 清扫即红 + 违反零实弹批词红线。改为内建本地自签靶（openssl 一次性证书，判据等价:
+// 自签 + env.tls=insecure 分层 + 证书类失败清零）+ 仓内 fixture 缺省（/tmp 再不灭失）。
 import { execFileSync } from 'node:child_process'
+import http from 'node:http'
+import https from 'node:https'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
 const argv = process.argv.slice(2)
 const argOf = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 ? (argv[i + 1] ?? d) : d }
-const TARGET = argOf('--target', 'https://192.168.132.14')
-const REPRO = argOf('--repro', '/tmp/r2b-smoke/record/xring-first/run-r2b-10150911/workspace/repro_paths.json')
+const TARGET = argOf('--target', null)
+const REPRO = argOf('--repro', path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/( [A-Za-z])/, '$1')), 'fixtures', 'legacy-repro-e11a.json'))
 const REPO = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/( [A-Za-z])/, '$1')), '..')
 const results = []
 const rec = (name, ok, detail) => { results.push({ name, ok, detail }); console.log(`${ok ? '✓' : '✗'} ${name}${detail ? ' — ' + detail : ''}`) }
 
-// ---- #1: 旧 repro 加 env.tls 重放（对真实自签靶场——证书类失败清零即判据） ----
+// ---- #1: 旧 repro 加 env.tls 重放（E23 起=本地自签靶——证书类失败清零即判据） ----
 {
   const { createVerifyRunner } = await import('./verify-runner.mjs')
   let reproIds = []
   if (fs.existsSync(REPRO)) {
-    const doc = JSON.parse(fs.readFileSync(REPRO, 'utf8'))
-    const vr = createVerifyRunner({ targetBase: TARGET, eng: 'xring-run-r2b-10150911' })
-    let certFails = 0, ran = 0
-    for (const f of doc.findings ?? []) {
-      const v = await vr.verify({ ...f, env: { tls: { mode: 'insecure' } } })
-      ran++
-      if (/certificate|CERT|self-?signed|unable to verify/i.test(v.evidence ?? '')) certFails++
-      reproIds.push(`${f.id}:${v.verdict}${v.failureClass ? '(' + v.failureClass + ')' : ''}`)
+    // E23: 目标=--target 显式给出（真靶形态, 批词授权时）或内建本地自签一次性靶（缺省——零实弹纪律）
+    let targetBase = TARGET
+    let srv = null
+    let certDir = null
+    if (!targetBase) {
+      certDir = fs.mkdtempSync(path.join(os.tmpdir(), 'selfcheck-tls-'))
+      execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-keyout', `${certDir}/k.pem`, '-out', `${certDir}/c.pem`, '-days', '1', '-nodes', '-subj', '/CN=localhost'], { stdio: 'pipe' })
+      srv = https.createServer({ key: fs.readFileSync(`${certDir}/k.pem`), cert: fs.readFileSync(`${certDir}/c.pem`) }, (req, res) => { res.end('TLS-OK') })
+      await new Promise((r) => srv.listen(0, '127.0.0.1', r))
+      targetBase = `https://127.0.0.1:${srv.address().port}`
     }
-    rec('#1 旧 repro 加 env.tls 重放', ran > 0 && certFails === 0, `ran=${ran} certFails=${certFails} [${reproIds.join(', ')}]`)
+    try {
+      const doc = JSON.parse(fs.readFileSync(REPRO, 'utf8'))
+      const vr = createVerifyRunner({ targetBase, eng: 'selfcheck-legacy-tls' })
+      let certFails = 0, ran = 0
+      for (const f of doc.findings ?? []) {
+        const v = await vr.verify({ ...f, env: { tls: { mode: 'insecure' } } })
+        ran++
+        if (/certificate|CERT|self-?signed|unable to verify/i.test(v.evidence ?? '')) certFails++
+        reproIds.push(`${f.id}:${v.verdict}${v.failureClass ? '(' + v.failureClass + ')' : ''}`)
+      }
+      rec('#1 旧 repro 加 env.tls 重放', ran > 0 && certFails === 0, `ran=${ran} certFails=${certFails} [${reproIds.join(', ')}] target=${srv ? '本地自签靶(零实弹)' : targetBase}`)
+    } finally {
+      try { srv?.close() } catch { /* 已记因: 关闭竞态无害 */ }
+      try { certDir && fs.rmSync(certDir, { recursive: true, force: true }) } catch { /* 已记因: 临时证书清理 */ }
+    }
   } else {
     rec('#1 旧 repro 加 env.tls 重放', false, `repro 不存在: ${REPRO}`)
   }
