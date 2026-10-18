@@ -25,7 +25,7 @@
 | 文件 | 内容 | 关键字段 |
 |------|------|----------|
 | `hypotheses.json` | 本次运行的假设树 | run_id/generated_at/hypotheses[]{id[H-n],statement,priority[high/medium/low],status[untested/probing/falsified/confirmed],evidence_refs?} |
-| `repro_paths.json` | 可复现漏洞路径（无则 findings 空数组） | run_id/generated_at/findings[]{id[F-n],title,severity[critical/high/medium/low/info],target,steps[],expected,observed,variants?[≤5 组 steps 变体],env?{tls}} |
+| `repro_paths.json` | 可复现漏洞路径（无则 findings 空数组） | run_id/generated_at/findings[]{id[F-n],title,severity[critical/high/medium/low/info],target,steps[],expected,observed,variants?[≤5 组 steps 变体——**形态=字符串数组的数组**, 见下方竞速注],env?{tls:{mode:'insecure'\|'ca',caPath?}——**仅 https 自签靶需要, http 靶整体省略 env 字段**}} |
 | `lessons.json` | 失败与教训（至少 1 条——什么浪费了时间/什么路径走不通/为什么） | run_id/generated_at/lessons[]{id[L-n],lesson,failure_class[resource/destructive/overreach/cognitive/environment],context?} |
 | `intents.json` | 下轮探索方向声明（可选——收尾时你已决定但未执行完的方向; 不写=无方向继承） | run_id/intents[]{id[I-n],direction[一句话方向],status[pending/completed/abandoned],spawned_from?} |
 | `intents.json` | 下轮探索方向声明（可选——收尾时你已决定但未执行完的方向; 不写=无方向继承） | run_id/intents[]{id[I-n],direction[一句话方向],status[pending/completed/abandoned],spawned_from?} |
@@ -33,8 +33,12 @@
 - 各产出文件的 `run_id` 一致，由启动器在渲染本模板时注入下方占位。
 - 未知字段不要添加（schema 拒绝额外属性）。
 - 竞速重放（可选能力——宿主开关开启时生效）: 单策略重放失败/存在多路径假设/环境可疑时,
-  finding 可带 `variants[]`（≤5 组 steps 变体, 每组与 steps 同语法）——宿主并行重放全部
-  变体, 先通过者胜出入图, 其余弃置; 不带 variants=单策略重放（行为不变）。
+  finding 可带 `variants[]`（≤5 组 steps 变体）——宿主并行重放全部变体, 先通过者胜出入图,
+  其余弃置; 不带 variants=单策略重放（行为不变）。
+  **形态（schema 强制, 违者整份 findings 被拒）**: variants = 字符串数组的数组——
+  `"variants": [["GET /api/x?id=1", "EXPECT 200"], ["GET /api/x?id=2", "EXPECT 200"]]`
+  （每组=一个纯 steps 字符串数组, 与 steps 同语法; **不是** `[{steps:[...]}]` 对象数组）。
+  `env` 仅 https 自签靶需要（`{"tls":{"mode":"insecure"}}`）; http 靶**整体省略 env 字段**。
 - 节奏与纪律缺省（任务书显式覆盖项以外恒适用）: 单线程、请求间隔 ≥500ms; 收到限流/
   锁定形态响应（如"失败次数过多/locked/429"）即停该向探测并如实记录——锁出窗内重复
   尝试=预算浪费+证据污染; 出口阻断信号（Proxy CONNECT aborted 类）=如实记录为环境观察。
