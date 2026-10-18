@@ -4818,10 +4818,12 @@ def test_write_finding_high_with_tier_marker_wires_candidate(tmp_path, monkeypat
 # ── GW-2 v2 (子批 A/N2/拍板③ + 低成本池 #4): 闭集单一来源/内容锚/MERGE 命中≠新建/params 扫描 ──
 
 def test_gw2v2_node_tables_single_source():
-    """闭集单一来源: NODE_TABLES 12 表(拍板③ Experience 入集的基础清单)。"""
+    """闭集单一来源: NODE_TABLES 15 表(拍板③ Experience 入集的基础清单; E28/R-25 M1
+    +Asset/EnvSnapshot/Verification——本锚=schema 演进对账快照, 加表批次机械跟随)。"""
     from graphd.gd.schema import NODE_TABLES
-    assert len(NODE_TABLES) == 12
+    assert len(NODE_TABLES) == 15
     assert "Experience" in NODE_TABLES and "ExperienceWeight" in NODE_TABLES
+    assert {"Asset", "EnvSnapshot", "Verification"} <= set(NODE_TABLES)
 
 
 def test_gw2v2_worker_gate_content_anchor_calibrated():

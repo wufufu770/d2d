@@ -1361,3 +1361,21 @@ def repairability_classify(cat, title, repro) -> tuple[str, str]:
     if m:
         return "cfg_one_click", f"配置一键修复: CONFIG_ADVICE_RE 词面命中[{m.group(0)}]"
     return "code_change", f"代码修复: 词表未命中(cat={c or '-'})默认保守归代码修复"
+
+
+# ── E28(R-25 M1): Verification 事件去重门(唯一新纯函数——设计 docs/asset-graph-design-r25.md
+#    §4.3; append-only 语义的防线面: 同 run+kind+引用的事件幂等拒重, 重放/双写零副作用)。
+def verification_duplicate_reject(run_id, kind, finding_ref, hypothesis_ref, existing_keys):
+    """Verification 事件去重门(纯函数供 pytest 锁回归)。
+    existing_keys: 既有事件键集合/列表, 每键形如 "run_id|kind|ref"(端点写入前从图内查得)。
+    返回 True=拒重(同 run_id+kind+同一引用的事件已存在——幂等语义);
+    引用取 finding_ref/hypothesis_ref 之非空者(两空=无引用事件, 键退化 "run_id|kind|"——
+    无引用事件同样幂等, 防编排重试双写)。入参全部字符串化归一(类型宽松)。"""
+    r = str(run_id or "").strip()
+    k = str(kind or "").strip()
+    ref = str(finding_ref or "").strip() or str(hypothesis_ref or "").strip()
+    key = f"{r}|{k}|{ref}"
+    if not r or not k:
+        return True  # run/kind 缺失=键不可构造, fail-closed 拒重(与 L1_DENY 同向)
+    keys = existing_keys if isinstance(existing_keys, (list, tuple, set, frozenset)) else []
+    return key in {str(x) for x in keys}

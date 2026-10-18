@@ -55,6 +55,20 @@ SCHEMA = [
     "CREATE REL TABLE IF NOT EXISTS DERIVED_FROM(FROM Signal_ TO Signal_)",
     "CREATE REL TABLE IF NOT EXISTS PRIOR_FOR(FROM ExperienceWeight TO Signal_)",
     "CREATE REL TABLE IF NOT EXISTS RELATES(FROM Endpoint TO Endpoint)",
+    # E28(R-25 M1, 设计权威 docs/asset-graph-design-r25.md §四): 资产图最小可用集三节点+四边。
+    # Asset=目标级聚合点(N1 跨 run 资产记忆——六轮场验每 run 重新发现资产的缺口);
+    # EnvSnapshot=环境快照 append-only(N4——ECC 判级+指纹矩阵, 双判级字段 ecc_level_raw/cal
+    # 与 docs/ecc-form-ledger.md E26 双记列一一对应); Verification=验证事件点 append-only
+    # (N2/N3——repro/race/retest/advisor-verdict, "结论可被新验证推翻历史不改写", 零 UPDATE 接口)。
+    # 四边 DDL 随三写端点落(端点内建边语义=端点功能一部分); reflow 消费接线(批量调用端点)
+    # =M2 范围(设计 §五 分期口径——M1 裁读入验收对账表)。
+    "CREATE NODE TABLE IF NOT EXISTS Asset(id STRING, kind STRING DEFAULT 'target', identifier STRING DEFAULT '', first_seen STRING DEFAULT '', last_seen STRING DEFAULT '', status STRING DEFAULT 'active', posture_note STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS EnvSnapshot(id STRING, asset_id STRING DEFAULT '', checked_at STRING DEFAULT '', ecc_level_raw STRING DEFAULT '', ecc_level_cal STRING DEFAULT '', signals STRING DEFAULT '', fingerprint STRING DEFAULT '', probe_paths STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS Verification(id STRING, kind STRING DEFAULT 'repro', verdict STRING DEFAULT '', repro_ref STRING DEFAULT '', executor STRING DEFAULT '', run_id STRING DEFAULT '', ts STRING DEFAULT '', latency_ms INT64 DEFAULT 0, race_variants STRING DEFAULT '', note STRING DEFAULT '', finding_ref STRING DEFAULT '', hypothesis_ref STRING DEFAULT '', PRIMARY KEY(id))",
+    "CREATE REL TABLE IF NOT EXISTS HOSTS(FROM Asset TO Endpoint)",
+    "CREATE REL TABLE IF NOT EXISTS SNAPSHOT(FROM Asset TO EnvSnapshot)",
+    "CREATE REL TABLE IF NOT EXISTS VERIFIED_BY(FROM Finding TO Verification)",
+    "CREATE REL TABLE IF NOT EXISTS JUDGED_BY(FROM Hypothesis TO Verification)",
 ]
 
 # GW-2 v2 (拍板③/N4): 节点表清单单一来源 — 从上方 SCHEMA 逐条派生(新表加进 SCHEMA 即自动
@@ -329,6 +343,14 @@ _CRITICAL_COLUMNS = {
                  "status", "review_note", "created_at", "reviewed_at",
                  "value_score", "value_components", "accepted_to_hypothesis_ref",
                  "hypothesis_to_confirmed_ref", "version", "refs"),
+    # E28(R-25 M1): 三新表全列校验(Experience/Frontier 同款拍板——全新表整表即该数据层全部
+    # 载体, 任一列缺失都属 schema 损坏; EnvSnapshot 双判级列缺失=E26 双记断链, Verification
+    # finding_ref/hypothesis_ref 缺失=M2 血缘接线断链)。
+    "Asset": ("id", "kind", "identifier", "first_seen", "last_seen", "status", "posture_note"),
+    "EnvSnapshot": ("id", "asset_id", "checked_at", "ecc_level_raw", "ecc_level_cal",
+                    "signals", "fingerprint", "probe_paths"),
+    "Verification": ("id", "kind", "verdict", "repro_ref", "executor", "run_id", "ts",
+                     "latency_ms", "race_variants", "note", "finding_ref", "hypothesis_ref"),
 }
 
 # 迁移校验结果: 缺失关键列的 "表.列" 列表(空=健康)。app.py /health 回显此值,
