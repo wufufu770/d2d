@@ -84,7 +84,7 @@ def _log_transition(entry):
 DB_PATH = os.environ.get("P2P_GRAPH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kuzu_db"))
 # M8 守护自愈锚: /health 回显三要素。发版必须改 VERSION — preflight 据版本差异识别 stale 旧实例;
 # STARTED_AT 是本进程启动时间, 预检与 /proc/<pid> starttime 比对防 pid 复用误判。
-VERSION = "1.6.0"  # 0924: Hypothesis value_score 列(3.6-4 段 C: CREATE+ALTER+关键列三处同步) + frontier-transition 闭环回填参数(转态端点带参) — bump 让 preflight 不复用旧实例
+VERSION = "1.7.0"  # E28(R-25 M1): 资产图三节点(Asset/EnvSnapshot/Verification)+HOSTS 边+三写端点+事件去重门 — bump 让 preflight 不复用旧实例
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 PORT = int(os.environ.get("P2P_GRAPH_PORT", "8766"))
 
@@ -167,6 +167,13 @@ try:
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import (EXPERIENCE_INJECTION_HIGH, EXPERIENCE_INJECTION_SOFT_RES,
                           experience_injection_scan, experience_quota_reject)
+
+# E28(R-25 M1): Verification 事件去重门(gd/gates.py 纯函数区新增)。同 3C 哲学: 不经 gd/__init__
+# 聚合, 直接从子模块导入, 两种运行形态都接住。
+try:
+    from graphd.gd.gates import verification_duplicate_reject
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd.gates import verification_duplicate_reject
 
 # 3.5-4-2(转态机制): Experience 转态纯函数门。同 3C 哲学: gd/__init__ 聚合不在本批次授权
 # 改动清单(gates.py/app.py/tests + plugin 三文件), 直接从子模块导入, 两种运行形态都接住。
@@ -1649,6 +1656,143 @@ class Handler(BaseHTTPRequestHandler):
         # (#73 同款可追溯)。
         # 共享门自动生效(Content-Length 门/legacy token/R6 denylist 红线扫描——本 path 以 /write/ 开头;
         # FIX-1 A3: 全局暂停豁免本路由 — 停机冻结图面正是为了人工审查, 审查结论需要写回)。
+        # ── E28(R-25 M1) 资产图三写端点（host-only——写入者=编排/回流管道, 设计 §4.4 权限契约
+        #    零变更: worker 零写零查权维持）。设计权威 docs/asset-graph-design-r25.md §四。
+        if self.path == "/write/asset":
+            # Asset=目标级聚合点(upsert 语义——聚合点天然非事件, first_seen/last_seen 分列;
+            # posture_note=侧写档指针语义, 非内容拷贝, 钳 500 字符)。HOSTS 边随 upsert 可选建立。
+            if not self._auth("host"):
+                return self._send(403, {"ok": False, "error": "asset write requires host token"})
+            _a_id = str(req.get("id") or "").strip()
+            _a_kind = str(req.get("kind") or "target").strip().lower()
+            _a_ident = str(req.get("identifier") or "").strip()[:300]
+            _a_status = str(req.get("status") or "active").strip().lower()
+            _a_note = str(req.get("posture_note") or "").strip()[:500]
+            if not _a_id or not _a_ident:
+                return self._send(400, {"ok": False, "error": "id and identifier required"})
+            if _a_kind not in ("host", "service", "target"):
+                return self._send(400, {"ok": False, "error": "invalid kind (host|service|target)"})
+            if _a_status not in ("active", "tarpit", "down", "archived"):
+                return self._send(400, {"ok": False, "error": "invalid status (active|tarpit|down|archived)"})
+            _a_note, _ = redact_pii(_a_note)
+            _a_now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            _a_ep = str(req.get("endpoint_url") or "").strip()[:300]
+            with _locked():
+                try:
+                    conn = kuzu.Connection(db())
+                    r = conn.execute("MATCH (a:Asset {id:$i}) RETURN a.id", parameters={"i": _a_id})
+                    if r.has_next():
+                        conn.execute("MATCH (a:Asset {id:$i}) SET a.last_seen=$t, a.status=$s, a.posture_note=$p",
+                                     parameters={"i": _a_id, "t": _a_now, "s": _a_status, "p": _a_note})
+                        _created = False
+                    else:
+                        conn.execute("CREATE (a:Asset {id:$i, kind:$k, identifier:$d, first_seen:$t, last_seen:$t, status:$s, posture_note:$p})",
+                                     parameters={"i": _a_id, "k": _a_kind, "d": _a_ident, "t": _a_now, "s": _a_status, "p": _a_note})
+                        _created = True
+                    _hosts = 0
+                    if _a_ep:
+                        re_ = conn.execute("MATCH (e:Endpoint {url:$u}) RETURN e.id", parameters={"u": _a_ep})
+                        if re_.has_next():
+                            conn.execute("MATCH (a:Asset {id:$i}), (e:Endpoint {url:$u}) CREATE (a)-[:HOSTS]->(e)",
+                                         parameters={"i": _a_id, "u": _a_ep})
+                            _hosts = 1
+                    self._send(200, {"ok": True, "id": _a_id, "created": _created, "hosts_edge": _hosts})
+                    _audit_event("asset-write", {"id": _a_id, "kind": _a_kind, "created": _created})
+                except Exception as e:
+                    self._send(500, {"ok": False, "error": f"asset write failed: {str(e)[:200]}"})
+            return
+        if self.path == "/write/env-snapshot":
+            # EnvSnapshot=环境快照 append-only(ECC assess 结果+指纹矩阵——E26 双记的图侧入口,
+            # ecc_level_raw/cal 与 docs/ecc-form-ledger.md 双记列一一对应; 单一事实源=判级语义
+            # 一处定义于 scripts/xring/ecc.mjs, 图与表各司其职)。零 UPDATE 零 DELETE。
+            if not self._auth("host"):
+                return self._send(403, {"ok": False, "error": "env-snapshot write requires host token"})
+            _e_asset = str(req.get("asset_id") or "").strip()
+            if not _e_asset:
+                return self._send(400, {"ok": False, "error": "asset_id required"})
+            _e_at = str(req.get("checked_at") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")).strip()[:40]
+            _e_raw = str(req.get("ecc_level_raw") or "").strip().lower()
+            _e_cal = str(req.get("ecc_level_cal") or "").strip().lower()
+            for _lv in (_e_raw, _e_cal):
+                if _lv and _lv not in ("none", "suspicious", "likely"):
+                    return self._send(400, {"ok": False, "error": "invalid ecc level (none|suspicious|likely|empty)"})
+            _e_sig = str(req.get("signals") or "")[:200_000]
+            _e_fp = str(req.get("fingerprint") or "")[:400_000]
+            _e_pp = str(req.get("probe_paths") or "")[:10_000]
+            _e_id = "env-" + uuid.uuid4().hex[:12]
+            with _locked():
+                try:
+                    conn = kuzu.Connection(db())
+                    conn.execute("CREATE (s:EnvSnapshot {id:$i, asset_id:$a, checked_at:$t, ecc_level_raw:$r, ecc_level_cal:$c, signals:$s1, fingerprint:$f, probe_paths:$p})",
+                                 parameters={"i": _e_id, "a": _e_asset, "t": _e_at, "r": _e_raw, "c": _e_cal,
+                                             "s1": _e_sig, "f": _e_fp, "p": _e_pp})
+                    conn.execute("MATCH (a:Asset {id:$i}), (s:EnvSnapshot {id:$e}) CREATE (a)-[:SNAPSHOT]->(s)",
+                                 parameters={"i": _e_asset, "e": _e_id})
+                    self._send(200, {"ok": True, "id": _e_id})
+                    _audit_event("env-snapshot-write", {"id": _e_id, "asset_id": _e_asset,
+                                                        "raw": _e_raw, "cal": _e_cal})
+                except Exception as e:
+                    self._send(500, {"ok": False, "error": f"env-snapshot write failed: {str(e)[:200]}"})
+            return
+        if self.path == "/write/verification":
+            # Verification=验证事件点 append-only(N2/N3 核心——"结论可被新验证推翻历史不改写")。
+            # 零 UPDATE 零 DELETE 接口; 去重门(gates.verification_duplicate_reject)=唯一新纯函数
+            # 防线: 同 run+kind+引用幂等拒重, 重放返回 200 duplicate=true(编排重试安全)。
+            if not self._auth("host"):
+                return self._send(403, {"ok": False, "error": "verification write requires host token"})
+            _v_kind = str(req.get("kind") or "").strip().lower()
+            _v_verdict = str(req.get("verdict") or "").strip().lower()
+            _v_run = str(req.get("run_id") or "").strip()[:120]
+            _v_fref = str(req.get("finding_ref") or "").strip()[:120]
+            _v_href = str(req.get("hypothesis_ref") or "").strip()[:120]
+            if _v_kind not in ("repro", "race", "retest", "advisor-verdict"):
+                return self._send(400, {"ok": False, "error": "invalid kind (repro|race|retest|advisor-verdict)"})
+            if _v_verdict not in ("pass", "fail", "race-win", "held-unreviewed"):
+                return self._send(400, {"ok": False, "error": "invalid verdict (pass|fail|race-win|held-unreviewed)"})
+            if not _v_run:
+                return self._send(400, {"ok": False, "error": "run_id required (去重门键)"})
+            if not _v_fref and not _v_href:
+                return self._send(400, {"ok": False, "error": "finding_ref or hypothesis_ref required (事件挂靠结论点)"})
+            _v_ref = str(req.get("repro_ref") or "").strip()[:300]
+            if _v_ref and experience_evidence_ref_rejected(_v_ref):
+                return self._send(400, {"ok": False, "error": "invalid repro_ref: 非空时须为 'ev/<eng>/<id>.txt' 指针且无路径穿越"})
+            _v_exec = str(req.get("executor") or "reflow").strip()[:40]
+            _v_ts = str(req.get("ts") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")).strip()[:40]
+            try:
+                _v_lat = int(req.get("latency_ms") or 0)
+            except (TypeError, ValueError):
+                _v_lat = 0
+            _v_race = str(req.get("race_variants") or "")[:20_000]
+            _v_note = str(req.get("note") or "").strip()[:500]
+            _v_id = "ver-" + uuid.uuid4().hex[:12]
+            with _locked():
+                try:
+                    conn = kuzu.Connection(db())
+                    _keys = []
+                    rv = conn.execute("MATCH (v:Verification) WHERE v.run_id=$r RETURN v.kind, v.finding_ref, v.hypothesis_ref",
+                                      parameters={"r": _v_run})
+                    while rv.has_next():
+                        k_, fr_, hr_ = rv.get_next()
+                        _keys.append(f"{_v_run}|{k_}|{str(fr_ or '') or str(hr_ or '')}")
+                    if verification_duplicate_reject(_v_run, _v_kind, _v_fref, _v_href, _keys):
+                        self._send(200, {"ok": True, "duplicate": True, "id": None})
+                        return
+                    conn.execute("CREATE (v:Verification {id:$i, kind:$k, verdict:$d, repro_ref:$rf, executor:$x, run_id:$r, ts:$t, latency_ms:$l, race_variants:$rv, note:$n, finding_ref:$fr, hypothesis_ref:$hr})",
+                                 parameters={"i": _v_id, "k": _v_kind, "d": _v_verdict, "rf": _v_ref, "x": _v_exec,
+                                             "r": _v_run, "t": _v_ts, "l": _v_lat, "rv": _v_race, "n": _v_note,
+                                             "fr": _v_fref, "hr": _v_href})
+                    if _v_fref:
+                        conn.execute("MATCH (f:Finding {id:$i}), (v:Verification {id:$v}) CREATE (f)-[:VERIFIED_BY]->(v)",
+                                     parameters={"i": _v_fref, "v": _v_id})
+                    if _v_href:
+                        conn.execute("MATCH (h:Hypothesis {id:$i}), (v:Verification {id:$v}) CREATE (h)-[:JUDGED_BY]->(v)",
+                                     parameters={"i": _v_href, "v": _v_id})
+                    self._send(200, {"ok": True, "id": _v_id, "duplicate": False})
+                    _audit_event("verification-write", {"id": _v_id, "kind": _v_kind, "verdict": _v_verdict,
+                                                        "run_id": _v_run})
+                except Exception as e:
+                    self._send(500, {"ok": False, "error": f"verification write failed: {str(e)[:200]}"})
+            return
         if self.path == "/write/adjudicate":
             if not self._auth("host"):
                 return self._send(403, {"ok": False, "error": "adjudication requires host token"})
