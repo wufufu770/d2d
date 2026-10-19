@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // selfcheck-e11a.mjs — E11a 六项自验收（批指令判据逐条; 只读+本地验证, 零写仓面）
 // 用法: node scripts/xring/selfcheck-e11a.mjs [--repro <repro_paths.json>]
-// E23: #1 自包含化（R-01 根修精神）——原缺省对真靶(192.168.132.14)重放 /tmp 旧 repro，
+// E23: #1 自包含化（R-01 根修精神）——原缺省对真靶(已代号化——见 E31 公开面卫生批)重放 /tmp 旧 repro，
 // /tmp 清扫即红 + 违反零实弹批词红线。改为内建本地自签靶（openssl 一次性证书，判据等价:
 // 自签 + env.tls=insecure 分层 + 证书类失败清零）+ 仓内 fixture 缺省（/tmp 再不灭失）。
 import { execFileSync } from 'node:child_process'

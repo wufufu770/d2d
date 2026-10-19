@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-10-19
+
+> 1.5.1 语义=ECC 判级校准+竞速变体契约形态示例修复+资产图数据层（M1）——小步迭代
+> （版本纪律：1.5.1→后续 1.5.2/1.5.3 小步递增，大数字跳变仅限大版本迭代）。
+> **加性纪律（升级零行为变化）**：ECC 校准缺省关闭等价于旧判级路径下无 401-JSON 证据
+> 场景的判读（正常形态判 none 与旧口径一致）；资产图表为新增纯加性；契约示例修复=
+> 文档面对齐（schema 权威零改动）。
+
+### Added
+- **资产图数据层**：Asset（目标级聚合）/EnvSnapshot（环境快照 append-only，双判级字段）/
+  Verification（验证事件 append-only——"结论可被新验证推翻，历史不改写"）三节点+四边
+  （HOSTS/SNAPSHOT/VERIFIED_BY/JUDGED_BY）+三写端点（host-only）+事件去重门（同
+  run+kind+引用幂等拒重，重放安全）+编排侧 helper。
+- **ECC 判级校准**：单轮判据的 401-JSON 在场性抵扣——多路径同指纹（SPA fallback 形态）
+  与 tarpit 同形时，组外真实 auth 层证据使置信降档；跨轮漂移在"恢复向切换"上同型假阳的
+  复合降档。正常形态判读 none 与旧口径一致（校准零干扰对照测试背书）。
+
+### Fixed
+- **竞速变体契约形态示例**：产出契约表补 variants 形态显式示例（字符串数组的数组——
+  与 schema 强制形态对齐）+env 字段仅 https 自签靶需要的说明——此前引导语无示例导致
+  worker 自然形态（对象数组）被 schema 整份拒收。
+- selfcheck TLS 分层检自包含化（内建本地自签靶+仓内 fixture——零外部依赖）。
+
+### 内部
+- 公开面卫生：测试面靶场关联字面量代号化（语义等价零信息损失）+push 前扫描闸
+  （scripts/ops/push-scan.mjs）+场验实录移出版本库跟踪。
+
 ## [1.4.0] - 2026-10-18
 
 > 1.4.0 语义=Advisor 触发源扩展+竞速变体生产契约（修正窗）+P2 折并清债 8 项+hook 静默
