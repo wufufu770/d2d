@@ -19,6 +19,7 @@
 > 401 抵扣 homogeneous 置信"校准候选（E22 追记）获得第二个支持样本。
 | 4 | E20-r2 (10170746) | likely | homogeneous-response+fingerprint-drift | 形态真变（部分→全量，5/5 漂移） | 域间切换 | **跨轮漂移检出现场命中** ✓ |
 | 5 | E22-r1 (10171337) | likely | homogeneous-response(low 3/5)+fingerprint-drift(high 5/5) | **服务真恢复**（SPA 398B ee450095f726 域+API 401 64B 真 auth 层=正常异构域） | ee450095f726 域（正常） | **首假阳**：SPA 路由 fallback 的同指纹（3/5 路径返同一 index.html）触发 homogeneous 信号——正常形态被疑为 tarpit ✗ |
+| 6 | E30-r1/r2 (10190618/0634, GSHOP 新目标) | **none / none（双记一致）** | 无信号（五路径五异构：200 html/404 JSON 反射/404 html/401 登录页/404 JSON） | 正常服务（API 面+auth 层+静态面全异构） | 新目标基线 | **校准后双记首点**：正常形态下 raw/cal 同判 none——校准规则零干扰（无 401 抵扣场景的基线行为实证）；校准不产生新假阳 ✓ |
 
 ## 阈值结论（E21 时点）
 
