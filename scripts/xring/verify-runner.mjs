@@ -208,12 +208,18 @@ async function replayHttp(artifact, { targetBase, fetchImpl = fetch, timeoutMs =
     }
     if (step.startsWith('EXPECT ')) {
       if (lastBody === null) return { verdict: 'manual', evidence: `步骤 ${i}: EXPECT 先于任何请求（歧义序）——留人工验收` }
-      const needle = step.slice('EXPECT '.length)
+      // E32 修复（E30 失真实证）: worker 常以引号包裹特征串（EXPECT "root:x:0" 的引号是引用
+      // 记号非特征本体——原样入匹配致 F-2 类真发现被误判 fail）。对称包裹引号剥离=容错;
+      // 无引号形态零行为变化。特征本体确需首尾引号的罕见形态走 manual 语义（不支持）。
+      let needle = step.slice('EXPECT '.length)
+      let quoteStripped = ''
+      const qm = /^"(.*)"$/s.exec(needle) || /^'(.*)'$/s.exec(needle)
+      if (qm) { needle = qm[1]; quoteStripped = '+引号容错' }
       if (!lastBody.includes(needle)) {
         const preTag = effectPreExisted?.probed && lastBody.length === 0 ? '（认证墙/空响应——XR-G4 会话态边界如实记录）' : ''
         return { verdict: 'fail', evidence: `步骤 ${i}: 期望特征未复现——EXPECT "${needle.slice(0, 80)}" 不在响应体（${lastBody.length}B, statuses=${statuses.join(',')})${preTag}` }
       }
-      evidenceParts.push(`EXPECT✓(${needle.length}B needle)`)
+      evidenceParts.push(`EXPECT✓(${needle.length}B needle${quoteStripped})`)
       expectIndex++
       continue
     }
