@@ -660,3 +660,6 @@ N-0 终版确认：E1 第四采样 84.9MB（书档维持）/E3 复扫 0/E2 16.6-
 
 ## 2026-10-20 · E33-r4 限流恢复重启批（阶段二——batch1 接力根因定谳+batch2 强项实证）
 **Phase 0**：额度恢复确认（单发 ok+靶场 Up 8h+非高峰时段）。**Phase 1 batch1 接力根因定谳（三 TRANSPORT 谜底）**：接力形态重跑仍 TRANSPORT → **降体积假设验证=非接力形态契约 4/4 突破**——**根因=--from-record 大 brief（18 leads）起步体积触发传输层失败**（框架观察项登记：reflow 注入体积 vs 传输稳定性——池议候选）。非接力收尾达成：**通关密码 3 个捕获**（口径注入后首考 ✓——handoff.md 内 20 位串三枚+驼峰噪音排除）+6 findings 二轮（新增 userenum 用户枚举面）+intents 5/5 补全 ✓。**Phase 2 batch2（run-r2b-10201840）**：**8 findings 全 SQLi 族=d2d 强项区实证**（login.php 认证绕过+UNION 伪造+information_schema 读表/errsi 报错注入/timesi 时间盲注/blindinj 布尔盲注/bsiadv WAF 等号绕过/symbol 字符串注入——全谱覆盖）——**跨栈对照数据齐：PHP 栈 8 靶面 vs gshop Python 4 注入点（同族发现力 PHP≥Python）**；契约 4/4；通关密码候选全噪音（SQLi 族通关链未走完——秘密收集排位需前移，batch3/4 续轮调）。**阶段状态**：batch3 高危面（零持久化硬闸）+batch4 商城+七维评价归下一续轮（上下文结算点）。三轨不动/零版本动作/红线全项。本段记账时点=落库前。
+
+## 2026-10-20 · E33-r4 下半场（阶段三——宿主复核抽样+batch3/4 归续轮）
+**宿主复核（抽样式——上下文结算点内最大覆盖）**：batch2 SQLi 三靶实复现=errsi 报错注入 **确认**（200/463B SQLSTATE 回显）+timesi 时间盲注 **确认**（SLEEP(2) 耗时 10115ms 盲注实锤）+sqlibase 认证绕过 **证据不足**（单 payload 401 未复现——worker 原 payload 精确重放归续轮，不足≠误报≠确认三态口径）；batch1 六 findings+3 通关密码复核归续轮。误报率初步数据=复核样本 0 误报（2/3 确认+1 不足单列——样本不足不做统计结论）。**batch3/4+七维终判归续轮**（上下文极限——非熔断，任务书就绪：batch3 高危面零持久化硬闸+batch4 商城积分制+非接力形态 workaround 在案）。TRANSPORT/步数帽合并登记维持（E34 框架批候选：接力 brief 摘要化/leads 注入上限/步数帽池议）。零版本动作/红线全项。本段记账时点=落库前。
