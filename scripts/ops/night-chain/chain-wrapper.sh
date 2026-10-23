@@ -40,6 +40,7 @@ for SLOT in $(seq 1 $MAX_SLOTS); do
 ## 夜班交接（第 $((SLOT-1)) 棒种子——文档续接: **先 read 本种子文件再开工**）
 - 种子文件: $SEED（前棒报告摘要+open leads+负向结论集+持留 findings+秘密路径进度）
 - 前棒 record: $PREV_RECORD（本棒证据/报告在前棒 final-report.md 基础上增量合并）
+- 引用规范（E34）: 讨论前棒条目时用其 id（H-n/F-n/L-n，种子内即对照表）——棒间机械对账
 EOF
       log "种子生成: $SEED ($(wc -c < "$SEED")B)"
     else

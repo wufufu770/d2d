@@ -7,7 +7,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { validateFile, validateHypotheses } from './validate.mjs'
+import { validateHypotheses, validateAgainst } from './validate.mjs'
+import { normalizeRepro, normalizeHypotheses, normalizeLessons } from './normalize.mjs'
 import { createVerifyRunner } from './verify-runner.mjs'
 import { collectFromReflow, writeHandoff, HANDOFF_FILE } from './relay.mjs'
 import { raceVerify, raceEvidence } from './verify-race.mjs'
@@ -137,11 +138,18 @@ export async function reflow(opts) {
 
   // ---- C 级: lessons.json → /write/experience（写入即 quarantined — graphd 语义）----
   if (found['lessons.json']) {
-    const v = validateFile(found['lessons.json'])
+    // E34: 归一化前置闸（读盘→归一→内存校验; 合规输入恒等零变化, 归一履历入事件流）
+    let lDoc = null, v = { ok: false, errors: ['unread'] }
+    try {
+      lDoc = JSON.parse(fs.readFileSync(found['lessons.json'], 'utf8'))
+      const nc = normalizeLessons(lDoc)
+      if (nc.changes.length) emit({ event: 'contract-normalized', runId, file: 'lessons.json', changes: nc.changes.slice(0, 30) })
+      v = validateAgainst('lessons.schema.json', lDoc)
+    } catch (e) { v = { ok: false, errors: [`JSON 解析失败: ${String(e?.message ?? e).slice(0, 120)}`] } }
     if (!v.ok) {
       errors.push({ file: 'lessons.json', errors: v.errors })
     } else {
-      const doc = JSON.parse(fs.readFileSync(found['lessons.json'], 'utf8'))
+      const doc = lDoc
       for (const l of doc.lessons) {
         const category = l.failure_class === 'cognitive' || l.failure_class === 'environment' ? 'failure' : 'pitfall'
         const r = await post(graphdUrl, '/write/experience', {
@@ -178,8 +186,14 @@ export async function reflow(opts) {
   // ---- B 级: hypotheses.json → /write/hypothesis（E11a#4: 条目级容错——超长 evidence
   // 截断+partial 入图, 条目拒只拒该条; 文件级拒仅留结构性损坏）----
   if (found['hypotheses.json']) {
-    const v = validateFile(found['hypotheses.json'])
-    const doc = JSON.parse(fs.readFileSync(found['hypotheses.json'], 'utf8'))
+    // E34: 归一化前置闸（id/status/priority 归一后, v.ok 直通道; 仍坏才走条目级容错）
+    let doc = null, v = { ok: false, errors: ['unread'] }
+    try {
+      doc = JSON.parse(fs.readFileSync(found['hypotheses.json'], 'utf8'))
+      const nc = normalizeHypotheses(doc)
+      if (nc.changes.length) emit({ event: 'contract-normalized', runId, file: 'hypotheses.json', changes: nc.changes.slice(0, 30) })
+      v = validateAgainst('hypotheses.schema.json', doc)
+    } catch (e) { v = { ok: false, errors: [`JSON 解析失败: ${String(e?.message ?? e).slice(0, 120)}`] } }
     hypothesisDocs.push(doc)
     let entries = { pass: doc.hypotheses ?? [], partial: [], rejected: [] }
     if (!v.ok) entries = tolerantHypothesisEntries(doc, v.errors)
@@ -210,11 +224,18 @@ export async function reflow(opts) {
 
   // ---- A 级: repro_paths.json → verifyRunner（必经）→ /write/finding ----
   if (found['repro_paths.json']) {
-    const v = validateFile(found['repro_paths.json'])
+    // E34: 归一化前置闸（id 连字符修复/重映射+variants ≤5 裁切——合规输入恒等零变化;
+    // r2 三棒 A 级零入图根因即此处整份拒, 现机械化兜底+履历入事件流）
+    let doc = null, v = { ok: false, errors: ['unread'] }
+    try {
+      doc = JSON.parse(fs.readFileSync(found['repro_paths.json'], 'utf8'))
+      const nc = normalizeRepro(doc)
+      if (nc.changes.length) emit({ event: 'contract-normalized', runId, file: 'repro_paths.json', changes: nc.changes.slice(0, 30) })
+      v = validateAgainst('repro_paths.schema.json', doc)
+    } catch (e) { v = { ok: false, errors: [`JSON 解析失败: ${String(e?.message ?? e).slice(0, 120)}`] } }
     if (!v.ok) {
       errors.push({ file: 'repro_paths.json', errors: v.errors })
     } else {
-      const doc = JSON.parse(fs.readFileSync(found['repro_paths.json'], 'utf8'))
       // E11a#7: ID 对账闸（入图前置）——repro 自洽+handoff 一致性; 漂移=整场拒落+差异报告
       const rec = idReconcile({ reproIds: (doc.findings ?? []).map((f) => f.id), handoffPath: path.join(workspace, 'handoff.md') })
       if (!rec.ok) {

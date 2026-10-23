@@ -22,6 +22,16 @@
 运行结束时，workspace 内必须落以下三份 JSON（结构校验器按此验收；**语义质量归
 运行外验证，契约只管格式**）：
 
+> **格式红线（E34——形态不合规=整份文件被拒，内容再好也零入图零计分）**：
+> ① `findings[].id` 必须**带连字符**（`F-1`、`F-23`——`F1` 会被整份拒）；
+> ② `variants[]` 至多 **5** 组（超出=整份拒）；
+> ③ `hypotheses[].status` 只收 `untested/probing/falsified/confirmed`（不收 pending/open）；
+> ④ `hypotheses[].priority` 只收 `high/medium/low`（critical 是 severity 的值，不是 priority）；
+> ⑤ `generated_at` 必须**带时区**（`2026-01-01T00:00:00Z` 形态——缺 `Z`/`+08:00` 会被拒）。
+>
+> **收尾自检清单（收工前逐项核对）**：四份文件 `run_id` 一致 ☐ ／ `generated_at` 带时区 ☐ ／
+> 每个 finding id 为 `F-数字` 且无重复 ☐ ／ variants 每条 ≤5 组 ☐ ／ status/priority 全在枚举域 ☐
+
 | 文件 | 内容 | 关键字段 |
 |------|------|----------|
 | `hypotheses.json` | 本次运行的假设树 | run_id/generated_at/hypotheses[]{id[H-n],statement,priority[high/medium/low],status[untested/probing/falsified/confirmed],evidence_refs?} |
