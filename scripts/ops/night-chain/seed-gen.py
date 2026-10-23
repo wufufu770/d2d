@@ -6,7 +6,9 @@ import json, os, re, sys
 
 rundir = sys.argv[1]
 ws = os.path.join(rundir, 'workspace')
-out = [f'# 夜班交接种子（自 {os.path.basename(rundir)}）', '']
+out = [f'# 夜班交接种子（自 {os.path.basename(rundir)}）', '',
+'> 引用规范（E34）: 讨论前棒条目时用其 id（`H-n`/`F-n`/`L-n`——下表每条已带），',
+'> 便于棒间机械对账; 下文 id→语义即对照表。', '']
 
 hj = os.path.join(ws, 'handoff.json')
 if os.path.exists(hj):

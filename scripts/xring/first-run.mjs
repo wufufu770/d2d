@@ -36,6 +36,10 @@ const MAX_HOURS = Number(argOf('--max-hours', '0.5')) || 0.5
 const RECORD_ROOT = argOf('--record-root', path.join(REPO, 'experiments', 'xrp4-first-run'))
 // E15/R-05: 上一 run record 目录——handoff.json 消费（跨 run 接力; 缺省 null=首战零注入）
 const FROM_RECORD = argOf('--from-record', null)
+// E34: 平台-图双轨对账旗标（可选——不给=零行为变化）。给平台计分面板 URL 则起跑抓基线、
+// 收尾对账: 平台增量分>0 而 A 级入图=0 → divergence 告警入事件流（Goodhart 脱钩机器级监测——
+// r2 实证: 三棒 +1950 通关但契约违约整份拒, 图零增, 靠人盯日志才发现）。
+const SCORE_PANEL = argOf('--score-panel', null)
 
 // ---- E18/P1-2: 修复后复测模式（--retest <run 目录>——机械重放 remediated facts, 零 worker 零图写;
 // 对偶语义: falsified=证伪防复测 / remediated=修复后复测。人工/上游在 run workspace 落 remediated.json）----
@@ -127,6 +131,16 @@ async function probeTarget() {
   return null
 }
 
+// E34: 平台计分面板只读抓取（totalScore 提取——对账专用, 失败返回 null 不阻断发射）
+async function fetchScore() {
+  try {
+    const r = await fetch(SCORE_PANEL, { signal: AbortSignal.timeout(8000) }) // nosemgrep — 本地受控靶计分面板只读对账
+    const t = await r.text()
+    const m = /totalScore"?\s*[:=]\s*([0-9]+)/.exec(t)
+    return m ? Number(m[1]) : null
+  } catch { return null }
+}
+
 // ---- 五项观察①: worker 进程树 env 扫描（私钥运行时探测——A7 实战数据点）----
 function scanProcEnv(pid) {
   const hits = []
@@ -179,6 +193,8 @@ if (TASK_FILE) {
   const code = await probeTarget()
   if (!code) throw new Error(`目标不就绪（3 试探活失败）: ${TARGET_BASE}`)
   log(`目标就绪: ${TARGET_BASE} HTTP ${code}`)
+  var SCORE_BASE = SCORE_PANEL ? await fetchScore() : null
+  if (SCORE_PANEL) log('平台基线分:', JSON.stringify({ panel: SCORE_PANEL, base: SCORE_BASE }))
 
   // ---- E15/R-05: handoff 消费（认识论标签制注入——leads 假设形态/facts 底账/falsified 排除;
   // 无 handoff=首战零注入向后兼容）----
@@ -336,6 +352,16 @@ const rf = await reflow({
     : {}),
 })
 log('reflow:', JSON.stringify({ ok: rf.ok, written: rf.written, held: rf.held, errors: rf.errors, handoff: rf.handoffPath ?? null }))
+
+// ---- E34: 平台-图双轨对账（分涨图零增=脱钩告警入事件流——机器级 Goodhart 监测）----
+if (SCORE_PANEL) {
+  const scoreEnd = await fetchScore()
+  const aWritten = (rf.written ?? []).filter((x) => x.level === 'A').length
+  const delta = scoreEnd != null && SCORE_BASE != null ? scoreEnd - SCORE_BASE : null
+  const divergent = delta != null && delta > 0 && aWritten === 0
+  appendEvent(EVENTS, { event: divergent ? 'platform-graph-divergence' : 'platform-graph-recon', runId: RUN_ID, ts: new Date().toISOString(), base: SCORE_BASE, end: scoreEnd, deltaScore: delta, aWritten })
+  log('平台-图对账:', JSON.stringify({ base: SCORE_BASE, end: scoreEnd, deltaScore: delta, aWritten, divergent }))
+}
 
 // ---- E15/R-04: 收尾报告自动化（verified→三外部格式+ab-report 内部面; task-file 模式, 尽力而为）----
 let REPORT = null
