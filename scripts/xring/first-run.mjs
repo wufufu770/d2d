@@ -61,9 +61,9 @@ const ROOT = RECORD_ROOT
 const RECORD = path.join(ROOT, 'record', 'xring-first', RUN_ID)
 const WORKSPACE = path.join(RECORD, 'workspace')
 const EVENTS = path.join(RECORD, 'events.jsonl')
-// 预算护栏双保险（拍板 3）: 时长（E11a#3 参数化, 缺省 0.5h=A8 收敛口径）×token 100 万
-// （BUDGET_LIMITS 缺省, 硬 cap 200 万由 monitor 拒绝不 clamp）——超限任一触发即熔断。
-const MAX_TOKENS = BUDGET_LIMITS.maxTokens.default
+// 预算护栏双保险（拍板 3）: 时长（E11a#3 参数化, 缺省 0.5h=A8 收敛口径）×token（E35-r1
+// 参数化 --max-tokens, 缺省 100 万——硬 cap 200 万由 monitor 拒绝不 clamp）——超限任一触发即熔断。
+const MAX_TOKENS = Number(argOf('--max-tokens', String(BUDGET_LIMITS.maxTokens.default))) || BUDGET_LIMITS.maxTokens.default
 const HOST_TOKEN_FILE = process.env.P2P_HOST_TOKEN_FILE ?? `${os.homedir()}/.config/d2d/host-token`
 
 const log = (...a) => { const line = '[first-run] ' + a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); console.error(line); try { fs.appendFileSync('/tmp/xrp4-first-run.log', line + '\n') } catch { /* 已记因: 另面留痕——stderr 已出, /tmp 镜像写失败静默 */ } }
