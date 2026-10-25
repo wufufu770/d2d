@@ -77,6 +77,7 @@ systemctl --user start d2d-graphd
 ## 引擎与测试
 
 - 图引擎：生产 ladybug（`LBUG_C_API_LIB_PATH` 注入），测试双轨（kuzu 轨+ladybug 轨全量等值）。
+- dsh 版本基线：六包+宿主 CLI 统一 0.2.1-rc.2 / dsh-better-sidebar 0.24.1（成对升级纪律，校验入口 `node scripts/ops/verify-dsh-version.mjs`，对应表见 `docs/dsh-sidebar-compat.md`）。
 - 三 workflow：ci（pytest+mocha+panel）/ gates（graphd 门禁+semgrep+codeql）/ dsh-compat（node 22 最低轨）。
 - 基线口径：`pytest tests/` 双轨 / `npx mocha "test/*.test.mjs"` / panel `npm test`。
 

@@ -5,7 +5,7 @@
 // 背景(4-1/4-2 审计 + 4-3d-2 复核): 全局 CLI 包 @deepseek-ai/dsh 与插件库包
 // @deepseek-ai/dsh-*(plugin/pentest-dsh 六依赖)是两条独立的版本序列。install.sh 曾未锁版
 // (npm install -g @deepseek-ai/dsh), 任意上游版本可直接进宿主(4-1); 宿主版本差异又导致
-// MCP 工具清单行为漂移(4-2)。现 install.sh 已锁 0.1.1-rc.2(与插件 pin 对齐), 本脚本对
+// MCP 工具清单行为漂移(4-2)。现 install.sh 已锁 0.2.1-rc.2(与插件 pin 对齐), 本脚本对
 // 三处版本做一致性校验, 不一致 exit 1+差异明细。
 //
 // 检查口径:
@@ -90,10 +90,10 @@ export const SIDEBAR_PKG = 'dsh-better-sidebar'
 // 0.17.1/0.19.1/0.22.1/0.24.1 吻合, 2026-09-29)。行: [dshLow, dshHigh, sidebarVer, 备注];
 // dsh 区间为闭区间, dshHigh=null=无上界。
 export const SIDEBAR_COMPAT_TABLE = [
-  ['0.1.1-rc.2', '0.1.1-rc.2', '0.17.1', '当前 pin/当前基线'],
+  ['0.1.1-rc.2', '0.1.1-rc.2', '0.17.1', '已退役基线(0.1.x 时代)'],
   ['0.1.5-rc.1', '0.1.6-alpha.2', '0.19.1', '升级时同步'],
   ['0.1.7-rc.1', '0.1.7-rc.2', '0.22.1', '升级时同步'],
-  ['0.2.0-rc.1', null, '0.24.1', '升级时同步'],
+  ['0.2.0-rc.1', null, '0.24.1', '当前 pin/当前基线'],
 ]
 // 预发布感知 semver 比较: <0 a<b / 0 相等 / >0 a>b / null=任一侧不可解析。
 // 主.次.补丁数值比; 有 pre < 无 pre; pre 标识符按标准 semver(数值比/ASCII 比, 数值标识符

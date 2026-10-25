@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-10-26
+
+> 1.5.2 语义=dsh 0.2.1-rc.2 统一重锁（宿主升级引发的成对适配）+X-Ring 契约归一化前置闸+
+> 平台-图对账旗标+夜链组件入仓。
+> **版本纪律**：1.5.1→1.5.2 小步递增（大数字跳变仅限大版本迭代）。
+> **加性纪律**：required: false 删除与数组类型形态改写均经语义等价论证（校验真值判断/
+> 编译产物同形），worker 调用面零行为变化。
+
+### Changed
+- **dsh 版本基线重锁（E36-r0）**：六包 @deepseek-ai/dsh-* 0.1.1-rc.2→0.2.1-rc.2（与宿主 CLI
+  内置版本对齐；dsh-tools exports 面逐字一致、defineTool(options) 签名不变——API 面零破坏
+  实证）；install.sh CLI pin 同步（行号守恒）；dsh-better-sidebar 0.17.1→0.24.1 成对升级
+  （兼容表 0.2.x 区间转当前基线，docs/dsh-sidebar-compat.md 同步注记）。
+- **defineTool author DSL 收紧适配**：required 属性出现必须为 true（required: false 20 处
+  全删——d2d 自家校验真值判断语义等价）；string[]/object[] 类型简写不再支持，改
+  array+items 显式形态（items 位 object 显式 additionalProperties）。
+- web profile 移除 dsh-sidebar-leap（0.3.2 为最新版但 peers 钉 client-runtime ^0.1.0-rc.8，
+  被 0.2.x 宿主拒载——上游发兼容版后回加；导航增强件非功能依赖，panel 走 better-sidebar
+  通道不受影响）。
+
+### Added
+- **契约归一化前置闸（E34-r0）**：normalizeRepro/normalizeHypotheses/normalizeLessons 纯函数
+  （id 缺连字符稳定重映射/variants ≤5 裁切/枚举串场归位/时区补全，合规输入恒等零改动）
+  接入 reflow 三段，归一履历 contract-normalized 事件入流；回放验收 39 项归一化全过。
+- **平台-图对账旗标（E34-r0）**：first-run --score-panel 起跑基线+终态对账，分涨图零增触发
+  platform-graph-divergence 告警（Goodhart 脱钩机器级监测）。
+- **night-chain 组件入仓（E35-r2）**：scripts/ops/night-chain/（chain-wrapper.sh+seed-gen.py）
+  ——4 槽链式无人值守（文档续接种子/治理五件/靶场健康预检/完成传播/周窗限流 park）。
+- first-run 补 --max-tokens 旗标（cap 2M 拒绝不 clamp；E35-r1）。
+
+### Fixed
+- adapter-inprocess 测试 mock 对齐 0.2.x 事件词汇（assistant/message 事件必带
+  stream: AssistantStreamRecord[]——dsh-session types 权威；真实 agent 产物自带该字段，
+  生产路径无恙）。
+
+### 内部
+- manifest node_modules 段重生成（六包 0.2.1-rc.2 哈希 18 条）；verify-dsh-version
+  SIDEBAR_COMPAT_TABLE 基线注记同步；pentest-dsh README 双轨说明注记 2026-10-26 重锁对齐。
+
 ## [1.5.1] - 2026-10-19
 
 > 1.5.1 语义=ECC 判级校准+竞速变体契约形态示例修复+资产图数据层（M1）——小步迭代

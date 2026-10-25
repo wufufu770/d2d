@@ -132,11 +132,11 @@ describe('T2-2b-0 检查④ sidebar 成对性(注入范式, 不读真实全局)'
     assert.ok(!r.warnings.some((w) => w.includes('9.9.9')), 'heredoc 外提及不得进 ④ 判定')
   })
 
-  it('锚 真实仓库(只读): install.sh heredoc sidebar pin 恰为 0.17.1(精确无范围符), 落在文档 0.17.1 行', () => {
+  it('锚 真实仓库(只读): install.sh heredoc sidebar pin 恰为 0.24.1(精确无范围符), 落在文档 0.24.1 行', () => {
     const pin = parseInstallSidebarPin(fs.readFileSync(path.join(REPO_ROOT, 'install.sh'), 'utf8'))
     assert.ok(pin, 'install.sh heredoc 内检出 sidebar pin')
-    assert.equal(pin.spec, '0.17.1')
-    assert.equal(findCompatRowBySidebarSpec(pin.spec), 0)
+    assert.equal(pin.spec, '0.24.1')
+    assert.equal(findCompatRowBySidebarSpec(pin.spec), 3)
     assert.ok(!/^[~^]/.test(pin.spec), '精确 pin, 无 ^/~ 范围符')
   })
 })

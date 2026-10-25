@@ -30,16 +30,16 @@ ok "python3 $(python3 --version 2>&1 | cut -d' ' -f2)"
 
 step "安装 dsh CLI(全局)"
 # 4-3d-2 供应链钉版本: @deepseek-ai/dsh(全局 CLI 包)与插件库包 @deepseek-ai/dsh-*
-# (plugin/pentest-dsh 六依赖, 精确 pin 0.1.1-rc.2)是两条独立的版本序列, 此处 PIN 与插件
-# pin 对齐(npm view @deepseek-ai/dsh@0.1.1-rc.2 version 已验证存在; dist-tags latest=
-# 0.1.5-rc.3, 不锁版新装会拉到最新 rc)。为什么锁版本: 4-1 审计(dsh 版本调查)——本行
+# (plugin/pentest-dsh 六依赖, 精确 pin 0.2.1-rc.2)是两条独立的版本序列, 此处 PIN 与插件
+# pin 对齐(npm view @deepseek-ai/dsh@0.2.1-rc.2 version 已验证存在; dist-tags latest=
+# 0.2.1-rc.2, 不锁版新装会拉到最新 rc)。为什么锁版本: 4-1 审计(dsh 版本调查)——本行
 # 曾未锁版, 任意上游新版本可直接进宿主; 4-2 审计(MCP 工具清单)——宿主 CLI 版本差异
 # 导致工具面行为漂移。已装偏斜(下方 command -v 短路, 只对新装生效)由
 # scripts/ops/verify-dsh-version.mjs 三处一致性校验如实告警(exit 1)。
 if command -v dsh >/dev/null; then
   ok "dsh 已装: $(dsh --version 2>/dev/null || echo '?')"
 else
-  npm install -g @deepseek-ai/dsh@0.1.1-rc.2
+  npm install -g @deepseek-ai/dsh@0.2.1-rc.2
   ok "dsh $(dsh --version) 已安装"
 fi
 
@@ -115,15 +115,16 @@ cat > "$DSH_HOME/profiles/web/cordis.yml" <<'EOF'
 EOF
 cp "$DSH_HOME/profiles/web/cordis.yml" "$DSH_HOME/profiles/headless/cordis.yml"
 
-# sidebar 精确 pin 消除 caret 浮动（0.24.1 需 DSH 0.2.0-rc.1+，装了会直接失败）；成对升级见 docs/dsh-sidebar-compat.md
+# sidebar 精确 pin 消除 caret 浮动（0.24.1 需 DSH 0.2.0-rc.1+，与 0.2.1-rc.2 基线成对）；成对升级见 docs/dsh-sidebar-compat.md
+# dsh-sidebar-leap 已移除（2026-10-26 重锁批）：0.3.2(最新) peers 钉 client-runtime ^0.1.0-rc.8，
+# 被 dsh 0.2.x 宿主拒载（启动冒烟实证 "skipping profile bundle"）；上游发 0.2.x 兼容版后回加 deps+bundles 两处。
 cat > "$DSH_HOME/profiles/web/package.json" <<EOF
 {
   "name": "dsh-profile-web",
   "private": true,
   "dependencies": {
     "d2d-panel": "link:$REPO_DIR/plugin/d2d-panel",
-    "dsh-better-sidebar": "0.17.1",
-    "dsh-sidebar-leap": "^0.3.2",
+    "dsh-better-sidebar": "0.24.1",
     "pentest-dsh": "link:$REPO_DIR/plugin/pentest-dsh"
   },
   "dsh": {
@@ -132,7 +133,6 @@ cat > "$DSH_HOME/profiles/web/package.json" <<EOF
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
         "dsh-better-sidebar",
-        "dsh-sidebar-leap",
         "d2d-panel",
         "pentest-dsh"
       ]
