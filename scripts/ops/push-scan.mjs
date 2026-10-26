@@ -10,15 +10,15 @@ const argv = process.argv.slice(2)
 const staged = argv.includes('--staged')
 
 const NEEDLES = [
-  '192.0.2.', // r2b 系网段（含 .14/.11）
-  '198.51.100.152', // shop-lab 网段
-  'nas-vendor',
-  'shop-lab',
-  'shop-lab',
-  'fingerprint-a', // 实测指纹串（E22 系）
-  'fingerprint-b',
-  'fingerprint-c',
-  'tarpit-marker', // tarpit 诱饵页特征
+  '192.168.132.', // r2b 系网段（含 .14/.11）
+  '192.168.41.152', // gshop 网段
+  'GokTech',
+  'GSHOP-Lab',
+  'gshop',
+  'ee450095f726', // 实测指纹串（E22 系）
+  '7d44a2950cc7',
+  'de3707ebbd69',
+  'pwn3d ACCESS GRANTED', // tarpit 诱饵页特征
 ]
 
 function scan(text, label) {
