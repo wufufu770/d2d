@@ -88,3 +88,7 @@ systemctl --user start d2d-graphd
 ## 合规
 
 授权测试专用；排除资产清单（denylist）红线零容忍；报告发布前必须脱敏（A/B 报告脱敏流程）。安全问题见 `SECURITY.md`。
+
+## 开发计划
+
+后期有时间会针对dsh最新版本进行适配，考虑添加superagent的机制
