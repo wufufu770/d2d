@@ -34,7 +34,10 @@ export const ORDER = [
   'view.audit.js', // T3-3-2 审计时间线 tab: audit.log+transition-log 合流
   'view.config.js', // T3-3-2 配置 tab: 只读总览+配置写面卡集中
   'view.xring.js', // XR-P2 X-Ring tab: 旁路探索只读投影(零写零动作)
+  'view.workitems.js', // 1.6.0 Phase B: 待人工队列视图(WorkItems 人工注意力处置面)
+  'view.main.js', // 1.6.0 Phase C: dsh workspace 主面板全页装配(顶签导航复用既有视图)
   'router.js', // better-sidebar tab 注册(inject / apply / exports)
+  'main.register.js', // 1.6.0 Phase C: dsh 主面板槽位注册(main + sidebar.panellist; 包装 apply/inject)
 ]
 
 const HEAD = [

@@ -1,6 +1,8 @@
 # release.yml — WRAP-4b 发布相（拍板②④⑤）：tag 触发 OIDC Trusted Publishing
 # 零本地 token 纪律：publish 仅凭 GitHub Actions OIDC（id-token: write + npm ≥11.5.1），
 # 仓库零 npm token（环境 secret 面空置）；provenance 由 npm --provenance 自动附。
+# E39 推送纪律扩展：每 OS 源码 zip 资产 + GHCR docker 源（packages: write；公开仓
+# GITHUB_TOKEN 直推 ghcr.io/wufufu770/d2d）。
 name: release
 
 on:
@@ -8,16 +10,21 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write   # GitHub Release 创建与资产上传
-  id-token: write   # npm OIDC trusted publishing（provenance）
+  contents: write          # GitHub Release 创建与资产上传
+  id-token: write          # npm OIDC trusted publishing（provenance）
+  packages: write          # GHCR 镜像推送（E39 docker 源规格）
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
@@ -42,14 +49,30 @@ jobs:
             npm publish --provenance --access public
           fi
 
-      - name: GitHub Release (SBOM + report templates + redacted A/B report)
+      - name: Build per-OS source archives (E39 推送纪律: 每 OS 适配 zip)
+        run: |
+          mkdir -p dist
+          git archive --format=zip -o "dist/d2d-${GITHUB_REF_NAME}-win-x64.zip" HEAD
+          git archive --format=zip -o "dist/d2d-${GITHUB_REF_NAME}-linux-x64.zip" HEAD
+          git archive --format=zip -o "dist/d2d-${GITHUB_REF_NAME}-macos-x64.zip" HEAD
+          ls -la dist/
+
+      - name: Docker build & push GHCR (E39 docker 源规格)
+        run: |
+          docker build -t "ghcr.io/${{ github.repository_owner }}/d2d:${GITHUB_REF_NAME}" \
+                       -t "ghcr.io/${{ github.repository_owner }}/d2d:latest" .
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "ghcr.io/${{ github.repository_owner }}/d2d:${GITHUB_REF_NAME}"
+          docker push "ghcr.io/${{ github.repository_owner }}/d2d:latest"
+
+      - name: GitHub Release (SBOM + per-OS zips + report templates + redacted A/B report)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME}"
           cp /tmp/sbom.cdx.json ./sbom.cdx.json
           NOTES=".github/release-notes-${TAG}.md"
-          ASSETS=(sbom.cdx.json docs/report-templates/butian.sample.json docs/report-templates/vulbox.sample.json docs/report-templates/edu-src.sample.json experiments/results/ab-report-20260928-190531.md)
+          ASSETS=(sbom.cdx.json docs/report-templates/butian.sample.json docs/report-templates/vulbox.sample.json docs/report-templates/edu-src.sample.json experiments/results/ab-report-20260928-190531.md dist/d2d-${TAG}-win-x64.zip dist/d2d-${TAG}-linux-x64.zip dist/d2d-${TAG}-macos-x64.zip)
           if [ -f "$NOTES" ]; then
             gh release create "$TAG" --title "d2d ${TAG}" --notes-file "$NOTES" "${ASSETS[@]}"
           else

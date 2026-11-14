@@ -14,7 +14,7 @@ D2D_DATA_DIR="${D2D_DATA_DIR:-$HOME/.d2d-data}"
 D2D_HOST_TOKEN="${D2D_HOST_TOKEN:-$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')}"
 GRAPHD_PORT="${GRAPHD_PORT:-8766}"
 WEB_PORT="${WEB_PORT:-8899}"
-PROXY_PORT="${PROXY_PORT:-8888}"
+PROXY_PORT="${PROXY_PORT:-18888}"
 OAST_PORT="${OAST_PORT:-8890}"
 
 step() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
@@ -30,16 +30,16 @@ ok "python3 $(python3 --version 2>&1 | cut -d' ' -f2)"
 
 step "安装 dsh CLI(全局)"
 # 4-3d-2 供应链钉版本: @deepseek-ai/dsh(全局 CLI 包)与插件库包 @deepseek-ai/dsh-*
-# (plugin/pentest-dsh 六依赖, 精确 pin 0.2.1-rc.2)是两条独立的版本序列, 此处 PIN 与插件
-# pin 对齐(npm view @deepseek-ai/dsh@0.2.1-rc.2 version 已验证存在; dist-tags latest=
-# 0.2.1-rc.2, 不锁版新装会拉到最新 rc)。为什么锁版本: 4-1 审计(dsh 版本调查)——本行
+# (plugin/pentest-dsh 六依赖, 精确 pin 0.2.2-rc.1)是两条独立的版本序列, 此处 PIN 与插件
+# pin 对齐(npm view @deepseek-ai/dsh@0.2.2-rc.1 version 已验证存在; dist-tags latest=
+# 0.2.2-rc.1, 不锁版新装会拉到最新 rc)。为什么锁版本: 4-1 审计(dsh 版本调查)——本行
 # 曾未锁版, 任意上游新版本可直接进宿主; 4-2 审计(MCP 工具清单)——宿主 CLI 版本差异
 # 导致工具面行为漂移。已装偏斜(下方 command -v 短路, 只对新装生效)由
 # scripts/ops/verify-dsh-version.mjs 三处一致性校验如实告警(exit 1)。
 if command -v dsh >/dev/null; then
   ok "dsh 已装: $(dsh --version 2>/dev/null || echo '?')"
 else
-  npm install -g @deepseek-ai/dsh@0.2.1-rc.2
+  npm install -g @deepseek-ai/dsh@0.2.2-rc.1
   ok "dsh $(dsh --version) 已安装"
 fi
 
@@ -115,7 +115,7 @@ cat > "$DSH_HOME/profiles/web/cordis.yml" <<'EOF'
 EOF
 cp "$DSH_HOME/profiles/web/cordis.yml" "$DSH_HOME/profiles/headless/cordis.yml"
 
-# sidebar 精确 pin 消除 caret 浮动（0.24.1 需 DSH 0.2.0-rc.1+，与 0.2.1-rc.2 基线成对）；成对升级见 docs/dsh-sidebar-compat.md
+# sidebar 精确 pin 消除 caret 浮动（0.31.1 peers 钉 dsh ^0.2.2-rc.1 + cordis ^4.0.5，与 0.2.2-rc.1 基线成对实证）；成对升级见 docs/dsh-sidebar-compat.md
 # dsh-sidebar-leap 已移除（2026-10-26 重锁批）：0.3.2(最新) peers 钉 client-runtime ^0.1.0-rc.8，
 # 被 dsh 0.2.x 宿主拒载（启动冒烟实证 "skipping profile bundle"）；上游发 0.2.x 兼容版后回加 deps+bundles 两处。
 cat > "$DSH_HOME/profiles/web/package.json" <<EOF
@@ -124,7 +124,7 @@ cat > "$DSH_HOME/profiles/web/package.json" <<EOF
   "private": true,
   "dependencies": {
     "d2d-panel": "link:$REPO_DIR/plugin/d2d-panel",
-    "dsh-better-sidebar": "0.24.1",
+    "dsh-better-sidebar": "0.31.1",
     "pentest-dsh": "link:$REPO_DIR/plugin/pentest-dsh"
   },
   "dsh": {
@@ -385,11 +385,19 @@ if command -v systemctl >/dev/null 2>&1 && systemctl --user show >/dev/null 2>&1
       sed -e "s|%h/d2d/|$REPO_DIR/|g" -e "s|%h/.npm-global/bin/dsh|$_DSH_BIN|g" \
         "$_u" > "$HOME/.config/systemd/user/$_name"
     done
+    for _t in "$REPO_DIR"/scripts/systemd/*.timer; do
+      [ -e "$_t" ] || break
+      _name="$(basename "$_t")"
+      sed -e "s|%h/d2d/|$REPO_DIR/|g" "$_t" > "$HOME/.config/systemd/user/$_name"
+    done
     systemctl --user daemon-reload
     # 已在跑的同名单元(如 start-all.sh 的 nohup 进程)不受影响 — 端口冲突时单元起不来,
     # install 不强杀已有进程; 提示后由操作者选择。
     systemctl --user enable d2d-graphd.service d2d-egress.service d2d-oast.service d2d-dsh-web.service >/dev/null 2>&1 \
       && ok "单元已安装并设为自启(d2d-graphd/egress/oast/dsh-web; spa 默认不启)"
+    # E39-B1-3: 季度归档 timer(runbook-storage §一 规程定时化)
+    systemctl --user enable --now d2d-archive.timer >/dev/null 2>&1 \
+      && ok "季度归档 timer 已启用(d2d-archive.timer: 季度首月 1 日 03:00 EXPORT+3 份滚动)"
     if systemctl --user is-active -q d2d-graphd.service d2d-egress.service d2d-oast.service d2d-dsh-web.service 2>/dev/null; then
       ok "服务已在运行(保留现状)"
     else

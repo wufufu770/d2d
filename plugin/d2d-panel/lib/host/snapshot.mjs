@@ -69,7 +69,10 @@ const Q = {
   findingsList: `MATCH (f:Finding) WHERE f.eng = $eng RETURN f.id AS id, f.title AS title, f.severity AS severity, f.cvss AS cvss, f.gate_status AS state, f.category AS category, f.ts AS ts, f.verified_at AS verified_at, f.last_transition AS last_transition, f.dual_sign AS dual_sign ORDER BY coalesce(f.ts, '') DESC LIMIT ${MAX.findings}`,
   // WRAP-2 #18: 幻觉抽检人口=Experience 表 quarantined 隔离池(与 ExperienceWeight 先验表异表)——
   // 面板抽检浏览面数据源; 裁决回流经 /write/adjudicate(experience revoke)。
-  quarantine: `MATCH (x:Experience) WHERE x.status='quarantined' RETURN x.id AS id, x.title AS title, x.created_at AS created_at ORDER BY coalesce(x.created_at, '') DESC LIMIT 12`,
+  // E38 修: created_at 在 T4-3-2 迁移后为 TIMESTAMP 列——coalesce 混 '' STRING 触发
+  // kuzu Binder exception("Implicit cast is not supported")致 snapshot 整体 503;
+  // 空值兜底改 TIMESTAMP 字面量, 与 schema DEFAULT 同值。
+  quarantine: `MATCH (x:Experience) WHERE x.status='quarantined' RETURN x.id AS id, x.title AS title, x.created_at AS created_at ORDER BY coalesce(x.created_at, timestamp('1970-01-01 00:00:00')) DESC LIMIT 12`,
   experienceTail: `MATCH (x:ExperienceWeight) RETURN x.id AS id, x.pattern AS pattern, x.stack AS stack, x.prior AS prior, x.hits AS hits, x.wins AS wins, x.target_type AS target_type ORDER BY coalesce(x.prior, 1.0) DESC, coalesce(x.hits, 0) DESC LIMIT ${MAX.exp}`,
   signalsTail: `MATCH (s:Signal_) WHERE s.status = 'open' AND s.eng = $eng RETURN s.id AS id, s.type AS type, s.weight AS weight, s.ts AS ts ORDER BY coalesce(s.ts, '') DESC LIMIT ${MAX.signals}`,
   coverage: `MATCH (e:Endpoint) WHERE e.eng = $eng RETURN count(e) AS total, sum(CASE WHEN e.exhausted = true OR e.coverage_votes >= 2 THEN 1 ELSE 0 END) AS covered`,

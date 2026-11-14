@@ -1,0 +1,26 @@
+# align.yml — 前后端功能对齐机器闸(E39-B1 入仓, E39-B6-1 CI 化)
+# 静态对齐检查(零栈依赖零安装): host 路由 ↔ client 数据消费 diff + viz 动态取数守卫。
+# E39 纪律执行点: 新后端功能必须同批有 UI 入口, 新 UI 数据面必须同批有后端路由。
+# 本 workflow 纯静态(不装依赖不起栈)——预期 <10s, 失败=对齐缺口合入拦截。
+name: align
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: 前后端功能对齐静态检查(E39 纪律机器闸)
+        run: node scripts/e2e/run.mjs --suite align

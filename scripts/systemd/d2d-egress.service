@@ -1,6 +1,6 @@
-# P0-4 守护单元 — egress-gateway(:8888, worker 出口代理)
+# P0-4 守护单元 — egress-gateway(:18888, worker 出口代理; E39-B1-4 改绑避让本机 Java 服务)
 [Unit]
-Description=d2d egress gateway (:8888)
+Description=d2d egress gateway (:18888)
 After=network.target d2d-graphd.service
 
 [Service]

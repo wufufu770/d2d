@@ -1,7 +1,7 @@
 {
   "name": "d2d-panel",
-  "version": "0.2.0",
-  "description": "d2d 面板 — dsh Web UI 侧栏观测台(better-sidebar tab): 三环 worker 心跳 + 七态 findings 只读看板, host 半同源路由聚合快照, token 不出 host",
+  "version": "0.3.0",
+  "description": "d2d 面板 — dsh Web UI 主面板(workspace 全页: 三环态势/findings/审批/链路/审计/XRing + WorkItems 人工注意力队列) + 侧栏快捷 tab, host 半同源路由聚合快照, token 不出 host",
   "type": "module",
   "main": "./lib/host/index.mjs",
   "exports": {
@@ -16,8 +16,11 @@
     "client": {
       "inject": [
         "dsh-better-sidebar",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-sidebar"
       ],
       "platform": "web"
     }

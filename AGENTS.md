@@ -196,3 +196,20 @@ Mimosa L3 处理 → push+CI → 回报固定格式 → 绝不碰清单 → 边�
 - 本批会碰哪些禁区？（答案在 docs/do-not-touch.md）
 - 回报用什么格式？（本文件）
 答不上任何一条 = 文档体系有缺口，补完再开工。
+
+## E39 常设开发纪律（PLAN-2 批确立，docs/plan-boost.md 为施工蓝本）
+- **前后端功能对齐确认（每次更改后必做）**：`node scripts/e2e/run.mjs --suite align`
+  （静态路由↔消费 diff，零栈依赖）+ 受影响路由 smoke。新后端功能必须同批给 UI 点击
+  入口，新 UI 数据面必须同批有后端路由——不对齐不合入。
+- **版本步进**：每次用户确认的更改，`plugin/pentest-dsh/package.json` version +0.0.1；
+  末位满十进位（1.7.9 次更 → 1.8.0）。CHANGELOG 只记里程碑，patch 步进记 devlog
+  批内条目。
+- **推送纪律**：用户未明示 = 禁止 push（本地 push URL 物理禁用）。推送只推用户指定
+  版本，按仓库规格（tag → release workflow：npm OIDC+SBOM+provenance）；**测试内容/
+  敏感信息/API key 一律不入公开面**（push-scan 闸 + 人工复核）；release 须更新：包
+  （每 OS 适配 zip 资产）+ docker 源 + 描述；推送面砍掉标语、提示文字、次要标签
+  （1.5.1 通用语义化先例）。
+- **前端文本纪律**：针对文本的小动作——原有风格不动，砍标语/提示文字/次要标签；目标
+  =架构简单/设计简单/实现简单；每个决定同时提升 UX/DX/AX 且不弄坏任何东西；风格类
+  改动必须可随时回滚（panel 拼接防漂移守卫已具备）。
+- **零推送本地作业形态**（E37 起延续）：push URL 物理禁用，交付=本地 commit+tag+zip。

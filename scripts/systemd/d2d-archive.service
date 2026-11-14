@@ -1,0 +1,11 @@
+# P0-4 守护单元 — d2d-archive(季度逻辑归档, E39-B1-3)
+# runbook-storage §一 规程定时化: graphd /query EXPORT DATABASE → 3 份滚动。
+# 前置: d2d-graphd 在跑(EXPORT 经 HTTP); 失败退出码 1, Persistent=true 补跑。
+[Unit]
+Description=d2d quarterly graph archive (EXPORT DATABASE, runbook-storage §一)
+After=d2d-graphd.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/d2d/scripts/ops/graphd-archive.sh
+Environment=P2P_GRAPHD=http://127.0.0.1:8766

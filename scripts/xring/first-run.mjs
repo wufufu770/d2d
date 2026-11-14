@@ -202,6 +202,17 @@ if (TASK_FILE) {
   if (FROM_RECORD) {
     prevHandoff = loadHandoffFrom(FROM_RECORD)
     if (prevHandoff) {
+      // E39-B2-2: cold_digest 体积守门——超 cap 才压缩(恒等承诺: 小输入零改动), 输入侧接线
+      // (scheduler.js brief 组装序禁区零触碰); falsified/negative 白名单零压缩(防复测语义)。
+      // cap env 可调(P2P_HANDOFF_CAP, 缺省 9KB=night-chain 种子封顶同口径)。
+      try {
+        const { digestBrief, HANDOFF_CAP_BYTES } = await import('./cold-digest.mjs')
+        const dig = digestBrief(prevHandoff.carriers, { cap: Number(process.env.P2P_HANDOFF_CAP ?? HANDOFF_CAP_BYTES) })
+        if (dig.changed) {
+          prevHandoff = { ...prevHandoff, carriers: dig.carriers }
+          log('cold-digest 体积守门(超 cap 已压缩):', JSON.stringify(dig.stats))
+        }
+      } catch (e) { log('cold-digest 跳过(守门异常不阻断接力):', e?.message) }
       EXTRA_TASK_RUNTIME += '\n\n' + injectBrief(prevHandoff)
       log('handoff 消费:', JSON.stringify({ from: FROM_RECORD, run: prevHandoff.run_id, facts: prevHandoff.carriers.facts.length, leads: prevHandoff.carriers.leads.length, falsified: prevHandoff.carriers.falsified.length }))
     } else {
@@ -224,6 +235,14 @@ if (TASK_FILE) {
     } catch (e) {
       log('ECC 探针失败（尽力而为——advisory 面不阻断发射）:', String(e?.message ?? e).slice(0, 120))
     }
+  }
+  // E39-B3-3: 报告强制点常态化(E35-r1 实证自发提前 38min 的机制化)——预算 70% 处的收束
+  // 成稿硬提醒, 随 --max-hours 注入任务文本(0.5h 短窗=21min 处, 长窗同比例)。任务书模板层
+  // 纪律块(prompt.md 运行前提)与之配对; 调度环核心零触碰。
+  {
+    const REPORT_AT_MIN = Math.max(5, Math.floor(MAX_HOURS * 60 * 0.7))
+    EXTRA_TASK_RUNTIME += `\n\n## 报告强制点(调度器注入)\nT0+${REPORT_AT_MIN} 分钟(预算 ${MAX_HOURS}h 的 70%)为收束成稿强制点——此后停止新线索，只做产出契约落盘与 handoff；未成稿的探索在报废中零价值。`
+    log('报告强制点:', `T0+${REPORT_AT_MIN}min(${MAX_HOURS}h × 70%)`)
   }
   var RELAY = { prevHandoff, ECC }
 } else {

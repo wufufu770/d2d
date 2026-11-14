@@ -26,7 +26,8 @@ function loadBundle() {
   return { loaded, requested, materialize: () => loaded[0].factory(fakeRequire) }
 }
 
-/** 假 better-sidebar 宿主 ctx: 记录 registerTab / effect / log 调用。 */
+/** 假宿主 ctx: better-sidebar 服务(svc)可缺席; slots/locale 宿主核心服务缺省在(0.2.2 宿主
+ *  client-ui 注入面提供 — superagent 同款), 供主面板注册断言; 无服务形态由独立用例覆盖。 */
 function fakeCtx(svc) {
   const tabs = []
   const effects = []
@@ -36,7 +37,18 @@ function fakeCtx(svc) {
     effect: (fn, label) => { effects.push(label); return fn() },
   }
   if (svc !== undefined) ctx.betterSidebar = svc === null ? null : { ...svc, registerTab: (t) => { tabs.push(t); return () => {} } }
-  return { ctx, tabs, effects, logs }
+  const slotCalls = []
+  const slotProducts = []
+  ctx.slots = {
+    injectCalls: slotCalls,
+    inject: (name, reg) => { slotCalls.push(name); const r = reg(); slotProducts.push({ name, r }); return r },
+    register: (cfg, comp) => ({ cfg, comp }),
+  }
+  ctx.locale = {
+    register: () => {},
+    bind: () => (k) => k,
+  }
+  return { ctx, tabs, effects, logs, slotCalls, slotProducts }
 }
 
 test('client: lib/client.js 与 lib/client/*.js 片段拼接结果逐字节一致(防漂移; 改片段后须 npm run build)', () => {
@@ -64,7 +76,7 @@ test('client: bundle 执行仅注册 factory(零副作用); materialize 只 requ
   assert.deepEqual(requested, [], '执行 bundle 不应触发任何 require(lazy-CJS)')
   const exp = materialize()
   assert.deepEqual(requested, ['react'], 'factory 顶层应只 require react(其余由 ctx 注入)')
-  assert.deepEqual([...exp.inject], ['betterSidebar'])
+  assert.deepEqual([...exp.inject], ['betterSidebar', 'slots', 'locale'])
   assert.equal(typeof exp.apply, 'function')
   assert.deepEqual(Object.keys(exp).sort(), ['apply', 'inject'])
 })
@@ -78,7 +90,9 @@ test('client: apply 注册 9 个 single tab(60-68), badge 能力探测通过时�
     'd2d-panel: ops tab', 'd2d-panel: findings tab', 'd2d-panel: viz tab',
     'd2d-panel: approval tab', 'd2d-panel: chain tab', 'd2d-panel: tools tab', 'd2d-panel: audit tab', 'd2d-panel: config tab',
     'd2d-panel: xring tab',
-  ], 'XR-P2: X-Ring tab 注册(九 tab)')
+    // 1.6.0 Phase C: 主面板槽位注册(applyMain — 与 better-sidebar tabs 同一 apply 顺序)
+    'd2d-panel: locale dict', 'd2d-panel: main page', 'd2d-panel: main icon',
+  ], 'XR-P2: X-Ring tab 注册(九 tab) + 主面板注册(Phase C)')
   assert.deepEqual(tabs.map((t) => t.id), ['d2d:ops', 'd2d:findings', 'd2d:viz', 'd2d:approval', 'd2d:chain', 'd2d:tools', 'd2d:audit', 'd2d:config', 'd2d:xring'])
   assert.deepEqual(tabs.map((t) => t.order), [60, 61, 62, 63, 64, 65, 66, 67, 68])
   assert.deepEqual(tabs.map((t) => t.single), [true, true, true, true, true, true, true, true, true])
@@ -112,16 +126,39 @@ test('client: 老版本 better-sidebar(无 features 数组)仍挂 badge; feature
   assert.deepEqual(noBadge.tabs.map((t) => 'badge' in t), [false, false, false, false, false, false, false, false, false])
 })
 
-test('client: betterSidebar 服务缺失 → 记录日志并静默跳过(软依赖, 不注册 effect)', () => {
+test('client: betterSidebar 服务缺失 → tabs 跳过但主面板仍注册(1.6.0: 主面板不依赖侧栏插件)', () => {
   const { materialize } = loadBundle()
   const { apply } = materialize()
   for (const svc of [undefined, null]) {
-    const { ctx, tabs, effects, logs } = fakeCtx(svc)
+    const { ctx, tabs, effects, logs, slotCalls } = fakeCtx(svc)
     assert.doesNotThrow(() => apply(ctx))
     assert.deepEqual(tabs, [])
-    assert.deepEqual(effects, [])
+    assert.deepEqual(effects, ['d2d-panel: locale dict', 'd2d-panel: main page', 'd2d-panel: main icon'])
+    assert.deepEqual(slotCalls, ['main', 'sidebar.panellist'])
     assert.deepEqual(logs, ['d2d-panel: betterSidebar 服务不可用, tab 注册跳过'])
   }
+})
+
+test('client: 主面板槽位注册形态(1.6.0 Phase C — superagent panel 同机制)', () => {
+  const { materialize } = loadBundle()
+  const { apply } = materialize()
+  const { ctx, slotCalls, slotProducts } = fakeCtx({ features: [] })
+  apply(ctx)
+  assert.deepEqual(slotCalls, ['main', 'sidebar.panellist'])
+  const main = slotProducts[0]
+  assert.equal(main.name, 'main')
+  assert.equal(main.r.cfg.name, 'main')
+  assert.equal(main.r.cfg.key, 'd2d-main', '主面板 key=MAIN_PANEL_ID(与 panellist id 配对切换)')
+  assert.equal(main.r.cfg.locale, 'd2dPanel')
+  assert.equal(typeof main.r.cfg.inject, 'function')
+  const pageEl = main.r.comp()
+  assert.equal(pageEl.type.name, 'MainPanelView', 'main 槽位装配 MainPanelView 全页')
+  const icon = slotProducts[1]
+  assert.equal(icon.r.cfg.name, 'sidebar.panellist')
+  assert.equal(icon.r.cfg.id, 'd2d-main', 'panellist id 与 main key 配对')
+  assert.equal(icon.r.cfg.order, 10)
+  assert.equal(icon.r.cfg.label(), 'panel', 'locale 绑定回落静态文案')
+  assert.equal(typeof icon.r.comp, 'function', 'panellist 子件=图标组件')
 })
 
 // ══════════ bug 回归: 片段级行为探针 — 片段放进隔离 vm, 工厂作用域依赖(h/useState/panel/…)打桩后直接驱动组件 ══════════

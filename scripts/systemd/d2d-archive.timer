@@ -1,0 +1,11 @@
+# E39-B1-3: 季度归档 timer(拍板② EXPORT 季度) — 每季度首月 1 日 03:00, 漏跑补跑。
+[Unit]
+Description=d2d quarterly graph archive timer
+
+[Timer]
+OnCalendar=*-01,04,07,10-01 03:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

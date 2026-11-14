@@ -97,6 +97,8 @@ upload.out
 Finding.repro
 # study/promote 的导出产物(派生数据, 不入库)
 output/
+# E39-B1: 覆盖率与 E2E 结果(本地测试产物)
+coverage/
 .release-message
 # 浏览器半构建产物(片段在 lib/client/, node scripts/build-client.mjs 生成)
 plugin/d2d-panel/lib/client.js

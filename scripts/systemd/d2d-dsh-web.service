@@ -10,7 +10,7 @@ WorkingDirectory=%h
 Restart=on-failure
 RestartSec=3
 Environment=P2P_GRAPHD=http://127.0.0.1:8766
-Environment=P2P_PROXY_URL=http://127.0.0.1:8888
+Environment=P2P_PROXY_URL=http://127.0.0.1:18888
 Environment=P2P_OAST_HOST=127.0.0.1:8890
 Environment=P2P_SPA_URL=http://127.0.0.1:8892
 # 0906 实证: systemd user 默认 PATH 缺 ~/.npm-global/bin → adapter spawn('dsh') 127 全灭

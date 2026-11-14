@@ -5,6 +5,157 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-11-14
+
+> 1.9.0 里程碑=PLAN-2 提升批 B4-B7（superagent 深化+产品面+质量健康+智能化收尾）。版本步进
+> 纪律延续（1.8.0→1.8.9 九 patch，本次 1.8.9→1.9.0 minor 进位）。全程本地零推送。
+
+### Added
+- **Eval 门 assessor 判级层**（workitems.mjs assess，superagent MasterAssessor 同形）：三态
+  fail-safe（决策采信/规则回落/抛错 fail-closed 影子）；**decision 词表=规则词表**（词表错位
+  真 bug 由测试抓出即修）；tick 注入缺省不传=纯规则零行为变化；宿主 LLM 判级接口预留。
+- **webhook source 走 oast 通道**（零新入站端口）：POST /hook/workitems（X-Auth timingSafe
+  Equal 常量时间比较 + kind 白名单 + body 上限）→ 规范化落投递箱（单一事实源路径，插件 tick
+  拾取）；活体四态验证。
+- **飞书/钉钉 Source 骨架**（cookbook 008 同形）：parseFeishuMessages/parseDingtalkPayload
+  纯解析 + pollFeishu 轮询形态（tenant token env 直供，应用凭据流程归实现批）；env 注册位
+  缺省关；钉钉差异如实登记（Stream 长连接形态，无 poll）。
+- **资产反查可视化**：host backlinks 路由（?ref→已锚资产 / ?asset→发现+任务）+ Findings
+  展开区"已锚定资产"chips。
+- **报告导出 UI**：host report-export 路由（代理 src-export.mjs CLI）+ ConfigView 导出卡。
+- **季度归档自动化**：graphd-archive.sh + d2d-archive.service/.timer + install.sh timer
+  安装循环（1.8.0 段，此处补记）。
+
+### Changed
+- **工作台 DSW 风格对齐**：KPI/页签字体换用 `--dsw-font-xxs-12/xxxs-11/xs-13` 令牌族
+  （better-sidebar 同源）；KPI 分显细化（待人工红/影子黄分色）。
+- **前端深清洁**（砍标语/提示文字/次要标签）：App Bar "影子 on" chip / 空态长文案 /
+  未锚定提示括号 / 导出卡 extra 说明——布局自解释替代文字提示。
+- **AGENTS.md 增 E39 常设开发纪律节**（对齐机器闸/版本步进/推送纪律/前端文本纪律）。
+
+### Fixed
+- snapshot quarantine 查询 TIMESTAMP 混型（T4-3-2 迁移后遗留 Binder exception）→ 503 整体
+  fail-closed 修复。
+- **deployment 提醒**：kuzu_db.wal 残留会让 LadybugDB 拒开旧库——生产走 runbook §八
+  EXPORT→IMPORT 迁移不可省（本地实测实证）。
+
+### 内部
+- E2E 驱动入仓 + 覆盖率基线（行 90.19%）+ align 闸 CI 化 + scheduler 禁区结构守卫四层断言
+  （golden 16909bd7914f2b78）+ 裸吞分级登记（54 处 7A/47B）——测试基线 pytest 443 /
+  mocha 2264 / panel 97 / align 3/3（30 路由↔21 消费点）。
+
+## [1.8.0] - 2026-11-14
+
+> 1.8.0 里程碑=PLAN-2 提升批 B1-B3（测试基建与存储收尾+实战效能两批）。版本步进纪律：
+> 每确认更改 +0.0.1（1.7.0→1.7.9, 下一次更改进位 1.8.0）。全程本地零推送。
+
+### Added
+- **E2E 驱动入仓**（scripts/e2e/run.mjs）：五套件（align 静态对齐闸/a 数据面/b WorkItems
+  生命周期/c 双图锚点/d engagement 启动流）+ 服务预检 + 退出码语义；`npm run e2e` /
+  `e2e:align`。**对齐机器闸=E39 纪律的执行点**（28 路由↔19 消费点+5 动态白名单）。
+- **覆盖率基线**：c8 接入 `npm run test:cover`；首跑**行 90.19% / 分支 75.53% / 函数
+  93.64%**（95 文件）；基线与低覆盖热点入 docs/coverage-baseline.md。
+- **季度归档自动化**：scripts/ops/graphd-archive.sh（EXPORT DATABASE→3 份滚动+失败不
+  静默）+ d2d-archive.service/.timer（季度首月 03:00 Persistent）+ install.sh timer 安装。
+- **TRANSPORT adapter 级自愈**（债项#3 收口）：E23 限流退避同构——非零退出且尾部含
+  TRANSPORT 形态词→指数退避重试（缺省 3 次，env 可调）；spawnImpl 注入点（生产零变化）；
+  契约 {code,text} 逐字保持；429 分支优先级不受影响。
+- **cold_digest 大 brief 冷摘要**：恒等承诺（≤9KB 零改动）+ 分级压缩（falsified/negative/
+  fp 白名单零压缩 > facts 截断 > leads 排序截断，迭代收敛+终极兜底）+ CLI + first-run
+  接线（P2P_HANDOFF_CAP）——scheduler 禁区零触碰（输入侧）。
+- **步数帽 per-ring 策略表**：P2P_MAX_STEPS_<RING> 覆盖 > 全局 > 60（env 缺省不过=零
+  行为变化；E35 步数分布数据源）。
+- **任务书两纪律块**（prompt.md 运行前提，禁词集 34/34 绿）：秘密/flag 同级计分排位
+  前移 + 报告成稿同排位（预算 70% 强制点）。
+- **报告强制点机器注入**：first-run 按 --max-hours×70% 注入收束成稿硬提醒。
+
+### Changed
+- **egress 网关缺省端口 8888→18888**（env P2P_PROXY_PORT 仍可覆盖；本机 Java 服务撞车
+  实证）——网关/两 systemd 单元/install.sh/passive/adapter-dsh/cdp-proxy 缺省值/README
+  同步十处。
+- **AGENTS.md 增 E39 常设开发纪律节**：前后端对齐机器闸/版本步进/推送纪律/前端文本
+  纪律/零推送本地作业形态。
+
+### Fixed
+- **snapshot quarantine 查询 TIMESTAMP 混型**（潜伏 bug，T4-3-2 迁移后遗留）：coalesce
+  混 '' STRING 触发 Binder exception → snapshot 整体 503——空值兜底改 TIMESTAMP 字面量。
+
+## [1.7.0] - 2026-11-13
+
+> 1.7.0 语义=1.7.0 债项清偿批——复测三态会话 + 双图锚点（reArtex 语义移植第二批）。
+> **版本纪律**：1.6.0→1.7.0 小步递增。**安全面纪律**：复测结论写回走既有 host-only
+> /write/verification（append-only+去重门）；锚点写面新增 /write/anchors 同口径 host-only
+> 幂等+双端引用 404 fail-closed；零入站端口面不变。
+
+### Added
+- **复测三态会话（scripts/xring/retest-tri.mjs）**：reproducible(仍可复现)|fixed(已修复)|
+  unconfirmable(无法确认) 三态显式化——classifyRetest 纯映射（verify-runner pass/fail/manual
+  词表→三态→/write/verification 既有枚举 pass/fail/held-unreviewed，未知词 fail-closed 归
+  unconfirmable）；runRetest 编排（重放异常吞为 unconfirmable 照常写回，编排永不因重放异常
+  失声）；与既有 retest.mjs(retestFacts 重放执行层, first-run 消费) 正交零触碰——本模块只做
+  结论显式化+入图+工单闭环；CLI `--finding/--replay-result/--complete-workitem/--dry-run`。
+- **WorkItems 复测执行面**：assigned 且 kind='retest' 工单 reconcile 自动派发复测 CLI
+  （detached；去重=进程内 dispatched Set+done 态收敛+graphd 去重门三重幂等——跨重启至多
+  重派一次, 结论零重复）；重放执行=外部执行器（payload.replay_result 显式携带）或缺省
+  manual（无法确认——宿主侧无靶环境重放执行器, 诚实归人工）。
+- **双图锚点（graphd 加性, reArtex 双图互查语义）**：FINDING_ON(Finding→Asset)/
+  TOUCHED(Task→Asset) 两锚点边（CREATE IF NOT EXISTS 纯加性, 既有 12 节点表/八态机/
+  actor+reason/host-only 认证零触碰）+ `/write/anchors` 写端点（host-only 幂等, 既有边
+  零新建, 双端引用缺一 404 fail-closed）+ 资产反查查询形态（MATCH (f:Finding)-[:FINDING_ON]
+  ->(a:Asset) 经既有 /query host-token 通道, 零新读端点）；graphd VERSION 1.7.0→1.8.0
+  （schema 变更强制实例换装, preflight 版本握手）。
+- pytest 7 例（test_graphd_anchors_e38.py：写边+反查/幂等/双端 404/参数校验/worker token
+  403/schema 纯加性护栏）+ mocha 8 例（retest-tri.test.mjs：三态映射/编排异常吞/工单收口）。
+
+### Changed
+- graphd VERSION 1.8.0（见上）。
+
+### 内部
+- **债项再挂账（归后续批）**：cold_digest 大 brief 压缩（消费接线邻接 scheduler.js:570-618
+  brief 组装序禁区, 需显式授权批）; 意图运行时契约（reArtex intent_guard/normalizer +
+  progress receipts, 牵动任务书模板面）; 双图锚点面板可视化（资产反查卡）。
+
+## [1.6.0] - 2026-11-13
+
+> 1.6.0 语义=dsh 0.2.2 成对适配 + superagent 机制移植（事件驱动入口/工单状态机/影子模式）
+> + dsh workspace 主面板全页 UI。**版本纪律**：1.5.2→1.6.0 小步大特性里程碑（包面真实增量）。
+> **安全面纪律**：WorkItems 影子模式缺省开（主动触发只记录不派发）；拉式源零入站端口；
+> 写面/范围门/出口治理三层不变。
+
+### Added
+- **WorkItems 事件驱动框架（superagent 机制移植）**：Source→Trigger→WorkItem 状态机
+  （trigger_received→eval_queued→accepted|eval_shadowed|rejected|needs_human→assigned⇄
+  needs_human→done|expired，迁移表 fail-closed 校验）；Eval 规则门四判（影子>源名单>作者
+  名单>容量>accept，纯规则不调模型）；拉式源两类=文件投递箱（`$D2D_DATA_DIR/sources/inbox/`，
+  处理完挪 .processed/）+ GitHub issues 轮询（`P2P_WORKITEMS_GITHUB`，水位去重）；影子模式
+  缺省开（`P2P_WORKITEM_SHADOW=0` 解除）；注意力通知（needs_human/done 才说话，一次一个
+  具体问题）走既有 notify webhook。模块 `workitems.mjs`（纯注入式可测）+ 单测 15 例。
+- **面板 WorkItems 数据面**：host 半 `/d2d/api/workitems` GET 列表+摘要 / POST 人工迁移
+  （迁移校验复用 workitems.mjs 跨包单源）；客户端「待人工」视图（影子/需人工置顶分列，
+  放行/否决动作，健康态折叠）。
+- **dsh workspace 主面板全页（d2d-panel 0.3.0）**：`ctx.slots.inject('main')` 全页注册 +
+  `sidebar.panellist` 左栏图标（dsh-superagent-prototype panel 同机制）——态势/待人工/
+  Findings/可视化/审批/链路/工具/审计/配置/XRing 十签顶栏导航，复用既有视图层（零新视图，
+  轮询随激活签 visible 门控）；better-sidebar 侧栏 tab 保留为快捷入口（两形态并存）。
+- client.inject 增加 layout/workspace/renderer/sidebar 四包（superagent 同款清单）。
+
+### Changed
+- **dsh 版本基线重锁（E37 批）**：六包 0.2.1-rc.2→0.2.2-rc.1（dsh-tools exports 面零破坏
+  实证）；install.sh CLI pin 同步（行号守恒）；dsh-better-sidebar 0.24.1→0.31.1 成对升级
+  （peers 钉 dsh ^0.2.2-rc.1 + cordis ^4.0.5 实证；兼容表 0.2.2 区间转当前基线）。
+- **dsh 0.2.2 破坏性变更适配**：宿主移除 `webRuntime` 服务（0.2.1 尚有）——面板 host 半
+  inject 去除之，trustedHosts 贡献面以空兜底替代（信任栅栏回环判定+同源闸保留，缺省
+  127.0.0.1 绑定形态行为不变）。
+
+### Fixed
+- 面板主面板注册与侧栏解耦：betterSidebar 服务缺失时主面板仍注册（软依赖降级分层——
+  tabs 跳过、main 槽位照常），测试覆盖两形态。
+
+### 内部
+- devlog E37 批登记；SIDEBAR_COMPAT_TABLE 第五行（0.2.2-rc.1↔0.31.1 当前基线）；
+- **债项（归 1.7.0）**：双图锚点（graphd schema 邻接禁区，需显式授权批）；漏洞复测三态
+  会话（verifyRunner 语义链，XR-G7 分层面）；reArtex 意图运行时契约/cold_digest。
+
 ## [1.5.2] - 2026-10-26
 
 > 1.5.2 语义=dsh 0.2.1-rc.2 统一重锁（宿主升级引发的成对适配）+X-Ring 契约归一化前置闸+

@@ -10,8 +10,8 @@
 //         直通模式下路径在 TLS 密文里不可见) → https 转发上游、响应透传。审计 event='mitm-http' 只记
 //         元数据 {ts,host,method,path,status,reqContentType,reqBytes,resBytes} — 除 content-type 外不含
 //         任何请求头值(头值面留给证据加密交付)。默认(env 不设/0)与合并前完全一致: CONNECT 纯隧道直通。
-// 用法: P2P_PROXY_PORT=8888 P2P_GRAPHD=http://127.0.0.1:8766 P2P_PROXY_ALLOW="127.0.0.1,localhost,.vulnweb.com" node egress-gateway.mjs
-// worker 侧: export http_proxy=http://127.0.0.1:8888 https_proxy=... NO_PROXY=127.0.0.1,localhost
+// 用法: P2P_PROXY_PORT=18888 P2P_GRAPHD=http://127.0.0.1:8766 P2P_PROXY_ALLOW="127.0.0.1,localhost,.vulnweb.com" node egress-gateway.mjs
+// worker 侧: export http_proxy=http://127.0.0.1:18888 https_proxy=... NO_PROXY=127.0.0.1,localhost
 import http from 'node:http'
 import https from 'node:https'
 import os from 'node:os'
@@ -28,7 +28,7 @@ import { createEvidenceSink, keyFromFile } from './evidence-crypto.mjs'
 // listen(NaN) 启动即崩 / RATE=NaN 使 allowRate 恒 false(全限死)。非法值一律回退默认。
 const _envInt = (v, dflt) => { const n = parseInt(v ?? '', 10); return Number.isFinite(n) && n > 0 && n <= 65535 ? n : dflt }
 const _envFloat = (v, dflt) => { const n = parseFloat(v ?? ''); return Number.isFinite(n) && n > 0 ? n : dflt }
-const PORT = _envInt(process.env.P2P_PROXY_PORT, 8888)
+const PORT = _envInt(process.env.P2P_PROXY_PORT, 18888) // E39-B1-4: 8888 与常见 Java/Tomcat 服务撞车(本机实证), 缺省改绑 18888(env 仍可覆盖)
 const GRAPHS = (process.env.P2P_GRAPHD ?? 'http://127.0.0.1:8766,http://127.0.0.1:8767,http://127.0.0.1:8768').split(',').map(s => s.trim()).filter(Boolean)
 const TOKEN_FILE = process.env.P2P_HOST_TOKEN_FILE ?? `${process.env.HOME}/.config/d2d/host-token`
 const STATIC_ALLOW = new Set((process.env.P2P_PROXY_ALLOW ?? '127.0.0.1,localhost')

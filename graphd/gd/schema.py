@@ -69,6 +69,12 @@ SCHEMA = [
     "CREATE REL TABLE IF NOT EXISTS SNAPSHOT(FROM Asset TO EnvSnapshot)",
     "CREATE REL TABLE IF NOT EXISTS VERIFIED_BY(FROM Finding TO Verification)",
     "CREATE REL TABLE IF NOT EXISTS JUDGED_BY(FROM Hypothesis TO Verification)",
+    # E38(1.7.0 P2): 双图锚点(reArtex 语义移植) — 探索面↔资产面互查锚点边。纯加性
+    # REL TABLE(IF NOT EXISTS), 既有节点表/八态机/actor+reason/host-only 认证零触碰。
+    # FINDING_ON=发现落在资产上(资产反查"被哪些发现测过、得出什么");
+    # TOUCHED=任务触达资产(资产反查"被哪些意图/任务探过")。写面=host-only /write/anchors。
+    "CREATE REL TABLE IF NOT EXISTS FINDING_ON(FROM Finding TO Asset)",
+    "CREATE REL TABLE IF NOT EXISTS TOUCHED(FROM Task TO Asset)",
 ]
 
 # GW-2 v2 (拍板③/N4): 节点表清单单一来源 — 从上方 SCHEMA 逐条派生(新表加进 SCHEMA 即自动

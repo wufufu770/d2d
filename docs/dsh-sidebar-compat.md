@@ -7,10 +7,11 @@
 | 0.1.1-rc.2（0.1.x 基线） | 0.17.1 | 已退役基线 |
 | 0.1.5-rc.1 ~ 0.1.6-alpha.2 | 0.19.1 | 升级时同步 |
 | 0.1.7-rc.1 ~ 0.1.7-rc.2 | 0.22.1 | 升级时同步 |
-| 0.2.0-rc.1+（当前 pin 0.2.1-rc.2） | 0.24.1 | 当前基线（2026-10-26 重锁对齐） |
+| 0.2.0-rc.1 ~ 0.2.1-rc.5 | 0.24.1 | 已退役基线（0.2.1 系） |
+| 0.2.2-rc.1（当前 pin） | 0.31.1 | 当前基线（2026-11-13 重锁对齐） |
 
 规则：升级 DSH 时必须同步升级 sidebar 且成对验证（install.sh 注释引用本文档）。
 
-> 来源=dsh-better-sidebar release notes（npm dist-tags 实查 0.17.1/0.19.1/0.22.1/0.24.1 吻合，2026-09-29）。
+> 来源=dsh-better-sidebar release notes（npm dist-tags 实查 0.17.1/0.19.1/0.22.1/0.24.1 吻合，2026-09-29；0.31.1 peers 实查钉 dsh ^0.2.2-rc.1 + cordis ^4.0.5，2026-11-13）。
 
 校验入口：`node scripts/ops/verify-dsh-version.mjs` 检查④按本表内置同源区间表（`SIDEBAR_COMPAT_TABLE`）做 sidebar 成对性校验，跨区间 WARN（`--strict` 计失败）。

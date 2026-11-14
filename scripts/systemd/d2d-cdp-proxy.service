@@ -4,7 +4,7 @@
 # 本单元不设 Environment=D2D_CDP; 常驻后 validator 缺省 cdp-first 通道即有池可用。
 # chrome 来源: P2P_CDP_URL=http://127.0.0.1:<port> 附着已有 chrome | 缺省自动拉起 headless
 # chromium(per-engagement profile + 单例锁, 安全边界 ①-⑦ 见 cdp-proxy.mjs:4-13)。
-# 强制代理 P2P_PROXY_URL 缺省 http://127.0.0.1:8888(egress-gateway, launch 参数级注入);
+# 强制代理 P2P_PROXY_URL 缺省 http://127.0.0.1:18888(egress-gateway, launch 参数级注入);
 # off|none 退直连(仅供无网关环境调试)。spa-render 可经 P2P_CDP_URL 指向本池 chrome
 # (端口见 /health 的 cdp 字段)合并双 chrome(T2-2b-2/6)。
 # 首次启用手工步骤(安装器只装单元不拉起 — 避免与 start-all.sh 的 nohup 旧实例抢 8893):

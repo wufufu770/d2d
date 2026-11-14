@@ -74,6 +74,27 @@ if (DNS_PORT > 0) {
 }
 
 // ---------- HTTP 通道 + 命中查询 ----------
+// E39-B4-2: WorkItems webhook source(E39 零新入站端口纪律——复用 oast 8890 面)。POST
+// /hook/workitems(X-Auth=host-token 或 P2P_WORKITEM_HOOK_TOKEN 专用值) → 规范化落投递箱
+// (D2D_DATA_DIR/sources/inbox/)——单一事实源路径, 插件 tick 拾取, workitems 语义零重复。
+// 外部可达性=部署面(与 DNS 通道同构: loopback 实验室形态即用; 公网 SRC 平台部署随
+// oast 公网部署规程)。token 比较用 timingSafeEqual(常量时间——本服务公网部署同形)。
+import { timingSafeEqual } from 'node:crypto'
+const HOOK_TOKEN = process.env.P2P_WORKITEM_HOOK_TOKEN
+const INBOX_DIR = `${process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`}/sources/inbox`
+const safeEqual = (a, b) => {
+  const ba = Buffer.from(String(a ?? ''))
+  const bb = Buffer.from(String(b ?? ''))
+  return ba.length === bb.length && timingSafeEqual(ba, bb)
+}
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let d = ''
+    req.on('data', (c) => { d += c; if (d.length > 1e6) { reject(new Error('body too large')); req.destroy() } })
+    req.on('end', () => resolve(d))
+    req.on('error', reject)
+  })
+}
 http.createServer((req, res) => {
   const p = decodeURIComponent(req.url.split('?')[0])
   if (p === '/hits') {
@@ -85,7 +106,44 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, log: LOG, hits: rows }))
   }
+  if (p === '/hook/workitems' && req.method === 'POST') {
+    const auth = req.headers['x-auth'] ?? ''
+    const expected = HOOK_TOKEN ?? (() => { try { return readFileSync(`${os.homedir()}/.config/d2d/host-token`, 'utf8').trim() } catch { return '' } })()
+    if (!expected || !safeEqual(auth, expected)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({ ok: false, error: 'hook token required(X-Auth)' }))
+    }
+    readBody(req).then((raw) => {
+      let doc = null
+      try { doc = JSON.parse(raw) } catch { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: false, error: 'invalid JSON' })) }
+      const kind = String(doc?.kind ?? 'manual').trim().toLowerCase()
+      const title = String(doc?.title ?? '').trim().slice(0, 200)
+      if (!['retest', 'manual', 'general'].includes(kind) || !title) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ ok: false, error: 'kind 须 retest|manual|general 且 title 必填' }))
+      }
+      const name = `hook-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`
+      const entry = {
+        source: String(doc?.source ?? 'webhook'), kind, externalId: String(doc?.id ?? ''),
+        title, author: String(doc?.author ?? ''), url: String(doc?.url ?? ''),
+        payload: { ...(doc?.payload ?? {}), replay_result: String(doc?.payload?.replay_result ?? '') },
+      }
+      try {
+        mkdirSync(INBOX_DIR, { recursive: true })
+        appendFileSync(`${INBOX_DIR}/${name}`, JSON.stringify(entry) + '\n')
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ ok: false, error: `inbox 落箱失败: ${String(e?.message ?? e).slice(0, 120)}` }))
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, dropped: name, note: '插件 tick 拾取(≤P2P_WORKITEMS_INTERVAL_MS)' }))
+    }).catch((e) => {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: String(e?.message ?? e).slice(0, 120) }))
+    })
+    return
+  }
   const e = hit(p, req.socket.remoteAddress)
   res.writeHead(200, { 'Content-Type': 'text/plain' })
   res.end(`OAST-HIT ${e.ts}`)
-}).listen(PORT, '127.0.0.1', () => console.log(`[oast] :${PORT} log=${LOG}`))
+}).listen(PORT, '127.0.0.1', () => console.log(`[oast] :${PORT} log=${LOG} hook=/hook/workitems(X-Auth)`))

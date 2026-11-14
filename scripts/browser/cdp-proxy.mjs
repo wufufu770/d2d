@@ -138,7 +138,7 @@ export function buildChromeArgs(port) {
     '--disable-quic',
   ]
   const p = String(process.env.P2P_PROXY_URL ?? '').trim()
-  if (!/^(off|none)$/i.test(p)) args.push(`--proxy-server=${p || 'http://127.0.0.1:8888'}`)
+  if (!/^(off|none)$/i.test(p)) args.push(`--proxy-server=${p || 'http://127.0.0.1:18888'}`)
   return args
 }
 

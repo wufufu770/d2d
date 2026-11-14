@@ -16,7 +16,7 @@ export async function osintGet(url, { timeoutMs = 20000, proxy, fetchImpl } = {}
     const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) }) // 测试注入(mock/直连模拟)
     return { ok: res.ok, status: res.status, text: await res.text(), via: 'mock' }
   }
-  const px = String(proxy ?? process.env.P2P_PROXY_URL ?? 'http://127.0.0.1:8888').trim()
+  const px = String(proxy ?? process.env.P2P_PROXY_URL ?? 'http://127.0.0.1:18888').trim()
   if (px && !/^(off|none)$/i.test(px)) {
     try {
       const text = await new Promise((resolve, reject) => {

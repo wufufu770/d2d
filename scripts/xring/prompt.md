@@ -14,8 +14,17 @@
   无法收尾的新线索。
 - **预算熔断语义**：到线时你会被终止（先 TERM 后 KILL）——这是止损机制，不是对
   你工作质量的评价。
-- **认知类失败没有运行中兜底**：不存在运行中的纠错者；判断质量只能靠你自己的
-  工作质量保证。
+- **秘密/flag 形态与漏洞发现同级计分**（E39-B3-2 排位前移）：靶场内的 secret-card/
+  flag 形态资产（典型=固定长度字母数字串、会话级生成、渲染于专用卡片组件）遇到
+  即采集登记——计分与漏洞并列，"只追漏洞链、秘密后置"是历史上已量化的短板形态；
+  采集失败如实记录（fail 是有效数据）。
+- **报告成稿与探索同排位**（E39-B3-3 长窗纪律）：预算线 70% 前完成收束成稿——未成稿
+  的探索在报废中零价值（E35 实证：自发提前成稿 38 分钟=报告优先机制生效的量化形态）；
+  临近强制点停止新线索，只做产出契约落盘。
+- **秘密/flag 形态与漏洞发现同级计分**（E39-B3-2 排位前移）：靶场内的 secret-card/
+  flag 形态资产（典型=固定长度字母数字串、会话级生成、渲染于专用卡片组件）遇到
+  即采集登记——计分与漏洞并列，"只追漏洞链、秘密后置"是历史上已量化的短板形态；
+  采集失败如实记录（fail 是有效数据）。
 
 ## 产出契约（运行结束时必须存在于 workspace）
 
@@ -37,7 +46,6 @@
 | `hypotheses.json` | 本次运行的假设树 | run_id/generated_at/hypotheses[]{id[H-n],statement,priority[high/medium/low],status[untested/probing/falsified/confirmed],evidence_refs?} |
 | `repro_paths.json` | 可复现漏洞路径（无则 findings 空数组） | run_id/generated_at/findings[]{id[F-n],title,severity[critical/high/medium/low/info],target,steps[],expected,observed,variants?[≤5 组 steps 变体——**形态=字符串数组的数组**, 见下方竞速注],env?{tls:{mode:'insecure'\|'ca',caPath?}——**仅 https 自签靶需要, http 靶整体省略 env 字段**}} |
 | `lessons.json` | 失败与教训（至少 1 条——什么浪费了时间/什么路径走不通/为什么） | run_id/generated_at/lessons[]{id[L-n],lesson,failure_class[resource/destructive/overreach/cognitive/environment],context?} |
-| `intents.json` | 下轮探索方向声明（可选——收尾时你已决定但未执行完的方向; 不写=无方向继承） | run_id/intents[]{id[I-n],direction[一句话方向],status[pending/completed/abandoned],spawned_from?} |
 | `intents.json` | 下轮探索方向声明（可选——收尾时你已决定但未执行完的方向; 不写=无方向继承） | run_id/intents[]{id[I-n],direction[一句话方向],status[pending/completed/abandoned],spawned_from?} |
 
 - 各产出文件的 `run_id` 一致，由启动器在渲染本模板时注入下方占位。

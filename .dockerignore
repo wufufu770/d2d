@@ -1,0 +1,13 @@
+# docker 构建上下文卫生(E39 推送规格)
+node_modules
+**/node_modules
+.git
+.mimosa
+coverage
+.d2d-data
+.d2d-tmp
+.stryker-tmp
+graphd/kuzu_db*
+graphd/ladybug_db*
+graphd/*.log
+*.log

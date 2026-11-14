@@ -8,7 +8,7 @@ import urllib.request
 
 import pytest
 
-kuzu = pytest.importorskip("kuzu")
+from graphd.app import kuzu  # noqa: E402 — E39-B1-3 kuzu 退役: 引擎单一化(from graphd.app 同源, LBD-1b 先例; importorskip("kuzu") 随 kuzu 退役移除)
 
 from graphd import app as graphd_app  # noqa: E402
 from graphd.gd.gates import verification_duplicate_reject  # noqa: E402

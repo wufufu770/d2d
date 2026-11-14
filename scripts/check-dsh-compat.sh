@@ -2,7 +2,7 @@
 # scripts/check-dsh-compat.sh — dsh 版本兼容性冒烟(蓝图 #20)
 #
 # 背景: dsh 是 developer preview, 六个 @deepseek-ai/dsh-* 包在 plugin/pentest-dsh/package.json
-#       精确 pin 为 0.2.1-rc.2。本脚本对比 pinned 与 latest 两列的兼容性冒烟结果,
+#       精确 pin 为 0.2.2-rc.1。本脚本对比 pinned 与 latest 两列的兼容性冒烟结果,
 #       在 dsh 上游 breaking 时第一时间暴露差异。
 # 语义: pinned 列失败 = 阻塞(退出 2); latest 列失败 = 仅通知(退出 3); 全部通过 = 退出 0。
 #       CI 矩阵(.github/workflows/dsh-compat.yml)按 --channel 逐列调用。

@@ -84,20 +84,24 @@ def _log_transition(entry):
 DB_PATH = os.environ.get("P2P_GRAPH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kuzu_db"))
 # M8 守护自愈锚: /health 回显三要素。发版必须改 VERSION — preflight 据版本差异识别 stale 旧实例;
 # STARTED_AT 是本进程启动时间, 预检与 /proc/<pid> starttime 比对防 pid 复用误判。
-VERSION = "1.7.0"  # E28(R-25 M1): 资产图三节点(Asset/EnvSnapshot/Verification)+HOSTS 边+三写端点+事件去重门 — bump 让 preflight 不复用旧实例
+VERSION = "1.8.0"  # E28(R-25 M1): 资产图三节点(Asset/EnvSnapshot/Verification)+HOSTS 边+三写端点+事件去重门 — bump 让 preflight 不复用旧实例; E38(1.7.0 P2): +双图锚点边 FINDING_ON/TOUCHED+/write/anchors(host-only 幂等) — schema 变更再 bump 强制实例换装
 STARTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
 PORT = int(os.environ.get("P2P_GRAPH_PORT", "8766"))
 
-# LBD-1(拍板 1): 图引擎开关(临时性——切换观察周期后随 WRAP-4 卫生尾批删除; 不引入永久
-# 双引擎抽象)。缺省 kuzu(生产态零变化); P2P_GRAPH_ENGINE=ladybug 走预演/LBD-2 切换实例。
-# ladybug=PyPI ladybug 包(LadybugDB, MIT, kuzu 社区延续)——API 同形(RECOV-1 实证: Database/
-# Connection/execute/get_next/has_next/table_info 全兼容; 异常捕获全为宽泛 Exception 不依赖
-# kuzu 类型)。kuzu 依赖过渡期保留(bak 恢复需要), 移除时机=WRAP-4。
-GRAPH_ENGINE = os.environ.get("P2P_GRAPH_ENGINE", "kuzu").strip().lower()
-if GRAPH_ENGINE == "ladybug":
-    import ladybug as kuzu  # noqa: N813 — 同形 API 直接顶替, 下游 kuzu.Database/Connection 零改动
-else:
-    import kuzu
+# LBD-1(拍板 1) → E39-B1-3 kuzu 退役(LBD-2 观察期 2026-10-04 起已满, cutover-record 预留
+# "缺省翻转/kuzu 退役=观察期后另批"兑现): 缺省 ladybug(生产态=切换实例同引擎); kuzu 分支
+# 移除——显式 env=P2P_GRAPH_ENGINE=kuzu 时给出退役指引错误(回滚=git revert 本批或临时
+# pip install kuzu==0.11.3)。ladybug=PyPI ladybug 包(LadybugDB, MIT, kuzu 社区延续)——API
+# 同形(RECOV-1 实证: Database/Connection/execute/get_next/has_next/table_info 全兼容;
+# 异常捕获全为宽泛 Exception 不依赖 kuzu 类型)。`import ladybug as kuzu` 别名保留=LBD-2
+# 下游零改动纪律(标识符历史命名, 非 kuzu 包依赖)。
+GRAPH_ENGINE = os.environ.get("P2P_GRAPH_ENGINE", "ladybug").strip().lower()
+if GRAPH_ENGINE == "kuzu":
+    raise RuntimeError(
+        "kuzu 引擎已退役(E39-B1-3, LBD-2 观察期结束) — 回滚: git revert 退役批 或 "
+        "临时 pip install kuzu==0.11.3 后重试; 详见 docs/runbook-storage.md"
+    )
+import ladybug as kuzu  # noqa: N813 — 同形 API 直接顶替, 下游 kuzu.Database/Connection 零改动
 
 # 巨型文件拆分(纯代码搬移, 逻辑零改动): 纯函数/表定义/门控逻辑移入 gd 子包, 此处统一 re-export
 # —— `from graphd.app import X` 的既有导入路径(tests/外部调用方)零改动。两种形态都接住:
@@ -1792,6 +1796,47 @@ class Handler(BaseHTTPRequestHandler):
                                                         "run_id": _v_run})
                 except Exception as e:
                     self._send(500, {"ok": False, "error": f"verification write failed: {str(e)[:200]}"})
+            return
+        if self.path == "/write/anchors":
+            # E38(1.7.0 P2): 双图锚点写面(host-only 裁决面同 verification 口径) — 探索面实体
+            # (Finding/Task)↔资产面(Asset)锚点边。幂等(既有边零新建, created:false); 端点引用
+            # 双缺失 404(fail-closed — 锚点必须挂在真实节点上); 零 UPDATE 零 DELETE。
+            if not self._auth("host"):
+                return self._send(403, {"ok": False, "error": "anchors write requires host token"})
+            _a_kind = str(req.get("anchor") or "").strip().lower()
+            _a_from = str(req.get("from_ref") or "").strip()[:120]
+            _a_asset = str(req.get("asset_id") or "").strip()[:120]
+            if _a_kind not in ("finding", "task"):
+                return self._send(400, {"ok": False, "error": "invalid anchor (finding|task)"})
+            if not _a_from or not _a_asset:
+                return self._send(400, {"ok": False, "error": "from_ref and asset_id required (锚点双端)"})
+            _edge = "FINDING_ON" if _a_kind == "finding" else "TOUCHED"
+            _node = "Finding" if _a_kind == "finding" else "Task"
+            _a_note = str(req.get("note") or "").strip()[:200]
+            with _locked():
+                try:
+                    conn = kuzu.Connection(db())
+                    _exists = conn.execute(
+                        f"MATCH (x:{_node} {{id:$f}})-[:{_edge}]->(a:Asset {{id:$a}}) RETURN count(x)",
+                        parameters={"f": _a_from, "a": _a_asset})
+                    if _exists.get_next()[0] > 0:
+                        self._send(200, {"ok": True, "created": False, "edge": _edge})
+                        return
+                    _missing = conn.execute(
+                        f"MATCH (x:{_node} {{id:$f}}) RETURN count(x)", parameters={"f": _a_from})
+                    if _missing.get_next()[0] == 0:
+                        return self._send(404, {"ok": False, "error": f"{_node} {_a_from} 不存在 — 锚点拒绝挂空(fail-closed)"})
+                    _missing_a = conn.execute(
+                        "MATCH (a:Asset {id:$a}) RETURN count(a)", parameters={"a": _a_asset})
+                    if _missing_a.get_next()[0] == 0:
+                        return self._send(404, {"ok": False, "error": f"Asset {_a_asset} 不存在 — 锚点拒绝挂空(fail-closed)"})
+                    conn.execute(
+                        f"MATCH (x:{_node} {{id:$f}}), (a:Asset {{id:$a}}) CREATE (x)-[:{_edge}]->(a)",
+                        parameters={"f": _a_from, "a": _a_asset})
+                    self._send(200, {"ok": True, "created": True, "edge": _edge, "note": _a_note})
+                    _audit_event("anchors-write", {"edge": _edge, "from": _a_from, "asset": _a_asset})
+                except Exception as e:
+                    self._send(500, {"ok": False, "error": f"anchors write failed: {str(e)[:200]}"})
             return
         if self.path == "/write/adjudicate":
             if not self._auth("host"):

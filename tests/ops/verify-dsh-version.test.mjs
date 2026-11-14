@@ -100,7 +100,7 @@ describe('T2-2b-0 检查④ sidebar 成对性(注入范式, 不读真实全局)'
     assert.ok(r.warnings[0].includes('跨区间'), r.warnings[0])
     assert.ok(r.warnings[0].includes(WARN_TEXT), r.warnings[0])
     assert.ok(r.warnings[0].includes('0.2.0-rc.1') && r.warnings[0].includes('0.17.1'), r.warnings[0])
-    assert.ok(SIDEBAR_COMPAT_TABLE.length === 4, '内置区间表与文档同源四行')
+    assert.ok(SIDEBAR_COMPAT_TABLE.length === 5, '内置区间表与文档同源五行')
   })
 
   it('(c) --strict 下 ④ WARN 计失败(exit 1), failures 仍 0 — 走 WARN 通道照 manifest 段先例', async () => {
@@ -132,11 +132,11 @@ describe('T2-2b-0 检查④ sidebar 成对性(注入范式, 不读真实全局)'
     assert.ok(!r.warnings.some((w) => w.includes('9.9.9')), 'heredoc 外提及不得进 ④ 判定')
   })
 
-  it('锚 真实仓库(只读): install.sh heredoc sidebar pin 恰为 0.24.1(精确无范围符), 落在文档 0.24.1 行', () => {
+  it('锚 真实仓库(只读): install.sh heredoc sidebar pin 恰为 0.31.1(精确无范围符), 落在文档 0.31.1 行', () => {
     const pin = parseInstallSidebarPin(fs.readFileSync(path.join(REPO_ROOT, 'install.sh'), 'utf8'))
     assert.ok(pin, 'install.sh heredoc 内检出 sidebar pin')
-    assert.equal(pin.spec, '0.24.1')
-    assert.equal(findCompatRowBySidebarSpec(pin.spec), 3)
+    assert.equal(pin.spec, '0.31.1')
+    assert.equal(findCompatRowBySidebarSpec(pin.spec), 4)
     assert.ok(!/^[~^]/.test(pin.spec), '精确 pin, 无 ^/~ 范围符')
   })
 })

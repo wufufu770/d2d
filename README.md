@@ -27,7 +27,7 @@
         └───────────┬───────────┘
                     ▼
         ┌───────────────────────┐
-        │ egress-gateway :8888  │  出网治理（scope/DNS 校验/限速/审计）
+        │ egress-gateway :18888 │  出网治理（scope/DNS 校验/限速/审计）
         │ oast :8890 cdp :8893  │
         └───────────────────────┘
 ```
@@ -46,7 +46,7 @@ systemctl --user start d2d-graphd
 ```
 
 - 图服务：`:8766`（systemd `d2d-graphd.service`，ladybug 引擎）
-- 出口网关：`:8888`（worker 全量代理，NO_PROXY 直连本地靶）
+- 出口网关：`:18888`（worker 全量代理，NO_PROXY 直连本地靶；E39-B1-4 起缺省改绑避让常见 Java/Tomcat :8888）
 - 面板：`dsh web`（:8899）
 
 ## 六类能力
@@ -77,7 +77,10 @@ systemctl --user start d2d-graphd
 ## 引擎与测试
 
 - 图引擎：生产 ladybug（`LBUG_C_API_LIB_PATH` 注入），测试双轨（kuzu 轨+ladybug 轨全量等值）。
-- dsh 版本基线：六包+宿主 CLI 统一 0.2.1-rc.2 / dsh-better-sidebar 0.24.1（成对升级纪律，校验入口 `node scripts/ops/verify-dsh-version.mjs`，对应表见 `docs/dsh-sidebar-compat.md`）。
+- dsh 版本基线：六包+宿主 CLI 统一 0.2.2-rc.1 / dsh-better-sidebar 0.31.1（成对升级纪律，校验入口 `node scripts/ops/verify-dsh-version.mjs`，对应表见 `docs/dsh-sidebar-compat.md`）。
+- 面板形态：dsh workspace 主面板全页（态势/待人工/Findings/可视化/审批/链路/工具/审计/配置/XRing 十签）+ 侧栏快捷 tab（1.6.0 起，superagent panel 同机制）。
+- WorkItems 事件驱动入口：投递箱（`$D2D_DATA_DIR/sources/inbox/*.json`）+ GitHub issues 轮询（`P2P_WORKITEMS_GITHUB=owner/repo`），影子模式缺省开（`P2P_WORKITEM_SHADOW=0` 解除），人工放行在面板「待人工」页；kind=retest 工单放行后自动派发复测（三态 reproducible/fixed/unconfirmable 入图 Verification）。
+- 双图锚点：FINDING_ON/TOUCHED 边（Finding/Task↔Asset，写面 host-only `/write/anchors`）——资产反查被哪些发现/任务测过（`MATCH (f:Finding)-[:FINDING_ON]->(a:Asset)`）。
 - 三 workflow：ci（pytest+mocha+panel）/ gates（graphd 门禁+semgrep+codeql）/ dsh-compat（node 22 最低轨）。
 - 基线口径：`pytest tests/` 双轨 / `npx mocha "test/*.test.mjs"` / panel `npm test`。
 

@@ -158,7 +158,56 @@
           traj ? h('div', panel.muted(0.55),
             `上次转移: ${traj.from}→${traj.to} · ${traj.actor} · ${String(traj.reason ?? '')}`) : null,
           h(TransitionOps, { f, refresh }),
-          h(AdjudicateOps, { f, refresh })) : null)
+          h(AdjudicateOps, { f, refresh }),
+          h(RetestAnchorOps, { f, refresh })) : null)
+    }
+
+    // ══════════ E38+: 复测/锚定动作组(前端↔后端功能对齐——/write/verification kind=retest
+    // 全链与 /write/anchors 双图锚点写面在 UI 的点击入口) ══════════
+    function RetestAnchorOps({ f, refresh }) {
+      const [msg, setMsg] = useState(null)
+      const [busy, setBusy] = useState('')
+      const [assetId, setAssetId] = useState('')
+      // E39-B5-1: 已锚定资产反查(mount+动作后刷新——backlinks 路由 GET ?ref=)
+      const [assets, setAssets] = useState(null)
+      useEffect(() => {
+        let alive = true
+        fetchApi('backlinks?ref=' + encodeURIComponent(f.id))
+          .then((j) => { if (alive) setAssets(j.assets ?? []) })
+          .catch(() => { if (alive) setAssets([]) })
+        return () => { alive = false }
+      }, [f.id, msg])
+      const retest = async () => {
+        setBusy('retest'); setMsg(null)
+        try {
+          await postJson('workitems', { action: 'create', kind: 'retest', title: `复测: ${f.title || f.id}`, externalId: f.id, payload: {} })
+          setMsg(`复测工单已建(F-链路: ${f.id}) → 「待人工」页放行后自动执行`)
+          refresh?.()
+        } catch (e) { setMsg(`复测建单失败: ${e.message}`) }
+        setBusy('')
+      }
+      const anchor = async () => {
+        if (!assetId.trim()) { setMsg('锚定资产: 请输入 Asset id'); return }
+        setBusy('anchor'); setMsg(null)
+        try {
+          await postJson('anchors', { anchor: 'finding', from_ref: f.id, asset_id: assetId.trim() })
+          setMsg(`已锚定 ${f.id} → ${assetId.trim()}(资产反查立即可用)`)
+          setAssetId('')
+        } catch (e) { setMsg(`锚定失败: ${e.message}`) }
+        setBusy('')
+      }
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px' } },
+        (assets ?? []).length
+          ? h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' } },
+            h('span', panel.muted(0.5), '已锚定资产:'),
+            assets.map((a) => h('span', { key: a.asset, ...panel.chip({ borderColor: 'var(--d2d-brand)' }), title: a.ident ?? '' }, a.asset)))
+          : h('div', panel.muted(0.4), '未锚定资产'),
+        h('div', { style: { display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' } },
+          h('button', { ...panel.btn(), style: { ...panel.btn().style, borderColor: 'var(--d2d-ring-verify)', color: 'var(--d2d-ring-verify)' }, disabled: busy === 'retest', onClick: retest }, busy === 'retest' ? '建单中…' : '发起复测'),
+          h('span', panel.muted(0.5), '资产锚定:'),
+          h('input', { ...panel.input(), style: { ...panel.input().style, width: '150px' }, placeholder: 'Asset id', value: assetId, onChange: (ev) => setAssetId(ev.target.value) }),
+          h('button', { ...panel.btn(), disabled: busy === 'anchor' || !assetId.trim(), onClick: anchor }, busy === 'anchor' ? '锚定中…' : '锚定')),
+        msg ? h('div', panel.muted(0.65), msg) : null)
     }
 
     function FindingsView(props) {

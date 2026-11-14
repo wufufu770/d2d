@@ -50,5 +50,30 @@
           (config?.degraded ?? []).map((d, i) => h('div', { key: i, ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, d))),
         h(DenylistCard, { snap, refresh }),
         h(CapsCard, { snap, refresh }),
-        h(FleetCard, { fleet: snap.fleet, run: snap.run, refresh }))
+        h(FleetCard, { fleet: snap.fleet, run: snap.run, refresh }),
+        h(ExportCard, {}))
+    }
+
+    // ══════════ E39-B5-2: SRC 报告导出卡(前端↔后端对齐: /d2d/api/report-export 代理
+    // scripts/report/src-export.mjs CLI——host 半进程包裹, 输出截 4k 展示面) ══════════
+    function ExportCard() {
+      const [sev, setSev] = useState('high')
+      const [out, setOut] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [err, setErr] = useState(null)
+      const run = async () => {
+        setBusy(true); setErr(null); setOut(null)
+        try {
+          const j = await postJson('report-export', { minSeverity: sev })
+          setOut(j.output ?? '')
+        } catch (e) { setErr(String(e.message ?? e).slice(0, 160)) }
+        setBusy(false)
+      }
+      return h(Card, { title: 'SRC 报告导出(verified 面 · 去重台账防重复提交)' },
+        h('div', { style: { display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' } },
+          h('select', { ...panel.input(), value: sev, onChange: (ev) => setSev(ev.target.value) },
+            ['critical', 'high', 'medium', 'low'].map((s) => h('option', { key: s, value: s }, `≥ ${s}`))),
+          h('button', { ...panel.btn(), disabled: busy, onClick: run }, busy ? '导出中…' : '导出报告'),
+          err ? h('span', { style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, err) : null),
+        out ? h('pre', { ...panel.mono, style: { ...panel.mono.style, maxHeight: '220px', overflowY: 'auto', whiteSpace: 'pre-wrap', margin: 0, padding: '6px', border: '1px solid var(--d2d-line)', borderRadius: '6px' } }, out) : null)
     }

@@ -1,5 +1,6 @@
-kuzu==0.11.3
 pytest==9.1.1
-# LBD-1: B 预案引擎(PyPI 官方 index 直连——镜像源无此包; 认准 metadata Summary=embeddable
-# graph database/Home=ladybugdb.com, MIT; RECOV-1 已辨真伪)。kuzu 保留=过渡期 bak 恢复需要。
+# E39-B1-3 kuzu 退役(LBD-2 观察期 2026-10-04 起已满, cutover-record 预留项兑现): 唯一图
+# 引擎=LadybugDB(PyPI 官方 index 直连——镜像源无此包; 认准 metadata Summary=embeddable
+# graph database/Home=ladybugdb.com, MIT; RECOV-1 已辨真伪)。kuzu 回滚=git revert 退役
+# 批或临时 pip install kuzu==0.11.3(docs/runbook-storage.md §八)。
 ladybug==0.21.2

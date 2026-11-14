@@ -10,7 +10,9 @@
   },
   "scripts": {
     "test": "node --test plugin/d2d-panel/test/*.test.mjs && cd plugin/pentest-dsh && npm test",
-    "lint": "node scripts/lint.mjs"
+    "lint": "node scripts/lint.mjs",
+    "e2e": "node scripts/e2e/run.mjs",
+    "e2e:align": "node scripts/e2e/run.mjs --suite align"
   },
   "dependencies": {
     "ajv": "8.17.1",

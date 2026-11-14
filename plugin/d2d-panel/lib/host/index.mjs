@@ -8,7 +8,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 
 export const name = 'd2d-panel'
-export const inject = ['webServer', 'webRuntime'] // 无 sessions 依赖: 快照只读 graphd, 不碰会话存储
+export const inject = ['webServer'] // 无 sessions 依赖: 快照只读 graphd, 不碰会话存储
+// 0.2.2 适配(E37, E38 根因修正): 宿主移除 webRuntime 服务(0.2.1 尚有)。**cordis ctx 是
+// 守卫式代理——未 inject 的服务属性访问即抛**(cannot get property "webRuntime" without
+// inject; 可选链防不住, 访问本身 throw)。因此 trustedHosts 贡献面直接以空名单落定:
+// 信任栅栏保留回环判定(isLoop + sec-fetch-site 同源闸), 非 loopback 信任名单为空=
+// dsh web 缺省 127.0.0.1 绑定形态下行为不变; 多 host 信任需求归文档面注记。
 
 const MICRO_CACHE_MS = 500 // 微缓存 + 单飞: 并发请求合并为一次图读取(_lock 争用最小)
 const BODY_MAX = 8 * 1024 // 写端点请求体上限(模型 id / 转移理由都是百字节级)
@@ -92,7 +97,11 @@ export function apply(ctx, config = {}) {
         res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
         res.end(JSON.stringify(obj))
       }
-      if (!isTrustedApiRequest(req, ctx.webRuntime?.trustedHosts ?? [])) {
+      // E37 教训(cordis 守卫式 ctx): 未 inject 的服务属性**访问即抛**(cannot get property
+      // "webRuntime" without inject——可选链防不住, 访问本身 throw → 外层兜底 400 空体)。
+      // webRuntime 已从 inject 移除(0.2.2 宿主删除该服务), 信任栅栏用空信任名单:
+      // 回环判定 + sec-fetch-site 同源闸保留, dsh web 缺省 127.0.0.1 绑定形态行为不变。
+      if (!isTrustedApiRequest(req, [])) {
         return send(403, { ok: false, error: { code: 'forbidden', message: 'forbidden' } })
       }
       const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname
@@ -206,6 +215,137 @@ export function apply(ctx, config = {}) {
           return send(200, { ok: true, caps: r })
         } catch (e) {
           return send(400, { ok: false, error: { code: 'caps-write-error', message: String(e?.message ?? e).slice(0, 160) } })
+        }
+      }
+      // ---- 1.6.0 Phase B: WorkItems 面板数据面(GET 列表+摘要 / POST 人工放行迁移) ----
+      // 与 pentest-dsh 插件(宿主进程内同一 writeitems.json 单一事实源)分面: 插件=写入侧
+      // (轮询/门/迁移), 面板 host=人工处置侧。迁移校验复用 workitems.mjs(跨包相对 import,
+      // 同仓同根 + profile hoisted 布局两形态均已实证解析)。文件缺失=空态 200(面板非关键路径,
+      // 与 capability fail-soft 同口径); 迁移非法=400 透传原因。
+      if (method === 'workitems') {
+        const wiDataDir = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
+        const wiFile = `${wiDataDir}/workitems.json`
+        if (req.method === 'GET') {
+          let items = []
+          try { items = JSON.parse(fs.readFileSync(wiFile, 'utf8'))?.items ?? [] } catch { items = [] }
+          const summary = { shadowed: 0, needs_human: 0, assigned: 0, done: 0, rejected: 0, total: items.length }
+          for (const w of items) if (summary[w.status] !== undefined) summary[w.status]++
+          return send(200, { ok: true, summary, items })
+        }
+        if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST/GET required' } })
+        let body
+        try { body = await readBody(req) } catch (e) {
+          return send(400, { ok: false, error: { code: 'bad-request', message: String(e?.message ?? e) } })
+        }
+        try {
+          const wi = await import(new URL('../../../pentest-dsh/workitems.mjs', import.meta.url).href)
+          const store = wi.createStore(wiFile)
+          // E38+: 双动作形态 — action='create'(面板建单: 走 intake+eval 门全链, 影子语义与
+          // 插件侧一致) / 缺省=人工迁移(panel 放行/否决)。
+          if (String(body?.action ?? '') === 'create') {
+            const kind = String(body?.kind ?? 'manual').trim().toLowerCase()
+            if (!['retest', 'manual', 'general'].includes(kind)) {
+              return send(400, { ok: false, error: { code: 'bad-kind', message: 'kind 须 retest|manual|general' } })
+            }
+            const title = String(body?.title ?? '').trim().slice(0, 200)
+            const externalId = String(body?.externalId ?? '').trim().slice(0, 120)
+            if (!title) return send(400, { ok: false, error: { code: 'bad-request', message: 'title required' } })
+            if (kind === 'retest' && !externalId) return send(400, { ok: false, error: { code: 'bad-request', message: 'retest 工单须 externalId=Finding id' } })
+            const { item, duplicate } = wi.intake(store, {
+              source: 'panel', kind, externalId, title,
+              payload: { ...(body?.payload ?? {}), replay_result: String(body?.payload?.replay_result ?? '') },
+              author: 'panel-user', url: '',
+            })
+            if (!duplicate) {
+              store.transition(item.id, 'eval_queued', { actor: 'panel-create', note: '面板建单' })
+              const verdict = wi.evalGate(item, { shadow: String(process.env.P2P_WORKITEM_SHADOW ?? '1') !== '0' }, store.openCount())
+              const to = verdict.decision === 'shadow' ? 'eval_shadowed' : verdict.decision === 'accept' ? 'accepted' : verdict.decision === 'reject' ? 'rejected' : 'needs_human'
+              store.transition(item.id, to, { actor: 'panel-eval-gate', note: verdict.reason, disposition: verdict })
+              item.status = to
+            }
+            return send(200, { ok: true, item, duplicate })
+          }
+          const updated = store.transition(String(body?.id ?? ''), String(body?.to ?? ''), {
+            actor: 'panel', note: String(body?.note ?? ''), mandateEng: body?.mandateEng ? String(body.mandateEng) : null,
+          })
+          return send(200, { ok: true, item: updated })
+        } catch (e) {
+          return send(400, { ok: false, error: { code: 'workitem-error', message: String(e?.message ?? e).slice(0, 160) } })
+        }
+      }
+      // ---- E38+: 双图锚点写面代理(/write/anchors graphd host-only 端点的同源代理) ----
+      // 面板 host 持 host token(既有 readHostToken 通道), 浏览器端零 token 暴露契约不变;
+      // 校验+幂等+双端 404 全在 graphd 端, 本代理只透传结果(单一边=窄面)。
+      if (method === 'anchors') {
+        if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST required' } })
+        let body
+        try { body = await readBody(req) } catch (e) {
+          return send(400, { ok: false, error: { code: 'bad-request', message: String(e?.message ?? e) } })
+        }
+        try {
+          const res = await fetch(`${graphdUrl}/write/anchors`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Auth': readHostToken() },
+            body: JSON.stringify({ anchor: String(body?.anchor ?? ''), from_ref: String(body?.from_ref ?? ''), asset_id: String(body?.asset_id ?? ''), note: String(body?.note ?? '') }),
+            signal: AbortSignal.timeout(12000),
+          })
+          const j = await res.json().catch(() => ({}))
+          return send(res.ok && j?.ok ? 200 : res.status === 404 ? 404 : 400, { ok: Boolean(j?.ok), ...(j?.created !== undefined ? { created: j.created } : {}), edge: j?.edge, error: j?.error ? { code: 'graphd-anchors', message: String(j.error).slice(0, 160) } : undefined })
+        } catch (e) {
+          return send(503, { ok: false, error: { code: 'graphd-unreachable', message: `fail-closed: ${String(e?.message ?? e).slice(0, 140)}` } })
+        }
+      }
+      // ---- E39-B5-1: 双图锚点反查面(GET ?ref=<finding id>→已锚资产 / ?asset=<asset id>→
+      // 测过它的发现+任务)——图查询走既有 /query host-token 通道, 零 graphd 改动。 ----
+      if (method === 'backlinks') {
+        if (req.method !== 'GET') return send(405, { ok: false, error: { code: 'method-error', message: 'GET required' } })
+        const sp = new URL(req.url ?? '/', 'http://dsh.internal').searchParams
+        const ref = String(sp.get('ref') ?? '').trim()
+        const asset = String(sp.get('asset') ?? '').trim()
+        try {
+          if (ref) {
+            const assets = await query(
+              'MATCH (f:Finding {id:$r})-[:FINDING_ON]->(a:Asset) RETURN a.id AS asset, a.identifier AS ident ORDER BY a.id',
+              { r: ref })
+            return send(200, { ok: true, assets })
+          }
+          if (asset) {
+            const findings = await query(
+              'MATCH (f:Finding)-[:FINDING_ON]->(a:Asset {id:$a}) RETURN f.id AS id, f.title AS title, f.severity AS severity ORDER BY f.id',
+              { a: asset })
+            const tasks = await query(
+              'MATCH (t:Task)-[:TOUCHED]->(a:Asset {id:$a}) RETURN t.id AS id ORDER BY t.id',
+              { a: asset })
+            return send(200, { ok: true, findings, tasks })
+          }
+          return send(400, { ok: false, error: { code: 'bad-request', message: 'ref 或 asset 必填其一' } })
+        } catch (e) {
+          return send(503, { ok: false, error: { code: 'graphd-unreachable', message: `fail-closed: ${String(e?.message ?? e).slice(0, 140)}` } })
+        }
+      }
+      // ---- E39-B5-2: 报告导出代理(POST → scripts/report/src-export.mjs CLI)——CLI 自带
+      // host-token/graphd 通道与台账去重, 本路由只做进程包裹与输出回传(截 4k 展示面)。 ----
+      if (method === 'report-export') {
+        if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST required' } })
+        let body
+        try { body = await readBody(req) } catch (e) {
+          return send(400, { ok: false, error: { code: 'bad-request', message: String(e?.message ?? e) } })
+        }
+        const { execFile } = await import('node:child_process')
+        const { promisify } = await import('node:util')
+        const { fileURLToPath } = await import('node:url')
+        const cli = fileURLToPath(new URL('../../../../scripts/report/src-export.mjs', import.meta.url)) // fileURLToPath: execFile 参数须纯路径(.href 形态被 node 拼到 cwd 下, E39-B5-2 活体实证)
+        const sev = ['critical', 'high', 'medium', 'low'].includes(String(body?.minSeverity)) ? String(body.minSeverity) : 'medium'
+        try {
+          const { stdout } = await promisify(execFile)(process.execPath, [cli, '--min-severity', sev], {
+            cwd: process.env.D2D ?? `${os.homedir()}/d2d`,
+            timeout: 60_000,
+            maxBuffer: 2e6,
+            env: process.env,
+          })
+          return send(200, { ok: true, output: String(stdout).slice(0, 4000), bytes: String(stdout).length })
+        } catch (e) {
+          return send(500, { ok: false, error: { code: 'report-export-error', message: String(e?.stderr ?? e?.message ?? e).slice(0, 200) } })
         }
       }
       // ---- T3-3-1 viz 数据面 ×4(GET 只读; 各自独立微缓存 — 与主快照互不牵动, viz 503 不炸 ops/findings) ----
