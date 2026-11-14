@@ -41,7 +41,7 @@
     "standalone": "node lib/host/standalone.mjs",
     "prepare": "node scripts/build-client.mjs"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wufufu770/d2d.git",

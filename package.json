@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "d2d — 三环并行渗透测试框架(发现环/深度攻击环/创造探索环 并行自主挖掘, dsh 插件形态)",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=22.5"
   },

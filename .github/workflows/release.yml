@@ -77,7 +77,8 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           cp /tmp/sbom.cdx.json ./sbom.cdx.json
           NOTES=".github/release-notes-${TAG}.md"
-          ASSETS=(sbom.cdx.json docs/report-templates/butian.sample.json docs/report-templates/vulbox.sample.json docs/report-templates/edu-src.sample.json experiments/results/ab-report-20260928-190531.md dist/d2d-${TAG}-win-x64.zip dist/d2d-${TAG}-linux-x64.zip dist/d2d-${TAG}-macos-x64.zip)
+          # E39: ab-report 场验实录移出资产面(测试内容——用户纪律"只推有需要的包")
+          ASSETS=(sbom.cdx.json docs/report-templates/butian.sample.json docs/report-templates/vulbox.sample.json docs/report-templates/edu-src.sample.json dist/d2d-${TAG}-win-x64.zip dist/d2d-${TAG}-linux-x64.zip dist/d2d-${TAG}-macos-x64.zip)
           if [ -f "$NOTES" ]; then
             gh release create "$TAG" --title "d2d ${TAG}" --notes-file "$NOTES" "${ASSETS[@]}"
           else
