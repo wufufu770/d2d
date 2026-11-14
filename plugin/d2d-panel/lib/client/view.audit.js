@@ -50,10 +50,10 @@
       const { audit, err } = useAudit(visible, kind, limit)
       return h('div', panel.root, Style(),
         h(Card, {
-          title: '审计时间线(安全事件 + 状态迁移合流)',
+          title: '审计',
           extra: err
-            ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `不可用: ${String(err?.message ?? err).slice(0, 60)}`)
-            : h('span', panel.muted(0.45), `显示 ${audit?.events?.length ?? 0} / ${audit?.total ?? 0} 条 · 降序`),
+            ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
+            : h('span', panel.muted(0.45), `${audit?.events?.length ?? 0}/${audit?.total ?? 0}`),
         },
           h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' } },
             h('button', { ...panel.btn(!kind ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}), onClick: () => setKind('') }, '全部'),
@@ -70,7 +70,5 @@
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '420px', overflowY: 'auto', paddingRight: '2px' } },
             (audit?.events ?? []).length
               ? audit.events.map((e, i) => h(AuditRow, { key: `${e.ts}:${i}`, e }))
-              : h('div', panel.muted(0.45), err ? '拉取失败 — fail-soft 不显示旧数据' : '无审计事件 — 图写入/门拒绝/转态发生时在此出现')),
-          h('div', { ...panel.muted(0.45), style: { borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px' } },
-            '非法迁移(transition-illegal 等)只落 audit.log, 转态成功落 transition-log — 两源合流为完整审计面; reason 已截尾、凭据面不落本流。')))
+              : h('div', panel.muted(0.45), err ? '拉取失败' : '无审计事件'))))
     }

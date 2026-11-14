@@ -30,7 +30,7 @@
             action: 'create', kind, title: title.trim(), externalId: ext.trim(),
             payload: { replay_result: replay },
           })
-          setMsg(`已建单 ${j.item?.id ?? ''}(状态=${j.item?.status ?? '?'})${j.duplicate ? ' · 去重命中返回既有工单' : ''}`)
+          setMsg(`已建单 ${j.item?.id ?? ''}${j.duplicate ? ' · 去重命中' : ''}`)
           setTitle(''); setExt(''); setReplay('')
           onDone?.()
         } catch (e) { setMsg(`建单失败: ${e.message}`) }
@@ -94,18 +94,16 @@
         } catch (e) { setMsg(`${w.id} 失败: ${e.message}`) }
         setBusy(null)
       }
-      if (err && !data) return h('div', panel.root, Style(), h('div', panel.card, h('div', { style: { color: 'var(--d2d-sev-high)' } }, `WorkItems 加载失败: ${err}`)))
+      if (err && !data) return h('div', panel.root, Style(), h('div', panel.card, h('div', { style: { color: 'var(--d2d-sev-high)' } }, '加载失败')))
       if (!data) return h('div', panel.root, Style(), h('div', panel.card, h('div', panel.muted(), '加载中…')))
       const priority = (data.items ?? []).filter((w) => ['needs_human', 'eval_shadowed'].includes(w.status))
       const rest = (data.items ?? []).filter((w) => !['needs_human', 'eval_shadowed'].includes(w.status))
         .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
       return h('div', panel.root, Style(),
         h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' } },
-          h('span', panel.cardTitle, 'WorkItems · 人工注意力队列'),
           Object.entries(data.summary ?? {}).filter(([k]) => k !== 'total' && k !== 'rejected').map(([k, v]) =>
             h('span', { key: k, ...panel.chip({ borderColor: k === 'needs_human' && v > 0 ? 'var(--d2d-sev-high)' : k === 'eval_shadowed' && v > 0 ? 'var(--d2d-warn)' : 'var(--d2d-line)' }) },
-              `${WI_STATUS_LABEL[k] ?? k} ${v}`)),
-          h('span', panel.muted(0.45), `共 ${data.summary?.total ?? 0}`)),
+              `${WI_STATUS_LABEL[k] ?? k} ${v}`))),
         msg ? h('div', panel.muted(0.75), msg) : null,
         h(WorkItemCreateForm, { onDone: () => setTick((x) => x + 1) }),
         priority.length
@@ -113,7 +111,7 @@
             priority.map((w) => h(WorkItemRow, { key: w.id, w, onAct: act, busy })))
           : h('div', panel.card, h('div', panel.muted(), '无待人工事项')),
         rest.length
-          ? h(Card, { title: `历史工单 · ${rest.length}` },
+          ? h(Card, { title: '历史工单' },
             h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto' } },
               rest.map((w) => h('div', { key: w.id, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
                 h('span', { ...panel.mono, style: { ...panel.mono.style, flex: '0 0 auto' } }, w.id),

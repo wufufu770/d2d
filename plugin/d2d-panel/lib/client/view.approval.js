@@ -69,17 +69,15 @@
       const list = data?.approvals ?? []
       return h('div', panel.root, Style(),
         h(Card, {
-          title: `审批队列 · ${data?.count ?? 0} 待决`,
+          title: '审批队列',
           extra: h('span', { ...panel.muted(0.5), style: { display: 'inline-flex', gap: '5px', alignItems: 'center' } },
-            h('span', panel.chip({ ...(data?.mode === 'off' ? {} : { borderColor: 'var(--d2d-warn)' }) }), `模式 ${data?.mode ?? '?'}`),
-            h('span', panel.muted(0.45), 'off=仅记录 · queue=排队待决 · 裁决不经过本面板的任何门')),
+            h('span', panel.chip({ ...(data?.mode === 'off' ? {} : { borderColor: 'var(--d2d-warn)' }) }), `${data?.mode ?? '?'}`),
+            h('span', panel.muted(0.45), `${data?.count ?? 0}`)),
         },
-          err && !data ? h('div', { style: { fontSize: '11px', color: 'var(--d2d-sev-high)' } }, `审批队列不可用: ${String(err?.message ?? err).slice(0, 120)}`) : null,
-          err && data ? h('div', panel.muted(0.45), `刷新失败(显示上次结果): ${String(err?.message ?? err).slice(0, 80)}`) : null,
-          !err && !list.length ? h('div', panel.muted(0.45), '队列为空 — 高危操作触发审批门时在此出现(approval-requested 事件同步落 run-log)') : null,
+          err && !data ? h('div', { style: { fontSize: '11px', color: 'var(--d2d-sev-high)' } }, '审批队列不可用') : null,
+          err && data ? h('div', panel.muted(0.45), '刷新失败 — 显示上次结果') : null,
+          !err && !list.length ? h('div', panel.muted(0.45), '队列为空') : null,
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
             list.map((t) => h(ApprovalTicket, { key: t?.id, t, onDecide: decide, busyId }))),
-          actErr ? h('div', { style: { fontSize: '11px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, actErr) : null,
-          h('div', { ...panel.muted(0.45), style: { borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px' } },
-            '授权与审批正交: 本面板裁决的是审批队列票据; 授权契约验签在调度环独立执行, 与此处无交互。')))
+          actErr ? h('div', { style: { fontSize: '11px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, actErr) : null))
     }

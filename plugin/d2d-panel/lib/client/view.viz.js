@@ -59,8 +59,8 @@
     /** 星图(自绘 SVG): open 信号节点(按 type 着色)+DERIVED_FROM 边+候选连线虚线提示。
      *  护栏: 渲染 ≤200 节点/≤300 边, 超限 Card extra 计数提示(数据不丢——服务端 total)。 */
     function StarMapChart({ starmap }) {
-      if (!starmap) return h('div', panel.muted(0.45), 'starmap 数据不可用')
-      if (!starmap.nodes?.length) return h('div', panel.muted(0.45), '当前 engagement 无 open 信号 — 星图空')
+      if (!starmap) return h('div', panel.muted(0.45), '星图数据不可用')
+      if (!starmap.nodes?.length) return h('div', panel.muted(0.45), '星图空')
       const nodes = starmap.nodes.slice(0, VIZ_RENDER_NODES)
       const ids = new Set(nodes.map((n) => n.id))
       const edges = (starmap.edges ?? []).filter((e) => ids.has(e.a) && ids.has(e.b)).slice(0, VIZ_RENDER_EDGES)
@@ -78,8 +78,8 @@
             return h('circle', { key: n.id, cx: p.x, cy: p.y, r: n.weight >= 2 ? 5 : 3.5, fill: typeColor(n.type), opacity: '0.85', title: `${n.type} · ${n.host || '(无 host)'} · ${n.ts}` })
           })),
         h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' } },
-          h('span', { ...panel.muted(0.45) }, `节点 ${nodes.length} / 共 ${starmap.total} · 边 ${edges.length}${starmap.candidates?.length ? ` · 候选连线 ${starmap.candidates.length} 对` : ''}`),
-          hidden > 0 ? h('span', { ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, `+${hidden} 未显示(超渲染上限)`) : null,
+          h('span', { ...panel.muted(0.45) }, `${nodes.length}/${starmap.total} · 边 ${edges.length}`),
+          hidden > 0 ? h('span', { ...panel.chip({ borderColor: 'var(--d2d-warn)' }), title: '超渲染上限' }, `+${hidden} 未显示`) : null,
           (starmap.candidates ?? []).slice(0, 4).map((c, i) => h('span', { key: i, ...panel.chip({ borderColor: 'var(--d2d-brand)' }), title: `${c.a} ~ ${c.b}` }, `${c.aType}~${c.bType}@${c.host}`))))
     }
 
@@ -162,7 +162,7 @@
     function SankeyChart({ flows, family }) {
       const links = (flows?.links ?? []).filter((l) => family === 'all' || l.family === family)
       if (!flows) return h('div', panel.muted(0.45), 'transition-flows 数据不可用')
-      if (!links.length) return h('div', panel.muted(0.45), `${flows?.windowDays ?? '?'} 天窗口内无迁移事件 — 稀疏即历史真相, 不造数据`)
+      if (!links.length) return h('div', panel.muted(0.45), `${flows?.windowDays ?? '?'} 天窗口内无迁移事件`)
       const outTotals = new Map()
       const inTotals = new Map()
       for (const l of links) {
@@ -186,6 +186,8 @@
         h('text', { x: x + 122, y: y + 13, fontSize: '10px', textAnchor: 'end', opacity: '0.6' }, String(x < 300 ? (outTotals.get(s) ?? 0) : (inTotals.get(s) ?? 0))))
       return h('div', null,
         h('svg', { viewBox: `0 0 600 ${height}`, width: '100%', style: { maxHeight: '420px', border: '1px solid var(--d2d-line)', borderRadius: '6px', background: 'rgba(128,140,165,.06)' } },
+          h('text', { x: 10, y: 9, fontSize: '9px', opacity: '0.55' }, '迁出'),
+          h('text', { x: 590, y: 9, fontSize: '9px', textAnchor: 'end', opacity: '0.55' }, '迁入'),
           links.slice(0, 120).map((l, i) => {
             const yl = lY.get(l.from)
             const yr = rY.get(l.to)
@@ -200,37 +202,35 @@
           lefts.map(([s, n]) => node(s, lY.get(s), 10)),
           rights.map(([s, n]) => node(s, rY.get(s), 462))),
         h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' } },
-          h('span', { ...panel.muted(0.45) }, `窗口 ${flows.windowDays} 天 · 读取 ${flows.linesRead} 行 / 匹配 ${flows.matched} 事件 · 边 ${Math.min(links.length, 120)} 条(共 ${links.length})`),
+          h('span', { ...panel.muted(0.45) }, `${flows.windowDays} 天 · 边 ${Math.min(links.length, 120)}/${links.length}`),
           (flows.degraded ?? []).map((d, i) => h('span', { key: i, ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, d))))
     }
 
-    /** 桑基卡(容器): 家族 chips(client 侧过滤, 不重取)+纯函数图+窗口注记。 */
+    /** 桑基卡(容器): 家族 chips(client 侧过滤, 不重取)+纯函数图+侧标注(布局即图例)。 */
     function SankeyCard({ flows, errs }) {
       const [family, setFamily] = useState('all')
       return h(Card, {
-        title: '状态迁移桑基(合法迁移事件流)',
+        title: '状态迁移',
         extra: errs['transition-flows']
-          ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `不可用: ${String(errs['transition-flows']?.message ?? '').slice(0, 60)}`)
-          : h('span', panel.muted(0.45), '左=迁出态 右=迁入态 · 缎带∝次数'),
+          ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
+          : null,
       },
         h('div', { style: { display: 'flex', gap: '5px', marginBottom: '6px', flexWrap: 'wrap' } },
           FLOW_FAMILIES.map((f) => h('button', {
             key: f, ...panel.btn(family === f ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}),
             onClick: () => setFamily(f),
-          }, FLOW_FAMILY_LABEL[f])),
-          h('span', { ...panel.muted(0.45), style: { alignSelf: 'center', marginLeft: '4px' } },
-            '流量按历史事件聚合 — 稀疏即历史真相, 不造数据; 非法迁移走审计 tab')),
+          }, FLOW_FAMILY_LABEL[f]))),
         h(SankeyChart, { flows, family }))
     }
 
     /** viz tab 容器: useViz 五路取数(allSettled 单卡降级) + 四图 + 桑基 + 看板卡装配。 */
     function VizView({ visible }) {
       const { data, errs } = useViz(visible)
-      const card = (title, key, extra, body) => h(Card, { title, extra: extra ?? (errs[key] ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `不可用: ${String(errs[key]?.message ?? '').slice(0, 60)}`) : null) }, body)
+      const card = (title, key, extra, body) => h(Card, { title, extra: extra ?? (errs[key] ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用') : null) }, body)
       return h('div', panel.root, Style(),
-        card(`覆盖象限热力(21 格)`, 'coverage', null, h(CoverageHeat, { coverage: data?.coverage?.coverage })),
+        card(`覆盖热力`, 'coverage', null, h(CoverageHeat, { coverage: data?.coverage?.coverage })),
         card(`假设泳道`, 'hypotheses', null, h(HypLaneSwim, { hypotheses: data?.hypotheses?.hypotheses })),
         card(`信号星图`, 'starmap', null, h(StarMapChart, { starmap: data?.starmap?.starmap })),
         h(SankeyCard, { flows: data?.['transition-flows']?.flows, errs }),
-        card(`能力看板(导出登记面)`, 'capability', null, h(CapabilityCard, { capability: data?.capability?.capability })))
+        card(`能力看板`, 'capability', null, h(CapabilityCard, { capability: data?.capability?.capability })))
     }

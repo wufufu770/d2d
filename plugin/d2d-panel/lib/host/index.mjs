@@ -14,6 +14,8 @@ export const inject = ['webServer'] // 无 sessions 依赖: 快照只读 graphd,
 // inject; 可选链防不住, 访问本身 throw)。因此 trustedHosts 贡献面直接以空名单落定:
 // 信任栅栏保留回环判定(isLoop + sec-fetch-site 同源闸), 非 loopback 信任名单为空=
 // dsh web 缺省 127.0.0.1 绑定形态下行为不变; 多 host 信任需求归文档面注记。
+// E39: 信任面扩为 回环 ∪ 本机接口地址(isTrustedApiRequest 内 os.networkInterfaces
+// 现取)——WEB_HOST=LAN IP 绑定时宿主机浏览器 Host 即本机接口地址, 不再误拦 403。
 
 const MICRO_CACHE_MS = 500 // 微缓存 + 单飞: 并发请求合并为一次图读取(_lock 争用最小)
 const BODY_MAX = 8 * 1024 // 写端点请求体上限(模型 id / 转移理由都是百字节级)
@@ -34,19 +36,36 @@ function readBody(req) {
   })
 }
 
-/** 浏览器信任栅栏(port of dsh-sidebar-leap isTrustedApiRequest 同口径)。 */
-function isTrustedApiRequest(req, trustedHosts = []) {
+/** 浏览器信任栅栏(port of dsh-sidebar-leap isTrustedApiRequest 同口径)。
+ *  E39: LAN 绑定形态放行——dsh web 拒绝 0.0.0.0 通配(仅收具体接口 IP), 从宿主机/局域网
+ *  访问时浏览器 Host 即本机接口地址(非回环)。信任面 = 回环 ∪ 本机非内部接口地址 ∪ 显式
+ *  trustedHosts; 第 2/3 层闸(sec-fetch-site 同源 + Origin 匹配)原样保留——跨站伪造仍在
+ *  这两层被拒, 接口面放行只解决"谁有资格声明这个 authority"。
+ *  导出面仅供 test/host-fence.test.mjs 回归(行为探针), 非公共 API。 */
+export function isTrustedApiRequest(req, trustedHosts = []) {
   const host = String(req.headers?.host ?? '')
   if (!host) return false
   const m = host.match(/^\[([^\]]+)\](?::(\d+))?$/) || host.match(/^([^:]+)(?::(\d+))?$/)
   if (!m) return false
   const hostname = String(m[1]).toLowerCase()
   const isLoop = hostname === 'localhost' || hostname === '::1' || /^127\.\d+\.\d+\.\d+$/.test(hostname)
+  // 本机接口地址面: 每请求现取(networkInterfaces 微秒级, DHCP/网络变化即时生效, 免启动时快照过期)
+  let isSelf = false
+  if (!isLoop) {
+    try {
+      for (const addrs of Object.values(os.networkInterfaces())) {
+        for (const a of addrs ?? []) {
+          if (a?.address && !a.internal && String(a.address).toLowerCase() === hostname) { isSelf = true; break }
+        }
+        if (isSelf) break
+      }
+    } catch { /* 接口枚举失败仅回落既有判定面 */ }
+  }
   const trusted = (trustedHosts ?? []).some((t) => {
     const tm = String(t ?? '').match(/^\[([^\]]+)\]/) || String(t ?? '').match(/^([^:]+)/)
     return tm ? String(tm[1]).toLowerCase() === hostname : false
   })
-  if (!isLoop && !trusted) return false
+  if (!isLoop && !isSelf && !trusted) return false
   if (String(req.headers?.['sec-fetch-site'] ?? '') === 'cross-site') return false
   const origin = req.headers?.origin
   if (origin === undefined) return true

@@ -79,20 +79,19 @@
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '4px' } },
         h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' } },
           disputed
-            ? [btn('disputed_confirm', '仲裁·确认(维持第一签→verified)', false),
-               btn('disputed_reject', '仲裁·否决(→rejected 终态)', true)]
-            : [btn('revoke', '回灌·撤销(隔离待裁)', false),
-               btn('false_positive', '回灌·标假阳性(终态不可逆)', true)],
-          h('span', panel.muted(0.45), disputed ? '双签 disputed · host-only · 人工身份审计' : 'host-only · 全量审计留痕')),
+            ? [btn('disputed_confirm', '仲裁确认', false),
+               btn('disputed_reject', '仲裁否决', true)]
+            : [btn('revoke', '撤销', false),
+               btn('false_positive', '标假阳性', true)]),
         h('input', {
           ...panel.input({ flex: 1 }),
-          placeholder: '裁决理由(回灌必填, 缺省自动填; 1-80 字符)',
+          placeholder: '裁决理由',
           value: reason,
           disabled: busy,
           onChange: (ev) => setReason(ev.target.value),
         }),
         err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null,
-        done ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-ok)' } }, `${doneMsg}; 审计 operator=panel`) : null)
+        done ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-ok)' } }, doneMsg) : null)
     }
 
     /** 人工裁决: 合法转移按钮 + reason 输入 → POST /d2d/api/transition(actor=panel)。 */
@@ -102,7 +101,7 @@
       const [err, setErr] = useState(null)
       const [okTo, setOkTo] = useState(null)
       const legal = TRANSITIONS[f.state] ?? []
-      if (!legal.length) return h('div', panel.muted(0.45), '终态 — 不可再转移')
+      if (!legal.length) return h('div', panel.muted(0.45), '终态')
       const go = async (to) => {
         setBusy(true); setErr(null); setOkTo(null)
         try {
@@ -118,13 +117,13 @@
             `→ ${to}${busy ? ' …' : ''}`))),
         h('input', {
           ...panel.input({ flex: 1 }),
-          placeholder: '裁决理由(可选, 默认自动填)',
+          placeholder: '裁决理由',
           value: reason,
           disabled: busy,
           onChange: (ev) => setReason(ev.target.value),
         }),
         err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, err) : null,
-        okTo ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-ok)' } }, `已转移 → ${okTo}(审计 actor=panel)`) : null)
+        okTo ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-ok)' } }, `已转移 → ${okTo}`) : null)
     }
 
     function parseTraj(s) {
@@ -222,7 +221,7 @@
       return h('div', panel.root, Style(),
         h(Card, {
           title: '管线',
-          extra: h('span', panel.muted(0.5), filter ? `筛选: ${filter} · 点击 chip 取消` : `共 ${snap.counts.findings} · 点击 chip 筛选`),
+          extra: h('span', panel.muted(0.5), `${snap.counts.findings}`),
         },
           h(Stepper, { byState, filter, setFilter })),
         filter ? h(Card, { title: `${filter} · ${shown.length}`, extra: h('button', { ...panel.btn(), onClick: () => setFilter(null) }, '清除筛选') },
@@ -232,8 +231,7 @@
                 h(FindingCard, { key: f.id, f, expanded: openId === f.id, onToggle: () => setOpenId(openId === f.id ? null : f.id), refresh })))
             : h('div', panel.muted(0.4), '该状态无记录')) : null,
         h(Card, {
-          title: '幻觉抽检(#18 合并 · 隔离池浏览)',
-          extra: h('span', panel.muted(0.5), '记账: node scripts/brain/experience-metrics.mjs --sample 5 → 人工审 → --record'),
+          title: '幻觉抽检',
         },
           (snap.quarantine ?? []).length
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto', paddingRight: '2px' } },
@@ -241,9 +239,7 @@
                 h('span', panel.chip({ borderColor: 'var(--d2d-warn)' }), 'quarantined'),
                 h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }, title: xq.id }, xq.title || xq.id),
                 h('span', { ...panel.mono, style: { ...panel.mono.style, fontSize: '9px', opacity: '.5', flex: '0 0 auto' } }, String(xq.created_at ?? '').slice(0, 10)))))
-            : h('div', panel.muted(0.4), '隔离池空 — 经验回流写入即 quarantined, 评审出池后在此浏览'),
-          h('div', { ...panel.muted(0.45), style: { borderTop: '1px dashed var(--d2d-line)', paddingTop: '4px' } },
-            '抽检=裁决入口的抽样浏览形态(同一入口): 勾选对象经 CLI --record 记账; 撤销经经验裁决回灌(active→deprecated, 检索面即时排除)')),
+            : h('div', panel.muted(0.4), '隔离池空')),
         h('div', {
           style: {
             display: 'grid',

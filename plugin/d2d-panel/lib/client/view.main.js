@@ -65,11 +65,11 @@
       const wiPending = (wi?.needs_human ?? 0) + (wi?.shadowed ?? 0)
       // E39-B5-3: KPI 分显细化——待人工(needs_human)与影子(shadowed)分色分显(注意力优先序)
       const kpis = [
-        { id: 'ops', label: '在办 workers', val: badgeState.workers },
+        { id: 'ops', label: '在办', val: badgeState.workers },
         { id: 'workitems', label: '待人工', val: wi?.needs_human || null, accent: wi?.needs_human ? 'high' : undefined },
         { id: 'workitems', label: '影子', val: wi?.shadowed || null, accent: wi?.shadowed ? 'warn' : undefined },
-        { id: 'findings', label: '已验证 findings', val: badgeState.verified },
-        { id: 'approval', label: '待审批', val: badgeState.approvals, accent: badgeState.approvals ? 'warn' : undefined },
+        { id: 'findings', label: 'Findings', val: badgeState.verified },
+        { id: 'approval', label: '审批', val: badgeState.approvals, accent: badgeState.approvals ? 'warn' : undefined },
       ]
       return h('div', {
         className: 'd2d-panel d2d-main',
@@ -79,7 +79,7 @@
         // App Bar: 品牌 + 工作台 KPI 带(chip 即导航 — 点击直达对应页签)
         // E39-B7-2: 砍"影子 on"chip(次要标签——影子状态在待人工页 summary 分显已可见)
         h('div', { style: WB.bar },
-          h('span', { style: WB.brand }, PanelIcon({ size: 17 }), 'd2d 工作台'),
+          h('span', { style: WB.brand }, PanelIcon({ size: 17 }), 'd2d'),
           h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', flex: 1, minWidth: 0, justifyContent: 'flex-end' } },
             kpis.map((k) => h('button', {
               key: k.id, style: WB.kpi(k.accent), onClick: () => setActive(k.id), title: `查看${k.label}`,
@@ -98,4 +98,30 @@
         h('div', { style: WB.canvas },
           h('div', { style: { maxWidth: '1280px', margin: '0 auto' } },
             h(tab.comp, { visible: true, key: tab.id }))))
+    }
+
+    // ══════════ d2d 图谱独立页(E39 用户需求): 星图/热力/泳道直开不经工作台页签 ══════════
+    // 独立 main 槽位(sidebar.panellist 第二入口)——VizView 同一组件(轮询/护栏/Style 全复用),
+    // 仅容器形态不同: 全宽画布去 1280 居中限宽, 图看的是面不是列。
+    function GraphIcon(props) {
+      const size = props?.size ?? 18
+      return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+        h('circle', { cx: 6, cy: 6, r: 2.5 }),
+        h('circle', { cx: 18, cy: 5, r: 2.5 }),
+        h('circle', { cx: 12, cy: 13, r: 2.5 }),
+        h('circle', { cx: 5, cy: 19, r: 2.5 }),
+        h('circle', { cx: 19, cy: 18, r: 2.5 }),
+        h('path', { d: 'M7.8 7.4 10.3 11.1M16.3 6.9 13.7 11.2M9.8 14.2 6.9 17.4M14.2 14.3 17.3 16.9M8.5 6 15.5 5.4' }))
+    }
+
+    function GraphPageView() {
+      return h('div', {
+        className: 'd2d-panel d2d-graph',
+        style: { display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, boxSizing: 'border-box', background: 'var(--dsw-alias-bg-layer-1, transparent)', color: 'var(--dsw-alias-label-primary, inherit)', font: 'inherit' },
+      },
+        Style(),
+        h('div', { style: WB.bar },
+          h('span', { style: WB.brand }, GraphIcon({ size: 17 }), 'd2d 图谱')),
+        h('div', { style: { ...WB.canvas, padding: '12px 14px' } },
+          h(VizView, { visible: true })))
     }

@@ -44,10 +44,10 @@
       const { tc, err } = useToolCalls(visible, kind, limit)
       return h('div', panel.root, Style(),
         h(Card, {
-          title: `工具调用明细 · ${tc?.eng || '—'}`,
+          title: '工具调用',
           extra: err
-            ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `不可用: ${String(err?.message ?? err).slice(0, 60)}`)
-            : h('span', panel.muted(0.45), `显示 ${tc?.events?.length ?? 0} 条${tc?.truncated ? '(已截尾, 取最近)' : ''}`),
+            ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
+            : h('span', panel.muted(0.45), `${tc?.events?.length ?? 0}`),
         },
           h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' } },
             h('button', { ...panel.btn(!kind ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}), onClick: () => setKind('') }, '全部'),
@@ -64,15 +64,13 @@
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '360px', overflowY: 'auto', paddingRight: '2px' } },
             (tc?.events ?? []).length
               ? tc.events.map((e, i) => h(ToolEventRow, { key: `${e.ts}:${i}`, e }))
-              : h('div', panel.muted(0.45), err ? '拉取失败 — fail-soft 不显示旧数据' : `无事件${kind ? `(kind=${kind})` : ''} — 调度环派发后 run-log 落行`)),
-          h('div', { ...panel.muted(0.45), style: { borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px' } },
-            '事件词表非穷尽: kind 白名单外的字段经 extra 截尾兜底渲染(不丢关键线索); 明细上限 600 行(服务端尾读)。')),
-        h(Card, { title: '工具量榜(per-worker, terminal 行聚合)', extra: h('span', panel.muted(0.45), 'model-usage.jsonl · 上限 20') },
+              : h('div', panel.muted(0.45), err ? '拉取失败' : '无事件'))),
+        h(Card, { title: '工具量榜' },
           (tc?.toolTotals ?? []).length
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px' } },
               tc.toolTotals.map((t) => h('div', { key: t.worker, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
                 h('span', { ...panel.mono, style: { ...panel.mono.style, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, t.worker),
                 h('span', panel.muted(0.55), `${t.terminals} 终态`),
                 h('span', { ...panel.mono, style: { ...panel.mono.style, fontWeight: 600 } }, `${t.tools} 次工具`))))
-            : h('div', panel.muted(0.45), '暂无终态账本行')))
+            : h('div', panel.muted(0.45), '暂无数据')))
     }

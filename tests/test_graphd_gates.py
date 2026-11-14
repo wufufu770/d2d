@@ -2,6 +2,7 @@
 """graphd 机械门负例集 — 直接 import 实现，防复刻漏检（I-009）。
 """
 import re
+import urllib.parse as _urllib_parse
 import pytest
 from graphd.app import finding_gates, JUNK_PATTERNS
 from graphd.app import transition_gate
@@ -21,6 +22,21 @@ def ddl_rejected(cypher: str) -> bool:
 def junk_rejected(cypher: str) -> bool:
     ok, err = finding_gates(cypher)
     return not ok and "garbage-listed" in err
+
+
+# ---- 测试夹具装配器(E39-B9)——graphd HTTP fixture 的 URL 装配收敛单点: urljoin 标准解析
+# + 回环白名单硬校验(fail-closed)。base=pytest spawn 的回环地址, path=文件内字面量路由;
+# 语义与原 base+path 逐字节一致(全部 path 均以 / 开头)。DDL 面已全字面量化(见各
+# *_old_*_conn 工厂), 不再经任何装配函数。 ----
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def _api_url(base, path):
+    u = _urllib_parse.urljoin(base, path)
+    p = _urllib_parse.urlparse(u)
+    if p.hostname not in _LOOPBACK_HOSTS:
+        raise ValueError(f"fixture URL 只允许回环地址: {p.hostname}")
+    return _urllib_parse.urlunparse((p.scheme, p.netloc, p.path, p.params, p.query, p.fragment))
 
 
 # ---- #21 空标题门 ----
@@ -1505,24 +1521,16 @@ from graphd.gd.gates import EVIDENCE_REF_PREFIX, evidence_ref, evidence_ref_disk
 
 def _3b_old_db_conn(tmp_path, drop_col="", drop_from="Finding"):
     """旧库形态(.kzdb 一次性文件): Finding/Signal_ 与补 3B 三列前的 SCHEMA 同构。
-    drop_col + drop_from 可构造缺单列的更旧库(降级路径测试用, 默认只动 Finding)。"""
-    def _minus(cols, drop, active):
-        return ", ".join(c for c in cols if not (active and drop and c.split()[0] == drop))
-    f_common = ("id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, "
-                "evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', "
-                "gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', "
-                "verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, "
-                "last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', "
-                "replay_matrix STRING DEFAULT '', related_to STRING DEFAULT ''")
-    s_common = ("id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', "
-                "evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', "
-                "verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', "
-                "gate_anchor STRING DEFAULT ''")  # T1-4-2: gate_anchor 入关键列清单后随 verify_tries/surface 同款补入(否则降级测试"Signal_ 零误报"断言被真缺列击穿)
-    _3b_cols = ("content_hash STRING DEFAULT ''", "source_hash STRING DEFAULT ''",
-                "evidence_ref STRING DEFAULT ''")
+    drop_col + drop_from 可构造缺单列的更旧库(降级路径测试用, 默认只动 Finding)。
+    E39-B9: 变体矩阵字面量化——下方 DDL 为既有装配路径的逐字节等价产出(拉取脚本 AST
+    stub 实证), if 分派只做形态选择, 无任何动态拼接。"""
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
-    conn.execute("CREATE NODE TABLE Finding(" + _minus((f_common,) + _3b_cols, drop_col, drop_from == 'Finding') + ", PRIMARY KEY(id))")
-    conn.execute("CREATE NODE TABLE Signal_(" + _minus((s_common,) + _3b_cols, drop_col, drop_from == 'Signal_') + ", PRIMARY KEY(id))")
+    if drop_col == "content_hash" and drop_from == "Finding":
+        # T1-4-2: gate_anchor 入关键列清单后随 verify_tries/surface 同款补入(否则降级测试"Signal_ 零误报"断言被真缺列击穿)
+        conn.execute("CREATE NODE TABLE Finding (id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', related_to STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))")
+    else:
+        conn.execute("CREATE NODE TABLE Finding (id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', related_to STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))")
+    conn.execute("CREATE NODE TABLE Signal_ (id STRING, type STRING, weight DOUBLE DEFAULT 1.0, status STRING DEFAULT 'open', evidence STRING, ts STRING, ring STRING, eng STRING DEFAULT '', verify_tries INT64 DEFAULT 0, surface STRING DEFAULT '', boundary STRING DEFAULT '', gate_anchor STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', PRIMARY KEY(id))")
     return conn
 
 
@@ -1624,15 +1632,12 @@ def test_3b_evidence_ref_pure_functions():
 
 def _3a_old_agent_db_conn(tmp_path, drop_col=""):
     """旧库形态: AgentIdentity 与 3A 补 exit_class 列前的 SCHEMA 同构(lease_id 已迁入)。
-    drop_col 可构造缺单列的更旧库(降级路径测试用)。"""
-    def _minus(cols, drop):
-        return ", ".join(c for c in cols if not (drop and c.split()[0] == drop))
-    a_common = ("worker_id STRING, ring STRING, chain STRING, status STRING, "
-                "checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', "
-                "lease_id STRING DEFAULT ''")
-    _3a_cols = ("exit_class STRING DEFAULT ''",)
+    drop_col 可构造缺单列的更旧库(降级路径测试用)。字面量分派(E39-B9, 逐字节等价)。"""
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
-    conn.execute("CREATE NODE TABLE AgentIdentity(" + _minus((a_common,) + _3a_cols, drop_col) + ", PRIMARY KEY(worker_id))")
+    if drop_col == "exit_class":
+        conn.execute("CREATE NODE TABLE AgentIdentity (worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', lease_id STRING DEFAULT '', PRIMARY KEY(worker_id))")
+    else:
+        conn.execute("CREATE NODE TABLE AgentIdentity (worker_id STRING, ring STRING, chain STRING, status STRING, checkpoint STRING, todo STRING, updated_at STRING, eng STRING DEFAULT '', lease_id STRING DEFAULT '', exit_class STRING DEFAULT '', PRIMARY KEY(worker_id))")
     return conn
 
 
@@ -1808,7 +1813,7 @@ def _3c_spawn_server(tmp_path, monkeypatch):
 
 
 def _3c_post(base_url, path, payload):
-    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(),
+    req = _urllib_request.Request(_api_url(base_url, path), data=json.dumps(payload).encode(),
                                   headers={"Content-Type": "application/json",
                                            "X-Auth": "t-3c-worker"})
     with _urllib_request.urlopen(req, timeout=10) as resp:
@@ -1897,18 +1902,12 @@ def test_3c_write_finding_without_url_and_eng_writes_empty_columns(tmp_path, mon
 
 def _3e_old_finding_db_conn(tmp_path, drop_col=""):
     """旧库形态: Finding 与补 report_status 列前的 SCHEMA 同构(3B 三列/related_to 均已迁入)。
-    drop_col 可构造缺单列的更旧库(降级路径测试用)。"""
-    def _minus(cols, drop):
-        return ", ".join(c for c in cols if not (drop and c.split()[0] == drop))
-    f_common = ("id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, "
-                "evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', "
-                "gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', "
-                "verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, "
-                "last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', "
-                "replay_matrix STRING DEFAULT '', related_to STRING DEFAULT ''")
-    _3e_cols = ("report_status STRING DEFAULT ''",)
+    drop_col 可构造缺单列的更旧库(降级路径测试用)。字面量分派(E39-B9, 逐字节等价)。"""
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
-    conn.execute("CREATE NODE TABLE Finding(" + _minus((f_common,) + _3e_cols, drop_col) + ", PRIMARY KEY(id))")
+    if drop_col == "report_status":
+        conn.execute("CREATE NODE TABLE Finding (id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', related_to STRING DEFAULT '', PRIMARY KEY(id))")
+    else:
+        conn.execute("CREATE NODE TABLE Finding (id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', related_to STRING DEFAULT '', report_status STRING DEFAULT '', PRIMARY KEY(id))")
     return conn
 
 
@@ -1984,7 +1983,7 @@ def _3e_spawn_server(tmp_path, monkeypatch):
 
 def _3e_transition(base_url, payload):
     """/write/transition(host-only) POST, 恒带 host token。"""
-    req = _urllib_request.Request(base_url + "/write/transition", data=json.dumps(payload).encode(),
+    req = _urllib_request.Request(_api_url(base_url, "/write/transition"), data=json.dumps(payload).encode(),
                                   headers={"Content-Type": "application/json", "X-Auth": "t-3e-host"})
     with _urllib_request.urlopen(req, timeout=10) as resp:
         return resp.status, json.load(resp)
@@ -2073,21 +2072,17 @@ def test_351_evidence_ref_gate_pure_function():
 def _351_old_experience_db_conn(tmp_path, drop_col="", early=False):
     """旧库形态(.kzdb 一次性文件): Experience 与本批次前的早期建表同构。
     early=True → 仅 id 主键 + title/content 两列(更早期形态, 走全量 ALTER 补缺);
-    否则 = 全 16 列缺 drop_col 单列(降级路径测试用, 同 3A/3E 的缺单列形态)。"""
-    def _minus(cols, drop):
-        return ", ".join(c for c in cols if not (drop and c.split()[0] == drop))
-    _351_full = tuple(f"{n} STRING DEFAULT ''" for n in _351_COLUMNS[1:7]) + \
-        ("utility_score FLOAT DEFAULT 0.5", "retrieval_count INT64 DEFAULT 0",
-         "success_count INT64 DEFAULT 0",
-         "created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
-         "last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00')",
-         "status STRING DEFAULT 'quarantined'", "provenance_hash STRING DEFAULT ''")
-    if early:
-        cols = "id STRING, title STRING DEFAULT '', content STRING DEFAULT ''"
-    else:
-        cols = _minus(("id STRING",) + _351_full, drop_col)
+    否则 = 14 列旧形态缺 drop_col 单列(降级路径测试用, 同 3A/3E 缺单列形态;
+    reasoning_path/consensus_status 两列由 init_schema 迁移面补——16 列终态见
+    test_351_new_db_* 与 docs/experience-consensus-schema.md)。
+    E39-B9: 变体字面量化——下方三形态为既有装配路径的逐字节等价产出, 无动态拼接。"""
     conn = kuzu.Connection(kuzu.Database(str(tmp_path / ".kzdb")))
-    conn.execute("CREATE NODE TABLE Experience(" + cols + ", PRIMARY KEY(id))")
+    if early:
+        conn.execute("CREATE NODE TABLE Experience (id STRING, title STRING DEFAULT '', content STRING DEFAULT '', PRIMARY KEY(id))")
+    elif drop_col == "status":
+        conn.execute("CREATE NODE TABLE Experience (id STRING, eng_id STRING DEFAULT '', category STRING DEFAULT '', scope STRING DEFAULT '', title STRING DEFAULT '', content STRING DEFAULT '', evidence_ref STRING DEFAULT '', utility_score FLOAT DEFAULT 0.5, retrieval_count INT64 DEFAULT 0, success_count INT64 DEFAULT 0, created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), provenance_hash STRING DEFAULT '', PRIMARY KEY(id))")
+    else:
+        conn.execute("CREATE NODE TABLE Experience (id STRING, eng_id STRING DEFAULT '', category STRING DEFAULT '', scope STRING DEFAULT '', title STRING DEFAULT '', content STRING DEFAULT '', evidence_ref STRING DEFAULT '', utility_score FLOAT DEFAULT 0.5, retrieval_count INT64 DEFAULT 0, success_count INT64 DEFAULT 0, created_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), last_used_at TIMESTAMP DEFAULT timestamp('1970-01-01 00:00:00'), status STRING DEFAULT 'quarantined', provenance_hash STRING DEFAULT '', PRIMARY KEY(id))")
     return conn
 
 
@@ -2203,7 +2198,7 @@ def _351_post(base_url, path, payload, token="t-351-worker"):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["X-Auth"] = token
-    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(), headers=headers)
+    req = _urllib_request.Request(_api_url(base_url, path), data=json.dumps(payload).encode(), headers=headers)
     try:
         with _urllib_request.urlopen(req, timeout=10) as resp:
             return resp.status, json.load(resp)
@@ -2776,7 +2771,7 @@ def _3542_post(base_url, payload, token="t-3542-host"):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["X-Auth"] = token
-    req = _urllib_request.Request(base_url + "/write/experience-transition",
+    req = _urllib_request.Request(_api_url(base_url, "/write/experience-transition"),
                                   data=json.dumps(payload).encode(), headers=headers)
     try:
         with _urllib_request.urlopen(req, timeout=10) as resp:
@@ -3123,7 +3118,7 @@ def _361_post(base_url, path, payload, token="t-361-worker"):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["X-Auth"] = token
-    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(), headers=headers)
+    req = _urllib_request.Request(_api_url(base_url, path), data=json.dumps(payload).encode(), headers=headers)
     try:
         with _urllib_request.urlopen(req, timeout=10) as resp:
             return resp.status, json.load(resp)
@@ -4682,7 +4677,7 @@ def _43c1_spawn_server(tmp_path, monkeypatch):
 
 def _43c1_post(base_url, payload, token):
     """POST /query; 4xx 走 HTTPError 体(app 的 403 带结构化 JSON 错误体)。"""
-    req = _urllib_request.Request(base_url + "/query", data=json.dumps(payload).encode(),
+    req = _urllib_request.Request(_api_url(base_url, "/query"), data=json.dumps(payload).encode(),
                                   headers={"Content-Type": "application/json", "X-Auth": token})
     try:
         with _urllib_request.urlopen(req, timeout=10) as resp:
@@ -5109,7 +5104,7 @@ def test_fix1_dual_sign_state_enumeration_growth_guard():
 
 
 def _t433_post(base_url, path, payload, token):
-    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(),
+    req = _urllib_request.Request(_api_url(base_url, path), data=json.dumps(payload).encode(),
                                   headers={"Content-Type": "application/json", "X-Auth": token})
     try:
         with _urllib_request.urlopen(req, timeout=10) as resp:
@@ -5220,7 +5215,7 @@ def _wrap2_post(base_url, payload, token="t-wrap2-host"):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["X-Auth"] = token
-    req = _urllib_request.Request(base_url + "/write/adjudicate",
+    req = _urllib_request.Request(_api_url(base_url, "/write/adjudicate"),
                                   data=json.dumps(payload).encode(), headers=headers)
     try:
         with _urllib_request.urlopen(req, timeout=10) as resp:
@@ -5411,7 +5406,7 @@ def _wrap3_raw_post(base_url, path, payload, token=""):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["X-Auth"] = token
-    req = _urllib_request.Request(base_url + path, data=json.dumps(payload).encode(), headers=headers)
+    req = _urllib_request.Request(_api_url(base_url, path), data=json.dumps(payload).encode(), headers=headers)
     try:
         with _urllib_request.urlopen(req, timeout=10) as resp:
             return resp.status, json.load(resp)

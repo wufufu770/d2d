@@ -92,7 +92,9 @@ test('client: apply 注册 9 个 single tab(60-68), badge 能力探测通过时�
     'd2d-panel: xring tab',
     // 1.6.0 Phase C: 主面板槽位注册(applyMain — 与 better-sidebar tabs 同一 apply 顺序)
     'd2d-panel: locale dict', 'd2d-panel: main page', 'd2d-panel: main icon',
-  ], 'XR-P2: X-Ring tab 注册(九 tab) + 主面板注册(Phase C)')
+    // E39: 图谱独立页(第二 main/panellist 配对 — VizView 直开全页)
+    'd2d-panel: graph page', 'd2d-panel: graph icon',
+  ], 'XR-P2: X-Ring tab 注册(九 tab) + 主面板/图谱页注册(Phase C + E39)')
   assert.deepEqual(tabs.map((t) => t.id), ['d2d:ops', 'd2d:findings', 'd2d:viz', 'd2d:approval', 'd2d:chain', 'd2d:tools', 'd2d:audit', 'd2d:config', 'd2d:xring'])
   assert.deepEqual(tabs.map((t) => t.order), [60, 61, 62, 63, 64, 65, 66, 67, 68])
   assert.deepEqual(tabs.map((t) => t.single), [true, true, true, true, true, true, true, true, true])
@@ -133,8 +135,8 @@ test('client: betterSidebar 服务缺失 → tabs 跳过但主面板仍注册(1.
     const { ctx, tabs, effects, logs, slotCalls } = fakeCtx(svc)
     assert.doesNotThrow(() => apply(ctx))
     assert.deepEqual(tabs, [])
-    assert.deepEqual(effects, ['d2d-panel: locale dict', 'd2d-panel: main page', 'd2d-panel: main icon'])
-    assert.deepEqual(slotCalls, ['main', 'sidebar.panellist'])
+    assert.deepEqual(effects, ['d2d-panel: locale dict', 'd2d-panel: main page', 'd2d-panel: main icon', 'd2d-panel: graph page', 'd2d-panel: graph icon'])
+    assert.deepEqual(slotCalls, ['main', 'sidebar.panellist', 'main', 'sidebar.panellist'])
     assert.deepEqual(logs, ['d2d-panel: betterSidebar 服务不可用, tab 注册跳过'])
   }
 })
@@ -144,7 +146,7 @@ test('client: 主面板槽位注册形态(1.6.0 Phase C — superagent panel 同
   const { apply } = materialize()
   const { ctx, slotCalls, slotProducts } = fakeCtx({ features: [] })
   apply(ctx)
-  assert.deepEqual(slotCalls, ['main', 'sidebar.panellist'])
+  assert.deepEqual(slotCalls, ['main', 'sidebar.panellist', 'main', 'sidebar.panellist'])
   const main = slotProducts[0]
   assert.equal(main.name, 'main')
   assert.equal(main.r.cfg.name, 'main')
@@ -159,6 +161,25 @@ test('client: 主面板槽位注册形态(1.6.0 Phase C — superagent panel 同
   assert.equal(icon.r.cfg.order, 10)
   assert.equal(icon.r.cfg.label(), 'panel', 'locale 绑定回落静态文案')
   assert.equal(typeof icon.r.comp, 'function', 'panellist 子件=图标组件')
+})
+
+test('client: 图谱独立页槽位注册(E39 — VizView 直开全页, 第二 main/panellist 配对)', () => {
+  const { materialize } = loadBundle()
+  const { apply } = materialize()
+  const { ctx, slotProducts } = fakeCtx({ features: [] })
+  apply(ctx)
+  const gpage = slotProducts[2]
+  assert.equal(gpage.r.cfg.name, 'main')
+  assert.equal(gpage.r.cfg.key, 'd2d-graph', '图谱页 key=GRAPH_PANEL_ID')
+  assert.equal(gpage.r.cfg.locale, 'd2dPanel')
+  const gpageEl = gpage.r.comp()
+  assert.equal(gpageEl.type.name, 'GraphPageView', '图谱槽位装配 GraphPageView 全页')
+  const gicon = slotProducts[3]
+  assert.equal(gicon.r.cfg.name, 'sidebar.panellist')
+  assert.equal(gicon.r.cfg.id, 'd2d-graph', 'panellist id 与图谱 main key 配对')
+  assert.equal(gicon.r.cfg.order, 11)
+  assert.equal(gicon.r.cfg.label(), 'graph', 'locale 绑定回落静态文案')
+  assert.equal(typeof gicon.r.comp, 'function', 'panellist 子件=图标组件')
 })
 
 // ══════════ bug 回归: 片段级行为探针 — 片段放进隔离 vm, 工厂作用域依赖(h/useState/panel/…)打桩后直接驱动组件 ══════════
@@ -298,7 +319,7 @@ test('client(viz): StarMapChart 渲染护栏 — 500 节点输入渲染 ≤200 c
   assert.ok(els.some((e) => e.type === 'svg'), '自绘 SVG 在位')
   const circles = els.filter((e) => e.type === 'circle')
   assert.ok(circles.length <= 200 && circles.length > 0, `circle 渲染上限(${circles.length})`)
-  assert.ok(JSON.stringify(els).includes('+300 未显示'), '超限计数提示(500-200)')
+  assert.ok(JSON.stringify(els).includes('+300 未显示'), '超限计数提示(500-200)——短文案+title 注记')
 })
 test('client(viz): StarMapChart 空态与候选连线 chip', () => {
   const { ctx, els } = loadVizFragment()
@@ -343,7 +364,7 @@ test('client(viz): VizView 容器 — visible 驱动 useViz, 数据未达时五�
   assert.equal(cards.length, 4, 'card() 直渲染四卡(热力/泳道/星图/能力)')
   assert.ok(els.some((e) => e.type === ctx.SankeyCard), '桑基卡 vnode 在位(makeH 不展开子组件) — T3-3-2 桑基入 viz tab')
   const blob = JSON.stringify(els)
-  for (const t of ['覆盖象限热力', '假设泳道', '信号星图', '能力看板']) assert.ok(blob.includes(t), `卡标题 ${t}`)
+  for (const t of ['覆盖热力', '假设泳道', '信号星图', '能力看板']) assert.ok(blob.includes(t), `卡标题 ${t}`)
   // makeH 不展开子组件 — 图组件 vnode 在位且收到 undefined 数据(路由失败单卡降级, 各图组件自渲染不可用态)
   const comps = els.filter((e) => [ctx.CoverageHeat, ctx.HypLaneSwim, ctx.StarMapChart, ctx.CapabilityCard].includes(e.type))
   assert.equal(comps.length, 4, '四图组件 vnode 在位')
@@ -396,11 +417,11 @@ test('client(sankey): SankeyChart — 双列节点+缎带按 count 缩宽+家族
   assert.ok(JSON.stringify(e3).includes('无迁移事件'), '过滤后空族 → 显式空态')
 })
 
-test('client(sankey): 空数据/降级注记 + SankeyCard 家族 chips + 窗口注记(稀疏即真相不造数据)', () => {
+test('client(sankey): 空数据/降级注记 + SankeyCard 家族 chips + 侧标注(E39 降噪: 布局即图例)', () => {
   const { ctx, els } = loadNewFragment('view.viz.js')
   ctx.SankeyChart({ flows: { links: [], windowDays: 7, linesRead: 0, matched: 0, degraded: [] }, family: 'all' })
   const blob = JSON.stringify(els)
-  assert.ok(blob.includes('无迁移事件') && blob.includes('不造数据'), '空态注记(拍板 3)')
+  assert.ok(blob.includes('无迁移事件'), '空态注记')
   const { ctx: c2, els: e2 } = loadNewFragment('view.viz.js')
   c2.SankeyChart({ flows: { ...mkFlows(), degraded: ['transition-log 不可读: ENOENT'] }, family: 'all' })
   assert.ok(JSON.stringify(e2).includes('transition-log 不可读'), 'degraded 记因进 UI')
@@ -408,7 +429,8 @@ test('client(sankey): 空数据/降级注记 + SankeyCard 家族 chips + 窗口�
   c3.SankeyCard({ flows: mkFlows(), errs: {} })
   const b3 = JSON.stringify(e3)
   for (const f of ['全部', '漏洞', '经验', '前沿']) assert.ok(b3.includes(f), `家族 chip ${f}`)
-  assert.ok(b3.includes('稀疏即历史真相'), '预期管理注记')
+  const { els: e5 } = (() => { const c5 = loadNewFragment('view.viz.js'); c5.ctx.SankeyChart({ flows: mkFlows(), family: 'all' }); return c5 })()
+  assert.ok(JSON.stringify(e5).includes('迁出') && JSON.stringify(e5).includes('迁入'), '侧标注入图(布局即图例)')
   const { ctx: c4, els: e4 } = loadNewFragment('view.viz.js')
   c4.SankeyCard({ flows: mkFlows(), errs: { 'transition-flows': new Error('HTTP 503') } })
   assert.ok(JSON.stringify(e4).includes('不可用'), '路由错误单卡降级提示')
@@ -424,14 +446,16 @@ const mkChain = () => ({
   caps: { tasks: 50, findings: 100, endpoints: 200, edges: 300 },
 })
 
-test('client(chain): ChainChart 三列节点+边两端在列内才画 + CONFIRMS 稀疏注记(拍板 3)', () => {
+test('client(chain): ChainChart 三列节点+边两端在列内才画 + 未画族条件披露(E39 降噪)', () => {
   const { ctx, els } = loadNewFragment('view.chain.js')
-  ctx.ChainChart({ chain: mkChain() })
+  ctx.ChainChart({ chain: { ...mkChain(), edges: { ...mkChain().edges, suggests: [{ a: 'sig-1', b: 'ep-1' }] } } })
   assert.ok(els.some((e) => e.type === 'svg'), '自绘 SVG 在位')
   assert.equal(els.filter((e) => e.type === 'path').length, 2, 'AT+CONFIRMS 各一条; DERIVED_FROM 末端 sig-0 不在列内被滤')
   const blob = JSON.stringify(els)
-  assert.ok(blob.includes('历史存量恒 0'), 'CONFIRMS 稀疏注记')
-  assert.ok(blob.includes('SUGGESTS'), '未画族计数披露')
+  assert.ok(blob.includes('SUGGESTS 1'), '未画族非零才披露')
+  const { ctx: c0, els: e0 } = loadNewFragment('view.chain.js')
+  c0.ChainChart({ chain: mkChain() })
+  assert.ok(!JSON.stringify(e0).includes('SUGGESTS'), 'suggests=0 不渲染计数(零噪音)')
   const { ctx: c2, els: e2 } = loadNewFragment('view.chain.js')
   c2.ChainChart({ chain: null })
   assert.ok(JSON.stringify(e2).includes('不可用'), '数据不可用态')
@@ -472,8 +496,7 @@ test('client(approval): ApprovalTicket 通过/驳回按钮回调携带 (id, deci
   const { ctx: c2, els: e2 } = loadNewFragment('view.approval.js', { fetchApi: async () => ({ ok: true, mode: 'queue', count: 0, approvals: [] }) })
   c2.ApprovalView({ visible: true })
   const b2 = JSON.stringify(e2)
-  assert.ok(b2.includes('审批队列') && b2.includes('队列为空'), '空队列态(探针 useState 不承接异步取数 — 数据路径由 host 测试覆盖)')
-  assert.ok(b2.includes('授权与审批正交'), '正交语义声明(不碰审批门)')
+  assert.ok(b2.includes('审批队列') && b2.includes('队列为空'), '空队列态(探针 useState 不承接异步取数 — 数据路径由 host 测试覆盖; 模式 chip 数据路径由 host 侧覆盖)')
 })
 
 test('client(tools/audit): ToolEventRow/AuditRow 直驱 + 容器壳降级态', () => {
@@ -484,8 +507,8 @@ test('client(tools/audit): ToolEventRow/AuditRow 直驱 + 容器壳降级态', (
   const { ctx: c2, els: e2 } = loadNewFragment('view.tools.js')
   c2.ToolsView({ visible: true })
   const b2 = JSON.stringify(e2)
-  assert.ok(b2.includes('工具调用明细') && b2.includes('工具量榜'), '双卡标题')
-  assert.ok(b2.includes('无事件') && b2.includes('暂无终态账本行'), '取数未达空态(探针 useState 不承接异步)')
+  assert.ok(b2.includes('工具调用') && b2.includes('工具量榜'), '双卡标题')
+  assert.ok(b2.includes('无事件') && b2.includes('暂无数据'), '取数未达空态(探针 useState 不承接异步)')
   const { ctx: c3, els: e3 } = loadNewFragment('view.audit.js')
   c3.AuditRow({ e: { ts: '2026-10-02T03:00:00Z', source: 'transition', kind: 'transition', detail: { node_id: 'f-1', from_status: 'candidate', to_status: 'verified', actor: 'host', reason: 'r' } } })
   c3.AuditRow({ e: { ts: '2026-10-02T02:00:00Z', source: 'audit', kind: 'transition-illegal', detail: { id: 'f-9' } } })
@@ -495,8 +518,7 @@ test('client(tools/audit): ToolEventRow/AuditRow 直驱 + 容器壳降级态', (
   const { ctx: c4, els: e4 } = loadNewFragment('view.audit.js')
   c4.AuditView({ visible: true })
   const b4 = JSON.stringify(e4)
-  assert.ok(b4.includes('审计时间线') && b4.includes('无审计事件'), '容器壳+空态')
-  assert.ok(b4.includes('合流'), '双源合流注记')
+  assert.ok(b4.includes('审计') && b4.includes('无审计事件'), '容器壳+空态')
 })
 
 test('client(config): ConfigView 只读总览(探针降级态) + 写面卡集中装配(vnode 在位)', () => {
@@ -507,10 +529,10 @@ test('client(config): ConfigView 只读总览(探针降级态) + 写面卡集中
   })
   ctx.ConfigView({ visible: true })
   const blob = JSON.stringify(els)
-  assert.ok(blob.includes('配置总览'), '只读总览卡')
-  assert.ok(blob.includes('通知通道 未配置'), 'configx 取数未达 → 未配置降级态(探针 useState 不承接异步)')
-  assert.ok(blob.includes('暂停项目 0'), '暂停清单空态')
-  assert.ok(blob.includes('审批模式 off'), '模式 chip(来自 useSnapshot 桩)')
+  assert.ok(blob.includes('总览'), '只读总览卡')
+  assert.ok(blob.includes('未配置'), 'configx 取数未达 → 未配置降级态(探针 useState 不承接异步)')
+  assert.ok(blob.includes('暂停 0'), '暂停清单空态')
+  assert.ok(blob.includes('off'), '模式 chip(来自 useSnapshot 桩)')
   const comps = els.filter((e) => [ctx.DenylistCard, ctx.CapsCard, ctx.FleetCard].includes(e.type))
   assert.equal(comps.length, 3, '三个既有写面卡集中(复用不重写, vnode 在位)')
 })
@@ -528,8 +550,8 @@ test('client(xring): XRingView 只读投影 — 当前 run/预算/工件/事件�
   })
   ctx.XRingView({ visible: true })
   let blob = JSON.stringify(els)
-  assert.ok(blob.includes('合法空态'), '空态文案')
-  assert.ok(blob.includes('零干预入口'), 'CLI 提示(空态也在位)')
+  assert.ok(blob.includes('无 run 记录'), '空态文案(E39 降噪: 合法空态一句话)')
+  assert.ok(blob.includes('X-Ring'), '卡题在位')
   // 有 run 数据 → 状态/预算/工件/事件尾窗/degraded
   const snap = { xring: { available: true, base: '/d2d/xring', activeCount: 1, degraded: ['eng-x/run-2: events.jsonl 不可读(ENOENT)'], runs: [
     { eng: 'eng-x', runId: 'run-1', status: 'running', stopReason: null, startedAt: '2026-10-06T01:00:00.000Z', elapsedSec: 125, mode: 'queue', budget: { maxHours: 3, maxTokens: 1000000 }, lastTick: { ok: true, detail: '0.03h/3h, 12590/1000000 tokens', tokens: 12590, idleMs: 42000 }, artifacts: null, events: [
@@ -549,11 +571,11 @@ test('client(xring): XRingView 只读投影 — 当前 run/预算/工件/事件�
   const b2 = JSON.stringify(e2)
   assert.ok(b2.includes('活跃 run 1') && b2.includes('历史 2'), '活跃/历史计数 chips')
   assert.ok(b2.includes('running') && b2.includes('stopped·budget'), '状态 chip(含停止原因)')
-  assert.ok(b2.includes('预算 3h') && b2.includes('token 上限'), '预算行')
+  assert.ok(b2.includes('预算 3h') && b2.includes('1,000,000'), '预算行')
   assert.ok(b2.includes('档位 queue'), 'U2 档位显示')
-  assert.ok(b2.includes('token 代理: 12,590'), '运行中 token 代理值（转录尾近精确, XR-P3）')
-  assert.ok(b2.includes('转录静默: 42s'), '停滞遥测显示（拍板 4）')
-  assert.ok(b2.includes('工件计数待回流'), '未回流=计数不可得(不造 0)')
+  assert.ok(b2.includes('token 12,590'), '运行中 token 值')
+  assert.ok(b2.includes('转录静默 42s'), '停滞遥测显示')
+  assert.ok(b2.includes('A:? B:? C:?') || b2.includes('—'), '未回流=计数不可得(不造 0)')
   assert.ok(b2.includes('budget-tick') && b2.includes('0.03h/3h'), '事件尾窗渲染')
   assert.ok(b2.includes('eng-x/run-2: events.jsonl 不可读'), 'degraded 记因进 UI')
   assert.ok(b2.includes('A:1 B:2 C:1'), '历史行工件三级计数')
@@ -568,7 +590,7 @@ test('client(xring): XRingView 只读投影 — 当前 run/预算/工件/事件�
     FailClosedBanner: function F() {}, Skeleton: function S() {},
   })
   c4.XRingView({ visible: true })
-  assert.ok(JSON.stringify(e4).includes('回流: 写入 2 / 留验 1 / 错误 0'), '回流账目行(已回流形态)')
+  assert.ok(JSON.stringify(e4).includes('回流 2 / 留验 1 / 错误 0'), '回流账目行(已回流形态)')
   // err 且无 snap → fail-closed banner(standalone 同构)
   const { ctx: c3, els: e3 } = loadNewFragment('view.xring.js', {
     useSnapshot: () => ({ snap: null, err: new Error('HTTP 503'), refresh: () => {} }),

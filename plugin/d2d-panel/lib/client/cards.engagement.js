@@ -60,7 +60,7 @@
       return h('div', {
         key: e.name,
         onClick: e.selected ? undefined : doSelect,
-        title: e.selected ? '当前选中 — 其余卡片显示该项目的数据' : `点击切换到该项目(${e.name})`,
+        title: e.selected ? '当前选中' : `切换到 ${e.name}`,
         style: {
           display: 'flex', flexDirection: 'column', gap: '3px', padding: '6px 8px', borderRadius: '6px', minWidth: 0,
           border: `1px solid ${e.selected ? 'var(--d2d-brand)' : 'var(--d2d-line)'}`,
@@ -95,21 +95,19 @@
       const [hoverMs, setHoverMs] = useState(null)
       const list = snap.engagements ?? []
       return h(Card, {
-        title: 'Engagement · 项目管理',
-        extra: h('span', panel.muted(0.5), `${list.length} 个项目 · 多开并行`),
+        title: '项目',
+        extra: h('span', panel.muted(0.5), `${list.length}`),
       },
         // 全部项目列表(含进度 + 操作)
         list.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '320px', overflowY: 'auto', paddingRight: '2px' } },
             list.map((x) => h(EngRow, { e: x, refresh })))
-          : h('div', panel.muted(), '尚无项目 — 用下方表单发起第一个 src 项目'),
+          : h('div', panel.muted(), '尚无项目'),
         h(EngStartForm, { onDone: refresh }),
         // 选中项目详情(覆盖大数字 + 里程碑 + 计数) — 其余卡片同源跟随
         e ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '6px' } },
           h('div', { ...panel.mono, style: { ...panel.mono.style, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `◆ ${e.name}`),
           h('div', panel.muted(0.55), `${e.target || '?'} · scope: ${e.scope || '?'}`),
-          (snap.denylist?.domains?.length || snap.denylist?.cidr_prefix?.length)
-            ? h('div', panel.muted(0.55), `⛔ 黑名单 ${(snap.denylist.domains?.length ?? 0) + (snap.denylist.cidr_prefix?.length ?? 0)} 条(独立卡片内可增删改)`) : null,
           h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
             h('span', { style: { fontSize: '22px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' } },
               pct === null ? '—' : `${pct}%`),
@@ -129,7 +127,7 @@
                 h('span', { style: { width: '8px', height: `${8 + (i % 3) * 3}px`, borderRadius: '2px', background: isLast ? 'var(--d2d-brand)' : 'var(--d2d-line-strong)', opacity: isLast ? 1 : 0.7 } }),
                 h('span', { style: { fontSize: '8px', opacity: hoverMs === m.id ? 1 : 0.5 } }, `m${i + 1}`))
             }),
-            h('span', { ...panel.muted(0.45), style: { marginLeft: '4px' } }, '· 里程碑(handoff)')) : null,
+            h('span', { ...panel.muted(0.45), style: { marginLeft: '4px' } }, '里程碑')) : null,
           hoverMs ? h('div', { ...panel.mono, style: { ...panel.mono.style, opacity: '.6', wordBreak: 'break-all' } },
             (snap.milestones.find((m) => m.id === hoverMs)?.digest ?? '').slice(0, 160)) : null,
           h(CountStrip, { counts: snap.counts }))

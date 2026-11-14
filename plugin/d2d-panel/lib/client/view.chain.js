@@ -75,15 +75,13 @@
           col.f.map((f, i) => nodeBox(`⚠ ${String(f.title || f.id).slice(0, 20)}`, { x: 462, y: 18 + (col.e.length + i) * ROW }, sevDot(f.severity), `${f.severity} · ${f.state} · ${f.title || f.id}`))),
         h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' } },
           h('span', { ...panel.muted(0.45) }, `worker ${col.w.length} · 信号 ${col.s.length} · 端点 ${col.e.length} · 漏洞 ${col.f.length} · 边 ${edges.length}`),
-          h('span', { ...panel.muted(0.45) }, `SUGGESTS ${chain.edges.suggests.length}(假设→端点, 图内无假设列不画)`)),
-        h('div', { ...panel.muted(0.5), style: { marginTop: '3px', fontSize: '10px' } },
-          'CONFIRMS 边仅 W3 修复后 verified 闭环逐条补建, 历史存量恒 0 — 视觉稀疏是历史真相不是缺陷(不造数据)。'))
+          chain.edges.suggests.length ? h('span', { ...panel.muted(0.45) }, `SUGGESTS ${chain.edges.suggests.length}`) : null))
     }
 
     /** Task 看板(对等 /pentest-tasks): 状态/kind/认领人/链路锚点(link_id)。 */
     function ChainTaskBoard({ chain }) {
       const tasks = chain?.tasks ?? []
-      return h(Card, { title: `任务看板 · ${tasks.length}`, extra: h('span', panel.muted(0.45), 'Task 表 · 认领环按 link_id 关联产物') },
+      return h(Card, { title: '任务看板' },
         tasks.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto', paddingRight: '2px' } },
             tasks.map((t) => h('div', { key: t.id, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
@@ -101,9 +99,9 @@
         h(Card, {
           title: '探索链路',
           extra: err
-            ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `不可用: ${String(err?.message ?? err).slice(0, 60)}`)
-            : h('span', panel.muted(0.45), `eng ${eng || '—'} · worker→信号→产出 三列, 边=DERIVED_FROM/AT/CONFIRMS`),
+            ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
+            : h('span', panel.muted(0.45), eng || '—'),
         },
-          err && !chain ? h('div', panel.muted(0.45), '图服务不可达 — fail-closed 不显示过期链路(重试随轮询自动进行)') : h(ChainChart, { chain })),
+          err && !chain ? h('div', panel.muted(0.45), '图服务不可达') : h(ChainChart, { chain })),
         h(ChainTaskBoard, { chain }))
     }

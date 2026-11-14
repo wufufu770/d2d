@@ -32,20 +32,20 @@
       const paused = config?.paused ?? []
       return h('div', panel.root, Style(),
         h(Card, {
-          title: '配置总览(只读)',
+          title: '总览',
           extra: cfgErr
-            ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `configx 不可用: ${String(cfgErr?.message ?? cfgErr).slice(0, 50)}`)
-            : h('span', panel.muted(0.45), '通知通道值面不出 host(webhook 内嵌 token) · 写面在下方卡片'),
+            ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
+            : null,
         },
           h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'baseline' } },
             h('span', panel.chip({ ...(config?.notify?.configured ? { borderColor: 'var(--d2d-ok)' } : {}) }),
-              `通知通道 ${config?.notify?.configured ? `已配置 · ${config.notify.method || 'POST'}` : '未配置(模板 config/notify.example.json)'}`),
-            h('span', panel.chip(), `审批模式 ${snap.approvals?.mode ?? '?'}`),
-            h('span', panel.chip({ ...(paused.length ? { borderColor: 'var(--d2d-warn)' } : {}) }), `暂停项目 ${paused.length}`)),
+              `通知 ${config?.notify?.configured ? `已配置 · ${config.notify.method || 'POST'}` : '未配置'}`),
+            h('span', panel.chip(), `审批 ${snap.approvals?.mode ?? '?'}`),
+            h('span', panel.chip({ ...(paused.length ? { borderColor: 'var(--d2d-warn)' } : {}) }), `暂停 ${paused.length}`)),
           paused.length
             ? h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap' } },
-              paused.slice(0, 12).map((p) => h('span', { key: p, ...panel.chip(), title: '停止时冻结快照(config/paused-<eng>.json) — 续跑入口在总览 tab' }, p)),
-              paused.length > 12 ? h('span', panel.muted(0.45), `+${paused.length - 12} …`) : null)
+              paused.slice(0, 12).map((p) => h('span', { key: p, ...panel.chip() }, p)),
+              paused.length > 12 ? h('span', panel.muted(0.45), `+${paused.length - 12}`) : null)
             : null,
           (config?.degraded ?? []).map((d, i) => h('div', { key: i, ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, d))),
         h(DenylistCard, { snap, refresh }),
@@ -69,7 +69,7 @@
         } catch (e) { setErr(String(e.message ?? e).slice(0, 160)) }
         setBusy(false)
       }
-      return h(Card, { title: 'SRC 报告导出(verified 面 · 去重台账防重复提交)' },
+      return h(Card, { title: '报告导出' },
         h('div', { style: { display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' } },
           h('select', { ...panel.input(), value: sev, onChange: (ev) => setSev(ev.target.value) },
             ['critical', 'high', 'medium', 'low'].map((s) => h('option', { key: s, value: s }, `≥ ${s}`))),

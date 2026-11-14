@@ -16,6 +16,10 @@ export D2D="${D2D:-${HOME}/d2d}"
 export P2P_HOST_TOKEN="${P2P_HOST_TOKEN:-$(cat "${HOME}/.config/d2d/host-token" 2>/dev/null || true)}"
 export P2P_GRAPHD="http://127.0.0.1:8766"
 WEB_PORT="${WEB_PORT:-8899}"
+# E39: dsh web 拒绝 0.0.0.0 通配(仅收具体接口 IP) — 宿主机访问时 WEB_HOST 传本机 LAN IP
+WEB_HOST="${WEB_HOST:-127.0.0.1}"
+# E39-B1-4: egress 缺省 18888(8888 撞 Java/Tomcat), env P2P_PROXY_PORT 可覆盖
+EGRESS_PORT="${P2P_PROXY_PORT:-18888}"
 RUN_DIR="${D2D_DATA_DIR}/run"
 mkdir -p "${RUN_DIR}"
 
@@ -23,10 +27,10 @@ ACTION="${1:-start}"
 
 # 0913(审查采纳): 端口监听等待 — 进程存活但绑定失败不再误报成功。
 # /dev/tcp 探测 15×1s; 进程死亡提前退出并指认日志。
-wait_port() {         # $1=端口 $2=pid $3=名称 $4=日志路径
-  local port="$1" pid="$2" name="$3" logf="$4"
-  for _ in $(seq 1 15); do
-    (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null && { exec 3>&- 3<&- || true; return 0; }
+wait_port() {         # $1=端口 $2=pid $3=名称 $4=日志路径 $5=探测host(缺省 127.0.0.1) $6=最大秒数(缺省 15)
+  local port="$1" pid="$2" name="$3" logf="$4" host="${5:-127.0.0.1}" tries="${6:-15}"
+  for _ in $(seq 1 "${tries}"); do
+    (exec 3<>"/dev/tcp/${host}/${port}") 2>/dev/null && { exec 3>&- 3<&- || true; return 0; }
     kill -0 "$pid" 2>/dev/null || { echo "✗ ${name} 启动后即退出 — 查 ${logf}"; return 1; }
     sleep 1
   done
@@ -93,8 +97,8 @@ echo "graphd → http://127.0.0.1:8766 (pid ${GRAPHDPID}, /health OK)"
 nohup node "${D2D}/scripts/gateway/egress-gateway.mjs" > "${D2D_DATA_DIR}/egress-gateway.log" 2>&1 &
 EGRESSPID=$!
 echo "${EGRESSPID}" > "${RUN_DIR}/egress.pid"
-wait_port 8888 "${EGRESSPID}" "egress-gateway" "${D2D_DATA_DIR}/egress-gateway.log"
-export P2P_PROXY_URL="http://127.0.0.1:8888"
+wait_port "${EGRESS_PORT}" "${EGRESSPID}" "egress-gateway" "${D2D_DATA_DIR}/egress-gateway.log"
+export P2P_PROXY_URL="http://127.0.0.1:${EGRESS_PORT}"
 
 # G2 带外回调服务(盲注自主确认): HTTP 通道; DNS 通道需公网部署(见 oast.mjs 头注释)
 nohup node "${D2D}/scripts/gateway/oast.mjs" > "${D2D_DATA_DIR}/oast.log" 2>&1 &
@@ -108,10 +112,11 @@ export P2P_OAST_HOST="127.0.0.1:8890"
 # nohup node "${D2D}/scripts/gateway/spa-render.mjs" > "${D2D_DATA_DIR}/spa-render.log" 2>&1 &
 # export P2P_SPA_URL="http://127.0.0.1:8891"
 
-nohup dsh --profile web --port "${WEB_PORT}" --no-open --host 127.0.0.1 > "${D2D_DATA_DIR}/dsh-web.log" 2>&1 &
+nohup dsh --profile web --port "${WEB_PORT}" --no-open --host "${WEB_HOST}" > "${D2D_DATA_DIR}/dsh-web.log" 2>&1 &
 DSHWBPID=$!
 echo "${DSHWBPID}" > "${RUN_DIR}/dshweb.pid"
-wait_port "${WEB_PORT}" "${DSHWBPID}" "dsh web" "${D2D_DATA_DIR}/dsh-web.log"
-echo "dsh web → http://127.0.0.1:${WEB_PORT} (pid ${DSHWBPID})"
+# dsh web 冷启动(插件栈初始化)可超 15s — 30s 窗口
+wait_port "${WEB_PORT}" "${DSHWBPID}" "dsh web" "${D2D_DATA_DIR}/dsh-web.log" "${WEB_HOST}" 30
+echo "dsh web → http://${WEB_HOST}:${WEB_PORT} (pid ${DSHWBPID})"
 echo "打开浏览器 → 右侧边栏 'd2d' / 'd2d Findings' 两个 tab 即面板"
 echo "停止: ${D2D}/ops/start-all.sh stop"

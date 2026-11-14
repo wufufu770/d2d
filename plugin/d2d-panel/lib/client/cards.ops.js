@@ -19,7 +19,7 @@
         ...panel.btn(m === current ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}, opts),
       }, label, m === current ? ' ✓' : '')
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px' } },
-        h('div', panel.muted(0.55), `选择 ${role}/${slot} 的模型(${(catalog ?? []).reduce((a, p) => a + p.models.length, 0)} 个来自 dsh 配置):`),
+        h('div', panel.muted(0.55), `${role}/${slot}`),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '220px', overflowY: 'auto', paddingRight: '2px' } },
           (catalog ?? []).filter((p) => p.models.length).map((p) => h('div', { key: p.provider, style: { display: 'flex', flexDirection: 'column', gap: '3px' } },
             h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'baseline' } },
@@ -27,13 +27,13 @@
               p.models.map((id) => modelBtn(`${p.provider}/${id}`, id, { keySuffix: `/${p.provider}` })),
               !p.hasKey ? h('button', {
                 ...panel.btn({ padding: '0 6px', opacity: 0.85, borderColor: 'var(--d2d-warn)', color: 'var(--d2d-warn)' }),
-                title: `该供应商未配置凭据(${p.apiKeyEnv || 'API KEY'}), 点此粘贴 API key 存入 dsh credentials(0600), 之后可无痕切换`,
+                title: `未配置凭据(${p.apiKeyEnv || 'API KEY'})`,
                 onClick: () => setKeyFor(keyFor === p.provider ? null : p.provider),
-              }, '🔑 缺凭据') : null),
+              }, '缺凭据') : null),
             keyFor === p.provider ? h('div', { key: `cred-${p.provider}`, style: { display: 'flex', gap: '4px', width: '100%' } },
-              h('input', { ...panel.input({ flex: 1 }), type: 'password', placeholder: `粘贴 ${p.apiKeyEnv || 'API KEY'}(仅写入 dsh credentials 文件)`,
+              h('input', { ...panel.input({ flex: 1 }), type: 'password', placeholder: p.apiKeyEnv || 'API KEY',
                 value: keyVal, onChange: (ev) => setKeyVal(ev.target.value) }),
-              h('button', { ...panel.btn(), disabled: busy || !keyVal, onClick: () => onCredential(p.provider, keyVal) }, '保存凭据')) : null)),
+              h('button', { ...panel.btn(), disabled: busy || !keyVal, onClick: () => onCredential(p.provider, keyVal) }, '保存')) : null)),
           usedCustom.length ? h('div', { key: 'used', style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'baseline' } },
             h('span', { ...panel.mono, style: { ...(panel.mono.style ?? {}), fontSize: '10px', opacity: 0.75, minWidth: '86px' } }, '已用/自定义'),
             usedCustom.map((m) => modelBtn(m, shortModel(m)))) : null,
@@ -72,9 +72,9 @@
         return kw.toLowerCase().split(/\s+/).filter(Boolean).every((k) => blob.includes(k))
       }).sort((a, b) => (b.stats?.wins ?? 0) - (a.stats?.wins ?? 0) || a.id.localeCompare(b.id))
       const cats = [...new Set((strategies ?? []).map((s) => s.category || 'general'))].sort()
-      return h(Card, { title: `策略库 · ${strategies?.length ?? 0} 张`, extra: h('span', panel.muted(0.45), 'confirmed=现役 / default=影子待实战') },
+      return h(Card, { title: '策略库' },
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
-          h('input', { ...panel.input(), placeholder: '关键词过滤(id/标题/applies_to, 空格分隔与语义)', value: kw, onChange: (ev) => setKw(ev.target.value) }),
+          h('input', { ...panel.input(), placeholder: '关键词过滤', value: kw, onChange: (ev) => setKw(ev.target.value) }),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } },
             h('button', { ...panel.btn(cat === '' ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}), onClick: () => setCat('') }, '全部'),
             cats.map((c) => h('button', { key: c, ...panel.btn(cat === c ? { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' } : {}), onClick: () => setCat(cat === c ? '' : c) }, c)))),
@@ -84,8 +84,8 @@
               `${s.source === 'confirmed' ? '✓' : s.source === 'shadow' ? '◦' : '?'}${s.stats?.wins ? ` W${s.stats.wins}` : ''}`),
             h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }, title: `${s.id} · ${s.category}` }, s.title || s.id),
             h('span', panel.chip(), s.category || 'general'))),
-          list.length > 80 ? h('div', panel.muted(0.5), `… 仅显示前 80/${list.length} 条, 请继续输入关键词收窄`) : null,
-          !list.length ? h('div', panel.muted(0.5), '无匹配策略') : null))
+          list.length > 80 ? h('div', panel.muted(0.5), `前 80 / ${list.length} 条`) : null,
+          !list.length ? h('div', panel.muted(0.5), '无匹配') : null))
     }
 
     // ---- R6.3: 黑名单独立卡 — 每行一条(域名/IP段), 行内增删改, 固定高度内滚 ----
@@ -109,11 +109,11 @@
         if (confirm(`从黑名单删除 ${v}?\n删除后该资产不再被写门/命令门拦截, 请确认它已不在授权排除清单内。`)) act({ op: 'del', kind, value: v })
       }
       return h(Card, {
-        title: '⛔ 排除资产黑名单',
-        extra: h('span', panel.muted(0.45), `${rows.length} 条 · 写门/命令门双层硬拦截`),
+        title: '黑名单',
+        extra: h('span', panel.muted(0.45), `${rows.length}`),
       },
         err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)' } }, err) : null,
-        !rows.length ? h('div', panel.muted(0.5), '黑名单为空 — denylist.json 未配置') : null,
+        !rows.length ? h('div', panel.muted(0.5), '黑名单为空') : null,
         h('div', { style: { maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px', paddingRight: '2px' } },
           rows.map(({ kind, v }) => {
             const ek = `${kind}|${v}`
@@ -188,15 +188,14 @@
         )
       }
       return h(Card, {
-        title: '⚙ 环容量热调',
-        extra: h('span', panel.muted(0.45), caps.updated_at ? `更新于 ${caps.updated_at.slice(5, 16).replace('T', ' ')}` : '无覆盖·跟随 env'),
+        title: '环容量',
+        extra: h('span', panel.muted(0.45), caps.updated_at ? `更新于 ${caps.updated_at.slice(5, 16).replace('T', ' ')}` : null),
       },
         err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)' } }, err) : null,
         h('div', { style: { maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px', paddingRight: '2px' } },
           kindRows.map((r) => row(r, true)),
           h('div', { style: { borderTop: '1px dashed var(--d2d-line)', margin: '3px 0' } }),
           globalRows.map((r) => row(r, false))),
-        h('div', panel.muted(0.5), '写入即于调度器下个 tick 生效(免重启); ✕ 删除覆盖回落 env 基准'),
       )
     }
 
@@ -206,7 +205,7 @@
       const [err, setErr] = useState(null)
       const [credMsg, setCredMsg] = useState(null) // 凭据保存结果提示(本组件作用域 — 旧版误引 FleetModelPicker 内部 setter, 成功也抛 ReferenceError 且 refresh 不执行)
       if (!fleet?.roles || !Object.keys(fleet.roles).length) {
-        return h(Card, { title: 'Fleet 模型矩阵' }, h('div', panel.muted(), '未配置 model-policies(fleet 卡降级)'))
+        return h(Card, { title: 'Fleet' }, h('div', panel.muted(), '未配置 model-policies'))
       }
       const pick = async (role, slot, model) => {
         setBusy(true); setErr(null)
@@ -224,7 +223,7 @@
           refresh()
         } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
       }
-      return h(Card, { title: 'Fleet 模型矩阵', extra: h('span', panel.muted(0.45), '点击模型换槽') },
+      return h(Card, { title: 'Fleet' },
         Object.entries(fleet.roles).map(([role, m]) => {
           const key = `${role}/primary`
           const keyB = `${role}/backup`
@@ -264,15 +263,14 @@
         h('span', { ...panel.chip({}), style: { fontSize: '9px' } }, `24h step ${c.steps24h}`),
         h('span', { ...panel.chip(c.quotaEvents24h ? { borderColor: 'var(--d2d-sev-high)', color: 'var(--d2d-sev-high)' } : {}), style: { fontSize: '9px' } }, `24h 额度事件 ${c.quotaEvents24h}`)) : null
       if (!entries.length) {
-        return h(Card, { title: '模型用量' }, costHead, h('div', panel.muted(0.45), '无调度记录 — worker 派发后自动入列'))
+        return h(Card, { title: '用量' }, costHead, h('div', panel.muted(0.45), '无调度记录'))
       }
       const max = Math.max(...entries.map(([, n]) => n), 1)
       const total = entries.reduce((a, [, n]) => a + n, 0)
-      return h(Card, { title: '模型用量 · 累计', extra: h('span', panel.muted(0.45), `共 ${total} 次调度`) },
+      return h(Card, { title: '用量', extra: h('span', panel.muted(0.45), `${total}`) },
         // R5: 口径标注 —— 这是自安装起跨轮次的累计记账, 不是当前 engagement 的
         costHead,
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
-          h('div', panel.muted(0.45), '自安装起全部轮次的 worker 派发记账(含已停止轮次)'),
         entries.map(([m, n]) => h('div', { key: m, style: { display: 'grid', gridTemplateColumns: 'minmax(64px, 38%) 1fr auto', gap: '6px', alignItems: 'center' } },
           h('span', { ...panel.mono, style: { ...panel.mono.style, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: m }, shortModel(m)),
           h('div', { style: { height: '6px', borderRadius: '3px', background: 'var(--d2d-line)', overflow: 'hidden' } },
@@ -299,19 +297,18 @@
         : c?.source === 'global-filtered' ? '全局账本·按项目过滤'
         : '无 token 账本'
       return h(Card, {
-        title: '性价比 · 产出密度',
+        title: '性价比',
         extra: h('span', panel.muted(0.45), srcLabel),
       },
         has
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px' } },
-            row(c.findingsPer100k, 'findings / 10万 input tokens'),
-            row(c.triagedPer100k, 'triaged / 10万 input tokens'))
-          : h('div', panel.muted(0.45), '尚无 input token 账本(runs/<eng>/model-usage.jsonl) — worker 跑起来后自动生成'),
+            row(c.findingsPer100k, 'findings / 10万 tokens'),
+            row(c.triagedPer100k, 'triaged / 10万 tokens'))
+          : h('div', panel.muted(0.45), '暂无账本'),
         h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } },
-          h('span', panel.chip({ borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' }), `输入 ${fmtTokens(c?.inputTokens)} tokens`),
-          h('span', panel.chip(), `输出 ${fmtTokens(c?.outputTokens)} tokens`),
-          h('span', panel.chip(), `派发 ${c?.dispatches ?? 0} 次`)),
-        has ? h('div', panel.muted(0.45), `总消耗 ${fmtTokens((c?.inputTokens ?? 0) + (c?.outputTokens ?? 0))} tokens · findings ${c?.findings ?? 0} / triaged ${c?.triaged ?? 0}`) : null)
+          h('span', panel.chip({ borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' }), `输入 ${fmtTokens(c?.inputTokens)}`),
+          h('span', panel.chip(), `输出 ${fmtTokens(c?.outputTokens)}`),
+          h('span', panel.chip(), `派发 ${c?.dispatches ?? 0}`)))
     }
 
     // ---- 转化率卡(T2-1-2, 看板 8.5-2): Frontier 两闭环锚点列非空比率 — 只读卡。
@@ -325,13 +322,12 @@
         h('span', { style: { fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', minWidth: '52px' } }, value),
         h('span', panel.muted(0.55), label))
       return h(Card, {
-        title: '转化率 · 前沿闭环',
-        extra: h('span', panel.muted(0.45), `Frontier ${f?.total ?? 0} 条`),
+        title: '转化率',
+        extra: h('span', panel.muted(0.45), `${f?.total ?? 0}`),
       },
         f && f.total > 0
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px' } },
-            row(pct(f.accepted_to_hypothesis), 'accepted → hypothesis(采纳→假设)'),
-            row(pct(f.hypothesis_to_confirmed), 'hypothesis → confirmed(假设→确证)'))
-          : h('div', panel.muted(0.45), '暂无前沿数据 — Frontier 闭环 ref 回填后自动出数'),
-        h('div', panel.muted(0.45), '口径: 闭环锚点 ref 非空行数 ÷ Frontier 总数(graphd frontier_conversion_rate 同源)'))
+            row(pct(f.accepted_to_hypothesis), 'accepted → hypothesis'),
+            row(pct(f.hypothesis_to_confirmed), 'hypothesis → confirmed'))
+          : h('div', panel.muted(0.45), '暂无数据'))
     }

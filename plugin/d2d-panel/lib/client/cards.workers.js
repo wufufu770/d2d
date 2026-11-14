@@ -53,7 +53,7 @@
                 h('span', { style: { fontSize: '9px', opacity: '.4', flex: '0 0 auto' } }, open ? '▾' : '▸')),
               open ? h('div', { ...panel.mono, style: { ...panel.mono.style, fontSize: '10px', opacity: '.6', wordBreak: 'break-all', border: '1px dashed var(--d2d-line)', borderRadius: '6px', padding: '4px 6px', margin: '2px 0 4px' } },
                 `ts=${e.ts}`, e.model ? ` model=${e.model}` : '', e.role ? ` role=${e.role}` : '', e.worker ? ` worker=${e.worker}` : '') : null)
-          })) : h('div', panel.muted(0.45), '无轨迹事件(run-log.jsonl 该 worker 无记录)'),
+          })) : h('div', panel.muted(0.45), '无轨迹事件'),
         (a.checkpoint || a.todo) ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px' } },
           h('button', { ...panel.btn({ alignSelf: 'flex-start' }), onClick: () => setShowCp(!showCp) },
             showCp ? '收起 checkpoint / todo' : '展开 checkpoint / todo'),
@@ -71,8 +71,8 @@
       // R5.1: 运行中的排前面, 全量渲染进固定高度滚动容器(替代展开/收起)
       const sorted = [...agents].sort((a, b) => (a.status === 'running' ? 0 : 1) - (b.status === 'running' ? 0 : 1))
       return h(Card, {
-        title: `Workers · 存活 ${alive}/${agents.length}`,
-        extra: h('span', panel.muted(0.45), `${agents.length} 条 · 滚轮查看`),
+        title: 'Workers',
+        extra: h('span', panel.muted(0.45), `${alive}/${agents.length}`),
       },
         sorted.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '320px', overflowY: 'auto', paddingRight: '2px' } },
@@ -88,6 +88,5 @@
               h('span', { style: { fontSize: '10px', color: a.zombie ? 'var(--d2d-warn)' : 'inherit', opacity: '.7', whiteSpace: 'nowrap', flex: '0 0 auto' } },
                 (a.zombie ? `失联 ${fmtAge(now - (Date.parse(a.updated_at) || 0))}` : (a.status || '?')), ' ▸')),
             openId === a.worker_id ? h(WorkerDrawer, { a, events: snap.run?.events ?? [], now }) : null)))
-          : h('div', panel.muted(), '暂无 worker 心跳(AgentIdentity 为空)'),
-        agents.length ? h('div', panel.muted(0.4), '运行中置顶 · 点击行展开执行轨迹') : null)
+          : h('div', panel.muted(), '暂无 worker'))
     }

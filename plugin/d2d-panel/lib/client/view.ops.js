@@ -7,7 +7,7 @@
     const rows = [...states, 'rejected']
       const max = Math.max(...rows.map((s) => byState[s] ?? 0), 1)
       const focusList = focus ? snap.findings.list.filter((f) => f.state === focus).slice(0, 8) : []
-      return h(Card, { title: 'Findings 漏斗', extra: h('span', panel.muted(0.45), focus ? '再点取消聚焦' : '点击状态聚焦') },
+      return h(Card, { title: '漏斗' },
         rows.map((s) => h('button', {
           key: s,
           onClick: () => setFocus(focus === s ? null : s),
@@ -28,27 +28,27 @@
     // ---- 缺口卡: 未覆盖业务链(scheduler 同款口径查询) ----
     function GapsCard({ snap }) {
       const gaps = snap.gaps ?? []
-      return h(Card, { title: '覆盖缺口', extra: h('span', panel.muted(0.45), 'coverage_votes<2') },
+      return h(Card, { title: '缺口' },
         gaps.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '240px', overflowY: 'auto', paddingRight: '2px' } },
             gaps.map((g, i) => h('div', { key: i, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
               h('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: 'var(--d2d-warn)', flex: '0 0 auto', alignSelf: 'center' } }),
               h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, g || '(无链名)'))))
-          : h('div', panel.muted(0.45), '无未覆盖链 — 端点全部 exhausted/双投票'))
+          : h('div', panel.muted(0.45), '无未覆盖链'))
     }
 
     // ---- 经验库卡: top ExperienceWeight(prior 权重排序) ----
     function ExperienceCard({ snap }) {
       const list = snap.experience ?? []
       const total = snap.counts?.experience ?? list.length
-      return h(Card, { title: `经验库 · ${total}`, extra: h('span', panel.muted(0.45), `显示 ${list.length} / 共 ${total} · prior 权重序`) },
+      return h(Card, { title: '经验库', extra: h('span', panel.muted(0.45), `${total}`) },
         list.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
             list.map((x) => h('div', { key: x.id, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
               h('span', { ...panel.mono, style: { ...panel.mono.style, color: 'var(--d2d-ring-deep)', fontWeight: 600, flex: '0 0 auto' } }, `w=${x.prior}`),
               h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }, title: `${x.pattern} @ ${x.stack}` }, x.pattern || x.id),
               h('span', panel.muted(0.5), `${x.hits}命中/${x.wins}胜`))))
-          : h('div', panel.muted(0.45), '暂无经验卡(ExperienceWeight 为空) — verify 环验证后沉淀'))
+          : h('div', panel.muted(0.45), '暂无经验卡'))
     }
 
     function ModuleToggles({ off, toggle }) {
@@ -120,14 +120,14 @@
             h('button', { ...panel.btn({ borderColor: 'var(--d2d-ok)', color: 'var(--d2d-ok)' }), disabled: Boolean(busyId), onClick: () => decide(p.id, 'accepted') }, busyId === `${p.id}:accepted` ? '…' : '采纳'),
             h('button', { ...panel.btn({ borderColor: 'var(--d2d-sev-high)', color: 'var(--d2d-sev-high)' }), disabled: Boolean(busyId), onClick: () => decide(p.id, 'rejected') }, busyId === `${p.id}:rejected` ? '…' : '驳回')) : null))
       return h(Card, {
-        title: `前沿提案池 · ${pool?.length ?? 0}`,
+        title: '前沿池',
         extra: err
-          ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, `不可用: ${String(err?.message ?? err).slice(0, 50)}`)
-          : h('span', panel.muted(0.45), `待评审 ${byStatus.proposed ?? 0} · 已采纳 ${byStatus.accepted ?? 0} · 已驳回 ${byStatus.rejected ?? 0}`),
+          ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
+          : h('span', panel.muted(0.45), `${pool?.length ?? 0}`),
       },
-        h('input', { ...panel.input(), placeholder: '评审理由(缺省 panel review, 随转态入 graphd 审计)', value: note, onChange: (ev) => setNote(ev.target.value) }),
-        err && !pool ? h('div', panel.muted(0.45), '图服务不可达 — fail-closed 不显示过期提案池') : null,
-        !err && pool && !pool.length ? h('div', panel.muted(0.45), '暂无前沿提案 — worker 经 propose_direction 提案后入池') : null,
+        h('input', { ...panel.input(), placeholder: '评审理由', value: note, onChange: (ev) => setNote(ev.target.value) }),
+        err && !pool ? h('div', panel.muted(0.45), '图服务不可达') : null,
+        !err && pool && !pool.length ? h('div', panel.muted(0.45), '暂无提案') : null,
         (pool ?? []).map(row),
         msg ? h('div', { style: { fontSize: '10px', color: msg.ok ? 'var(--d2d-ok)' : 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, msg.text) : null)
     }
@@ -155,7 +155,7 @@
         !off.has('gaps') ? h(GapsCard, { snap }) : null,
         !off.has('exp') ? h(ExperienceCard, { snap }) : null,
         off.has('strategies') || !snap.strategies?.length ? null : h(StrategiesCard, { strategies: snap.strategies }),
-        h(Card, { title: `开放信号 tail · ${snap.counts.signals_open}`, extra: h('span', panel.muted(0.45), `显示最近 ${snap.signals.length} 条`) },
+        h(Card, { title: '信号', extra: h('span', panel.muted(0.45), `${snap.counts.signals_open}`) },
           snap.signals.length
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
               snap.signals.map((s) =>
@@ -163,5 +163,5 @@
                   h('span', panel.chip(), s.type || '?'),
                   h('span', { ...panel.mono, style: { ...panel.mono.style, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, s.id),
                   h('span', panel.muted(0.5), `w=${s.weight}`))))
-            : h('div', panel.muted(), '无开放信号 — discovery 环产出后自动入列')))
+            : h('div', panel.muted(), '无开放信号')))
     }

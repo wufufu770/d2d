@@ -4,6 +4,7 @@
     // (package.json dsh.client.inject 增加 layout/workspace/renderer/sidebar 四包 — superagent 同款清单)。
     // 注入面契约: betterSidebar 仍在 inject(既有 tab 快捷入口依赖); 三服务就绪后一次性注册。
     const MAIN_PANEL_ID = 'd2d-main'
+    const GRAPH_PANEL_ID = 'd2d-graph'
     const LOCALE_NS = 'd2dPanel'
 
     function applyMain(ctx) {
@@ -12,7 +13,7 @@
         return
       }
       try {
-        ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh: { panel: 'd2d 控制台' }, en: { panel: 'd2d Console' } }), 'd2d-panel: locale dict')
+        ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh: { panel: 'd2d 控制台', graph: 'd2d 图谱' }, en: { panel: 'd2d Console', graph: 'd2d Graph' } }), 'd2d-panel: locale dict')
       } catch { /* 已记因: locale 不可用则用静态 label — 尽力而为不阻断主面板 */ }
       let t = () => 'd2d'
       try { const bind = ctx.locale?.bind?.(LOCALE_NS); if (bind) t = bind } catch { /* 同上 */ }
@@ -26,6 +27,17 @@
         { name: 'sidebar.panellist', id: MAIN_PANEL_ID, order: 10, label: () => t('panel'), locale: LOCALE_NS },
         PanelIcon,
       )), 'd2d-panel: main icon')
+
+      // E39: d2d 图谱独立页 — 可视化直开为全页(VizView 同组件复用), 不经工作台页签
+      ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register(
+        { name: 'main', key: GRAPH_PANEL_ID, locale: LOCALE_NS, inject: () => ({}) },
+        () => h(GraphPageView, null),
+      )), 'd2d-panel: graph page')
+
+      ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
+        { name: 'sidebar.panellist', id: GRAPH_PANEL_ID, order: 11, label: () => t('graph'), locale: LOCALE_NS },
+        GraphIcon,
+      )), 'd2d-panel: graph icon')
     }
 
     // 包装既有 apply(router.js 的 better-sidebar tabs), 主面板与快捷 tab 一次注册

@@ -21,7 +21,7 @@
           running ? 'running' : `stopped${r?.stopReason ? `·${r.stopReason}` : ''}`),
         h('span', { ...panel.mono, style: { ...panel.mono.style, opacity: 0.7, flex: '0 0 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: `${r?.eng}/${r?.runId}` }, `${r?.eng}/${r?.runId}`),
         h('span', panel.muted(0.6), xringElapsed(r?.elapsedSec)),
-        h('span', panel.muted(0.5), r?.artifacts ? `A:${r.artifacts.A ?? '?'} B:${r.artifacts.B ?? '?'} C:${r.artifacts.C ?? '?'}` : '工件计数待回流'))
+        h('span', panel.muted(0.5), r?.artifacts ? `A:${r.artifacts.A ?? '?'} B:${r.artifacts.B ?? '?'} C:${r.artifacts.C ?? '?'}` : '—'))
     }
 
     /** X-Ring tab 容器: 当前 run/预算/工件计数/事件尾窗/历史列表 —— 全部只读投影。 */
@@ -32,11 +32,8 @@
       const x = snap?.xring
       if (!x?.available || !(x.runs ?? []).length) {
         return h('div', panel.root, Style(),
-          h(Card, {
-            title: 'X-Ring 旁路探索(只读投影)',
-            extra: h('span', panel.muted(0.45), '零干预入口 —— 停止: node scripts/xring/cli.mjs stop <runDir>'),
-          },
-            h('div', panel.muted(0.45), `无 X-Ring run 记录（记录面 ${x?.base || '~/.d2d-data/xring'}）—— 尚未运行过任何 run（合法空态）`)))
+          h(Card, { title: 'X-Ring' },
+            h('div', panel.muted(0.45), '无 run 记录')))
       }
       const cur = x.runs[0]
       const kids = [
@@ -46,19 +43,19 @@
         ...((x.degraded ?? []).map((d, i) => h('div', { key: `dg${i}`, ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, d))),
         h('div', { key: 'cur', style: { borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px', display: 'flex', flexDirection: 'column', gap: '3px' } },
           h(XRingRunRow, { r: cur }),
-          h('div', panel.muted(0.5), `${cur.mode ? `档位 ${cur.mode} · ` : ''}${cur.budget ? `预算 ${cur.budget.maxHours ?? '?'}h / ${Number(cur.budget.maxTokens ?? 0).toLocaleString()} token 上限` : '预算参数缺（超长 run 推导窗外）'}${cur.mode === 'bypass' ? ' · bypass: A 级 verify 双签仍硬线' : ''}`),
-          h('div', panel.muted(0.5), cur.lastTick ? `最近预算判定: ${cur.lastTick.ok ? 'ok' : '超限'} · ${cur.lastTick.detail}` : '无预算 tick'),
-          h('div', panel.muted(0.5), cur.lastTick?.tokens != null
-            ? `token 代理: ${Number(cur.lastTick.tokens).toLocaleString()}（转录尾; 近精确——dsh 200ms 批窗持久追加, XR-P3 实录）`
-            : 'token 代理: 暂无（转录未落盘前=时长口径兜底）'),
+          h('div', panel.muted(0.5), `${cur.mode ? `档位 ${cur.mode} · ` : ''}${cur.budget ? `预算 ${cur.budget.maxHours ?? '?'}h / ${Number(cur.budget.maxTokens ?? 0).toLocaleString()} token` : ''}${cur.mode === 'bypass' ? ' · bypass' : ''}`),
+          h('div', panel.muted(0.5), cur.lastTick ? `预算判定 ${cur.lastTick.ok ? 'ok' : '超限'} · ${cur.lastTick.detail}` : null),
+          cur.lastTick?.tokens != null
+            ? h('div', panel.muted(0.5), `token ${Number(cur.lastTick.tokens).toLocaleString()}`)
+            : null,
           cur.lastTick?.idleMs != null
-            ? h('div', panel.muted(0.5), `转录静默: ${(cur.lastTick.idleMs / 1000).toFixed(0)}s（停滞遥测——干预仅预算熔断与显式 stop, 拍板 4）`)
+            ? h('div', panel.muted(0.5), `转录静默 ${(cur.lastTick.idleMs / 1000).toFixed(0)}s`)
             : null,
           cur.stale
-            ? h('div', { ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, `⚠ monitor 心跳失联 ${(cur.stale.idleMs / 1000).toFixed(0)}s（阈 ${(cur.stale.thresholdMs / 1000).toFixed(0)}s）——worker 可能裸奔, 建议显式 stop`)
+            ? h('div', { ...panel.chip({ borderColor: 'var(--d2d-warn)' }) }, `⚠ 心跳失联 ${(cur.stale.idleMs / 1000).toFixed(0)}s`)
             : null,
           cur.artifacts
-            ? h('div', panel.muted(0.5), `回流: 写入 ${cur.artifacts.reflow?.written ?? 0} / 留验 ${cur.artifacts.reflow?.held ?? 0} / 错误 ${cur.artifacts.reflow?.errors ?? 0}`)
+            ? h('div', panel.muted(0.5), `回流 ${cur.artifacts.reflow?.written ?? 0} / 留验 ${cur.artifacts.reflow?.held ?? 0} / 错误 ${cur.artifacts.reflow?.errors ?? 0}`)
             : null),
         ...(x.runs.length > 1
           ? [h('div', { key: 'hist', style: { borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px', display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '160px', overflowY: 'auto' } },
@@ -72,11 +69,8 @@
               h('span', { ...panel.muted(0.6), style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: [e.reason, e.detail].filter(Boolean).join(' · ') }, [e.reason, e.detail].filter(Boolean).join(' · '))))
             : h('div', panel.muted(0.45), '无事件')),
         h('div', { key: 'note', ...panel.muted(0.45), style: { borderTop: '1px dashed var(--d2d-line)', paddingTop: '5px' } },
-          '模型自主循环产物经 host 回流管道入图（A 级必经 verify）—— 本 tab 全数据面 GET 只读, 与主流程零耦合。'),
+          '停止: node scripts/xring/cli.mjs stop <runDir>'),
       ]
       return h('div', panel.root, Style(),
-        h(Card, {
-          title: 'X-Ring 旁路探索(只读投影)',
-          extra: h('span', panel.muted(0.45), '零干预入口 —— 停止: node scripts/xring/cli.mjs stop <runDir>'),
-        }, ...kids))
+        h(Card, { title: 'X-Ring' }, ...kids))
     }

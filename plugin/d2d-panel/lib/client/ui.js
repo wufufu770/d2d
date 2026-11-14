@@ -20,19 +20,19 @@
         className: 'd2d-panel',
         style: {
           background: 'var(--dsw-alias-bg-layer-1, transparent)', // 接入指南 §12.1: 面板表面唯一正确令牌
-          color: 'inherit', font: 'inherit', padding: '10px',
+          color: 'inherit', font: 'inherit', padding: '12px 14px',
           display: 'flex', flexDirection: 'column', gap: '10px',
           overflowY: 'auto', height: '100%', boxSizing: 'border-box', minWidth: 0,
         },
       },
-      card: { style: { border: '1px solid var(--d2d-line)', borderRadius: '8px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 } },
-      cardTitle: { style: { fontSize: '11px', opacity: '.65', letterSpacing: '.04em', textTransform: 'uppercase', margin: 0 } },
+      card: { style: { border: '1px solid var(--d2d-line)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '7px', minWidth: 0 } },
+      cardTitle: { style: { fontSize: '12px', fontWeight: 500, opacity: '.8', margin: 0 } },
       mono: { style: { fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)', fontSize: '11px' } },
       muted: (o = 0.65) => ({ style: { opacity: String(o), fontSize: '11px' } }),
-      chip: (extra = {}) => ({ style: { display: 'inline-flex', alignItems: 'center', gap: '4px', border: '1px solid var(--d2d-line)', borderRadius: '999px', padding: '1px 7px', fontSize: '10px', whiteSpace: 'nowrap', ...extra } }),
+      chip: (extra = {}) => ({ style: { display: 'inline-flex', alignItems: 'center', gap: '4px', border: '1px solid var(--d2d-line)', borderRadius: '5px', padding: '1px 6px', fontSize: '11px', whiteSpace: 'nowrap', ...extra } }),
       dot: (color, pulse) => ({ className: pulse ? 'd2d-dot-running' : undefined, style: { width: '7px', height: '7px', borderRadius: '50%', background: color, flex: '0 0 auto' } }),
-      btn: (extra = {}) => ({ style: { fontSize: '10px', border: '1px solid var(--d2d-line-strong)', borderRadius: '999px', padding: '2px 9px', background: 'transparent', color: 'inherit', whiteSpace: 'nowrap', ...extra } }),
-      input: (extra = {}) => ({ style: { fontSize: '11px', border: '1px solid var(--d2d-line-strong)', borderRadius: '6px', padding: '3px 6px', background: 'transparent', color: 'inherit', minWidth: 0, ...extra } }),
+      btn: (extra = {}) => ({ style: { fontSize: '11px', border: '1px solid var(--d2d-line-strong)', borderRadius: '6px', padding: '3px 10px', background: 'transparent', color: 'inherit', whiteSpace: 'nowrap', ...extra } }),
+      input: (extra = {}) => ({ style: { fontSize: '11px', border: '1px solid var(--d2d-line-strong)', borderRadius: '6px', padding: '3px 8px', background: 'transparent', color: 'inherit', minWidth: 0, ...extra } }),
       rail: (color) => ({ style: { width: '3px', borderRadius: '2px', background: color, flex: '0 0 auto', alignSelf: 'stretch' } }),
     }
 
@@ -116,10 +116,9 @@
     function FailClosedBanner({ err, onRetry }) {
       return h('div', panel.root, Style(),
         h('div', { ...panel.card, style: { ...panel.card.style, borderColor: 'var(--d2d-sev-high)' } },
-          h('div', { style: { fontSize: '12px', fontWeight: 600 } }, '图服务不可达 · 轮询已暂停'),
-          h('div', panel.muted(), 'fail-closed: 不展示过期快照'),
+          h('div', { style: { fontSize: '12px', fontWeight: 600 } }, '图服务不可达'),
           h('div', { ...panel.mono, style: { ...panel.mono.style, opacity: '.55', wordBreak: 'break-all' } }, String(err?.message ?? err)),
-          h('button', { onClick: onRetry, style: { alignSelf: 'flex-start', marginTop: '2px' } }, '立即重试')))
+          h('button', { onClick: onRetry, style: { alignSelf: 'flex-start', marginTop: '2px' } }, '重试')))
     }
 
     function fmtAge(ms) {

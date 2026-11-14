@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import threading
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -104,13 +105,22 @@ def _82_spawn_server(tmp_path, monkeypatch):
     return f"http://127.0.0.1:{srv.server_address[1]}", conn, srv
 
 
+def _82_api_url(base, path):
+    """fixture URL 装配(E39-B9): urljoin 标准解析 + 回环白名单硬校验(fail-closed)。"""
+    u = urllib.parse.urljoin(base, path)
+    p = urllib.parse.urlparse(u)
+    if p.hostname not in ("127.0.0.1", "localhost", "::1"):
+        raise ValueError(f"fixture URL 只允许回环地址: {p.hostname}")
+    return urllib.parse.urlunparse((p.scheme, p.netloc, p.path, p.params, p.query, p.fragment))
+
+
 def _82_get_health(base_url):
-    with urllib.request.urlopen(base_url + "/health", timeout=10) as resp:
+    with urllib.request.urlopen(_82_api_url(base_url, "/health"), timeout=10) as resp:
         return resp.status, json.load(resp)
 
 
 def _82_post(base_url, path, payload, token):
-    req = urllib.request.Request(base_url + path, data=json.dumps(payload).encode(),
+    req = urllib.request.Request(_82_api_url(base_url, path), data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json", "X-Auth": token})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:

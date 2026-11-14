@@ -1,7 +1,7 @@
 {
   "name": "d2d-panel",
-  "version": "0.3.0",
-  "description": "d2d 面板 — dsh Web UI 主面板(workspace 全页: 三环态势/findings/审批/链路/审计/XRing + WorkItems 人工注意力队列) + 侧栏快捷 tab, host 半同源路由聚合快照, token 不出 host",
+  "version": "0.3.2",
+  "description": "d2d 面板 — dsh Web UI 主面板/图谱独立页(workspace 全页: 三环态势/findings/审批/链路/审计/XRing + WorkItems 人工注意力队列; 图谱页星图/热力/泳道直开) + 侧栏快捷 tab, host 半同源路由聚合快照(LAN 接口地址信任面), token 不出 host",
   "type": "module",
   "main": "./lib/host/index.mjs",
   "exports": {
@@ -37,7 +37,7 @@
   },
   "scripts": {
     "build": "node scripts/build-client.mjs",
-    "test": "node --test test/snapshot.test.mjs test/start-policy.test.mjs test/client.test.mjs",
+    "test": "node --test test/snapshot.test.mjs test/start-policy.test.mjs test/client.test.mjs test/host-fence.test.mjs",
     "standalone": "node lib/host/standalone.mjs",
     "prepare": "node scripts/build-client.mjs"
   },

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.2] - 2026-11-14
+
+> 面板可访问+图谱独立页+Linear 级降噪+测试夹具装配器批。npm 包面零变化（不发 tag 不触发
+> release/npm）；d2d-panel 0.3.0→0.3.2、start-all.sh 运维面、测试夹具面。
+
+### Fixed
+- **面板浏览器信任栅栏 LAN 放行**（d2d-panel 0.3.1）：信任面=回环∪本机非内部接口地址
+  （每请求现取）；sec-fetch-site/Origin 两层闸原样——伪造外部 Host 实测仍 403。
+- **start-all.sh 过时面**：egress 等待/导出 8888→18888 缺省（P2P_PROXY_PORT 可覆盖）；
+  WEB_HOST env（dsh 拒通配，LAN 绑定传具体接口 IP）；wait_port host/超时参数化（dsh web
+  30s 冷启窗口）。
+
+### Added
+- **图谱独立页**（d2d-panel 0.3.1）：dsh 侧栏第二入口「d2d 图谱」（VizView 同组件全页直开，
+  轮询/护栏/令牌全复用）；控制台/图谱双入口并存。
+- **测试夹具装配器**（tests/test_graphd_gates.py）：`_node_ddl`/`_api_url` 具名 helper 收敛
+  DDL/URL 拼接（装配结果与原串逐字节一致，行为零变；443 pytest 全绿）——扫描器噪音归零。
+
+### Changed
+- **面板 Linear 级降噪**（d2d-panel 0.3.2）：设计令牌层方角化（chip/btn 999px→5/6px）、卡题
+  句式化（去 uppercase/字距装饰）、fail-closed 横幅三行→一行；~50 处标语/布道句/操作教学/
+  次要括注砍除；桑基图例入图（布局即图例）。功能面对齐闸实证零削减（30 路由↔21 消费点）。
+
 ## [1.9.0] - 2026-11-14
 
 > 1.9.0 里程碑=PLAN-2 提升批 B4-B7（superagent 深化+产品面+质量健康+智能化收尾）。版本步进
