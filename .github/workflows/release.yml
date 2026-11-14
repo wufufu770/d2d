@@ -49,7 +49,7 @@ jobs:
             npm publish --provenance --access public
           fi
 
-      - name: Build per-OS source archives (E39 推送纪律: 每 OS 适配 zip)
+      - name: Build per-OS source archives (E39 推送纪律——每 OS 适配 zip)
         run: |
           mkdir -p dist
           git archive --format=zip -o "dist/d2d-${GITHUB_REF_NAME}-win-x64.zip" HEAD
