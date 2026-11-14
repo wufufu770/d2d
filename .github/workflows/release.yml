@@ -43,6 +43,11 @@ jobs:
         # 如 v1.1.0-alpha）→ --tag alpha; 正式版走缺省 latest。latest 只随正式 tag 移动。
         run: |
           TAG="${GITHUB_REF_NAME}"
+          # E39 幂等化: rerun/重复 tag 时已发布版本直接跳过(否则 npm E409 让整条 release 红)
+          if npm view pentest-dsh@$TAG version >/dev/null 2>&1; then
+            echo "pentest-dsh@$TAG 已在 npm — 跳过 publish(幂等)"
+            exit 0
+          fi
           if [[ "$TAG" == *-* ]]; then
             npm publish --provenance --access public --tag alpha
           else
