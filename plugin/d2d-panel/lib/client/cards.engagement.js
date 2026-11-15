@@ -96,6 +96,7 @@
       const list = snap.engagements ?? []
       return h(Card, {
         title: '项目',
+        icon: 'folder',
         extra: h('span', panel.muted(0.5), `${list.length}`),
       },
         // 全部项目列表(含进度 + 操作)

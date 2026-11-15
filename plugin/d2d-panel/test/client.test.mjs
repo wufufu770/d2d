@@ -383,8 +383,12 @@ function loadNewFragment(frag, extra = {}) {
   const { h, els } = makeH()
   const ctx = loadFragment(frag, {
     h,
-    panel: { muted: () => ({ style: {} }), chip: (e) => ({ style: e ?? {} }), btn: (e) => ({ style: e ?? {} }), input: (e) => ({ style: e ?? {} }), mono: { style: {} }, root: { className: 'd2d-panel' }, dot: () => ({ style: {} }) },
-    Card: (p, ...children) => h('card', { title: p?.title, extra: p?.extra }, ...(children ?? [])),
+    panel: { muted: () => ({ style: {} }), chip: (e) => ({ style: e ?? {} }), btn: (e) => ({ style: e ?? {} }), input: (e) => ({ style: e ?? {} }), mono: { style: {} }, root: { className: 'd2d-panel' }, dot: () => ({ style: {} }),
+      // B10: chipTone 桩(五态对色对齐真源形态——探针断言 kind badge 消费)
+      chipTone: (tone, e) => ({ style: { background: `var(--d2d-${tone}-bg)`, border: `1px solid var(--d2d-${tone}-line)`, color: `var(--d2d-${tone})`, ...(e ?? {}) } }) },
+    Card: (p, ...children) => h('card', { title: p?.title, extra: p?.extra, icon: p?.icon }, ...(children ?? [])),
+    DetailSheet: function DS() {}, // B10: 抽屉桩(容器装配断言 vnode 在位)
+    IconSearch: () => h('i'), IconCopy: () => h('i'), IconJson: () => h('i'), IconX: () => h('i'), IconChevron: () => h('i'), IconSave: () => h('i'), IconTrash: () => h('i'), TabIcon: () => h('i'),
     Style: () => h('style'),
     useState: (v) => [v, () => {}],
     useEffect: () => {},
@@ -403,15 +407,18 @@ const mkFlows = () => ({
   windowDays: 7, linesRead: 100, matched: 11, degraded: [],
 })
 
-test('client(sankey): SankeyChart — 双列节点+缎带按 count 缩宽+家族过滤(client 侧零重取)', () => {
+test('client(sankey): SankeyChart — 双列节点+缎带按 count 缩宽+家族过滤(client 侧零重取)+B10 渐变/命中层', () => {
   const { ctx, els } = loadNewFragment('view.viz.js')
   ctx.SankeyChart({ flows: mkFlows(), family: 'all' })
   assert.ok(els.some((e) => e.type === 'svg'), '自绘 SVG 在位')
-  assert.equal(els.filter((e) => e.type === 'path').length, 2, '两条迁移缎带')
-  assert.ok(els.filter((e) => e.type === 'rect').length >= 4, '左右两列节点')
+  // B10: 每条边 = 透明宽命中路径 + 可见渐变缎带 → 2 边 4 path
+  assert.equal(els.filter((e) => e.type === 'path').length, 4, '两条迁移缎带+各自命中层(hit+visible)')
+  assert.ok(els.some((e) => e.type === 'linearGradient'), '家族级 linearGradient defs 在位')
+  assert.ok(JSON.stringify(els).includes('url(#d2d-flow-g-'), '缎带消费家族渐变')
+  assert.equal(els.filter((e) => e.type === 'rect').length >= 4, true, '左右两列节点')
   const { ctx: c2, els: e2 } = loadNewFragment('view.viz.js')
   c2.SankeyChart({ flows: mkFlows(), family: 'finding' })
-  assert.equal(e2.filter((el) => el.type === 'path').length, 1, 'family=finding 只剩漏洞缎带')
+  assert.equal(e2.filter((el) => el.type === 'path').length, 2, 'family=finding 只剩漏洞缎带(1 hit+1 visible)')
   const { ctx: c3, els: e3 } = loadNewFragment('view.viz.js')
   c3.SankeyChart({ flows: mkFlows(), family: 'experience' })
   assert.ok(JSON.stringify(e3).includes('无迁移事件'), '过滤后空族 → 显式空态')
@@ -658,4 +665,73 @@ test('T3-3-2 禁区 grep: 授权契约链/tier-approval 零出现于 panel 面; 
   assert.deepEqual(imports.sort(), [path.join(libDir, 'host', 'index.mjs'), path.join(libDir, 'host', 'snapshot.mjs')].sort(), 'approvals.mjs import 消费点仅既有两处(消费不改动 — 拍板 4)')
   const clientHits = hits('approvals.mjs').filter((f) => f.includes(`${path.sep}client${path.sep}`) || f.endsWith(`${path.sep}client.js`))
   assert.deepEqual(clientHits, [], 'client 半零 approvals 模块引用(纯路由名消费)')
+})
+
+test('client(ui): B10-A 令牌桥接层与形态原语 — chipTone 五态对色/行为类注入/alias 首选/内联图标', () => {
+  // ui.js 的 panel/SEMANTIC_CSS 为顶层 const(vm 不落 context 全局) — 结构面走源码文本断言(禁区 grep 同模式)
+  const src = fs.readFileSync(path.join(FRAG_DIR, 'ui.js'), 'utf8')
+  const cssBlock = src.slice(src.indexOf('const SEMANTIC_CSS'), src.indexOf('@keyframes d2d-pulse'))
+  for (const v of ['--d2d-bg-0', '--d2d-bg-1', '--d2d-bg-2', '--d2d-text-hi', '--d2d-text-mid', '--d2d-text-lo',
+    '--d2d-ok-bg', '--d2d-warn-bg', '--d2d-danger-bg', '--d2d-info-bg']) {
+    assert.ok(cssBlock.includes(v), `令牌 ${v} 桥接在位`)
+  }
+  assert.ok(cssBlock.includes('var(--dsw-alias-bg-base') && cssBlock.includes('#09090b'), '底色=DSW alias 首选+zinc fallback(不写死)')
+  assert.ok(cssBlock.includes('var(--dsw-alias-state-error-primary') && cssBlock.includes('var(--dsw-alias-state-warn-primary'), 'danger/warn 色相=宿主状态色首选')
+  for (const cls of ['.d2d-formrow:hover', '.d2d-iconbtn[disabled]', '.d2d-tablerow:hover', '.d2d-codeid']) {
+    assert.ok(src.includes(cls), `行为类 ${cls} 注入`)
+  }
+  assert.ok(src.includes('chipTone: (tone, extra = {})'), 'chipTone 原语定义在位')
+  assert.ok(src.includes("['--d2d-danger-bg', '--d2d-danger-line', '--d2d-danger']"), 'danger 三元对色')
+  assert.ok(src.includes("?? ['var(--d2d-bg-2)', '--d2d-line', '--d2d-text-mid']"), '未知 tone 回落 neutral 深底')
+  assert.ok(src.includes("background: 'var(--d2d-bg-1)'") || src.includes("background: 'var(--d2d-bg-1)',"), '卡片深底升级')
+  // 函数声明落 sloppy 全局 — 图标渲染面可直驱
+  const { ctx, els } = loadNewFragment('ui.js')
+  const save = ctx.IconSave({ size: 13 })
+  assert.equal(save.type, 'svg', 'IconSave 内联 SVG(零依赖图标纪律)')
+  assert.equal(ctx.IconTrash({}).type, 'svg', 'IconTrash 同壳')
+  assert.equal(ctx.IconSearch({}).type, 'svg', 'IconSearch 同壳')
+  assert.equal(ctx.IconCopy({}).type, 'svg', 'IconCopy 同壳')
+  assert.ok(els.length >= 0, '探针执行无抛')
+})
+
+test('client(ui): B10 DetailSheet — fixed 抽屉/快照冻结/Esc 关闭/零 portal 依赖', () => {
+  const uiSrc = fs.readFileSync(path.join(FRAG_DIR, 'ui.js'), 'utf8')
+  assert.ok(uiSrc.includes("position: 'fixed', inset: '0'"), '抽屉 fixed 全屏遮罩(不依赖 portal/react-dom)')
+  assert.ok(uiSrc.includes('createPortal') === false, '零 createPortal(react-dom 依赖纪律)')
+  assert.ok(uiSrc.includes("ev.key === 'Escape'"), 'Esc 关闭在位')
+  assert.ok(uiSrc.includes('animation: \'d2d-fade-in') && uiSrc.includes('animation: \'d2d-slide-in'), '进出场动画(SEMANTIC_CSS keyframes)')
+  const { ctx, els } = loadNewFragment('ui.js')
+  ctx.DetailSheet({ item: { ts: '2026-11-14', kind: 'auth-fail', detail: { path: '/query' } }, onClose: () => {} })
+  const blob = JSON.stringify(els)
+  assert.ok(blob.includes('Copy JSON'), 'Copy JSON 在位')
+  assert.ok(blob.includes('关闭 (Esc)'), 'footer 关闭钮在位')
+  assert.ok(blob.includes('auth-fail'), '快照对象渲染(item 引用冻结)')
+  const els2 = loadNewFragment('ui.js')
+  els2.ctx.DetailSheet({ item: null, onClose: () => {} })
+  assert.equal(els2.els.length, 0, 'item=null 渲染 null(不占 DOM)')
+})
+
+test('client(audit/tools): B10 结构化表格+搜索过滤+sheet 接线 — 行 grid/tone badge/词表映射', () => {
+  const { ctx, els } = loadNewFragment('view.audit.js')
+  ctx.AuditRow({ e: { ts: '2026-11-14T13:22:34', source: 'audit', kind: 'auth-fail', detail: { path: '/write/x', status: 403 } }, onOpen: () => {} })
+  const blob = JSON.stringify(els)
+  assert.ok(blob.includes('--d2d-danger-bg'), 'auth-fail → danger tone(词表映射)')
+  assert.ok(blob.includes('d2d-tablerow'), '表格行 hover 类在位')
+  const { ctx: c2, els: e2 } = loadNewFragment('view.audit.js')
+  c2.AuditRow({ e: { ts: '2026-11-14T13:22:34', source: 'transition', kind: 'transition', detail: { from_status: 'candidate', to_status: 'verified' } }, onOpen: () => {} })
+  assert.ok(JSON.stringify(e2).includes('--d2d-info-bg'), 'transition → info tone')
+  const { ctx: c3, els: e3 } = loadNewFragment('view.tools.js')
+  c3.ToolEventRow({ e: { ts: '2026-11-14T03:22:00', kind: 'dispatch', worker: 'w1', ring: 'deep', tool: 'curl', reason: '', command: '', extra: '' }, onOpen: () => {} })
+  assert.ok(JSON.stringify(e3).includes('--d2d-neutral-bg') || JSON.stringify(e3).includes('var(--d2d-bg-2)'), '工具行 neutral tone')
+  const { ctx: c4, els: e4 } = loadNewFragment('view.audit.js', { useAudit: () => ({ audit: { events: [{ ts: '2026-11-14T13:22:34', source: 'audit', kind: 'auth-fail', detail: {} }], total: 1, kinds: ['auth-fail'] }, err: null }) })
+  c4.AuditView({ visible: true })
+  const b4 = JSON.stringify(e4)
+  assert.ok(b4.includes('搜索 Event / Payload'), '审计搜索框在位')
+  assert.ok(b4.includes('"Time"') && b4.includes('"Action"') && b4.includes('"Payload"'), '表头列在位(grid 132/150/1fr)')
+  assert.ok(b4.includes('DetailSheet') || e4.some((e) => e.type === c4.DetailSheet), 'Sheet 接线(vnode 在位)')
+  const { ctx: c5, els: e5 } = loadNewFragment('view.tools.js', { useToolCalls: () => ({ tc: { events: [{ ts: '2026-11-14T03:22:00', kind: 'dispatch', worker: 'w1', ring: 'deep', tool: 'curl', reason: '', command: '', extra: '' }], total: 1, kinds: ['dispatch'], toolTotals: [] }, err: null }) })
+  c5.ToolsView({ visible: true })
+  const b5 = JSON.stringify(e5)
+  assert.ok(b5.includes('搜索 Tool / Worker / Reason'), '工具搜索框在位')
+  assert.ok(b5.includes('"Worker"') && b5.includes('"Data"'), '工具表头 Worker/Data 列在位')
 })

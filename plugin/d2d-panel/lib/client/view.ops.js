@@ -7,7 +7,7 @@
     const rows = [...states, 'rejected']
       const max = Math.max(...rows.map((s) => byState[s] ?? 0), 1)
       const focusList = focus ? snap.findings.list.filter((f) => f.state === focus).slice(0, 8) : []
-      return h(Card, { title: '漏斗' },
+      return h(Card, { title: '漏斗', icon: 'filter' },
         rows.map((s) => h('button', {
           key: s,
           onClick: () => setFocus(focus === s ? null : s),
@@ -28,7 +28,7 @@
     // ---- 缺口卡: 未覆盖业务链(scheduler 同款口径查询) ----
     function GapsCard({ snap }) {
       const gaps = snap.gaps ?? []
-      return h(Card, { title: '缺口' },
+      return h(Card, { title: '缺口', icon: 'shield' },
         gaps.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '240px', overflowY: 'auto', paddingRight: '2px' } },
             gaps.map((g, i) => h('div', { key: i, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
@@ -41,7 +41,7 @@
     function ExperienceCard({ snap }) {
       const list = snap.experience ?? []
       const total = snap.counts?.experience ?? list.length
-      return h(Card, { title: '经验库', extra: h('span', panel.muted(0.45), `${total}`) },
+      return h(Card, { title: '经验库', icon: 'book', extra: h('span', panel.muted(0.45), `${total}`) },
         list.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
             list.map((x) => h('div', { key: x.id, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
@@ -53,17 +53,21 @@
 
     function ModuleToggles({ off, toggle }) {
       // 单行横向滚动(不折行): 模块再多/标签再长也只占一行, 超宽省略号截断, 悬停 title 看全名
+      // B10: pill 形态(chipTone info=显示中 / neutral 虚线半透明=已隐藏), hover 提亮(.d2d-pill)
       return h('div', { style: { display: 'flex', gap: '4px', alignItems: 'center', minWidth: 0 } },
         h('span', { style: { ...panel.muted(0.5).style, flexShrink: 0 } }, '模块'),
         h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'nowrap', alignItems: 'center', overflowX: 'auto', minWidth: 0, maxWidth: '100%', padding: '2px', scrollbarWidth: 'thin' } },
           MODULES.map((m) => {
-            const st = off.has(m.key) ? { opacity: '.4', borderStyle: 'dashed' } : { borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' }
+            const on = !off.has(m.key)
             return h('button', {
               key: m.key,
+              className: 'd2d-pill',
               title: `${m.label} — 点击显示/隐藏该卡片`,
               onClick: () => toggle(m.key),
-              ...panel.btn(st),
-              style: { ...panel.btn(st).style, flexShrink: 0, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis' },
+              style: { ...panel.chipTone(on ? 'info' : 'neutral').style, borderRadius: '999px',
+                fontFamily: 'var(--dsw-font-mono, monospace)', cursor: 'pointer', flexShrink: 0,
+                maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis',
+                ...(on ? {} : { opacity: .45, borderStyle: 'dashed' }) },
             }, m.label)
           })))
     }
@@ -121,6 +125,7 @@
             h('button', { ...panel.btn({ borderColor: 'var(--d2d-sev-high)', color: 'var(--d2d-sev-high)' }), disabled: Boolean(busyId), onClick: () => decide(p.id, 'rejected') }, busyId === `${p.id}:rejected` ? '…' : '驳回')) : null))
       return h(Card, {
         title: '前沿池',
+        icon: 'merge',
         extra: err
           ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
           : h('span', panel.muted(0.45), `${pool?.length ?? 0}`),
@@ -155,7 +160,7 @@
         !off.has('gaps') ? h(GapsCard, { snap }) : null,
         !off.has('exp') ? h(ExperienceCard, { snap }) : null,
         off.has('strategies') || !snap.strategies?.length ? null : h(StrategiesCard, { strategies: snap.strategies }),
-        h(Card, { title: '信号', extra: h('span', panel.muted(0.45), `${snap.counts.signals_open}`) },
+        h(Card, { title: '信号', icon: 'activity', extra: h('span', panel.muted(0.45), `${snap.counts.signals_open}`) },
           snap.signals.length
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
               snap.signals.map((s) =>

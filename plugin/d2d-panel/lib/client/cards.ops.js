@@ -72,7 +72,7 @@
         return kw.toLowerCase().split(/\s+/).filter(Boolean).every((k) => blob.includes(k))
       }).sort((a, b) => (b.stats?.wins ?? 0) - (a.stats?.wins ?? 0) || a.id.localeCompare(b.id))
       const cats = [...new Set((strategies ?? []).map((s) => s.category || 'general'))].sort()
-      return h(Card, { title: '策略库' },
+      return h(Card, { title: '策略库', icon: 'book' },
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
           h('input', { ...panel.input(), placeholder: '关键词过滤', value: kw, onChange: (ev) => setKw(ev.target.value) }),
           h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } },
@@ -110,6 +110,7 @@
       }
       return h(Card, {
         title: '黑名单',
+        icon: 'shieldban',
         extra: h('span', panel.muted(0.45), `${rows.length}`),
       },
         err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)' } }, err) : null,
@@ -170,25 +171,33 @@
         const has = override !== undefined && override !== null
         const save = () => { if (numOk(key) && dirty(key)) act(isKind ? { caps: { [key]: String(draft[key]).trim() } } : { [key]: String(draft[key]).trim() }) }
         const clear = () => act(isKind ? { caps: { [key]: '' } } : { [key]: '' })
-        // 固定列宽 grid: 标签(1fr·省略) | 覆盖徽标(26px) | 输入(46px) | 存(22px) | ✕(22px) — 单元格恒渲染, 列列对齐
+        // B10-A 三列 Form Row: 配置项 | 值(覆盖徽标+input) | 操作(icon 对) —— 行容器 .d2d-formrow hover 亮起
         return h('div', {
           key,
-          style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 26px 46px 22px 22px', gap: '4px', alignItems: 'center', minHeight: '22px' },
+          className: 'd2d-formrow',
+          style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto 52px', gap: '8px', alignItems: 'center',
+            padding: '7px 10px', border: '1px solid var(--d2d-line)', borderRadius: '8px',
+            background: 'var(--d2d-bg-0)', minHeight: '34px', minWidth: 0 },
         },
-          h('span', { style: { fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, label),
-          h('span', { title: has ? '当前覆盖值' : undefined, style: { fontSize: '10px', color: 'var(--d2d-brand)', textAlign: 'right' } }, has ? `=${override}` : ''),
-          h('input', {
-            value: draft[key] ?? '', placeholder: 'env', disabled: busy,
-            onChange: (e) => setDraft((d) => ({ ...d, [key]: e.target.value })),
-            onKeyDown: (e) => { if (e.key === 'Enter') save() },
-            style: { width: '100%', textAlign: 'center', fontSize: '11px', padding: '1px 2px', boxSizing: 'border-box', ...panel.mono.style },
-          }),
-          h('button', { ...panel.btn({ padding: '0' }), title: '保存覆盖', disabled: busy || !numOk(key) || !dirty(key), onClick: save, style: { ...panel.btn({ padding: '0' }).style, width: '22px', textAlign: 'center' } }, '存'),
-          h('button', { ...panel.btn({ padding: '0' }), title: has ? '删除覆盖(回落 env)' : '无覆盖', disabled: busy || !has, onClick: clear, style: { ...panel.btn({ padding: '0' }).style, width: '22px', textAlign: 'center' } }, '✕'),
-        )
+          h('span', { style: { fontSize: '11px', color: 'var(--d2d-text-mid)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, label),
+          h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px' } },
+            has ? h('span', { title: '当前覆盖值', style: { fontSize: '10px', color: 'var(--d2d-brand)', ...panel.mono.style } }, `=${override}`) : null,
+            h('input', {
+              value: draft[key] ?? '', placeholder: 'env', disabled: busy,
+              onChange: (e) => setDraft((d) => ({ ...d, [key]: e.target.value })),
+              onKeyDown: (e) => { if (e.key === 'Enter') save() },
+              style: { width: '64px', height: '24px', textAlign: 'center', fontSize: '11px', padding: '1px 4px', boxSizing: 'border-box',
+                background: 'var(--d2d-bg-2)', border: '1px solid var(--d2d-line)', borderRadius: '6px', color: 'var(--d2d-text-hi)', ...panel.mono.style },
+            })),
+          h('div', { style: { display: 'inline-flex', gap: '4px' } },
+            h('button', { className: 'd2d-iconbtn', title: '保存覆盖', disabled: busy || !numOk(key) || !dirty(key), onClick: save,
+              style: { width: '24px', height: '24px', border: '1px solid var(--d2d-line)', background: 'transparent', color: 'var(--d2d-text-mid)' } }, IconSave({ size: 13 })),
+            h('button', { className: 'd2d-iconbtn', title: has ? '删除覆盖(回落 env)' : '无覆盖', disabled: busy || !has, onClick: clear,
+              style: { width: '24px', height: '24px', border: '1px solid var(--d2d-line)', background: 'transparent', color: 'var(--d2d-text-mid)' } }, IconTrash({ size: 13 }))))
       }
       return h(Card, {
         title: '环容量',
+        icon: 'sliders',
         extra: h('span', panel.muted(0.45), caps.updated_at ? `更新于 ${caps.updated_at.slice(5, 16).replace('T', ' ')}` : null),
       },
         err ? h('div', { style: { fontSize: '10px', color: 'var(--d2d-sev-high)' } }, err) : null,
@@ -205,7 +214,7 @@
       const [err, setErr] = useState(null)
       const [credMsg, setCredMsg] = useState(null) // 凭据保存结果提示(本组件作用域 — 旧版误引 FleetModelPicker 内部 setter, 成功也抛 ReferenceError 且 refresh 不执行)
       if (!fleet?.roles || !Object.keys(fleet.roles).length) {
-        return h(Card, { title: 'Fleet' }, h('div', panel.muted(), '未配置 model-policies'))
+        return h(Card, { title: 'Fleet', icon: 'box' }, h('div', panel.muted(), '未配置 model-policies'))
       }
       const pick = async (role, slot, model) => {
         setBusy(true); setErr(null)
@@ -223,7 +232,7 @@
           refresh()
         } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
       }
-      return h(Card, { title: 'Fleet' },
+      return h(Card, { title: 'Fleet', icon: 'box' },
         Object.entries(fleet.roles).map(([role, m]) => {
           const key = `${role}/primary`
           const keyB = `${role}/backup`
@@ -263,11 +272,11 @@
         h('span', { ...panel.chip({}), style: { fontSize: '9px' } }, `24h step ${c.steps24h}`),
         h('span', { ...panel.chip(c.quotaEvents24h ? { borderColor: 'var(--d2d-sev-high)', color: 'var(--d2d-sev-high)' } : {}), style: { fontSize: '9px' } }, `24h 额度事件 ${c.quotaEvents24h}`)) : null
       if (!entries.length) {
-        return h(Card, { title: '用量' }, costHead, h('div', panel.muted(0.45), '无调度记录'))
+        return h(Card, { title: '用量', icon: 'chart' }, costHead, h('div', panel.muted(0.45), '无调度记录'))
       }
       const max = Math.max(...entries.map(([, n]) => n), 1)
       const total = entries.reduce((a, [, n]) => a + n, 0)
-      return h(Card, { title: '用量', extra: h('span', panel.muted(0.45), `${total}`) },
+      return h(Card, { title: '用量', icon: 'chart', extra: h('span', panel.muted(0.45), `${total}`) },
         // R5: 口径标注 —— 这是自安装起跨轮次的累计记账, 不是当前 engagement 的
         costHead,
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } },
@@ -298,6 +307,7 @@
         : '无 token 账本'
       return h(Card, {
         title: '性价比',
+        icon: 'chart',
         extra: h('span', panel.muted(0.45), srcLabel),
       },
         has
@@ -323,6 +333,7 @@
         h('span', panel.muted(0.55), label))
       return h(Card, {
         title: '转化率',
+        icon: 'activity',
         extra: h('span', panel.muted(0.45), `${f?.total ?? 0}`),
       },
         f && f.total > 0

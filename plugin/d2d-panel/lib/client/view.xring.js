@@ -32,7 +32,7 @@
       const x = snap?.xring
       if (!x?.available || !(x.runs ?? []).length) {
         return h('div', panel.root, Style(),
-          h(Card, { title: 'X-Ring' },
+          h(Card, { title: 'X-Ring', icon: 'cpu' },
             h('div', panel.muted(0.45), '无 run 记录')))
       }
       const cur = x.runs[0]

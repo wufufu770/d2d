@@ -33,6 +33,7 @@
       return h('div', panel.root, Style(),
         h(Card, {
           title: '总览',
+          icon: 'sliders',
           extra: cfgErr
             ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
             : null,
@@ -69,7 +70,7 @@
         } catch (e) { setErr(String(e.message ?? e).slice(0, 160)) }
         setBusy(false)
       }
-      return h(Card, { title: '报告导出' },
+      return h(Card, { title: '报告导出', icon: 'filecheck' },
         h('div', { style: { display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' } },
           h('select', { ...panel.input(), value: sev, onChange: (ev) => setSev(ev.target.value) },
             ['critical', 'high', 'medium', 'low'].map((s) => h('option', { key: s, value: s }, `≥ ${s}`))),

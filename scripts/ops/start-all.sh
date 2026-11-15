@@ -34,7 +34,7 @@ wait_port() {         # $1=端口 $2=pid $3=名称 $4=日志路径 $5=探测host
     kill -0 "$pid" 2>/dev/null || { echo "✗ ${name} 启动后即退出 — 查 ${logf}"; return 1; }
     sleep 1
   done
-  echo "✗ ${name} 端口 ${port} 15s 未监听 — 查 ${logf}"
+  echo "✗ ${name} 端口 ${port} ${tries}s 未监听 — 查 ${logf}"
   return 1
 }
 

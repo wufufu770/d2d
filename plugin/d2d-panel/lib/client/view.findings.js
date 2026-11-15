@@ -20,19 +20,31 @@
     }
 
     function stepChip(s, n, opts = {}) {
+      const has = (n ?? 0) > 0
       return h('button', {
-        ...panel.chip({ borderColor: opts.active ? 'var(--d2d-brand)' : opts.strong ? 'var(--d2d-line-strong)' : 'var(--d2d-line)', color: opts.active ? 'var(--d2d-brand)' : undefined }),
         onClick: opts.onClick,
         disabled: !opts.onClick,
-        style: { ...panel.chip({ borderColor: opts.active ? 'var(--d2d-brand)' : opts.strong ? 'var(--d2d-line-strong)' : 'var(--d2d-line)' }).style, ...(opts.onClick ? { cursor: 'pointer' } : { cursor: 'default' }) },
+        style: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '8px',
+          border: `1px solid ${has ? 'var(--d2d-line-strong)' : 'var(--d2d-line)'}`,
+          background: has ? 'var(--d2d-bg-1)' : 'color-mix(in srgb, var(--d2d-bg-0) 40%, transparent)',
+          color: has ? 'var(--d2d-text-hi)' : 'var(--d2d-text-lo)',
+          cursor: opts.onClick ? 'pointer' : 'default', minWidth: 0,
+          ...(opts.active ? { borderColor: 'var(--d2d-ok)', color: 'var(--d2d-text-hi)' } : {}) },
       },
-        h('span', { ...panel.mono, style: { ...panel.mono.style, fontSize: '10px' } }, s),
-        h('b', null, String(n ?? 0)))
+        h('span', { ...panel.mono, style: { ...panel.mono.style, fontSize: '11px' } }, s),
+        h('span', { style: { padding: '0 5px', borderRadius: '4px', fontSize: '10px', fontWeight: 700,
+          background: has ? 'rgba(16,185,129,.2)' : 'var(--d2d-bg-2)',
+          color: has ? 'var(--d2d-ok)' : 'var(--d2d-text-lo)' } }, String(n ?? 0)))
+    }
+
+    // B10 步骤间实线 chevron(mockup 风格)
+    function StepArrow() {
+      return h('span', { style: { display: 'inline-flex', alignItems: 'center', opacity: .45, flex: '0 0 auto' } }, h(IconChevron, { size: 14 }))
     }
 
     function Stepper({ byState, filter, setFilter }) {
       const chain = STEPS.map((s, i) => h('span', { key: s, style: { display: 'inline-flex', alignItems: 'center', gap: '4px' } },
-        i > 0 ? h('span', { style: { opacity: '.35', fontSize: '10px' } }, '→') : null,
+        i > 0 ? h(StepArrow, null) : null,
         stepChip(s, byState[s], { active: filter === s, strong: byState[s] > 0, onClick: () => setFilter(filter === s ? null : s) })))
       const branch = h('span', { style: { display: 'inline-flex', gap: '4px', marginLeft: '6px' } },
         stepChip('isolated', byState.isolated, { active: filter === 'isolated', strong: byState.isolated > 0, onClick: () => setFilter(filter === 'isolated' ? null : 'isolated') }),
@@ -221,6 +233,7 @@
       return h('div', panel.root, Style(),
         h(Card, {
           title: '管线',
+          icon: 'activity',
           extra: h('span', panel.muted(0.5), `${snap.counts.findings}`),
         },
           h(Stepper, { byState, filter, setFilter })),
@@ -232,6 +245,7 @@
             : h('div', panel.muted(0.4), '该状态无记录')) : null,
         h(Card, {
           title: '幻觉抽检',
+          icon: 'shield',
         },
           (snap.quarantine ?? []).length
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto', paddingRight: '2px' } },

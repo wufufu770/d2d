@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [d2d-panel 0.4.0] - 2026-11-15 (B10 风格对齐+交互层合并批)
+
+> 参考风格 mockup 全量对齐（Shadcn 设计语言移植，组件库不安装——零依赖单文件纪律；呈现层
+> only，路由/消费点零变更，align 30↔21 矩阵保持）。pentest-dsh 版本不动。
+
+### Added
+- **令牌桥接层**：`--d2d-bg-0/1/2`、`--d2d-text-hi/mid/lo`、四状态 tone 对色（bg/line=500 系、
+  文字=400 系）——DSW alias 恒首选、zinc 兜底；danger/warn 色相引宿主状态色。
+- **行为类**：`.d2d-formrow/.d2d-iconbtn/.d2d-tablerow/.d2d-codeid/.d2d-pill`（白系透明 hover=
+  color-mix text-hi 3.5%/8%/16%）+ 面板内滚动条 + ping/fade/slide keyframes。
+- **原语**：`chipTone(tone)` 五态半透明 badge；`TabIcon` 16 图标（lucide 路径内联，零依赖）+
+  IconSave/Trash/Search/Copy/Chevron/X/Plus/Json。
+- **DetailSheet 侧滑抽屉**：fixed 遮罩（免 portal/react-dom 依赖——面板祖先无 transform 不裁切）
+  + Esc/遮罩关闭 + Copy JSON + footer 关闭钮；内容=打开时刻快照（append-only 日志下快照即终值）。
+- **审计/工具结构化表格**：grid 列（Time/Action/Payload、Time/Action/Worker/Data）+ tone badge
+  （fail/illegal=danger、write=ok、transition=info）+ 纯前端搜索框（icon 内嵌）。
+- **桑基渐变**：家族级 linearGradient（沿流向 0.5→0.22 衰减）+ hover 联动（悬停提亮加粗、其余
+  降 .12）+ 透明宽命中路径（细缎带可 hover）+ 节点深底化。
+
+### Changed
+- 卡片玻璃化：`color-mix bg-1 65% + blur(12px) + 白系 8% 边 + radius 12`（mockup 玻璃卡）。
+- 顶栏：tab 加图标、激活=emerald 底线+微底色；brand=ping 双圈+`LIVE · N Workers` pill（无在办
+  =IDLE 灰）；KPI 统一 neutral 容器+彩色数值（在办 emerald/待人工 rose/Findings blue/审批 amber）。
+- 画布限宽 1280→1700；环容量 3 列 Form Row（icon 操作对）；工单 ID code 块+copy 图标；状态
+  badge 圆点 tone 化；Stepper 实线 chevron+数值 chip（有数 emerald/无数灰）；模块条 pill 化；
+  全部卡头加图标+底边线（Card icon prop，28 处）。
+
 ## [1.9.2] - 2026-11-14
 
 > 面板可访问+图谱独立页+Linear 级降噪+测试夹具装配器批。npm 包面零变化（不发 tag 不触发

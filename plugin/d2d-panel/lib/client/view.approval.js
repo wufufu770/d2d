@@ -70,6 +70,7 @@
       return h('div', panel.root, Style(),
         h(Card, {
           title: '审批队列',
+          icon: 'filecheck',
           extra: h('span', { ...panel.muted(0.5), style: { display: 'inline-flex', gap: '5px', alignItems: 'center' } },
             h('span', panel.chip({ ...(data?.mode === 'off' ? {} : { borderColor: 'var(--d2d-warn)' }) }), `${data?.mode ?? '?'}`),
             h('span', panel.muted(0.45), `${data?.count ?? 0}`)),

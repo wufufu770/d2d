@@ -10,6 +10,9 @@
       eval_shadowed: [{ to: 'accepted', label: '放行', tone: 'ok' }, { to: 'rejected', label: '否决', tone: 'warn' }],
       needs_human: [{ to: 'assigned', label: '放行派发', tone: 'ok' }, { to: 'rejected', label: '否决', tone: 'warn' }],
     }
+    // B10-A 状态 badge tone 化(小圆点+半透明底); TONE_DOT 为圆点色值映射
+    const WI_TONE = { needs_human: 'danger', eval_shadowed: 'warn', done: 'ok', assigned: 'info', accepted: 'info', expired: 'neutral', rejected: 'neutral', eval_queued: 'neutral', trigger_received: 'neutral' }
+    const TONE_DOT = { ok: 'var(--d2d-ok)', warn: 'var(--d2d-warn)', danger: 'var(--d2d-danger)', info: 'var(--d2d-info)', neutral: 'var(--d2d-text-lo)' }
 
     /** E38+: 面板建单表单(创建也是"点击可用"的功能面——手动触发/复测请求不经文件投递)。
      *  action='create' 走 intake+eval 门全链(影子语义与插件侧一致): 建单后落在
@@ -53,11 +56,17 @@
 
     function WorkItemRow({ w, onAct, busy }) {
       const acts = WI_ACTIONS[w.status] ?? []
+      const [copied, setCopied] = useState(false)
+      const copyId = () => { try { navigator.clipboard?.writeText(w.id).catch(() => { /* 剪贴板拒绝静默 */ }) } catch { /* 无 clipboard API 静默 */ } setCopied(true); setTimeout(() => setCopied(false), 1200) }
+      const tone = WI_TONE[w.status] ?? 'neutral'
       return h('div', { style: { display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '7px 8px', border: '1px solid var(--d2d-line)', borderRadius: '8px', minWidth: 0 } },
         h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' } },
           h('div', { style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
-            h('span', { ...panel.mono, style: { ...panel.mono.style, flex: '0 0 auto' } }, w.id),
-            h('span', panel.chip({ borderColor: w.status === 'needs_human' ? 'var(--d2d-sev-high)' : 'var(--d2d-line-strong)' }), WI_STATUS_LABEL[w.status] ?? w.status),
+            h('span', { className: 'd2d-codeid', title: '点击复制工单 ID', onClick: copyId },
+              copied ? '已复制 ✓' : [w.id, h(IconCopy, { size: 10 })]),
+            h('span', panel.chipTone(tone),
+              h('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: TONE_DOT[tone], flex: '0 0 auto' } }),
+              WI_STATUS_LABEL[w.status] ?? w.status),
             h('span', panel.chip(), `${w.source}/${w.kind}`)),
           h('div', { style: { fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: w.title }, w.title || '(无标题)'),
           w.disposition?.reason ? h('div', panel.muted(0.55), `判词: ${w.disposition.reason}`) : null,
@@ -111,7 +120,7 @@
             priority.map((w) => h(WorkItemRow, { key: w.id, w, onAct: act, busy })))
           : h('div', panel.card, h('div', panel.muted(), '无待人工事项')),
         rest.length
-          ? h(Card, { title: '历史工单' },
+          ? h(Card, { title: '历史工单', icon: 'history' },
             h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto' } },
               rest.map((w) => h('div', { key: w.id, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
                 h('span', { ...panel.mono, style: { ...panel.mono.style, flex: '0 0 auto' } }, w.id),

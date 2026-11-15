@@ -81,7 +81,7 @@
     /** Task 看板(对等 /pentest-tasks): 状态/kind/认领人/链路锚点(link_id)。 */
     function ChainTaskBoard({ chain }) {
       const tasks = chain?.tasks ?? []
-      return h(Card, { title: '任务看板' },
+      return h(Card, { title: '任务看板', icon: 'box' },
         tasks.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto', paddingRight: '2px' } },
             tasks.map((t) => h('div', { key: t.id, style: { display: 'flex', gap: '6px', alignItems: 'baseline', minWidth: 0 } },
@@ -98,6 +98,7 @@
       return h('div', panel.root, Style(),
         h(Card, {
           title: '探索链路',
+          icon: 'merge',
           extra: err
             ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
             : h('span', panel.muted(0.45), eng || '—'),
