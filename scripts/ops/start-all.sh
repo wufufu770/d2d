@@ -63,7 +63,96 @@ if [ "$ACTION" = "stop" ] || [ "$ACTION" = "restart" ]; then
   kill_svc cdpproxy "${D2D}/scripts/browser/cdp-proxy.mjs"
   # dsh web 同走 kill_svc(PID 文件优先, 端口锚定兜底) — 与其他服务行为对称
   kill_svc dshweb   "dsh --profile web --port ${WEB_PORT}"
+  # B11 批1: 端口释放等待(restart 竞态实证——KILL 后立即重绑 EADDRINUSE 崩溃)
+  wait_port_free() { local port="$1"; for _ in $(seq 1 10); do (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null && { exec 3>&- 3<&- 2>/dev/null || true; sleep 0.5; continue; }; return 0; done; echo "  端口 ${port} 5s 未释放 — 继续启动(如报 EADDRINUSE 请手动排查残留进程)"; return 0; }
+  for _p in 8766 "${EGRESS_PORT}" 8890 "${WEB_PORT}"; do wait_port_free "$_p"; done
   if [ "$ACTION" = "stop" ]; then exit 0; fi
+fi
+
+# ---------- B11 批1: worker(headless profile) LLM 路由幂等镜像 + 模板兜底 ----------
+# 修因: install.sh 只装配 web 时(或手工环境), headless patch 缺 llm-pi-ai 段 → worker
+# 缺省 deepseek-official 无 key 全灭(tourzj 7 worker 14s 实证)。镜像段 = llm-pi-ai +
+# agent-default-model(与 web 同源); 凭据经同名 apiKeyEnv 读 ~/.dsh/.credentials.yaml(同
+# home 天然同源)。headless 特有段(sandbox/approval/token 桥)缺失请重跑 install.sh。
+sync_worker_llm_profile() {
+  local WEB="$DSH_HOME/profiles/web/cordis.patch.yml"
+  local HEAD="$DSH_HOME/profiles/headless/cordis.patch.yml"
+  [ -f "$WEB" ] || { echo "  (web patch 缺, 跳过 LLM 镜像)"; return 0; }
+  mkdir -p "$(dirname "$HEAD")"
+  [ -f "$HEAD" ] || printf '[]\n' > "$HEAD"
+  grep -q 'llm-pi-ai' "$HEAD" && return 0
+  grep -q 'llm-pi-ai' "$WEB" || { echo "  (web patch 无 LLM 段 — 先在 dsh UI Models 页配置厂商)"; return 0; }
+  local SNIP; SNIP=$(mktemp)
+  { awk '/^- id: llm-pi-ai/{f=1} f && /^- id:/ && !/llm-pi-ai/{f=0} f' "$WEB"
+    awk '/^- id: agent-default-model/{f=1} f && /^- id:/ && !/agent-default-model/{f=0} f' "$WEB"
+  } > "$SNIP"
+  if [ -s "$SNIP" ]; then
+    # 空 patch 形态(仅注释+[])先去掉 [] 占位行, 再 append 镜像段
+    if [ "$(grep -vc '^\s*#\|^\s*$' "$HEAD")" = "1" ] && grep -q '^\s*\[\]\s*$' "$HEAD"; then
+      grep -v '^\s*\[\]\s*$' "$HEAD" > "$HEAD.tmp" && mv "$HEAD.tmp" "$HEAD"
+    fi
+    { echo; echo "# ── worker LLM 路由镜像(自 web patch, start-all 幂等同步) ──"; cat "$SNIP"; } >> "$HEAD"
+    echo "  headless patch ← web LLM 段镜像完成(llm-pi-ai + agent-default-model) — worker 复用 dsh 模型配置"
+  fi
+  rm -f "$SNIP"
+}
+sync_worker_llm_profile
+
+# B12 自动凭据桥: 直接复用 dsh 里的模型凭据(用户在 dsh UI Models 页存过即零配置)。
+# 源①显式 provider-keys.env(0600, 手工覆盖用); 源②(缺省)解析 ~/.dsh/.credentials.yaml
+# refs 段(官方 credentials 存储——web Models 页写入处), 值经进程环境注入 dsh web → worker
+# spawn 继承 → apiKeyEnv 命中。值只在同机进程环境流转, 不打印/不落盘/不进仓库。
+PK_ENV="$D2D_DATA_DIR/config/provider-keys.env"
+if [ -f "$PK_ENV" ]; then
+  [ "$(stat -c %a "$PK_ENV" 2>/dev/null)" = "600" ] || chmod 600 "$PK_ENV"
+  set -a; . "$PK_ENV"; set +a
+  echo "  provider keys 已注入(显式 env 文件 $(grep -c 'API_KEY=' "$PK_ENV") 个) — web 与 worker 同源"
+elif [ -f "$DSH_HOME/.credentials.yaml" ]; then
+  PK_COUNT=$(DSH_HOME="$DSH_HOME" python3 - << 'PYEOF'
+import os, yaml
+d = yaml.safe_load(open(os.path.join(os.environ['DSH_HOME'], '.credentials.yaml')))
+refs = d.get('refs') or {}
+n = 0
+for k, v in refs.items():
+    if k.endswith('_API_KEY') and v:
+        os.environ[k] = str(v)
+        n += 1
+print(n)
+PYEOF
+) 2>/dev/null || PK_COUNT=0
+  # python 子进程的 export 无法传回 shell — 改由逐键二次解析(值不回显)
+  if [ "${PK_COUNT:-0}" -gt 0 ]; then
+    eval "$(DSH_HOME="$DSH_HOME" python3 - << 'PYEOF'
+import os, yaml, shlex
+d = yaml.safe_load(open(os.path.join(os.environ['DSH_HOME'], '.credentials.yaml')))
+for k, v in (d.get('refs') or {}).items():
+    if k.endswith('_API_KEY') and v:
+        print(f'export {k}={shlex.quote(str(v))}')
+PYEOF
+)"
+    echo "  provider keys 已自动继承 dsh credentials(${PK_COUNT} 个) — worker 零配置复用"
+  else
+    echo "  (dsh credentials 无 API key 记录 — worker 需要 key 时在 dsh UI Models 页配置)"
+  fi
+else
+  echo "  (提示: $PK_ENV 不存在 — worker 需要 provider key 时创建它, 形如 MINIMAX_CN_API_KEY=...)"
+fi
+
+# model-policies.json 模板兜底(缺失时 install.sh 同款模板; 占位符形态 worker 回退宿主默认模型并提示, 不会再全灭)
+if [ ! -f "$D2D_DATA_DIR/config/model-policies.json" ] && [ -f "${D2D}/config/model-policies.example.json" ]; then
+  cp "${D2D}/config/model-policies.example.json" "$D2D_DATA_DIR/config/model-policies.json"
+  echo "  model-policies.json 模板已落(编辑后生效; 占位符=worker 回退宿主缺省模型)"
+fi
+
+# brain seed 自动安装(策略库数据源——install.sh 未跑的环境策略库恒空; current=confirmed 池, shadow=影子池)
+mkdir -p "$D2D_DATA_DIR/brain/current" "$D2D_DATA_DIR/brain/shadow"
+if [ ! -f "$D2D_DATA_DIR/brain/current/techniques.json" ] && [ -f "${D2D}/brain/seed/v0-techniques.json" ]; then
+  cp "${D2D}/brain/seed/v0-techniques.json" "$D2D_DATA_DIR/brain/current/techniques.json"
+  echo "  brain seed 已安装 → brain/current/techniques.json(策略库 40 张公开知识卡)"
+fi
+if [ ! -f "$D2D_DATA_DIR/brain/shadow/techniques.json" ] && [ -f "${D2D}/brain/seed/seed-cards.json" ]; then
+  cp "${D2D}/brain/seed/seed-cards.json" "$D2D_DATA_DIR/brain/shadow/techniques.json"
+  echo "  brain shadow seed 已安装 → brain/shadow/techniques.json(影子池 ENOENT 噪声消除)"
 fi
 
 # ↓↓↓ 按需注入你的模型 API key(与 cordis.patch.yml 的 apiKeyEnv 对应)
