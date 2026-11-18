@@ -155,9 +155,96 @@ test('buildSnapshot: selected 文件缺名 → 落最新 active; 全无 active �
   assert.equal(s2.engagement.status, 'completed')
 })
 
-test('buildSnapshot: 任一图读取失败 → 整体抛错(fail-closed, 不下半截快照)', async () => {
-  const q = async (cypher) => { if (cypher.includes('count(x)')) throw new Error('boom'); return makeFake()(cypher) }
-  await assert.rejects(() => buildSnapshot(q), /boom/)
+test('buildSnapshot: 单查询失败 → fail-honest(上拍缓存回落 + stale 标记, 不再假零/不再 503)', async () => {
+  // E44-F1 新契约: 第一次调用 cntExperience(含 count(x))失败 → 无缓存回落空集 + stale 含键;
+  // 第二拍恢复 → stale 清空; 第三拍复现失败 → 回落上拍缓存值 + stale 再标。
+  let boom = true
+  const base = makeFake()
+  const q = async (cypher) => {
+    if (cypher.includes('count(x)') && boom) throw new Error('boom')
+    return base(cypher)
+  }
+  const s1 = await buildSnapshot(q, { eng: 'eng-x' })
+  assert.equal(s1.stale.includes('cntExperience'), true, '首拍失败 → stale 键在列')
+  assert.equal(s1.counts.experience, 0, '无上拍缓存 → 空集(明示 stale, 非静默)')
+  boom = false
+  const s2 = await buildSnapshot(q, { eng: 'eng-x' })
+  assert.equal(s2.stale.length, 0, '恢复拍 stale 清空')
+  boom = true
+  const s3 = await buildSnapshot(q, { eng: 'eng-x' })
+  assert.equal(s3.stale.includes('cntExperience'), true, '复现失败 → stale 再标')
+  assert.notEqual(s3.counts.experience, undefined, '有上拍缓存 → 回落缓存值(不炸快照)')
+})
+
+test('assembleStarmap: 双层折叠 — 低权重信号按 type 收进聚合点, AT 边折叠到组, DERIVED 只连独立节点', async () => {
+  const { assembleStarmap } = await import('../lib/host/snapshot/viz-data.mjs')
+  const eps = [
+    { id: 'ep1', url: 'http://a.com/login', host: 'a.com', votes: 3, exhausted: false },
+    { id: 'ep2', url: 'http://a.com/admin', host: 'a.com', votes: 0, exhausted: false },
+  ]
+  const sigs = [
+    { id: 's-high', type: 'sqli', weight: 3.5, host: 'a.com' },        // 独立
+    { id: 's-low1', type: 'recon', weight: 1, host: 'a.com' },         // 折叠 → grp-recon
+    { id: 's-low2', type: 'recon', weight: 1.5, host: 'b.com' },       // 折叠 → grp-recon
+    { id: 's-low3', type: 'xss', weight: 1, host: 'a.com' },           // 折叠 → grp-xss
+  ]
+  const at = [
+    { sid: 's-high', eid: 'ep1' },
+    { sid: 's-low1', eid: 'ep1' },
+    { sid: 's-low2', eid: 'ep1' },   // 同组同端点 → 去重为一条组边
+    { sid: 's-low3', eid: 'ep2' },
+  ]
+  const derived = [{ a: 's-high', b: 's-low1' }]  // 意图链一端在组内 → 剔除
+  const r = assembleStarmap(eps, sigs, at, derived)
+  const grp = r.nodes.find((n) => n.kind === 'group' && n.type === 'recon')
+  assert.ok(grp, 'recon 聚合节点在')
+  assert.equal(grp.count, 2, 'recon 组含 2 成员')
+  assert.equal(r.nodes.filter((n) => n.kind === 'signal').length, 1, '仅高权重信号独立')
+  assert.equal(r.nodes.filter((n) => n.kind === 'endpoint').length, 2, '端点节点在图')
+  const atEdges = r.edges.filter((e) => e.kind === 'at')
+  assert.equal(atEdges.some((e) => e.a === 's-high' && e.b === 'ep1'), true, '独立信号 AT 边保留')
+  assert.equal(atEdges.filter((e) => e.a === 'grp-recon').length, 1, '组→endpoint 去重为一条')
+  assert.equal(r.edges.some((e) => e.kind === 'derived'), false, '意图链边一端在组内 → 剔除')
+  assert.equal(r.folded, 3, '折叠计数=3')
+})
+
+test('buildStarmap: wire 带端点/折叠计数 + evHead 截断(全文不出 host)', async () => {
+  const base = makeFake()
+  const q = async (cypher, params) => {
+    if (cypher.includes("s.status = 'open'")) return [{ id: 's1', type: 'sqli', weight: 3, verify_tries: 1, ts: 't', evidence: 'http://a.com/x ' + 'y'.repeat(300) }]
+    if (cypher.includes('Endpoint')) return [{ id: 'ep1', url: 'http://a.com/login', tech: 'spring', business_chain: 'auth', coverage_votes: 2, exhausted: false }]
+    if (cypher.includes(':AT]')) return [{ sid: 's1', eid: 'ep1' }]
+    if (cypher.includes('DERIVED_FROM')) return []
+    return base(cypher, params)
+  }
+  const st = await buildStarmap(q, { eng: 'eng-x' })
+  assert.equal(st.epTotal, 1, '端点计数在 wire')
+  assert.equal(st.total, 1, '信号总数在 wire')
+  const sig = st.nodes.find((n) => n.kind === 'signal')
+  assert.ok(sig.evHead.length <= 160, 'evHead 截断')
+  assert.equal(st.nodes.find((n) => n.kind === 'endpoint').label, 'a.com/login', '端点短标签')
+})
+
+test('buildStarmap: AT 端点跨 eng 共享 → 边自带属性补集入图(实证 e43b 五条 AT 边全丢的修复)', async () => {
+  // 端点查询(eng 过滤)不含 ep-shared; AT 边自带端点属性 → 补集入图 + 溯源标注
+  const base = makeFake()
+  const q = async (cypher, params) => {
+    if (cypher.includes(':AT]')) return [ // AT 分支先行(starmapAt 查询含 coverage_votes 子串, 会撞端点分支)
+      { sid: 's1', eid: 'ep-shared', eurl: 'http://a.com/shared', etech: 'nginx', echain: 'edge', evotes: 2, eexhausted: false },
+      { sid: 's1', eid: 'ep-own' },
+    ]
+    if (cypher.includes("s.status = 'open'")) return [{ id: 's1', type: 'sqli', weight: 3, verify_tries: 0, ts: 't', evidence: 'http://a.com/x' }]
+    if (cypher.includes('Endpoint') && cypher.includes('coverage_votes')) return [{ id: 'ep-own', url: 'http://a.com/own', tech: '', business_chain: '', coverage_votes: 0, exhausted: false }]
+    if (cypher.includes('DERIVED_FROM')) return []
+    return base(cypher, params)
+  }
+  const st = await buildStarmap(q, { eng: 'eng-x' })
+  const shared = st.nodes.find((n) => n.id === 'ep-shared')
+  assert.ok(shared, 'E44-V2b: AT 端点不在 eng 集 → 补集入图(旧版全丢)')
+  assert.equal(shared.firstSeenElsewhere, true, '溯源标注')
+  assert.equal(shared.label, 'a.com/shared', '补集端点短标签')
+  assert.equal(st.edges.filter((e) => e.kind === 'at').length, 2, '两条 AT 边全保留')
+  assert.equal(st.epTotal, 2, '端点总数含补集')
 })
 
 test('createGraphdQuery: X-Auth 注入 + 非 ok 响应抛错', async () => {
@@ -180,10 +267,15 @@ test('createGraphdQuery: X-Auth 注入 + 非 ok 响应抛错', async () => {
   await assert.rejects(() => createGraphdQuery({ graphdUrl: 'http://x', token: 't', fetchImpl: graphErr })('bad'), /bad cypher/)
 })
 
-test('readFleet: DATA_DIR 外置策略, 缺失返回 null(A-2)', async () => {
+test('readFleet: DATA_DIR 外置策略 — 缺失时 policies 面空但 fleet 仍返回(B11 修复: catalog 与 policies 解耦)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2d-panel-test-'))
   const env = { D2D_DATA_DIR: dir, DSH_HOME: '/tmp/definitely-not-exist-dsh-xyz' } // 隔离真实 dsh 目录, catalog 保持确定性
-  assert.equal(readFleet(env), null) // 未配置
+  // B11 修复: model-policies.json 缺失 → policies 面空(default/roles 全空)但不再 return null
+  // (原 try 连带吞掉 catalog——dsh 侧已配厂商/模型在面板不可见的根因)
+  const empty = readFleet(env)
+  assert.deepEqual(empty.default, { primary: '', backup: '' })
+  assert.deepEqual(empty.roles, {})
+  assert.deepEqual(empty.catalog, [], 'DSH_HOME 隔离 → catalog 空(确定性)')
   fs.mkdirSync(path.join(dir, 'config'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'config', 'model-policies.json'), JSON.stringify({
     default: { primary: 'p/d', backup: '' },
@@ -709,12 +801,16 @@ test('buildSnapshot: frontier 键 — Q.frontierConversion 按 $eng 过滤, tota
 
 // ══════════ T3-3-1 viz 数据面: 三纯函数 + capability + 路由级(含 #24 盲区顺手补) ══════════
 
-test('viz buildStarmap: 节点 host 提取(evidence 不出 host)+边两端过滤+candidate-links pairs 解析(坏对丢弃)', async () => {
+test('viz buildStarmap: 节点 host 提取(evidence 不出 host)+边两端过滤+candidate-links pairs 解析(坏对丢弃) — E44 双层 wire', async () => {
   const q = async (cy) => {
+    if (cy.includes(':AT]')) return [{ sid: 's1', eid: 'ep1' }] // AT 先行(查询含 coverage_votes 子串)
     if (cy.includes('DERIVED_FROM')) return [{ a: 's1', b: 's2' }, { a: 's1', b: 's-ghost' }]
     if (cy.includes('s.weight AS weight')) return [
-      { id: 's1', type: 'asset-perimeter', weight: 2, ts: '2026-10-01', evidence: 'http://a.com/x?y=1' },
-      { id: 's2', type: 'js-endpoint', weight: 1, ts: '2026-10-02', evidence: 'no-url-here' },
+      { id: 's1', type: 'asset-perimeter', weight: 2, verify_tries: 0, ts: '2026-10-01', evidence: 'http://a.com/x?y=1' },
+      { id: 's2', type: 'js-endpoint', weight: 1, verify_tries: 0, ts: '2026-10-02', evidence: 'no-url-here' },
+    ]
+    if (cy.includes('Endpoint') && cy.includes('coverage_votes')) return [
+      { id: 'ep1', url: 'http://a.com/x?y=1', tech: 'nginx', business_chain: 'edge', coverage_votes: 2, exhausted: false },
     ]
     throw new Error(`unmatched: ${cy.slice(0, 50)}`)
   }
@@ -722,12 +818,20 @@ test('viz buildStarmap: 节点 host 提取(evidence 不出 host)+边两端过滤
     { kind: 'candidate-links', pairs: ['s1(asset-perimeter)~s2(js-endpoint)@a.com', 'bad-pair-form'] },
     { kind: 'tick' },
   ] } })
-  assert.equal(sm.nodes.length, 2)
-  assert.equal(sm.nodes[0].host, 'a.com', 'hostname 提取')
-  assert.equal(sm.nodes[1].host, '', '无 URL → 空 host')
-  assert.equal(sm.edges.length, 1, '两端不在集内的边被过滤(ghost)')
+  // E44 双层: s2(weight=1)折叠进 grp-js-endpoint; s1(weight=2)独立 + ep1 端点节点
+  assert.equal(sm.nodes.filter((n) => n.kind === 'endpoint').length, 1, '端点节点入图')
+  assert.equal(sm.nodes.filter((n) => n.kind === 'signal').length, 1, '高权重信号独立')
+  const grp = sm.nodes.find((n) => n.kind === 'group')
+  assert.equal(grp?.type, 'js-endpoint', '低权重信号折叠为类型组')
+  const sig1 = sm.nodes.find((n) => n.id === 's1')
+  assert.equal(sig1.host, 'a.com', 'hostname 提取')
+  assert.equal(sig1.tries, 0, 'verify_tries 入 wire(tooltip 重验面)')
+  assert.ok(sig1.evHead.length <= 160, 'evHead 截断')
+  assert.equal(sm.edges.some((e) => e.kind === 'at' && e.a === 's1' && e.b === 'ep1'), true, 'AT 关联边在位')
+  assert.equal(sm.edges.some((e) => e.kind === 'derived'), false, '意图链边一端在组内 → 剔除')
   assert.deepEqual(sm.candidates, [{ a: 's1', aType: 'asset-perimeter', b: 's2', bType: 'js-endpoint', host: 'a.com' }], '坏对丢弃不中断')
   assert.equal(sm.truncated, false)
+  assert.equal(sm.folded, 1, '折叠计数')
 })
 
 test('viz buildCoverage: 21 格固定网格填充(枚举序稳定, 空格补零)', async () => {
@@ -1267,4 +1371,37 @@ test('host 路由 WRAP-2: POST /d2d/api/adjudicate 可达 — body 解析在位(
   assert.equal(g.code, 405, 'GET → 405(POST 守卫, 同族写分支形态)')
   const bad = await driveRoute(handler, 'POST', '/d2d/api/adjudicate')
   assert.equal(bad.code, 400, '空 body=400(bad-request)')
+})
+
+// ══════════ E46-XR: xring-start 路由(手动启动——目标政策复用+单活跃守卫+detached spawn) ══════════
+test('host 路由 xring-start: 校验分型(400 target/scope/预算) + 单活跃 409 + happy spawn 参数逐项', async () => {
+  const { _setXringSpawn } = await import('../lib/host/index.mjs')
+  const handler = mountPanelHost()
+  // 400 分型
+  const bad1 = await driveRoute(handler, 'POST', '/d2d/api/xring-start', { target: 'ftp://x', scope: 'a.com' })
+  assert.equal(bad1.code, 400, '非 http(s) target 拒')
+  const bad2 = await driveRoute(handler, 'POST', '/d2d/api/xring-start', { target: 'https://demo-src.com', scope: '169.254.169.254' })
+  assert.equal(bad2.code, 400, 'scope 命中元数据地址拒(start-policy C6 逐条; 空 scope 合法=回落目标域名)')
+  const bad3 = await driveRoute(handler, 'POST', '/d2d/api/xring-start', { target: 'https://demo-src.com', scope: 'demo-src.com', maxHours: 9 })
+  assert.equal(bad3.code, 400, '超预算硬上限拒(拒绝不 clamp)')
+  const bad4 = await driveRoute(handler, 'GET', '/d2d/api/xring-start')
+  assert.equal(bad4.code, 405, 'GET 拒(POST-only)')
+  // happy: 注入 spawn 捕获参数
+  const spawned = []
+  _setXringSpawn((cmd, args, opts) => { spawned.push({ cmd, args, opts }); return { pid: 4321, unref() {} } })
+  const ok = await driveRoute(handler, 'POST', '/d2d/api/xring-start', { target: 'https://demo-src.com', scope: 'demo-src.com', maxHours: 1 })
+  assert.equal(ok.code, 200)
+  const okBody = JSON.parse(ok.raw)
+  assert.equal(okBody.ok, true)
+  assert.equal(okBody.pid, 4321)
+  assert.equal(spawned.length, 1, 'detached spawn 恰一次')
+  const a = spawned[0].args
+  assert.ok(a.some((x) => String(x).endsWith('first-run.mjs')), '编排脚本=first-run.mjs')
+  const ai = a.indexOf('--target')
+  assert.equal(a[ai + 1], 'https://demo-src.com', 'target 透传(规范化含 scheme)')
+  assert.ok(a.includes('--record-root') && a[a.indexOf('--record-root') + 1].includes('xring'), 'record-root 指 DATA_DIR/xring(面板可见)')
+  assert.ok(a.includes('--skip-reset'), '非 DVWA 靶默认跳过重置')
+  assert.ok(spawned[0].opts.detached === true, 'detached(宿主重启不牵连)')
+  // 环境恢复
+  _setXringSpawn(() => { throw new Error('test-scope-only') })
 })

@@ -17,6 +17,8 @@ import path from 'node:path'
 import { loadStore, saveStore, renewCards, sweepExpired } from '../../plugin/pentest-dsh/domain/memory-store.mjs'
 // #86 进化显式回路(消费端): 进化台账(brain/evolution.jsonl)聚合 → 降级复审清单(只报告不自动删)
 import { evolutionStats, downgradeReview } from '../../plugin/pentest-dsh/domain/strategy-evolution.mjs'
+// E40-B5(#105): 晋升积分与内容版本绑定(currentCardWeightRow — 见 fieldEvidence 注释)
+import { currentCardWeightRow } from '../../plugin/pentest-dsh/domain/experience.mjs'
 // T3-1-2 A-MemGuard 共识验证 v1(纯函数; 输入行由本文件 gq() 只读拉取, 零写通道零加列)
 import { consensusCheck } from '../../plugin/pentest-dsh/domain/experience-consensus.mjs'
 
@@ -102,24 +104,31 @@ function prune() {
 }
 // 门禁③(样本量收紧): wins>=1 即转正是低先验高方差陷阱 — 单次命中可能是运气。
 // 可信证据 = wins>=3, 或 wins>=2 且该卡 applies_to 不撞已证伪方向(refuted/pruned)。
+// E40-B5(#105): 积分与内容版本绑定 — 只认 `card:<bareId>@<ver>` 且 ver == 当前 current
+// 池卡内容哈希(currentCardWeightRow)的行; 旧形态(无版本绑定)与改稿错配行不再参与晋级
+// (issue #105: 全局卡胜绩曾让"改写一稿重投"白嫖旧实战积分)。bareId 供 refuted 撞向比对。
 function fieldEvidence() {
+  const cardsById = new Map(currentCards().map((c) => [String(c.id ?? '').toLowerCase().replace(/^card:/, ''), c]))
   const rows = gq(`MATCH (e:ExperienceWeight) WHERE e.id STARTS WITH 'card:' AND e.wins > 0 RETURN e.id AS id, e.wins AS w, e.hits AS h, e.prior AS p`)
   const laplace = (w, h) => Math.round(((w + 1) / (h + 2)) * 100) / 100
-  return rows.map((r) => {
-    const w = Number(r.w), h = Number(r.h ?? r.w)
-    return { id: String(r.id), wins: w, hits: h, prior: Number(r.p ?? laplace(w, h)) }
-  })
+  return rows
+    .map((r) => currentCardWeightRow(r, cardsById))
+    .filter(Boolean)
+    .map((r) => {
+      const w = Number(r.w), h = Number(r.h ?? r.w)
+      return { id: String(r.id), bareId: String(r.bareId), wins: w, hits: h, prior: Number(r.p ?? laplace(w, h)) }
+    })
 }
 function gate3(ev) {
   const refuted = gq(`MATCH (s:Signal_) WHERE s.status IN ['refuted','pruned'] RETURN DISTINCT s.type AS t LIMIT 60`).map((r) => _norm(r.t))
   const shadowCards = (() => { try { return JSON.parse(fs.readFileSync(`${BRAIN}/shadow/techniques.json`, 'utf8')).cards ?? [] } catch { return [] } })()
   const dirty = new Set(shadowCards
     .filter((c) => (c.applies_to ?? []).some((k) => refuted.some((r) => r && (r.includes(_norm(k)) || _norm(k).includes(r)))))
-    .map((c) => c.id))
+    .map((c) => String(c.id ?? '').toLowerCase().replace(/^card:/, '')))
   const pass = [], detail = []
   for (const e of ev) {
-    const ok = e.wins >= 3 || (e.wins >= 2 && !dirty.has(e.id))
-    detail.push(`${e.id}(wins=${e.wins}, laplace=${e.prior}${dirty.has(e.id) ? ', 撞refuted' : ''})${ok ? '✓' : '✗'}`)
+    const ok = e.wins >= 3 || (e.wins >= 2 && !dirty.has(e.bareId))
+    detail.push(`${e.id}(wins=${e.wins}, laplace=${e.prior}${dirty.has(e.bareId) ? ', 撞refuted' : ''})${ok ? '✓' : '✗'}`)
     if (ok) pass.push(`${e.id}(wins=${e.wins}, laplace=${e.prior})`)
   }
   return { ok: pass.length > 0, pass, detail }

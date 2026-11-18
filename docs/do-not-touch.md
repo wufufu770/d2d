@@ -9,11 +9,11 @@
 | adapter egress 强制块 | 凭证强制注入面 |
 | app.py slowloris + 信号量 | 并发保护核心 |
 | failover QUOTA_RE + 备用模型语义 | 熔断语义 |
-| scheduler.js 禁区区间 [570,618]（删除行=0） | brief 组装序整体（头注释 scheduler.js:14 自证） |
-| scheduler.js:589-594 | Gate-P 拒绝回收区（unclaim + identity reset；素材原标「join 序」经 HD-1 核实修正） |
-| scheduler.js:596-597 | 简报保险丝丢弃序注释（applyBriefBudget 裁剪序） |
-| scheduler.js:607-630 + buildAgentStatus（:791+ 文件末尾） | 2C agent_status 区（派发快照+taskWithStatus+experience_ref 注入） |
-| scheduler.js:603 | linkContext .slice(0,800) 显式例外先例（4-3a 保留） |
+| scheduler.js 禁区区间 [584,632]（删除行=0） | brief 组装序整体（E40-A1 位移重锚 2026-11-17：模型继承链上游纯插入 +14 行，区间内容 sha256 逐字节不变=16909bd7914f2b78 自证零触碰；守卫 test/scheduler-zone-guard.test.mjs 同步） |
+| scheduler.js:616-625 | Gate-P 派单契约门+拒绝回收区（unclaim + identity reset；内容锚=const gp=gateP...return null） |
+| scheduler.js:610-611 | 简报保险丝/gapLine 消毒注入序注释（applyBriefBudget 裁剪序） |
+| scheduler.js:626-654 + buildAgentStatus（:840+ 文件内） | 2C agent_status 区（派发快照+taskWithStatus+experience_ref 注入） |
+| scheduler.js:639 | linkContext .slice(0,800) 显式例外先例（4-3a 保留） |
 | gates.py redact_pii 8 类 | 脱敏语义 |
 | report.mjs 三校验点 | 3E 已落地 |
 | graphd 八态机 / actor+reason / host-only 认证 | 4-8 已落地 |
@@ -44,7 +44,7 @@
 | Mimosa L3 门既有拦截项 | 存量账目 |
 | approvals.mjs / tier-approval.mjs 浏览器⓪支（approvals.mjs:74-77 词表+116-121 isBrowserStateChange；tier-approval.mjs:79-82 镜像，均实锚） | T2-2b-4 已落地 |
 | scripts/browser/ 四文件（cdp-client/form-fuzzer/logic-tester/race-condition） | T2-2b-4 已落地 |
-| scheduler.js BG-2 业务闸注入行（:621-625 区新增 5 行, 禁区 [570,618] 之外） | BG-2 已落地 |
+| scheduler.js BG-2 业务闸注入行（:654-660 区新增 5 行, 禁区 [584,632] 之外；E40-A1 位移重锚） | BG-2 已落地 |
 | scheduler/loop.mjs 深环业务闸检查块（allocateOnce scope 过滤后 13 行） | BG-2 已落地 |
 | scheduler/business-gate.mjs 编排文件 | BG-2 已落地 |
 | domain/skill-schema.mjs（skill Schema+结构门纯函数） | T3-2-2 已落地 |

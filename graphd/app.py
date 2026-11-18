@@ -119,6 +119,7 @@ try:
                            eng_time_windows, finding_gates, host_in_scope, hostport_of,
                            init_schema, is_engagement_create, l1_gate, legacy_token_ok,
                            normalize_title, parse_scope_allows, pick_write_eng,
+                           write_scope_auth,
                            prose_denylist_hit, redact_pii, repro_gate, title_tokens,
                            titles_duplicate, transition_gate, url_sig, worker_query_allowed,
                            SCHEMA_DEGRADED)
@@ -136,6 +137,7 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
                     eng_time_windows, finding_gates, host_in_scope, hostport_of,
                     init_schema, is_engagement_create, l1_gate, legacy_token_ok,
                     normalize_title, parse_scope_allows, pick_write_eng,
+                    write_scope_auth,
                     prose_denylist_hit, redact_pii, repro_gate, title_tokens,
                     titles_duplicate, transition_gate, url_sig, worker_query_allowed,
                     SCHEMA_DEGRADED)
@@ -145,8 +147,10 @@ except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
 # (本批次授权改动仅 gates.py/app.py/tests 三文件) — 直接从子模块导入, 两种运行形态都接住。
 try:
     from graphd.gd.gates import content_hash, evidence_ref, source_hash
+    from graphd.gd.gates import repairability_classify  # E46-2: finding 写入回填 repairability(4-4B 段2 写入接线)
 except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
     from gd.gates import content_hash, evidence_ref, source_hash
+    from gd.gates import repairability_classify  # E46-2: 同上(脚本运行形态)
 
 # 4-3c-1: host /query CALL 禁令纯函数(gd/gates.py 4-3c-1 区块)。同 3C 哲学: gd/__init__
 # 聚合不在本批次授权改动清单, 直接从子模块导入, 两种运行形态都接住。
@@ -396,12 +400,84 @@ def _eng_paused(eng: str) -> bool:
         return False
 
 
+def _eng_pause_block_reason(eng: str, conn, hint: str = "写入停收") -> str:
+    """E40-B4(#104): per-eng 暂停的 owner/epoch 核验 — 返回 409 文案(空串=放行)。
+    暂停文件 {paused, eng, by, epoch, at}:
+      · 旧形态(无 by 字段)→ 仍然全拦(向后兼容)
+      · 新形态: 仅当文件 by == 图内当前 leased_by(写停机者仍是租约持有者)且
+        (无 epoch 字段 或 epoch >= 图内 lease_epoch)时才拦 —— 新持有者(B 接管后
+        leased_by≠A)或新纪元(认领 CAS 已 bump)读到的旧 A 暂停文件视为 STALE 放行,
+        不再阻塞新持有者(issue #104 主洞: 失租自停写的暂停文件挡住接管者)。
+    conn 由调用方传入 — 与写面同一 _locked() 窗口内读图(原子核验)。"""
+    if not eng or "/" in eng or ".." in eng:
+        return ""
+    p = f"{_D2D_PAUSE_DIR}/paused-{eng}.json"
+    try:
+        with open(p) as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    if not d.get("paused"):
+        return ""
+    by = str(d.get("by") or "").strip()
+    if not by:
+        return f"d2d-paused({eng}) — 该 engagement 已冻结(legacy 暂停), {hint}"
+    cur_by, cur_epoch = "", 0
+    try:
+        row = conn.execute("MATCH (e:Engagement {name:$n}) RETURN e.leased_by, e.lease_epoch", {"n": eng})
+        if row.has_next():
+            vals = row.get_next()
+            cur_by = str(vals[0] or "")
+            cur_epoch = int(vals[1] or 0)
+    except Exception:
+        cur_by = by  # 图读失败 → 保守按同持有者处理(退回旧 _eng_paused 全拦语义)
+    if by != cur_by:
+        return ""  # 暂停属旧持有者 — 新持有者不背旧锅(#104)
+    ep = d.get("epoch")
+    if ep is not None:
+        try:
+            if int(ep) < cur_epoch:
+                return ""  # 同持有者但纪元已前进(重挂载) → 旧纪元暂停作废
+        except (TypeError, ValueError):
+            pass
+    return f"d2d-paused({eng}) — 该 engagement 已冻结(by {by[:24]} epoch {cur_epoch}), {hint}"
+
+
 # D-4: 并发连接上限 — ThreadingHTTPServer 每连接一线程, 慢连接可耗尽线程/内存(纵深防御)
 _INFLIGHT = threading.BoundedSemaphore(int(os.environ.get("P2P_MAX_CONNS", "32")))
 
 # 3.5-1(经验回流 A): Experience.category 枚举(方案 v2 拍板三类) — 写入侧 400 门与读侧无枚举约束
 # (读按 status 过滤, 不按 category), 常量单点供 /write/experience 与 pytest 同源引用。
 _EXPERIENCE_CATEGORIES = ("success", "failure", "pitfall")
+
+# ── E40-D2: 读面/锚点拆分的依赖命名空间(app.py 装配, gd 模块消费) ──
+# 为什么依赖注入不 import app: 脚本形态(cd graphd && python3 app.py)下本文件是 __main__,
+# `import app` 会二次实例化整模块(锁/DB 全分家)。host_token 走 property 现读 os.environ
+# (与原 /query 行为一致 — env 可被 /reload 等运行时改写, 不能装配期冻结)。
+try:
+    from graphd.gd import anchors as _anchors  # noqa: E402 — 装配序在 Handler 之前, 双形态随 gd 惯例
+    from graphd.gd import queries_read as _queries_read  # noqa: E402
+    from graphd.gd import writes_gate as _writes_gate  # noqa: E402 — E46-D2b 门控写面拆分
+except Exception:  # 直接脚本运行(cd graphd && python3 app.py)
+    from gd import anchors as _anchors  # noqa: E402
+    from gd import queries_read as _queries_read  # noqa: E402
+    from gd import writes_gate as _writes_gate  # noqa: E402
+
+
+class _GdDeps:
+    @property
+    def host_token(self):
+        return os.environ.get("P2P_HOST_TOKEN", "")
+
+
+_GD_DEPS = _GdDeps()
+_GD_DEPS._locked = _locked
+_GD_DEPS.db = db
+_GD_DEPS.kuzu = kuzu
+_GD_DEPS._d2d_paused = _d2d_paused
+_GD_DEPS._audit_event = _audit_event
+_GD_DEPS._log_transition = _log_transition  # E46-D2b: writes_gate 旁路日志依赖
+_GD_DEPS.hmac = hmac
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -471,6 +547,13 @@ class Handler(BaseHTTPRequestHandler):
             return str(self.client_address)
 
     def do_GET(self):
+        # B11: 与 do_POST 同款 V-11 锁等待超时顶层兜底(见 do_POST 注释)
+        try:
+            return self._do_get_impl()
+        except TimeoutError as _te:
+            return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
+
+    def _do_get_impl(self):
         self._slowloris_arm()  # #73: 慢头部/慢 body 读全程受限(见 _slowloris_arm 注释)
         if self.path == "/health":
             # V-12: 不回显 DB_PATH(本机信息暴露面收敛)
@@ -523,6 +606,15 @@ class Handler(BaseHTTPRequestHandler):
         return auth_check(level, self.headers.get("X-Auth", ""))
 
     def do_POST(self):
+        # B11: V-11 锁等待超时统一兜底 —— `with _locked():` 在 __enter__ 抛 TimeoutError 时,
+        # 各路由内层 except(只覆盖锁内执行)接不到(try 尚未进入) → 逃逸成 500。顶层统一转
+        # 503(V-11 语义), 一处覆盖全部锁位点; 锁内执行超时仍由各路由内层 except 优先处理。
+        try:
+            return self._do_post_impl()
+        except TimeoutError as _te:
+            return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
+
+    def _do_post_impl(self):
         self._slowloris_arm()  # #73: 慢头部/慢 body 读全程受限(见 _slowloris_arm 注释)
 
         # V-11 + C7: Content-Length 解析门(纯函数 content_length_gate 供 pytest 锁回归)。
@@ -671,12 +763,19 @@ class Handler(BaseHTTPRequestHandler):
                             except Exception:
                                 pass
                     _eng = pick_write_eng(str(req.get("eng") or ""), _actives, _hosts)
-                    if _eng and _eng_paused(_eng):
-                        return self._send(409, {"ok": False, "error": f"d2d-paused({_eng}) — 该 engagement 已冻结, 任务立即收尾退出"})
-                    # 0913 审查 H13: 结构化写入的 scope fail-closed — 载荷带 URL 但无活跃 engagement
-                    # 认领(=不在任何活跃 scope)时拒绝, 防 worker 把 scope 外目标写进黑板(原 eng='' 落库)
-                    if not _eng and _hosts:
-                        return self._send(403, {"ok": False, "error": "write rejected: payload URLs match no active engagement scope (fail-closed)"})
+                    # E40-B4(#104): 暂停核验升级 owner/epoch — 失租自停写的旧暂停文件
+                    # 不再阻塞新持有者(接管后 leased_by≠暂停文件 by → STALE 放行)
+                    if _eng:
+                        _pause_why = _eng_pause_block_reason(_eng, conn, hint="任务立即收尾退出")
+                        if _pause_why:
+                            return self._send(409, {"ok": False, "error": _pause_why})
+                    # E40-B1(#101): 归属与正向范围授权解耦 — 归属命中后载荷 host 逐一对【被归属
+                    # engagement 的 scope】做 host/domain/IP/CIDR 授权(write_scope_auth 纯函数):
+                    # 修掉"恰一个 active 时范围外目标借有效归属入图"的授权错配洞;
+                    # 无归属(eng='')仍按 0913 H13 fail-closed 403 保留。
+                    _ok_sc, _why_sc = write_scope_auth(_eng, _hosts, _actives)
+                    if not _ok_sc:
+                        return self._send(403, {"ok": False, "error": _why_sc})
                     if self.path == "/write/finding":
                         title = str(req.get("title") or "").strip()
                         if not title:
@@ -781,10 +880,14 @@ class Handler(BaseHTTPRequestHandler):
                             _eref = evidence_ref(_eng, _fid)
                         except Exception:
                             pass  # 哈希/路径失败不阻塞写入(列落 '' = schema DEFAULT 同语义)
+                        # E46-2: repairability 回填(4-4B 段2 写入接线) — 纯函数按 category/title/repro
+                        # 三分类(cfg_one_click|code_change|arch_change)。只落 cls 列(加列=三处同步+
+                        # 版本 bump 另批); why 由读侧 JS 镜像 domain/repairability.mjs 同源词表重算。
+                        _repair_cls, _repair_why = repairability_classify(cat, title, str(req.get("repro") or ""))
                         conn.execute(
                             "CREATE (f:Finding {id:$id, title:$title, severity:$sev, cvss:$cvss, "
                             "evidence_dir:$edir, repro:$repro, category:$cat, gate_status:'candidate', ts:$ts, related_to:$rt, eng:$eng, "
-                            "content_hash:$ch, source_hash:$sh, evidence_ref:$eref})",
+                            "content_hash:$ch, source_hash:$sh, evidence_ref:$eref, repairability:$rep})",
                             parameters={"id": _fid,
                                         "title": title, "sev": sev,
                                         "cvss": cvss_or_default(req.get("cvss")),
@@ -794,7 +897,8 @@ class Handler(BaseHTTPRequestHandler):
                                         "rt": _rt,
                                         "eng": _eng,
                                         "ts": str(req.get("ts") or datetime.now(timezone.utc).isoformat()),
-                                        "ch": _ch, "sh": _sh, "eref": _eref})
+                                        "ch": _ch, "sh": _sh, "eref": _eref,
+                                        "rep": _repair_cls})
                     elif self.path == "/write/signal":
                         # I-014: Signal.evidence 脱敏
                         _ev_raw = str(req.get("evidence") or "")[:2000]
@@ -1041,8 +1145,9 @@ class Handler(BaseHTTPRequestHandler):
                     # 同款, 「停 A 不误伤 B」语义对所有 worker 写端点成立; eng_id 可空=跨 eng
                     # 通用经验, 空值不判 _eng_paused 直接放行)。host 评审面(experience-transition
                     # /consensus 等)不挂 per-eng 门: 冻结正是为了人工处理, 全局门+豁免面已覆盖。
-                    if _eng_id and _eng_paused(_eng_id):
-                        return self._send(409, {"ok": False, "error": f"d2d-paused({_eng_id}) — 该 engagement 已冻结, 经验写入停收"})
+                    _pause_why = _eng_pause_block_reason(_eng_id, conn, hint="经验写入停收") if _eng_id else ""
+                    if _pause_why:
+                        return self._send(409, {"ok": False, "error": _pause_why})
                     # ③3.5-4-3 端点侧 per-eng_id 写入配额(粗兜底): 计数与 CREATE 同一 _locked()
                     # 窗口原子完成(engagement_cap_gate 的 H12 TOCTOU 教训同款); 含 quarantined
                     # 隔离行 — 评审出池前同样占池。超限 429(水位门同款)+ 审计。
@@ -1177,49 +1282,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "id": xid, "consensus_status": cs})
 
         # ---- T4-3-3(8-2): /write/dual-sign-transition —— Finding.dual_sign 状态机收编端点
-        # (host-only)。scheduler 11 处 SET f.dual_sign 直写簿记收编至此(机制变更非语义变更:
-        # 迁移表白名单=11 处实测全边集, dual_sign_transition_gate 纯函数为真源, :382/:390 等
-        # 调用点话术/runLog/审计逐字保留)。独立早退路由(experience-consensus 先例同款, 既有
-        # 路由零改写); 认证照 host 端点先例(_auth("host"), worker token 403); 共享门自动生效
-        # (Content-Length 门/legacy token/R6 denylist 红线扫描 — 本 path 以 /write/ 开头)。
-        # 载荷 {id, to}: to=pending 走 0917 H7 CAS 语义(锁内读 cur, 仅 ''/NULL 可写; cur 已是
-        # pending=并发入口已占 → 200+claimed:false 不算错误, 与旧条件写零命中等价);
-        # 其余 to 表判定, 非法迁移 409(signed/disputed 真终态不可迁; blocked→pending 解冻边
-        # 0915 B1 先例合法); finding 缺失 404(对齐旧簿记: MATCH 不命中=无写入, scheduler 侧
-        # 落既有 catch 留痕形态)。
+        # (host-only)。E46-D2b: 写面拆至 gd/writes_gate.py(逐字搬移零改动 — 依赖经 _GD_DEPS
+        # 注入, queries_read.py/anchors.py 先例同形态)。
         if self.path == "/write/dual-sign-transition":
-            if not self._auth("host"):
-                return self._send(403, {"ok": False, "error": "dual sign transition requires host token"})
-            fid = str(req.get("id") or "").strip()
-            to = str(req.get("to") or "").strip()
-            if not fid:
-                return self._send(400, {"ok": False, "error": "id required"})
-            if to not in DUAL_SIGN_STATES:  # to 形态预检: 越枚举 400(表外状态名)
-                return self._send(400, {"ok": False,
-                                        "error": f"invalid dual_sign target: to must be one of {list(DUAL_SIGN_STATES)}"})
-            with _locked():  # V-11: 锁带 5s deadline(读 cur→门判定→SET 与转态端点同一锁窗口口径)
-                try:
-                    conn = kuzu.Connection(db())
-                    r = conn.execute("MATCH (f:Finding {id:$id}) RETURN f.dual_sign", parameters={"id": fid})
-                    if not r.has_next():
-                        return self._send(404, {"ok": False, "error": "finding not found"})
-                    cur = r.get_next()[0]
-                    cur = "" if cur is None else str(cur)
-                    ok, reason = dual_sign_transition_gate(cur, to)
-                    if not ok:
-                        if to == "pending" and cur == "pending":
-                            # 0917 H7 CAS 零命中等价: 已被并发入口占走 — 不算错误, claimed=false
-                            return self._send(200, {"ok": True, "id": fid, "to": to, "claimed": False})
-                        return self._send(409, {"ok": False, "error": f"dual-sign transition rejected: {reason}",
-                                                "from": cur})
-                    conn.execute("MATCH (f:Finding {id:$id}) SET f.dual_sign=$to",
-                                 parameters={"id": fid, "to": to})
-                except TimeoutError as _te:
-                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
-                except Exception as e:
-                    return self._send(500, {"ok": False, "error": str(e)[:200]})
-            _audit_event("dual-sign-transition", {"id": fid, "from": cur, "to": to})
-            return self._send(200, {"ok": True, "id": fid, "to": to, "claimed": True})
+            return _writes_gate.handle_dual_sign_transition(self, req, _GD_DEPS)
 
         # ---- 3.6-1-2(前沿子系统 C 数据层): /write/frontier —— Frontier 探索方向提案写入通道。
         # 独立挂载(不并入结构化写分支, 该分支既有语句零改动); 认证/共享 _locked()/错误骨架与
@@ -1319,8 +1385,9 @@ class Handler(BaseHTTPRequestHandler):
                     conn = kuzu.Connection(db())
                     # FIX-1 A3: per-eng 暂停门补挂(worker 数据写面 — 结构化 4 端点 :640 先例
                     # 同款; eng_id 必填已在上方 400 门保证, 此处非空恒成立)。
-                    if _eng_id and _eng_paused(_eng_id):
-                        return self._send(409, {"ok": False, "error": f"d2d-paused({_eng_id}) — 该 engagement 已冻结, frontier 提案停收"})
+                    _pause_why = _eng_pause_block_reason(_eng_id, conn, hint="frontier 提案停收") if _eng_id else ""
+                    if _pause_why:
+                        return self._send(409, {"ok": False, "error": _pause_why})
                     # ---- 3.6-2 v4.1 增强①(续): refs 终检(锁内 — 服务端不信自报, 数据终值裁决)。
                     # 逐 id 存在性 + eng 同源校验(两表各自字面量语句 + IN 列表绑定 — kuzu 0.11.3
                     # 列表参数绑定形态现场实证可用; 空列表已在格式门拒绝不会到达此处)。
@@ -1412,152 +1479,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "id": _fid, "status": "proposed"})
 
         # ---- 3.6-1-4(前沿子系统 C): /write/frontier-transition —— Frontier 评审转态通道。
-        # 独立早退路由(照 /write/experience-transition 模板, 既有路由零改写; 本路由 return 后不
-        # 触达下方任何链)。host-only(/write/transition 同款: _auth("host") 只认 HOST_TOKEN 恒等
-        # 比较, worker token 403; 失败由 _auth 包装器既有 auth-fail 审计覆盖)。合法迁移表与
-        # review_note 必填校验收敛在 gates.frontier_transition_gate 纯函数(单测真源): 仅
-        # proposed→accepted / proposed→rejected / accepted→explored 三条, 其余拒绝。
-        # 转态写 Frontier.status + reviewed_at=当前时刻 + review_note(落图列, 供 /query/frontier
-        # 回读); 轨迹经 _audit_event('frontier-transition') 记 ts/旧状态/新状态/reviewer/reason,
-        # 非法迁移记 'frontier-transition-illegal'(#73 transition-illegal 同款可追溯)。
-        # status/review_note 写入参数绑定($to/$note), 拒绝拼接; 共享门自动生效: Content-Length
-        # 门/legacy token/R6 denylist 红线扫描(本 path 以 /write/ 开头且非 /write/transition)。
+        # E46-D2b: 写面拆至 gd/writes_gate.py(逐字搬移零改动 — 依赖经 _GD_DEPS 注入,
+        # anchors.py 先例同形态; 闭环回填三参与 utility 预检语义逐字保留)。
         if self.path == "/write/frontier-transition":
-            if not self._auth("host"):
-                return self._send(403, {"ok": False, "error": "frontier transitions require host token"})
-            xid = str(req.get("frontier_id") or "").strip()
-            to = str(req.get("target_status") or "").strip().lower()
-            if not xid:
-                return self._send(400, {"ok": False, "error": "frontier_id required"})
-            if not to:
-                return self._send(400, {"ok": False, "error": "target_status required (proposed|accepted|rejected|explored)"})
-            # ---- 3.6-4 段 C(C-1 反馈闭环回填): 可选参数 — 转态端点带参(审计①拍板的最小侵入
-            # 方案)。转态本体(迁移表/host-only/status+reviewed_at+review_note 写)零改动, 三参
-            # 均缺省时行为与既有调用逐字节等价; 显式传参才回填闭环锚点列(3.6-2 定死的两个
-            # *_ref 占位列由此获得唯一写入方)。回填语义(现场链路):
-            #   accepted_to_hypothesis_ref = 采纳后该方向产出的 Hypothesis id(锚① — worker 经
-            #     /write/hypothesis 生成, 现场无方向标签, 由 engagement 终态回填进程按时间窗
-            #     关联, plugin/scheduler/frontier-closure.mjs);
-            #   hypothesis_to_confirmed_ref = 该假设 verdict=confirmed 的 evidence_ref 所指
-            #     Finding id(锚② — Hypothesis↔Finding 现场关系即 evidence_ref 文本, 无边;
-            #     Finding.related_to 是跨 host 同缺陷归并, 与本链路无关);
-            #   utility_effective(bool) = 探索期效用(有效 True=+0.2 / 无发现 False=-0.1) —
-            #     仅 accepted→explored 生效, 合并进 value_components JSON 的 utility 键
-            #     (已定死字段内加键不违约; ±0.2 常量单源 gates.py)。转化率 = 两 ref 非空比率
-            #     (gates.frontier_conversion_rate; 看板 8.5-2 只读消费)。
-            _ref_hyp = str(req.get("accepted_to_hypothesis_ref") or "").strip()
-            _rej_h, _rej_h_reason, _ref_hyp = frontier_ref_backfill(_ref_hyp)
-            if _rej_h:
-                return self._send(400, {"ok": False, "error": f"accepted_to_hypothesis_ref: {_rej_h_reason}"})
-            _ref_fnd = str(req.get("hypothesis_to_confirmed_ref") or "").strip()
-            _rej_f, _rej_f_reason, _ref_fnd = frontier_ref_backfill(_ref_fnd)
-            if _rej_f:
-                return self._send(400, {"ok": False, "error": f"hypothesis_to_confirmed_ref: {_rej_f_reason}"})
-            _util_eff = None
-            if "utility_effective" in req:
-                _ue = req.get("utility_effective")
-                if not isinstance(_ue, bool):
-                    return self._send(400, {"ok": False, "error": "utility_effective must be a boolean"})
-                _util_eff = _ue
-            with _locked():  # V-11: 锁带 5s deadline(读旧态→门判定→写新态同一锁窗口, /write/transition 同款)
-                try:
-                    conn = kuzu.Connection(db())
-                    # 3.6-4 段 C: 读旧态同时取既有 value_components(utility 合并基线 — 既有键
-                    # 原样保留, 仅置 utility 键); 无回填参数的既有调用多取一列零行为差。
-                    r = conn.execute("MATCH (x:Frontier {id:$id}) RETURN x.status, x.value_components",
-                                     parameters={"id": xid})
-                    if not r.has_next():
-                        return self._send(404, {"ok": False, "error": "frontier not found"})
-                    _frow = r.get_next()
-                    cur = str(_frow[0] or "proposed")
-                    _cur_vc = str(_frow[1] or "") if len(_frow) > 1 else ""
-                    ok, err = frontier_transition_gate(cur, to, req.get("review_note"))
-                    if not ok:
-                        # #73: 非法迁移审计(转态拒绝动作可追溯: id/cur/to/reviewer)
-                        _audit_event("frontier-transition-illegal",
-                                     {"id": xid, "cur": cur, "to": to,
-                                      "reviewer": str(req.get("reviewer") or "")[:80], "err": err})
-                        return self._send(400, {"ok": False, "error": err})
-                    # utility 适用性预检(写状态前拒绝 — 零半程状态): 效用结论只在探索结束时产生
-                    if _util_eff is not None and to != "explored":
-                        return self._send(400, {"ok": False, "error": "utility_effective 仅在 accepted→explored 转态生效(探索结束才有效用结论)"})
-                    # 锚点存在性终检(服务端不信自报 — 假 ref 会污染转化率度量; refs 终检同款哲学)
-                    if _ref_hyp:
-                        _ex = conn.execute("MATCH (h:Hypothesis {id:$id}) RETURN h.id LIMIT 1",
-                                           parameters={"id": _ref_hyp})
-                        if not _ex.has_next():
-                            _audit_event("frontier-ref-reject",
-                                         {"id": xid, "field": "accepted_to_hypothesis_ref",
-                                          "ref": _ref_hyp[:80]})
-                            return self._send(400, {"ok": False, "error": f"accepted_to_hypothesis_ref {_ref_hyp[:60]} 不存在(Hypothesis 表无此 id)"})
-                    if _ref_fnd:
-                        _ex = conn.execute("MATCH (f:Finding {id:$id}) RETURN f.id LIMIT 1",
-                                           parameters={"id": _ref_fnd})
-                        if not _ex.has_next():
-                            _audit_event("frontier-ref-reject",
-                                         {"id": xid, "field": "hypothesis_to_confirmed_ref",
-                                          "ref": _ref_fnd[:80]})
-                            return self._send(400, {"ok": False, "error": f"hypothesis_to_confirmed_ref {_ref_fnd[:60]} 不存在(Finding 表无此 id)"})
-                    # 全参数绑定($id/$to/$ts/$note); 其他列零触碰(eng_id/direction/evidence/
-                    # proposed_by/created_at 不动 — 评审只产出裁决, 不改提案本体)。
-                    _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                    conn.execute("MATCH (x:Frontier {id:$id}) SET x.status=$to, "
-                                 "x.reviewed_at=timestamp($ts), x.review_note=$note",
-                                 parameters={"id": xid, "to": to, "ts": _ts,
-                                             "note": str(req.get("review_note") or "").strip()})
-                    # 3.6-4 段 C: 闭环回填(与转态写同一 _locked() 窗口; 列级失败降级 stderr 不
-                    # 阻塞转态本体 — report_status 降级先例; 列由 schema 三处同步+ALTER 迁移保证)。
-                    _bf_err = []
-                    if _ref_hyp:
-                        try:
-                            conn.execute("MATCH (x:Frontier {id:$id}) SET x.accepted_to_hypothesis_ref=$r",
-                                         parameters={"id": xid, "r": _ref_hyp})
-                        except Exception as _be:
-                            _bf_err.append(f"a2h: {type(_be).__name__}")
-                    if _ref_fnd:
-                        try:
-                            conn.execute("MATCH (x:Frontier {id:$id}) SET x.hypothesis_to_confirmed_ref=$r",
-                                         parameters={"id": xid, "r": _ref_fnd})
-                        except Exception as _be:
-                            _bf_err.append(f"h2c: {type(_be).__name__}")
-                    if _util_eff is not None:
-                        try:
-                            conn.execute("MATCH (x:Frontier {id:$id}) SET x.value_components=$vc",
-                                         parameters={"id": xid,
-                                                     "vc": frontier_utility_components(_cur_vc, _util_eff)})
-                        except Exception as _be:
-                            _bf_err.append(f"utility: {type(_be).__name__}")
-                    if _bf_err:
-                        print(f"[frontier] closure backfill degraded ({xid}): {'; '.join(_bf_err)}",
-                              file=sys.stderr, flush=True)
-                except TimeoutError as _te:
-                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
-                except Exception as e:
-                    # 写失败降级: stderr 响亮留痕不阻塞服务(同 [transition] report_status 降级先例),
-                    # 转态未发生必须如实回 500 — 绝不假成功。
-                    print(f"[frontier] transition write failed (degraded): {type(e).__name__} {str(e)[:160]}",
-                          file=sys.stderr, flush=True)
-                    return self._send(500, {"ok": False, "error": str(e)[:200]})
-            # 成功转态审计: ts/旧状态/新状态/reviewer/reason 全记录(+3.6-4 段 C 追加键:
-            # 闭环锚点与效用 — 仅显式传参时出现, 既有审计键零改动)
-            _audit_event("frontier-transition",
-                         {"id": xid, "from": cur, "to": to,
-                          "reviewer": str(req.get("reviewer") or "host")[:80],
-                          "reason": str(req.get("review_note") or ""),
-                          "ts": datetime.now(timezone.utc).isoformat(),
-                          **({"accepted_to_hypothesis_ref": _ref_hyp} if _ref_hyp else {}),
-                          **({"hypothesis_to_confirmed_ref": _ref_fnd} if _ref_fnd else {}),
-                          **({"utility_effective": _util_eff} if _util_eff is not None else {})})
-            # 8-1: 转态旁路日志(仅插调用行, 既有语句零改动)。锁外追加; log_transition 内部
-            # 自吞异常静默计数 —— 写失败绝不影响下方 200 响应(_audit_event 同款哲学)。
-            _log_transition({"node_id": xid, "from_status": cur, "to_status": to,
-                             "actor": str(req.get("reviewer") or "host"),
-                             "reason": str(req.get("review_note") or ""),
-                             "source_batch": str(req.get("source_batch") or "")})
-            return self._send(200, {"ok": True, "id": xid, "from": cur, "to": to,
-                                    **({"accepted_to_hypothesis_ref": _ref_hyp} if _ref_hyp else {}),
-                                    **({"hypothesis_to_confirmed_ref": _ref_fnd} if _ref_fnd else {}),
-                                    **({"utility_effective": _util_eff} if _util_eff is not None else {})})
+            return _writes_gate.handle_frontier_transition(self, req, _GD_DEPS)
 
         # R3: Finding 八态状态机转换（host 专属；worker 的 verified 结论仍须经验证器环独立重放背书）
         # #73 token 归属复核: 本端点已 host-only —— _auth("host") 只接受与 HOST_TOKEN 的恒等
@@ -1798,46 +1723,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(500, {"ok": False, "error": f"verification write failed: {str(e)[:200]}"})
             return
         if self.path == "/write/anchors":
-            # E38(1.7.0 P2): 双图锚点写面(host-only 裁决面同 verification 口径) — 探索面实体
-            # (Finding/Task)↔资产面(Asset)锚点边。幂等(既有边零新建, created:false); 端点引用
-            # 双缺失 404(fail-closed — 锚点必须挂在真实节点上); 零 UPDATE 零 DELETE。
-            if not self._auth("host"):
-                return self._send(403, {"ok": False, "error": "anchors write requires host token"})
-            _a_kind = str(req.get("anchor") or "").strip().lower()
-            _a_from = str(req.get("from_ref") or "").strip()[:120]
-            _a_asset = str(req.get("asset_id") or "").strip()[:120]
-            if _a_kind not in ("finding", "task"):
-                return self._send(400, {"ok": False, "error": "invalid anchor (finding|task)"})
-            if not _a_from or not _a_asset:
-                return self._send(400, {"ok": False, "error": "from_ref and asset_id required (锚点双端)"})
-            _edge = "FINDING_ON" if _a_kind == "finding" else "TOUCHED"
-            _node = "Finding" if _a_kind == "finding" else "Task"
-            _a_note = str(req.get("note") or "").strip()[:200]
-            with _locked():
-                try:
-                    conn = kuzu.Connection(db())
-                    _exists = conn.execute(
-                        f"MATCH (x:{_node} {{id:$f}})-[:{_edge}]->(a:Asset {{id:$a}}) RETURN count(x)",
-                        parameters={"f": _a_from, "a": _a_asset})
-                    if _exists.get_next()[0] > 0:
-                        self._send(200, {"ok": True, "created": False, "edge": _edge})
-                        return
-                    _missing = conn.execute(
-                        f"MATCH (x:{_node} {{id:$f}}) RETURN count(x)", parameters={"f": _a_from})
-                    if _missing.get_next()[0] == 0:
-                        return self._send(404, {"ok": False, "error": f"{_node} {_a_from} 不存在 — 锚点拒绝挂空(fail-closed)"})
-                    _missing_a = conn.execute(
-                        "MATCH (a:Asset {id:$a}) RETURN count(a)", parameters={"a": _a_asset})
-                    if _missing_a.get_next()[0] == 0:
-                        return self._send(404, {"ok": False, "error": f"Asset {_a_asset} 不存在 — 锚点拒绝挂空(fail-closed)"})
-                    conn.execute(
-                        f"MATCH (x:{_node} {{id:$f}}), (a:Asset {{id:$a}}) CREATE (x)-[:{_edge}]->(a)",
-                        parameters={"f": _a_from, "a": _a_asset})
-                    self._send(200, {"ok": True, "created": True, "edge": _edge, "note": _a_note})
-                    _audit_event("anchors-write", {"edge": _edge, "from": _a_from, "asset": _a_asset})
-                except Exception as e:
-                    self._send(500, {"ok": False, "error": f"anchors write failed: {str(e)[:200]}"})
-            return
+            # E40-D2: 锚点写面拆至 gd/anchors.py(纯代码搬移零改动 — 依赖经 _GD_DEPS 注入)
+            return _anchors.handle_anchors(self, req, _GD_DEPS)
         if self.path == "/write/adjudicate":
             if not self._auth("host"):
                 return self._send(403, {"ok": False, "error": "adjudication requires host token"})
@@ -1914,13 +1801,15 @@ class Handler(BaseHTTPRequestHandler):
                         if int(list(_dup.get_next())[0]) > 0:
                             return self._send(409, {"ok": False, "error": "held finding 已入图(admit 幂等拒绝——重复裁决)"})
                         _hf_ts = datetime.now(timezone.utc).isoformat()
+                        _hfr_cls, _hfr_why = repairability_classify(str(hf.get("category") or ""), hf_title, _hf_repro)  # E46-2 admit 路径同规回填
                         conn.execute(
                             "CREATE (f:Finding {id:$id, title:$t, severity:$s, cvss:0.0, evidence_dir:'', "
                             "repro:$r, category:$c, gate_status:'candidate', ts:$ts, "
                             "verified_at:'', verified_log:'', notify_sent:false, last_transition:'', "
                             "eng:$e, dual_sign:'', replay_matrix:'', content_hash:'', source_hash:'', "
-                            "evidence_ref:'', report_status:'', repairability:''})",
+                            "evidence_ref:'', report_status:'', repairability:$rep})",
                             parameters={"id": ident, "t": hf_title[:200], "s": hf_sev, "r": _hf_repro,
+                                        "rep": _hfr_cls,
                                         "c": dedup_cat(str(hf.get("category") or "")), "ts": _hf_ts,
                                         "e": hf_eng})
                         _log_transition({"node_id": ident, "from_status": "held",
@@ -2193,56 +2082,8 @@ class Handler(BaseHTTPRequestHandler):
         # else 404); 认证沿 /query 通道先例(worker 级); 查询全参数绑定($x), 行上限沿
         # bounded_rows/MAX_QUERY_ROWS 现有约束同款。
         if self.path == "/query/experience":
-            if not self._auth("worker"):
-                return self._send(401, {"ok": False, "error": "unauthorized: X-Auth (worker/host) token required"})
-            # status: 缺省只返回 active(写入即隔离 — quarantined/deprecated 默认不入池);
-            # 显式传值则精确过滤(蒸馏/评审管道可显式拉 quarantined 复核, 数据层不设枚举白名单)。
-            _st = str(req.get("status") or "active").strip().lower() or "active"
-            # scope: 精确匹配(拍板 — 选「精确匹配」而非前缀: 经验 scope 是条目级归标签,
-            # 前缀语义在数据层引入隐式泛化, 留给调用方自行决定); 空值=不按 scope 过滤
-            # (($scope='' OR e.scope=$scope) 同 :699 Hypothesis eng 过滤的仓内先例形态)。
-            _scope = str(req.get("scope") or "").strip()
-            # min_utility_score: 缺省 0.3(EvolveR 剪枝阈值); 非法回退缺省(cvss_or_default 同哲学),
-            # NaN 归一缺省(NaN 比较恒 False 会让过滤静默清空)。
-            try:
-                _minu = float(req.get("min_utility_score"))
-            except (TypeError, ValueError):
-                _minu = 0.3
-            if _minu != _minu:
-                _minu = 0.3
-            # limit: 缺省 10, 钳位 [1, MAX_QUERY_ROWS](沿 /query 行上限约束); 参数化 LIMIT($lim
-            # 绑定, kuzu 0.11 现场实证支持) + bounded_rows 双保险。
-            try:
-                _lim = int(req.get("limit") or 10)
-            except (TypeError, ValueError):
-                _lim = 10
-            _lim = max(1, min(_lim, MAX_QUERY_ROWS))
-            # 排序: utility_score DESC, 平局按 created_at DESC 次级(新经验优先, 拍板记录)。
-            _cy = ("MATCH (x:Experience) WHERE x.status = $st AND x.utility_score >= $minu "
-                   "AND ($scope = '' OR x.scope = $scope) "
-                   "RETURN x.id AS id, x.eng_id AS eng_id, x.category AS category, x.scope AS scope, "
-                   "x.title AS title, x.content AS content, x.evidence_ref AS evidence_ref, "
-                   "x.utility_score AS utility_score, x.retrieval_count AS retrieval_count, "
-                   "x.success_count AS success_count, x.created_at AS created_at, "
-                   "x.last_used_at AS last_used_at, x.status AS status, x.provenance_hash AS provenance_hash, "
-                   # T4-3-2: 读侧回传 +2 列(漏列=静默旧形态, 测试锁定 —— 细化: 共识消费方经此通道取值)
-                   "x.reasoning_path AS reasoning_path, x.consensus_status AS consensus_status "
-                   "ORDER BY x.utility_score DESC, x.created_at DESC LIMIT $lim")
-            _params = {"st": _st, "minu": _minu, "scope": _scope, "lim": _lim}
-            with _locked():  # V-11: 锁带 5s deadline
-                try:
-                    conn = kuzu.Connection(db())
-                    res = conn.execute(_cy, _params)
-                    # H13 同款: 行数上限封顶消费(超限停拉 + truncated 标记)
-                    rows, _trunc = bounded_rows(res, limit=_lim)
-                    cols = res.get_column_names()
-                    data = [{cols[i]: _jsonify(r[i]) for i in range(len(cols))} for r in rows]
-                except TimeoutError as _te:
-                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
-                except Exception as e:
-                    return self._send(400, {"ok": False, "error": str(e)[:200]})
-            return self._send(200, {"ok": True, "experiences": data,
-                                    "count": len(data), "truncated": _trunc})
+            # E40-D2: 读面拆至 gd/queries_read.py(纯代码搬移零改动 — 依赖经 _GD_DEPS 注入)
+            return _queries_read.handle_query_experience(self, req, _GD_DEPS)
         # ---- 3.6-1-3(前沿子系统 C 数据层): /query/frontier —— 前沿提案池读取通道(主控评审
         # 3.6-3 输入源 + 面板可视)。独立挂载于 /query 链之前(该链既有语句零改动, 本路由早退不
         # 触达 else 404); 认证沿 /query/experience 通道先例(worker 级); 查询全参数绑定($x),
@@ -2252,122 +2093,12 @@ class Handler(BaseHTTPRequestHandler):
         # 是主控评审的输入本体, 缺省过滤会把待评审提案整池藏掉(评审管道静默空转), 故缺省全态
         # 返回, 评审侧按 status='proposed' 精确取用, 面板可看全貌。
         if self.path == "/query/frontier":
-            # GW-2 (gap #2): 路由升 host-only —— worker 级挂载下 eng_id 可选+缺省全态
-            # = worker token 可拉全项目提案池(direction/evidence/review_note 跨项目明文)。
-            # 生产消费方普查(gatewarden 方案卡 #2): frontier-review/closure 与面板 raw cypher
-            # 全部持 host token; worker 侧生产调用方零——worker 读本 eng 提案走 raw /query +
-            # WHERE(FULLSCAN 闭集已含 Frontier, GW-2 gap #1 同批收口)。
-            if not self._auth("host"):
-                return self._send(401, {"ok": False, "error": "unauthorized: X-Auth host token required (/query/frontier is host-only since GW-2)"})
-            # status: 缺省 ''(不过滤 — 全态返回, 理由见上方拍板留痕); 显式传值则精确过滤。
-            _st = str(req.get("status") or "").strip().lower()
-            # eng_id: 精确匹配(空值=不过滤, ($eng='' OR ...) 同 /query/experience scope 过滤的
-            # 仓内先例形态 — 共享黑板跨项目隔离由调用方按需收窄)。
-            _eng = str(req.get("eng_id") or "").strip()
-            # limit: 缺省 20, 钳位 [1, MAX_QUERY_ROWS](沿 /query 行上限约束); 参数化 LIMIT($lim)
-            # 绑定(kuzu 0.11 现场实证) + bounded_rows 双保险。
-            try:
-                _lim = int(req.get("limit") or 20)
-            except (TypeError, ValueError):
-                _lim = 20
-            _lim = max(1, min(_lim, MAX_QUERY_ROWS))
-            # 排序: created_at DESC(新提案优先 — 评审消费最前沿输入)。
-            _cy = ("MATCH (x:Frontier) WHERE ($eng = '' OR x.eng_id = $eng) AND ($st = '' OR x.status = $st) "
-                   "RETURN x.id AS id, x.eng_id AS eng_id, x.direction AS direction, x.evidence AS evidence, "
-                   "x.proposed_by AS proposed_by, x.status AS status, x.review_note AS review_note, "
-                   "x.created_at AS created_at, x.reviewed_at AS reviewed_at "
-                   "ORDER BY x.created_at DESC LIMIT $lim")
-            _params = {"eng": _eng, "st": _st, "lim": _lim}
-            with _locked():  # V-11: 锁带 5s deadline
-                try:
-                    conn = kuzu.Connection(db())
-                    res = conn.execute(_cy, _params)
-                    # H13 同款: 行数上限封顶消费(超限停拉 + truncated 标记)
-                    rows, _trunc = bounded_rows(res, limit=_lim)
-                    cols = res.get_column_names()
-                    data = [{cols[i]: _jsonify(r[i]) for i in range(len(cols))} for r in rows]
-                except TimeoutError as _te:
-                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
-                except Exception as e:
-                    return self._send(400, {"ok": False, "error": str(e)[:200]})
-            return self._send(200, {"ok": True, "frontiers": data,
-                                    "count": len(data), "truncated": _trunc})
+            # E40-D2: 读面拆至 gd/queries_read.py(纯代码搬移零改动)
+            return _queries_read.handle_query_frontier(self, req, _GD_DEPS)
         if self.path == "/query":
-            cypher = req.get("cypher", "").strip()
-            params = req.get("params") or {}
-            if not cypher:
-                return self._send(400, {"error": "empty cypher"})
-            # V-05r: 只读白名单仅对 worker token —— host token 是调度器合法写通道
-            # (AgentIdentity/Engagement/ExperienceWeight MERGE 均经 /query；worker 写走 /write/*)
-            _host_tok = os.environ.get("P2P_HOST_TOKEN", "")
-            _got = self.headers.get("X-Auth", "")
-            _is_host = bool(_host_tok) and bool(_got) and hmac.compare_digest(_got, _host_tok)  # V-13
-            if not _is_host:
-                # V-06: 纯函数判定(大小写不敏感白名单+黑名单), 替代原区分大小写的 :271/:273
-                ok_q, err_q = worker_query_allowed(cypher)
-                if not ok_q:
-                    return self._send(403, {"ok": False, "error": err_q})
-            else:
-                # 4-3c-1: host token /query 的 CALL 禁令(一行级止血) —— host 写通道
-                # (MERGE/CREATE/SET/...)零触碰, 仅拦 Kuzu 过程调用(元数据枚举面, 与 worker
-                # 门 0913 C10 同口径)。纯正则判定不占锁(位于 with _locked() 之前);
-                # #73: 拒绝统一审计(auth-fail 同款 detail 含 path/peer 来源地址)。
-                ok_h, err_h = host_query_gate(cypher)
-                if not ok_h:
-                    _audit_event("host-call-denied", {"path": self.path, "peer": self._peer(),
-                                                      "cypher_head": cypher[:80]})
-                    return self._send(403, {"ok": False, "error": err_h})
-                # FIX-1 A3: host 写通道停写 — /query 是调度器合法写通道(AgentIdentity/
-                # Engagement MERGE 等), 全局暂停期僵尸调度器的写型查询同样拦(冷读 A3: 原暂停
-                # 门只覆盖 /write/*, 经 /query 的变更语句绕过「全停写」)。判定复用
-                # WORKER_MUTATION_RE(单一真源); 只读查询放行 — 停机调查需要读图(worker 侧
-                # 本就只读, worker_query_allowed 拦变更, 零影响)。拒绝留审计可追溯。
-                if _d2d_paused() and WORKER_MUTATION_RE.search(cypher):
-                    _audit_event("host-write-paused", {"path": self.path, "peer": self._peer(),
-                                                       "cypher_head": cypher[:80]})
-                    return self._send(409, {"ok": False, "error": "d2d-paused — 全局暂停中, host 写通道已冻结(只读查询不受限)"})
-            with _locked():  # V-11: 锁带 5s deadline
-                try:
-                    conn = kuzu.Connection(db())
-                    # H12: Engagement CREATE 的容量栅栏权威判定 — 必须与 CREATE 同一把锁原子完成。
-                    # 旧实现预检在外层独立锁窗口(:1197 一带), CREATE 在此处另一次加锁执行,
-                    # 两并发请求可同时过检再双双 CREATE, P2P_MAX_ACTIVE 上限被并发击穿(TOCTOU)。
-                    if is_engagement_create(cypher):
-                        # GW-2 v2 (N2/拍板③): MERGE 命中已存在 ≠ 新建 —— 同锁内先按 {name:$k|'k'}
-                        # 点查存在性(参数绑定), 命中=更新语义不计容量; 键不可提取(形态偏离/多 MERGE)
-                        # → 按新建计容量(fail-closed)。外层纵深预检仅 CREATE(见上段注释)。
-                        _merge_key = engagement_merge_existing_key(cypher)
-                        _is_existing_update = False
-                        if _merge_key is not None:
-                            if "param" in _merge_key:
-                                _mk = conn.execute(
-                                    "MATCH (e:Engagement {name:$k}) RETURN count(e)",
-                                    parameters={"k": str(params.get(_merge_key["param"], ""))})
-                            else:
-                                _mk = conn.execute(
-                                    "MATCH (e:Engagement {name:$k}) RETURN count(e)",
-                                    parameters={"k": _merge_key["value"]})
-                            _is_existing_update = int(list(_mk.get_next())[0]) > 0 if _mk.has_next() else False
-                        if not _is_existing_update:
-                            _r1 = conn.execute("MATCH (e:Engagement) WHERE e.status IN ['active','requested'] RETURN count(e)")
-                            _n_active = int(list(_r1.get_next())[0]) if _r1.has_next() else 0
-                            _cap_err = engagement_cap_gate(_n_active)
-                            if _cap_err:
-                                return self._send(409, {"ok": False, "error": _cap_err})
-                    res = conn.execute(cypher, params)
-                    # H13: 行数上限封顶(bounded_rows 纯逻辑供 pytest) — 大图全量缓冲 OOM 面
-                    rows, truncated = bounded_rows(res)
-                    cols = res.get_column_names()
-                    data = []
-                    for r in rows:
-                        data.append({cols[i]: _jsonify(r[i]) for i in range(len(cols))})
-                    return self._send(200, {"ok": True, "rows": data,
-                                            "count": len(data), "truncated": truncated})
-                except TimeoutError as _te:
-                    return self._send(503, {"ok": False, "error": f"graph busy (V-11 lock deadline): {_te}"})
-                except Exception as e:
-                    # V-12: 错误信息截断回显(原 str(e) 全文回传)
-                    return self._send(400, {"ok": False, "error": str(e)[:200]})
+            # E40-D2: 读面拆至 gd/queries_read.py(纯代码搬移零改动 — worker 白名单/host CALL
+            # 禁令/容量栅栏原子窗全在拆出函数内, 依赖经 _GD_DEPS 注入)
+            return _queries_read.handle_query(self, req, _GD_DEPS)
         elif self.path == "/reset":
             # V-12: /reset 改认 HOST token(原仅认遗留 P2P_TOKEN, 与主鉴权体系脱节)
             if not self._auth("host"):
@@ -2388,6 +2119,22 @@ class Handler(BaseHTTPRequestHandler):
 # backlog 提到 128 覆盖突发; 连接上限仍由 _INFLIGHT 信号量兜底(慢连接不吃线程)。
 class GraphdHTTPServer(ThreadingHTTPServer):
     request_queue_size = 128
+
+
+def _write_token_file(raw_path: str, data: str) -> str:
+    """Mimosa 加固: 唯一 token 落盘点 — 路径白名单校验(_safe_token_path)后 O_NOFOLLOW+0600 写入,
+    三处写入点收敛至此, 防符号链接替换/任意路径写。
+    返回值 = data 本身(调用方直接 os.environ 赋值)。0905 冒烟实证: 曾误返回 safe 路径,
+    env 被设成路径字符串 → 全新部署(无外部 P2P_HOST_TOKEN env)所有 host 认证全挂。
+    B11: 提升 __main__ 块嵌套 def 至模块级(安全关键落盘点可 import 测) + O_TRUNC —
+    新 token 比旧短时残留尾字节(reader 读到坏 token 全认证挂)。"""
+    safe = _safe_token_path(raw_path)
+    os.makedirs(os.path.dirname(safe), exist_ok=True)
+    fd = os.open(safe, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(data)
+    os.chmod(safe, 0o600)
+    return data
 
 
 if __name__ == "__main__":
@@ -2423,19 +2170,7 @@ if __name__ == "__main__":
         print(f"[graphd] gate_status 一致性检查跳过: {_e}", flush=True)
 
     # _safe_token_path 已搬移至 gd.auth(路径白名单纯函数), 由模块顶部 re-export 提供同名实现。
-
-    def _write_token_file(raw_path: str, data: str) -> str:
-        """Mimosa 加固: 唯一 token 落盘点 — 路径白名单校验(_safe_token_path)后 O_NOFOLLOW+0600 写入,
-        三处写入点收敛至此, 防符号链接替换/任意路径写。
-        返回值 = data 本身(调用方直接 os.environ 赋值)。0905 冒烟实证: 曾误返回 safe 路径,
-        env 被设成路径字符串 → 全新部署(无外部 P2P_HOST_TOKEN env)所有 host 认证全挂。"""
-        safe = _safe_token_path(raw_path)
-        os.makedirs(os.path.dirname(safe), exist_ok=True)
-        fd = os.open(safe, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write(data)
-        os.chmod(safe, 0o600)
-        return data
+    # (B11: _write_token_file 提升至模块级 — 安全关键落盘点应可 import 测; O_TRUNC 见模块级定义)
 
     # #32: host token 持久化 —— 文件存在则加载进环境; 不存在则生成
     import secrets as _sec

@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { createXRingRunner, stripGraphTokenEnv, ensureXRingEngagement, releaseXRingEngagement } from './runner.mjs'
 import { startMonitor, collectTranscriptUsage, readEvents, sessionsBucketFor, appendEvent, BUDGET_LIMITS } from './monitor.mjs'
 import { reflow } from './reflow.mjs'
+import { writeAsset, writeEnvSnapshot } from './graphd-assets.mjs' // R-25 M3: 资产 upsert+快照落图
 import { assessTarget, briefSection } from './ecc.mjs'
 import { loadHandoffFrom, injectBrief } from './relay.mjs'
 import { emitReports } from './report-face.mjs'
@@ -232,6 +233,22 @@ if (TASK_FILE) {
       })
       EXTRA_TASK_RUNTIME += '\n\n' + briefSection(ECC)
       log('ECC:', JSON.stringify({ level: ECC.level, signals: ECC.signals.map((s) => s.kind) }))
+      // R-25 M3: 判级+指纹矩阵落 EnvSnapshot(append-only; SNAPSHOT 边服务端自建) —
+      // Asset 先 upsert(URL 幂等; HOSTS 边缺省无 endpoint 挂), 双判级 raw=assess 实测,
+      // cal 留空(E26 校准流程接线=另批); 落图失败尽力而为(advisory 面不阻断发射)。
+      try {
+        const _assetId = `asset-${new URL(TARGET_BASE).hostname}`
+        const wa = await writeAsset({ graphdUrl: GRAPHD_URL, hostToken, id: _assetId, kind: 'target', identifier: TARGET_BASE })
+        const we = await writeEnvSnapshot({
+          graphdUrl: GRAPHD_URL, hostToken, assetId: _assetId,
+          levelRaw: String(ECC.level ?? ''), levelCal: '',
+          signals: JSON.stringify(ECC.signals ?? []), fingerprint: JSON.stringify(ECC.fingerprint ?? []),
+          probePaths: (ECC.probePaths ?? []).join(','),
+        })
+        log('EnvSnapshot 落图:', JSON.stringify({ asset: _assetId, assetCreated: wa.created ?? null, snapshot: we.id ?? we.error ?? 'ok' }))
+      } catch (e) {
+        log('EnvSnapshot 落图失败(尽力而为):', String(e?.message ?? e).slice(0, 120))
+      }
     } catch (e) {
       log('ECC 探针失败（尽力而为——advisory 面不阻断发射）:', String(e?.message ?? e).slice(0, 120))
     }

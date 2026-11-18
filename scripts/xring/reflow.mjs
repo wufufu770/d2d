@@ -12,6 +12,7 @@ import { normalizeRepro, normalizeHypotheses, normalizeLessons } from './normali
 import { createVerifyRunner } from './verify-runner.mjs'
 import { collectFromReflow, writeHandoff, HANDOFF_FILE } from './relay.mjs'
 import { raceVerify, raceEvidence } from './verify-race.mjs'
+import { writeVerification } from './graphd-assets.mjs' // R-25 M2: Verification 事件落图(append-only 台账源)
 import { shouldAdvise, runAdvisor, buildAdvisorBrief, applyAdvice, epistemicSignals } from './advisor.mjs'
 import { XRING_MODES } from './monitor.mjs'
 
@@ -257,10 +258,29 @@ export async function reflow(opts) {
         } else {
           verdict = await verifyRunner.verify(f)
         }
+        // R-25 M2: Verification 事件落图(append-only 台账数据源; 服务端去重门幂等) —
+        // kind=repro(标准重放)/race(竞速, pass=race-win); finding_ref 挂靠 xring finding id
+        // (held 未入图亦留事件——VERIFIED_BY 边 MATCH 空转无害, 事件本体即 M5 台账源)。
+        // 尽力而为面: 写失败入 errors(与 finding 写同罪) — 台账数据完整性语义。
+        const _vFid = `xring-${runId}-${f.id.toLowerCase()}`
+        const _vKind = raceNote ? 'race' : 'repro'
+        const _vVerdict = verdict.verdict === 'pass' ? (raceNote ? 'race-win' : 'pass') : 'fail'
+        try {
+          const vr = await writeVerification({ graphdUrl, hostToken, kind: _vKind, verdict: _vVerdict, runId, findingRef: _vFid, executor: 'reflow', note: String(verdict.evidence ?? raceNote ?? '').slice(0, 400) })
+          // 注意形态: graphd-assets 写助手返回扁平 {status, ...j}(与 reflow.post 的 {status, body} 嵌套不同)
+          if (!(vr.status === 200 && vr.ok)) errors.push({ file: 'verification', id: f.id, status: vr.status, body: { ok: vr.ok, duplicate: vr.duplicate } })
+          else emit({ event: 'verification-written', runId, kind: _vKind, verdict: _vVerdict, finding: _vFid })
+        } catch (e) { errors.push({ file: 'verification', id: f.id, err: String(e?.message ?? e).slice(0, 120) }) }
         if (verdict.verdict !== 'pass') {
           failStreak++
           held.push({ level: 'A', id: f.id, verdict: verdict.verdict, failureClass: verdict.failureClass ?? null, evidence: verdict.evidence, ...(prevFactMap.has(String(f.id)) ? { prevFact: true } : {}) })
-          if (prevFactMap.has(String(f.id))) refuted.push({ id: f.id, statement: prevFactMap.get(String(f.id)) || f.title, reason: `复验 ${verdict.verdict}（上轮 fact——形态突变嫌疑, 见 ECC 跨轮信号）` })
+          if (prevFactMap.has(String(f.id))) {
+            refuted.push({ id: f.id, statement: prevFactMap.get(String(f.id)) || f.title, reason: `复验 ${verdict.verdict}（上轮 fact——形态突变嫌疑, 见 ECC 跨轮信号）` })
+            // R-25 M2: 复战语义事件(kind=retest, verdict=fail) — M5「falsified 防复测命中」指标源
+            try {
+              await writeVerification({ graphdUrl, hostToken, kind: 'retest', verdict: 'fail', runId, findingRef: _vFid, executor: 'reflow', note: `复验失败(上轮 fact: ${String(prevFactMap.get(String(f.id)) || '').slice(0, 120)})` })
+            } catch { /* 主事件已落, 复战事件尽力而为 */ }
+          }
           // E18/P0-2 Advisor（opt-in）: 连败 ≥ 阈值 → 第二上下文会诊（建议非指令, 主循环消化）
           if (opts.advisor && shouldAdvise(failStreak, { threshold: opts.advisorThreshold })) {
             try {

@@ -9,20 +9,27 @@
     function useChain(visible) {
       const [data, setData] = useState(null)
       const [err, setErr] = useState(null)
+      const [rev, setRev] = useState(0)
       useEffect(() => {
-        if (!visible) return
-        let stop = false
+        if (!visible) return undefined
+        // E40-C1: setTimeout 链式(不堆积) + AbortSignal — 与 useSnapshot/useViz 同形态
+        const ac = new AbortController()
+        let alive = true
+        let t = null
         const tick = async () => {
           try {
-            const j = await fetchApi('chain')
-            if (!stop) { setData(j); setErr(null) }
-          } catch (e) { if (!stop) setErr(e) }
+            const j = await fetchApi('chain', { signal: ac.signal })
+            if (alive) { setData(j); setErr(null) }
+          } catch (e) {
+            if (alive && e?.name !== 'AbortError') setErr(e)
+          } finally {
+            if (alive && !ac.signal.aborted) t = setTimeout(tick, CHAIN_POLL_MS)
+          }
         }
         void tick()
-        const poll = setInterval(tick, CHAIN_POLL_MS)
-        return () => { stop = true; clearInterval(poll) }
-      }, [visible])
-      return { chain: data?.chain ?? null, eng: data?.eng ?? '', err }
+        return () => { alive = false; ac.abort(); if (t) clearTimeout(t) }
+      }, [visible, rev])
+      return { chain: data?.chain ?? null, eng: data?.eng ?? '', err, refresh: () => setRev((r) => r + 1) }
     }
 
     /** 链路图(自绘 SVG 纯函数): 三列 工作环→信号→产出(端点+漏洞), 边=三次贝塞尔。
@@ -94,7 +101,8 @@
 
     /** 探索链路 tab 容器。 */
     function ChainView({ visible }) {
-      const { chain, eng, err } = useChain(visible)
+      const { chain, eng, err, refresh } = useChain(visible)
+      if (err && !chain) return h(FailClosedBanner, { err, onRetry: refresh })
       return h('div', panel.root, Style(),
         h(Card, {
           title: '探索链路',

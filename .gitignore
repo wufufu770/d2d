@@ -106,3 +106,4 @@ plugin/d2d-panel/lib/client.js
 
 # E31 公开面卫生: 场验实录（靶场关联数据——私有面保留, 公开仓移除; 历史 commit 零改写）
 experiments/results/*r2b*
+.coverage

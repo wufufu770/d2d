@@ -158,7 +158,31 @@ if (isDirect) {
     }
     console.log('参数校验通过:', JSON.stringify(r.params))
     console.log(costLine(r.params.model, r.params.maxHours, r.params.maxTokens))
-    console.log('启动确认：确认上界后执行。spawn 编排归 P4（当前骨架不派真 worker）。')
+    // E46-M7: P4 编排接线兑现("spawn 编排归 P4"骨架 → 真 first-run detached 派发) —
+    // --target/--scope 必填(first-run 真编排参数); --skip-reset 非 DVWA 缺省; --model 校验保留
+    // (准入语义), 实际模型走宿主继承链(policies/DSH)。detached+日志落 DATA_DIR。
+    const getArg = (k) => { const i = rest.indexOf(k); return i >= 0 ? (rest[i + 1] ?? '') : '' }
+    const target = String(getArg('--target')).trim()
+    const scope = String(getArg('--scope')).trim()
+    if (!/^https?:\/\//i.test(target)) { console.error('✗ --target <http(s) URL> 必填(真编排靶)'); process.exit(1) }
+    if (!scope) { console.error('✗ --scope <域名/IP段[,..]> 必填(授权边界)'); process.exit(1) }
+    const fsX = await import('node:fs')
+    const pathX = await import('node:path')
+    const { spawn } = await import('node:child_process')
+    const repoRoot = pathX.resolve(pathX.dirname(new URL(import.meta.url).pathname), '../..')
+    const script = pathX.join(repoRoot, 'scripts/xring/first-run.mjs')
+    const logFile = pathX.join(DATA_DIR, `xring-start-${Date.now()}.log`)
+    try { fsX.mkdirSync(DATA_DIR, { recursive: true }); fsX.closeSync(fsX.openSync(logFile, 'a')) } catch { /* 尽力而为 */ }
+    const logFd = fsX.openSync(logFile, 'a')
+    const child = spawn(process.execPath, [script,
+      '--target', target, '--scope', scope,
+      '--max-hours', String(r.params.maxHours),
+      '--record-root', pathX.join(DATA_DIR, 'xring'),
+      '--skip-reset', '--graphd-url', process.env.P2P_GRAPHD ?? 'http://127.0.0.1:8766',
+    ], { detached: true, stdio: ['ignore', logFd, logFd], env: { ...process.env } })
+    child.unref?.()
+    console.log(`已拉起 X-Ring 编排(detached pid ${child.pid}) — 记录面 ${pathX.join(DATA_DIR, 'xring')}; 日志 ${logFile}`)
+    console.log('停止: node scripts/xring/cli.mjs stop <runDir>')
     process.exit(0)
   }
   if (cmd === 'status') {

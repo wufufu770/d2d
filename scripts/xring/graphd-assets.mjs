@@ -39,3 +39,29 @@ export async function writeVerification({ graphdUrl, hostToken, kind, verdict, r
   const j = await r.json().catch(() => ({}))
   return { status: r.status, ...j }
 }
+
+/** E46-M4: 跨 run 资产聚合查询(台账/溯源面——编排侧跨 run 资产函数, 设计 §五 M4)。
+ *  返回 Asset 本体+HOSTS 端点数+SNAPSHOT 数+最近快照判级; 图不可达/资产不存在 → null 面降级。 */
+export async function queryAssetLedger({ graphdUrl, hostToken, assetId }) {
+  const q = async (cy, params) => {
+    const r = await fetch(`${graphdUrl}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth': hostToken },
+      body: JSON.stringify({ cypher: cy, params }),
+      signal: AbortSignal.timeout(10_000),
+    })
+    const j = await r.json().catch(() => ({}))
+    return j.ok ? (j.rows ?? []) : []
+  }
+  const [asset] = await q('MATCH (a:Asset {id:$id}) RETURN a.kind AS kind, a.identifier AS identifier, a.first_seen AS first_seen, a.last_seen AS last_seen, a.status AS status', { id: assetId })
+  if (!asset) return null
+  const [cnt] = await q('MATCH (a:Asset {id:$id}) OPTIONAL MATCH (a)-[:HOSTS]->(e:Endpoint) RETURN count(DISTINCT e) AS endpoints', { id: assetId })
+  const snaps = await q('MATCH (a:Asset {id:$id})-[:SNAPSHOT]->(s:EnvSnapshot) RETURN s.ecc_level_raw AS raw, s.ecc_level_cal AS cal, s.checked_at AS at ORDER BY s.checked_at DESC LIMIT 5', { id: assetId })
+  return {
+    asset: { kind: asset.kind, identifier: asset.identifier, firstSeen: asset.first_seen, lastSeen: asset.last_seen, status: asset.status },
+    endpoints: Number(cnt?.endpoints ?? 0),
+    snapshots: snaps.length,
+    eccDrift: snaps.filter((s) => s.raw && s.cal && String(s.raw).toLowerCase() !== String(s.cal).toLowerCase()).length,
+    latestSnapshot: snaps[0] ?? null,
+  }
+}

@@ -66,7 +66,7 @@
           warn: ['--d2d-warn-bg', '--d2d-warn-line', '--d2d-warn'],
           danger: ['--d2d-danger-bg', '--d2d-danger-line', '--d2d-danger'],
           info: ['--d2d-info-bg', '--d2d-info-line', '--d2d-info'] }[tone]
-          ?? ['var(--d2d-bg-2)', '--d2d-line', '--d2d-text-mid']
+          ?? ['--d2d-bg-2', '--d2d-line', '--d2d-text-mid']
         return { style: { display: 'inline-flex', alignItems: 'center', gap: '4px', background: `var(${t[0]})`, border: `1px solid var(${t[1]})`, color: `var(${t[2]})`, borderRadius: '5px', padding: '1px 7px', fontSize: '11px', whiteSpace: 'nowrap', ...extra } }
       },
       dot: (color, pulse) => ({ className: pulse ? 'd2d-dot-running' : undefined, style: { width: '7px', height: '7px', borderRadius: '50%', background: color, flex: '0 0 auto' } }),
@@ -90,7 +90,8 @@
         children)
     }
 
-    // 轮询 hook: visible 门控(tab 不可见完全静默) + 前端时钟(zombie 走字不占轮询)
+    // 轮询 hook: visible 门控(tab 不可见完全静默) + 前端时钟(zombie 走字不占轮询)。
+    // B11: setTimeout 链式(上一轮完成才排下一轮 — fetch 慢于间隔时不再堆积)。
     function useSnapshot(visible) {
       const [snap, setSnap] = useState(null)
       const [err, setErr] = useState(null)
@@ -100,18 +101,20 @@
         if (!visible) return
         const ac = new AbortController()
         let stop = false
+        let poll = null
         const tick = async () => {
           try {
             const s = await fetchSnapshot(ac.signal)
             if (!stop) { setSnap(s); setErr(null) }
           } catch (e) {
             if (!stop && e?.name !== 'AbortError') setErr(e)
+          } finally {
+            if (!stop && !ac.signal.aborted) poll = setTimeout(tick, POLL_MS)
           }
         }
         void tick()
-        const poll = setInterval(tick, POLL_MS)
         const clock = setInterval(() => setNow(Date.now()), 1000)
-        return () => { stop = true; ac.abort(); clearInterval(poll); clearInterval(clock) }
+        return () => { stop = true; ac.abort(); if (poll) clearTimeout(poll); clearInterval(clock) }
       }, [visible, rev])
       const refresh = useCallback(() => setRev((r) => r + 1), [])
       return { snap, err, now, refresh }
@@ -172,8 +175,9 @@
     function IconCopy(p) { return _iconShell(p?.size ?? 14, [h('rect', { x: 9, y: 9, width: 13, height: 13, rx: 2, ry: 2 }), h('path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' })]) }
     function IconChevron(p) { return _iconShell(p?.size ?? 16, h('path', { d: 'M9 5l7 7-7 7' })) }
     function IconX(p) { return _iconShell(p?.size ?? 16, h('path', { d: 'M18 6 6 18M6 6l12 12' })) }
-    function IconPlus(p) { return _iconShell(p?.size ?? 14, h('path', { d: 'M12 5v14M5 12h14' })) }
+    // E44 清理: IconPlus 已退役(EngStartForm 内联 '+' 文案按钮取代)
     function IconJson(p) { return _iconShell(p?.size ?? 15, [h('path', { d: 'M10 4.5 6 12l4 7.5M14 4.5l4 7.5-4 7.5' })]) }
+    function IconGithub(p) { return _iconShell(p?.size ?? 14, h('path', { d: 'M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4' }), h('path', { d: 'M9 18c-4.51 2-5-2-7-2' })) }
 
     // B10 页签/卡头图标(mockup: layout-dashboard/user-check/shield-alert/activity/file-check/git-merge/terminal/history/sliders/cpu)
     function TabIcon({ name, size = 14 }) {

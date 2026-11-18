@@ -17,7 +17,7 @@ import https from 'node:https'
 import os from 'node:os'
 import dns from 'node:dns'
 import path from 'node:path'
-import { mkdirSync, appendFileSync, readFileSync } from 'node:fs'
+import { mkdirSync, appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 // 4.5-1: 解密面的 CA/叶子签发/内部 TLS 服务在共享模块(自包含, 无反向依赖)
 import { startTlsIntercept } from './tls-intercept.mjs'
@@ -120,11 +120,26 @@ const FORBIDDEN_CIDRS = _FORBIDDEN_CIDRS
 
 // ---- 动态 scope: control 图的活跃 Engagement.scope, 30s 刷新 ----
 let dynScope = new Set()
+// E40-B2(#102): 全部 active engagement 的 '!host' 排除并集 — 默认口(deny 先行判定)。
+// 修掉的洞: 旧版 '!' 条目被直接丢弃(refreshScope :143-146), A 项目排除的域名可经 B 项目
+// scope 并集放行。per-eng 精确面走独立监听口(见 _syncEngListeners), 默认口=并集保守面。
+let dynDeny = new Set()
+// E40-B2(#102): per-eng 独立判定集(name → {allow:Set, deny:Set, pathDeny:Set}, 原地整体替换)
+const engScopesLive = new Map()
 let token = ''
 try { token = readFileSync(TOKEN_FILE, 'utf8').trim() } catch { /* 已记因: 降级路径——token 文件缺失时空令牌启动, scope 取不到按拒处理 */ }
+// E40-B2(#102): '!host' / '!host/path' 条目 → 被排除 host(无 '!' 前缀返回 '' — allow 条目不适用)
+export function hostDenyFromScopeEntry(v) {
+  const s = String(v ?? '').trim().toLowerCase()
+  if (!s.startsWith('!')) return ''
+  const i = s.indexOf('/', 1)
+  return i > 0 ? s.slice(1, i) : s.slice(1)
+}
 async function refreshScope() {
   const next = new Set()
+  const nextDeny = new Set() // E40-B2(#102): '!' 排除并集(默认口 deny 先行)
   const nextPathDeny = new Set() // 4.5-1: 本轮 '!host/path' 条目解析出的 path deny 集(与 dynScope 同生命周期)
+  const nextEngScopes = new Map() // E40-B2(#102): name → {allow, deny, pathDeny}(per-eng 独立判定集)
   const activeEngs = [] // T3-3-3: active engagement 的 {name,target,scope}(授权契约整集校验用)
   for (const G of GRAPHS) {
     try {
@@ -136,19 +151,32 @@ async function refreshScope() {
       const data = await res.json()
       for (const r of data.rows ?? []) {
         activeEngs.push({ name: String(r.n ?? ''), target: String(r.t ?? ''), scope: String(r.s ?? '') }) // T3-3-3
+        const engAllow = new Set()
+        const engDeny = new Set()
+        const engPathDeny = new Set()
         for (const s of String(r.s ?? '').split(',')) {
           const v = s.trim().toLowerCase()
           if (!v) continue
-          // H14: 图内 scope 条目同样过硬黑面(0.0.0.0/0、169.254.169.254、100.64/10 等不进 allow 集);
-          // `!` 前缀是排除清单语法(allow 侧无意义, 旧版当死条目原样放入从不匹配) → 直接不收, 防解析歧义。
+          // H14: 图内 scope 条目同样过硬黑面(0.0.0.0/0、169.254.169.254、100.64/10 等不进 allow 集)。
           const pd = pathDenyFromScopeEntry(v) // 4.5-1: '!host/path' 的 path 形态进路径 deny 集(仅解密模式消费)
-          if (pd) nextPathDeny.add(pd)
-          if (v.startsWith('!')) continue
+          if (pd) { nextPathDeny.add(pd); engPathDeny.add(pd) }
+          // E40-B2(#102): '!' 条目不再丢弃 — 全局 deny 并集(默认口保守面) + 该 eng 独立 deny(精确面)。
+          // 子域通配: '!' 纯域名条目补 '.域' 形态(与 allow 侧同口径); CIDR/IP 排除原样入集。
+          if (v.startsWith('!')) {
+            const dh = hostDenyFromScopeEntry(v)
+            if (dh) {
+              nextDeny.add(dh); engDeny.add(dh)
+              if (!dh.includes('/') && !/^\d+\.\d+\.\d+\.\d+$/.test(dh)) { nextDeny.add(`.${dh}`); engDeny.add(`.${dh}`) }
+            }
+            continue
+          }
           if (isForbiddenTarget(v)) { audit({ event: 'scope-entry-rejected', entry: v.slice(0, 60) }); continue }
           // 保留原文(IP/CIDR 精确匹配用); 域名形态额外记一条 ".域" 供子域通配
           next.add(v)
-          if (!v.includes('/') && !/^\d+\.\d+\.\d+\.\d+$/.test(v)) next.add(`.${v}`)
+          engAllow.add(v)
+          if (!v.includes('/') && !/^\d+\.\d+\.\d+\.\d+$/.test(v)) { next.add(`.${v}`); engAllow.add(`.${v}`) }
         }
+        nextEngScopes.set(String(r.n ?? ''), { allow: engAllow, deny: engDeny, pathDeny: engPathDeny })
       }
     } catch { /* 单图抖动保留其余 */ }
   }
@@ -165,6 +193,7 @@ async function refreshScope() {
         audit({ event: 'scope-contract-rejected', eng: eng.name.slice(0, 40), state: g.state, reason: String(g.reason ?? '').slice(0, 100) })
         next.clear()
         nextPathDeny.clear()
+        for (const sc of nextEngScopes.values()) sc.allow.clear() // E40-B2(#102): per-eng allow 同步收窄为空(fail-closed 同向)
         break
       }
       if (g.decision === 'allow-warn') audit({ event: `scope-contract-${g.state}`, eng: eng.name.slice(0, 40), reason: String(g.reason ?? '').slice(0, 100) })
@@ -173,7 +202,14 @@ async function refreshScope() {
     audit({ event: 'scope-contract-channel-error', reason: String(e?.message ?? e).slice(0, 100) }) // 放行 + warn
   }
   dynScope = next
+  dynDeny = nextDeny // E40-B2(#102): 排除并集生效(默认口 deny 先行)
   dynPathDeny = nextPathDeny // 4.5-1: 与 dynScope 同步生效(全图不可达 → 空集, path-deny 退回 P2P_PATH_DENY 静态集)
+  // E41-C1: 真·原地替换 — 冻结/消失的 engagement 判定集要摘除(旧版只增不删:
+  // eng-79 冻结后 19001 监听与端口表条目永久滞留 = 死口泄漏)。
+  for (const k of [...engScopesLive.keys()]) if (!nextEngScopes.has(k)) engScopesLive.delete(k)
+  for (const [k, v] of nextEngScopes) engScopesLive.set(k, v) // E40-B2(#102): per-eng 判定集原地替换(judge 请求时现读)
+  _syncEngListeners()
+  _writePortsFile()
 }
 // scope 是 CIDR(如 192.168.1.0/24)时按位匹配 — 字符串后缀匹配会误杀段内主机(2026-09-01 接线时实证)
 function ipToInt(ip) {
@@ -190,21 +226,89 @@ function ipInCidr(ip, cidr) {
   const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0
   return (v & mask) === (b & mask)
 }
-function hostAllowed(host) {
-  const h = normalizeHost(host)
-  if (isForbiddenTarget(h)) return false // 硬黑面双保险(处理器层已先拒一次)
-  // 0911: 模型 API 豁免(基础设施, 非目标流量)——scope 只约束目标侧; LLM 端点不豁免会被
-  // engagement scope 全拦(worker 模型调用全部 TRANSPORT error)。硬黑面仍优先于本豁免。
-  if (MODEL_HOSTS.has(h)) return true
-  if (OSINT_HOSTS.has(h)) return true // T3-2-1: osint 情报源豁免(令牌桶/审计照常)
-  if (STATIC_ALLOW.has(h)) return true
-  for (const a of [...STATIC_ALLOW, ...dynScope]) {
-    if (a.includes('/')) { if (ipInCidr(h, a)) return true }
-    else if (a.startsWith('.')) { if (h.endsWith(a) || h === a.slice(1)) return true }
-    else if (h === a) return true
+// E40-B2(#102): 判定器工厂 — allow 集 + deny 集(deny 先于 allow)。判定序与旧 hostAllowed
+// 完全同构: 硬黑面 → MODEL/OSINT 基础设施豁免 → STATIC_ALLOW → deny(动态) → allow(动态)。
+// 默认口 = makeJudge(STATIC∪dynScope, dynDeny)(合并 allow + 全局 '!'-deny 并集 — 保守面);
+// per-eng 口 = makeJudge(STATIC∪该eng.allow, 该eng.deny)(A 的排除只拦 A 的 worker — 精确面)。
+export function makeJudge(allowIter, denyIter = []) {
+  const deny = [...denyIter]
+  return (host) => {
+    const h = normalizeHost(host)
+    if (isForbiddenTarget(h)) return false // 硬黑面双保险(处理器层已先拒一次)
+    // 0911: 模型 API 豁免(基础设施, 非目标流量)——scope 只约束目标侧; LLM 端点不豁免会被
+    // engagement scope 全拦(worker 模型调用全部 TRANSPORT error)。硬黑面仍优先于本豁免。
+    if (MODEL_HOSTS.has(h)) return true
+    if (OSINT_HOSTS.has(h)) return true // T3-2-1: osint 情报源豁免(令牌桶/审计照常)
+    if (STATIC_ALLOW.has(h)) return true
+    for (const d of deny) {
+      if (d.includes('/')) { if (ipInCidr(h, d)) return false }
+      else if (d.startsWith('.')) { if (h.endsWith(d) || h === d.slice(1)) return false }
+      else if (h === d) return false
+    }
+    for (const a of allowIter) {
+      if (a.includes('/')) { if (ipInCidr(h, a)) return true }
+      else if (a.startsWith('.')) { if (h.endsWith(a) || h === a.slice(1)) return true }
+      else if (h === a) return true
+    }
+    return false
   }
-  return false
 }
+function hostAllowed(host) {
+  return makeJudge([...STATIC_ALLOW, ...dynScope], dynDeny)(host)
+}
+
+// ---- E40-B2(#102): per-eng 独立监听口 + 端口发布 ----
+// 每个 active engagement 一个监听口(P2P_PROXY_ENG_PORT_BASE 起, 名称排序稳定编口), 判定 =
+// 该 eng 的 allow+deny 全集; 端口表写 D2D_DATA_DIR/egress-ports.json, adapter 按 eng 注入
+// worker 专属 http_proxy(未命中/口缺 → 回落默认口)。监听随 refreshScope(30s)增删;
+// 上限 P2P_PROXY_ENG_LISTENERS(缺省 16, 超出部分回落默认口并 audit)。
+const ENG_PORT_BASE = _envInt(process.env.P2P_PROXY_ENG_PORT_BASE, 19001)
+const ENG_LISTENER_CAP = _envInt(process.env.P2P_PROXY_ENG_LISTENERS, 16)
+const PORTS_FILE = path.join(process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`, 'egress-ports.json')
+const engListeners = new Map() // name → { server, port }
+const _engJudge = (name) => (host) => {
+  const sc = engScopesLive.get(name)
+  return makeJudge([...STATIC_ALLOW, ...(sc?.allow ?? [])], sc?.deny ?? [])(host)
+}
+function _syncEngListeners() {
+  const names = [...engScopesLive.keys()].filter((n) => n).sort().slice(0, ENG_LISTENER_CAP)
+  if (engScopesLive.size > ENG_LISTENER_CAP) audit({ event: 'eng-listener-cap', capped: engScopesLive.size - ENG_LISTENER_CAP })
+  const keep = new Set(names)
+  for (const [name, l] of engListeners) {
+    if (!keep.has(name)) {
+      try { l.server.close() } catch { /* 已记因: 尽力而为——过期监听关闭失败不阻塞刷新 */ }
+      engListeners.delete(name)
+    }
+  }
+  names.forEach((name, i) => {
+    if (engListeners.has(name)) return
+    const port = ENG_PORT_BASE + i
+    const srv = http.createServer((req, res) => _plainReq(req, res, _engJudge(name), name)) // E41-D1: engTag 入捕(证据按 eng 归属)
+    srv.on('connect', (req, sock, head) => _connectReq(req, sock, head, _engJudge(name)))
+    srv.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n') } catch { /* 同主口口径 */ } })
+    srv.listen(port, '127.0.0.1', () => { /* 已记因: 静默成功——端口表由 _writePortsFile 发布 */ })
+    srv.on('error', (e) => audit({ event: 'eng-listener-error', eng: name.slice(0, 40), port, error: String(e?.message ?? e).slice(0, 80) }))
+    engListeners.set(name, { server: srv, port })
+  })
+}
+function _writePortsFile() {
+  try {
+    mkdirSync(path.dirname(PORTS_FILE), { recursive: true })
+    writeFileSync(PORTS_FILE, JSON.stringify({
+      ts: new Date().toISOString(),
+      default: PORT,
+      engs: Object.fromEntries([...engListeners].map(([n, l]) => [n, l.port])),
+    }) + '\n')
+  } catch { /* 已记因: 尽力而为——端口表写盘失败回落默认口语义, 不阻断刷新 */ }
+}
+// 测试注入口(同 _setDynScope 口径): 直灌 per-eng 判定集
+const _setEngScopes = (m) => {
+  engScopesLive.clear()
+  for (const [k, v] of (m ?? new Map())) engScopesLive.set(k, v)
+  _syncEngListeners()
+  _writePortsFile()
+}
+const _engListenersView = () => new Map(engListeners)
 // ---- H14: DNS 解析后校验 — scope 内域名可被(被挟持的)权威 DNS 解到元数据/链路本地等保留段,
 // host 字符串比对防不住; 放行前先解一层, 解析失败或任一解析结果命中硬黑面 → fail-closed 拒绝。
 const _dnsCache = new Map()
@@ -294,20 +398,33 @@ const _sockDeny = (sock, host, why, code = 403) => {
   audit({ event: 'deny', host, why })
   try { sock.end(`HTTP/1.1 ${code} Forbidden\r\n\r\n`) } catch { /* 已记因: 另面留痕——deny 决定已审计, 对端已断时 403 写回失败静默 */ }
 }
-const server = http.createServer(async (req, res) => {
+// E40-B2(#102): 请求处理参数化(judge 注入) — 主口=hostAllowed(合并 allow+全局 deny),
+// per-eng 口=_engJudge(name)(该 eng 的 allow+deny 全集)。判定链/审计/转发逐字节同构。
+async function _plainReq(req, res, judge, engTag = '') {
   // 0906 修复: worker 被杀/客户端半途断连时 req/res 的 'error'(ECONNRESET) 无监听 → 整进程退出(12:15 实证)
   req.on('error', () => {})
   res.on('error', () => {})
   let u
   try { u = new URL(req.url, `http://${req.headers.host ?? 'unknown'}`) } catch { return deny(res, '', 'bad request url') }
   const host = normalizeHost(u.hostname)
+  // E41-D1: 纯 HTTP 加密事务捕获(D2D_EGRESS_MITM=1 同旗) — 既有 mitmHandle 捕获只挂在 HTTPS
+  // 解密分支, 纯 http:// 目标(靶场主流形态)从不入捕 = Gate-V 认证证据链对 http 目标结构性盲区
+  // (2026-11-17 运行时审计: mitm-enc 目录自 11-15 起零产出, 12 条 high/medium 全卡 triaged)。
+  // 与解密分支同 sink 同上限同 fail-closed: 证据尽力而为、明文永不落盘、捕获失败只审计不碍转发。
+  const _capture = process.env.D2D_EGRESS_MITM === '1'
+  const reqChunks = []
+  let reqBytes = 0, reqStored = 0
+  if (_capture) req.on('data', (c) => {
+    reqBytes += c.length
+    if (reqStored < MITM_TXN_BODY_CAP) { const room = MITM_TXN_BODY_CAP - reqStored; reqChunks.push(room >= c.length ? c : c.subarray(0, room)); reqStored += Math.min(room, c.length) }
+  })
   if (req.url === '/health' || u.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     return res.end(JSON.stringify({ ok: true, dynScope: [...dynScope], rate: RATE, upstream: UPSTREAM ? 'configured' : null }))
   }
-  // H14 顺序: 硬黑面 → scope → 限速 → DNS 解析校验(逐请求逐 host, prompt 注入改 URL 也逃不过)
+  // H14 顺序: 硬黑面 → scope(deny 先行) → 限速 → DNS 解析校验(逐请求逐 host, prompt 注入改 URL 也逃不过)
   if (isForbiddenTarget(host)) return deny(res, host, 'metadata/link-local/CGNAT/0-net 硬黑面(H14), scope 声明也不放行')
-  if (!hostAllowed(host)) return deny(res, host, 'host not in scope (V-08 egress enforcement)')
+  if (!judge(host)) return deny(res, host, 'host not in scope (V-08 egress enforcement)')
   if (!allowRate(host)) return deny(res, host, 'rate limit', 429)
   // FIX-2 A4: resolve once / connect validated —— 校验解析返回的合法 IP 直接用于建连,
   // 消除「校验解析→建连二次解析」的 rebinding TOCTOU 窗口(三转发点统一形态)。
@@ -332,12 +449,33 @@ const server = http.createServer(async (req, res) => {
     const up = http.request(reqOpts, (r) => {
       noteUpstreamStatus(host, r.statusCode, r.headers) // T2-2b-1: 直通路径回灌点(状态码→令牌桶 penalty/冻结)
       res.writeHead(r.statusCode, r.headers); r.pipe(res)
+      if (!_capture) return
+      // E41-D1: 响应面捕获(mitmHandle 同构: 头+体上限内加密落盘, end 后组包)
+      const resChunks = []
+      let resBytes = 0, resStored = 0
+      const _t0 = Date.now()
+      r.on('data', (c) => {
+        resBytes += c.length
+        if (resStored < MITM_TXN_BODY_CAP) { const room = MITM_TXN_BODY_CAP - resStored; resChunks.push(room >= c.length ? c : c.subarray(0, room)); resStored += Math.min(room, c.length) }
+      })
+      r.on('end', () => {
+        try {
+          mitmEncCapture({
+            eng: String(engTag ?? ''), proto: 'http', durMs: Date.now() - _t0,
+            req: { method: req.method, host, port: u.port || 80, path: u.pathname + u.search, httpVersion: req.httpVersion, headers: headOut(req.headers) },
+            reqBody: { size: reqBytes, truncated: reqBytes > MITM_TXN_BODY_CAP, text: reqChunks.length ? Buffer.concat(reqChunks).toString('utf8') : '' },
+            res: { status: r.statusCode, headers: headOut(r.headers) },
+            resBody: { size: resBytes, truncated: resBytes > MITM_TXN_BODY_CAP, text: resChunks.length ? Buffer.concat(resChunks).toString('utf8') : '' },
+          })
+        } catch { /* 已记因: 另面留痕——事务组包失败静默, sink 侧错误已走 mitm-enc-error 审计 */ }
+      })
     })
     up.on('timeout', () => up.destroy(new Error(`upstream timeout ${UPSTREAM_TIMEOUT_MS}ms`)))
     up.on('error', () => { try { res.writeHead(502); res.end() } catch { /* 已记因: 尽力而为——上游错误回 502 时响应已发出/客户端已断, 写回失败静默 */ } })
     req.pipe(up)
   } catch { deny(res, host, 'bad upstream') }
-})
+}
+const server = http.createServer((req, res) => _plainReq(req, res, hostAllowed))
 // WRAP-3 gap 24: CONNECT 端口 pin —— host 级 scope 通过 ≠ 任意端口隧道授权(登记原文:
 // scope http:80 host 可 CONNECT :6379)。缺省 pin 443(TLS 隧道本义); env P2P_PROXY_CONNECT_PORTS
 // 逗号白名单扩展。**环回内部服务豁免**(127.0.0.1/localhost/::1): 4.5-1 MITM 解密与直通非标
@@ -350,14 +488,15 @@ const connectPortAllowed = (p, host = '') => CONNECT_PORTS.has(p) || CONNECT_LOO
 const _setConnectPorts = (ports) => { CONNECT_PORTS.clear(); for (const p of (ports ?? [])) { const v = _envInt(p, -1); if (v > 0) CONNECT_PORTS.add(v) } } // 测试注入口(_setDynScope 口径)
 const _connectPortsView = () => new Set(CONNECT_PORTS)
 
-server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 scope 强制 + 端口 pin(gap 24)
+// E40-B2(#102): CONNECT 同款参数化(judge 注入; 主口=hostAllowed / per-eng 口=该 eng 判定器)
+async function _connectReq(req, sock, head, judge) {
   sock.on('error', () => {}) // 0906 修复: 隧道对端 RST(step-limit 杀 worker 等)无监听 → 崩进程(12:15 实证)
   // H14: CONNECT 目标可能是 [v6]:port 形态 — 旧版 split(':')[0] 会把它截成 "[::ffff"(比对必然失真)
   const cm = String(req.url ?? '').match(/^(?:\[([^\]]+)\]|([^:]+))(?::(\d+))?$/)
   const host = normalizeHost(cm?.[1] ?? cm?.[2] ?? '')
   const port = _envInt(cm?.[3], 443) // 中危审计修复(13): 端口 NaN/越界兜底(旧版 parseInt 原样透传给 net.connect)
   if (isForbiddenTarget(host)) return _sockDeny(sock, host, 'metadata/link-local/CGNAT/0-net 硬黑面(H14), scope 声明也不放行')
-  if (!hostAllowed(host)) { audit({ event: 'deny', host, why: 'CONNECT not in scope' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
+  if (!judge(host)) { audit({ event: 'deny', host, why: 'CONNECT not in scope' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
   if (!connectPortAllowed(port, host)) { audit({ event: 'deny', host, port, why: 'CONNECT port not pinned (gap 24)' }); sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
   if (!allowRate(host)) { sock.end('HTTP/1.1 429 Too Many Requests\r\n\r\n'); return }
   // FIX-2 A4: resolve once / connect validated —— 校验通过即持有已校验 IP, 直连分支绑定建连
@@ -433,7 +572,8 @@ server.on('connect', async (req, sock, head) => { // HTTPS CONNECT: host 级 sco
     })
     up.on('error', () => sock.end())
   }).catch(() => sock.end())
-})
+}
+server.on('connect', (req, sock, head) => _connectReq(req, sock, head, hostAllowed))
 server.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n') } catch { /* 已记因: 尽力而为——畸形请求回 400, 连接已坏时写回失败静默 */ } })
 
 // ---- 4.5-1 解密面: 内部 TLS 服务解密出的明文 HTTP 进这里(同一判定链 → https 转发上游 → 响应透传) ----
@@ -451,6 +591,13 @@ const headOut = (h) => { const o = {}; for (const [k, v] of Object.entries(h ?? 
 let encSeq = 0
 function mitmEncCapture(txn) {
   if (process.env.D2D_EVIDENCE_ENC === '0') return // 加密开关关 → 新捕获面不落盘(无明文降级路)
+  // E41-D4: 基础设施豁免不入证据库 — MODEL_HOSTS/OSINT_HOSTS 是 worker 的 LLM/情报流量
+  // (头含 API key 等凭据), 不是目标交互证据; 证据库只收目标面。基础设施流量照常转发,
+  // 只是不落密文库。
+  try {
+    const h = normalizeHost(String(txn?.req?.host ?? ''))
+    if (MODEL_HOSTS.has(h) || OSINT_HOSTS.has(h)) return
+  } catch { /* 判定失败照常落盘(尽力而为面) */ }
   try {
     txn.ts = txn.ts ?? new Date().toISOString() // 与 mitm-capture captureTxn 同口径: 缺 ts 自动补 ISO
     const keyFile = process.env.D2D_EVIDENCE_KEY_FILE ?? `${os.homedir()}/.config/d2d/host-token`
@@ -536,4 +683,4 @@ if (IS_MAIN) {
   server.listen(PORT, '127.0.0.1', () => console.log(`[egress-gateway] :${PORT} allow=${[...STATIC_ALLOW]} + dynamic scope from ${GRAPHS.join(',')}`))
 }
 
-export { normalizeHost, isForbiddenTarget, hostAllowed, allowRate, resolvedIpsAllowed, resolveValidatedIp, refreshScope, server, _setDynScope, _clearDnsCache, UPSTREAM_TIMEOUT_MS, MAP_CAP, buckets as _buckets, _dnsCache, noteUpstreamStatus, parseRetryAfter, mitmHandle, logFile as _auditLog, MITM_ENC_DIR as _mitmEncDir, MITM_TXN_BODY_CAP, connectPortAllowed, _setConnectPorts, _connectPortsView }
+export { normalizeHost, isForbiddenTarget, hostAllowed, allowRate, resolvedIpsAllowed, resolveValidatedIp, refreshScope, server, _setDynScope, _clearDnsCache, UPSTREAM_TIMEOUT_MS, MAP_CAP, buckets as _buckets, _dnsCache, noteUpstreamStatus, parseRetryAfter, mitmHandle, logFile as _auditLog, MITM_ENC_DIR as _mitmEncDir, MITM_TXN_BODY_CAP, connectPortAllowed, _setConnectPorts, _connectPortsView, _setEngScopes, _engListenersView, engScopesLive as _engScopesLive, PORTS_FILE as _portsFile }

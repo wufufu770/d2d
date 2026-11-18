@@ -83,17 +83,23 @@
       const [err, setErr] = useState(null)
       const [rev, setRev] = useState(0)
       useEffect(() => {
-        if (!visible) return
-        let stop = false
+        if (!visible) return undefined
+        // E40-C1: setTimeout 链式(不堆积) + AbortSignal — 与 useSnapshot/useViz 同形态
+        const ac = new AbortController()
+        let alive = true
+        let t = null
         const tick = async () => {
           try {
-            const j = await fetchApi('frontier')
-            if (!stop) { setData(j); setErr(null) }
-          } catch (e) { if (!stop) setErr(e) }
+            const j = await fetchApi('frontier', { signal: ac.signal })
+            if (alive) { setData(j); setErr(null) }
+          } catch (e) {
+            if (alive && e?.name !== 'AbortError') setErr(e)
+          } finally {
+            if (alive && !ac.signal.aborted) t = setTimeout(tick, FRONTIER_POLL_MS)
+          }
         }
         void tick()
-        const poll = setInterval(tick, FRONTIER_POLL_MS)
-        return () => { stop = true; clearInterval(poll) }
+        return () => { alive = false; ac.abort(); if (t) clearTimeout(t) }
       }, [visible, rev])
       return { pool: data?.frontier?.pool ?? null, byStatus: data?.frontier?.byStatus ?? {}, err, refresh: () => setRev((r) => r + 1) }
     }
@@ -103,6 +109,11 @@
       const [note, setNote] = useState('')
       const [busyId, setBusyId] = useState('')
       const [msg, setMsg] = useState(null) // {ok, text}
+      // E44-F8: 状态计数条补渲染(byStatus wire 一直有, 渲染面漏接 — 解构未用即其证)
+      const statusChips = Object.keys(FRONTIER_STATE).map((s) => h('span', {
+        key: s,
+        ...panel.chip({ ...(byStatus?.[s] ? { borderColor: s === 'accepted' ? 'var(--d2d-ok)' : s === 'proposed' ? 'var(--d2d-warn)' : 'var(--d2d-line-strong)' } : { opacity: '.5' }) }),
+      }, `${FRONTIER_STATE[s] ?? s} ${byStatus?.[s] ?? 0}`))
       const decide = async (id, to) => {
         setBusyId(`${id}:${to}`); setMsg(null)
         try {
@@ -130,6 +141,7 @@
           ? h('span', { ...panel.muted(0.5), style: { color: 'var(--d2d-sev-high)', fontSize: '10px' } }, '不可用')
           : h('span', panel.muted(0.45), `${pool?.length ?? 0}`),
       },
+        h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '6px' } }, statusChips),
         h('input', { ...panel.input(), placeholder: '评审理由', value: note, onChange: (ev) => setNote(ev.target.value) }),
         err && !pool ? h('div', panel.muted(0.45), '图服务不可达') : null,
         !err && pool && !pool.length ? h('div', panel.muted(0.45), '暂无提案') : null,
@@ -145,8 +157,21 @@
         return h(FailClosedBanner, { err, onRetry: refresh })
       }
       if (!snap) return h(Skeleton, null)
+      // E44-F9: fail-honest 的诚实显示闭环 — snap.stale 非空(本拍有查询回落上拍缓存)时
+      // 明示 STALE 徽标(hover 列出回落键), 不再让用户把陈值当实时
+      const stalePill = (snap.stale?.length)
+        ? h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '8px' } },
+          h('span', {
+            ...panel.chip({ borderColor: 'var(--d2d-warn)', color: 'var(--d2d-warn)' }),
+            title: `以下查询本拍失败, 显示为上拍缓存值: ${(snap.stale ?? []).join(', ')}`,
+          }, `STALE ×${snap.stale.length}`),
+          h('span', panel.muted(0.5), '部分数据为上拍缓存(graphd 抖动), 下一拍自动恢复'))
+        : null
       return h('div', panel.root, Style(),
+        stalePill,
         h(ModuleToggles, { off, toggle }),
+        // B13: 两列自适应网格(参考 dashboard 双列——窄槽自动回落单列)
+        h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '10px', alignItems: 'start' } },
         !off.has('eng') ? h(EngagementCard, { snap, refresh }) : null,
         !off.has('denylist') ? h(DenylistCard, { snap, refresh }) : null,
         !off.has('caps') ? h(CapsCard, { snap, refresh }) : null,
@@ -168,5 +193,6 @@
                   h('span', panel.chip(), s.type || '?'),
                   h('span', { ...panel.mono, style: { ...panel.mono.style, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, s.id),
                   h('span', panel.muted(0.5), `w=${s.weight}`))))
-            : h('div', panel.muted(), '无开放信号')))
+            : h('div', panel.muted(), '无开放信号'))))
     }
+

@@ -2,7 +2,7 @@
 // evidence-crypto.mjs — T2-2b-1 证据存储加密(静态面): MITM/网关事务证据落盘前的对称加密壳。
 // 威胁面(审计实证): mitm 事务文件含完整 req/res 头(Cookie/Authorization 明文落盘零脱敏) —
 // 落盘即敏感资产(at-rest), 本模块让"写盘路径只有密文, 内存明文写后即弃"。
-// 密钥: KEK = SHA-256(host-token 文件 64-hex 原文) 派生 32 字节 — 绝不写死任何密钥字面量;
+// 密钥: KEK = SHA-256(host-token 文件 hex 原文, 64/32-hex 均可) 派生 32 字节 — 绝不写死任何密钥字面量;
 //   读 ~/.config/d2d/host-token(消费方), env D2D_EVIDENCE_KEY_FILE 可重定向(测试/多机)。
 // 落盘格式: 单行 JSON {v:1,alg:'aes-256-gcm',iv,tag,ct}(iv/tag/ct 均 base64), 随机 12 字节 IV,
 //   aes-256-gcm 认证加密(错密钥/被篡改在读取时抛错, 不返回部分明文)。node:crypto 原生, 零依赖。
@@ -14,13 +14,19 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 
 const HEX64 = /^[0-9a-fA-F]{64}$/
+const HEX32 = /^[0-9a-fA-F]{32}$/
 
-// 密钥派生: 读密钥文件 → trim → 必须 64-hex(host-token 形态) → SHA-256(原文 utf8) → 64-hex KEK。
+// 密钥派生: 读密钥文件 → trim → 64-hex 或 32-hex(graphd 默认形态) → SHA-256(原文 utf8) → 64-hex KEK。
+// E41-D3: 原实现硬性要求 64-hex, 而 graphd 的 host-token 缺省生成是 token_hex(16)=32-hex
+// (app.py:2361) → 默认部署下本函数恒抛错 → 加密证据链(mitm-enc 捕获 + gateV 认证对账)从
+// 第一天起结构性不可用(2026-11-17 运行时审计实证: mitm-enc 自 11-15 零产出)。32-hex(128-bit
+// 熵)经 SHA-256 派生后 KEK 仍 256-bit, 威胁模型(host 侧 at-rest 证据 + 主机身份绑定)不变;
+// 64-hex 存量形态派生结果逐字节不变(向后兼容)。
 // 文件缺失/不可读/形态不对 → 抛错(fail-closed: 调用方拒写, 绝不降级明文)。
 export function keyFromFile(file) {
   let raw = ''
   try { raw = fs.readFileSync(file, 'utf8').trim() } catch (e) { throw new Error(`evidence-crypto: 密钥文件不可读: ${file}: ${String(e?.message ?? e).slice(0, 80)}`) }
-  if (!HEX64.test(raw)) throw new Error(`evidence-crypto: 密钥文件不是 64-hex 形态(host-token 形态): ${file}`)
+  if (!HEX64.test(raw) && !HEX32.test(raw)) throw new Error(`evidence-crypto: 密钥文件不是 64/32-hex 形态(host-token 形态): ${file}`)
   return crypto.createHash('sha256').update(raw, 'utf8').digest('hex')
 }
 

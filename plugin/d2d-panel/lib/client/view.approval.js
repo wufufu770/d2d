@@ -11,17 +11,23 @@
       const [err, setErr] = useState(null)
       const [rev, setRev] = useState(0)
       useEffect(() => {
-        if (!visible) return
-        let stop = false
+        if (!visible) return undefined
+        // E40-C1: setTimeout 链式(不堆积) + AbortSignal
+        const ac = new AbortController()
+        let alive = true
+        let t = null
         const tick = async () => {
           try {
-            const j = await fetchApi('approval')
-            if (!stop) { setData(j); setErr(null) }
-          } catch (e) { if (!stop) setErr(e) }
+            const j = await fetchApi('approval', { signal: ac.signal })
+            if (alive) { setData(j); setErr(null) }
+          } catch (e) {
+            if (alive && e?.name !== 'AbortError') setErr(e)
+          } finally {
+            if (alive && !ac.signal.aborted) t = setTimeout(tick, APPROVAL_POLL_MS)
+          }
         }
         void tick()
-        const poll = setInterval(tick, APPROVAL_POLL_MS)
-        return () => { stop = true; clearInterval(poll) }
+        return () => { alive = false; ac.abort(); if (t) clearTimeout(t) }
       }, [visible, rev])
       return { data, err, refresh: () => setRev((r) => r + 1) }
     }

@@ -9,16 +9,22 @@
       const [err, setErr] = useState(null)
       useEffect(() => {
         if (!visible) return
-        let stop = false
+        // E40-C1: setTimeout 链式(不堆积) + AbortSignal
+        const ac = new AbortController()
+        let alive = true
+        let t = null
         const tick = async () => {
           try {
-            const j = await fetchApi('configx')
-            if (!stop) { setData(j); setErr(null) }
-          } catch (e) { if (!stop) setErr(e) }
+            const j = await fetchApi('configx', { signal: ac.signal })
+            if (alive) { setData(j); setErr(null) }
+          } catch (e) {
+            if (alive && e?.name !== 'AbortError') setErr(e)
+          } finally {
+            if (alive && !ac.signal.aborted) t = setTimeout(tick, CONFIG_POLL_MS)
+          }
         }
         void tick()
-        const poll = setInterval(tick, CONFIG_POLL_MS)
-        return () => { stop = true; clearInterval(poll) }
+        return () => { alive = false; ac.abort(); if (t) clearTimeout(t) }
       }, [visible])
       return { config: data?.config ?? null, err }
     }

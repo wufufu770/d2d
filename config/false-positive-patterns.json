@@ -1,0 +1,122 @@
+{
+  "version": "v1",
+  "priority": "ledger > static",
+  "_说明": "E46-FP: docs/false-positive-schema.md 4-2 静态种子运行时化(6 条查表型, 判别式封闭枚举)。运行时消费=scripts/ops/fp-router.mjs(热载 mtime 缓存+匹配+路由 low/high+hitCount 写回)。账本(4-5)同名 id 覆盖静态(优先级 ledger>static)——账本文件 DATA_DIR/config/false-positive-ledger.json 缺席=纯静态。",
+  "patterns": [
+    {
+      "id": "A-test-ddl",
+      "type": "test-ddl",
+      "routingSafe": true,
+      "source": "static",
+      "hitCount": 1,
+      "description": "测试文件 DDL 脚手架误报(路径段 tests + DDL 关键字; env 词元命中即降人工)",
+      "pathSegment": "tests",
+      "keywords": [
+        "CREATE NODE TABLE",
+        "CREATE TABLE",
+        "DROP TABLE",
+        "ALTER TABLE",
+        "CREATE INDEX",
+        "DROP INDEX",
+        "INSERT INTO"
+      ],
+      "guards": [
+        "os.environ",
+        "argv",
+        "input",
+        "request"
+      ]
+    },
+    {
+      "id": "B-test-urlopen",
+      "type": "test-urlopen",
+      "routingSafe": true,
+      "source": "static",
+      "hitCount": 0,
+      "description": "测试域 urlopen 回环请求误报(urlopen+回环 host+同文件本地起服构造三验)",
+      "pathSegment": "tests",
+      "callToken": "urlopen(",
+      "loopbackHosts": [
+        "127.0.0.1",
+        "localhost",
+        "::1"
+      ],
+      "localServerMarker": "GraphdHTTPServer((\"127.0.0.1\", 0)"
+    },
+    {
+      "id": "C-validator",
+      "type": "validator-triple",
+      "routingSafe": true,
+      "source": "static",
+      "hitCount": 1,
+      "description": "validator.js 存量告警误报((file,规则id,锚函数) 三元查表整行命中)",
+      "triples": [
+        {
+          "file": "plugin/pentest-dsh/validator.js",
+          "ruleId": "token-extract-re",
+          "anchor": "extractCurlArgs"
+        },
+        {
+          "file": "plugin/pentest-dsh/validator.js",
+          "ruleId": "curl-spawn-replay",
+          "anchor": "runCurl"
+        },
+        {
+          "file": "plugin/pentest-dsh/validator.js",
+          "ruleId": "graphd-local-query",
+          "anchor": "q"
+        }
+      ]
+    },
+    {
+      "id": "D-app-token",
+      "type": "function-triple",
+      "routingSafe": true,
+      "source": "static",
+      "hitCount": 0,
+      "description": "app.py token 落盘告警误报(_write_token_file 函数体内三件套全中)",
+      "file": "graphd/app.py",
+      "function": "_write_token_file",
+      "tokens": [
+        "_safe_token_path(",
+        "os.O_NOFOLLOW",
+        "0o600"
+      ]
+    },
+    {
+      "id": "D-env-path",
+      "type": "env-read-json",
+      "routingSafe": true,
+      "source": "static",
+      "hitCount": 0,
+      "description": "操作者 env 指路读型通用判别式(P2P_*/D2D_DATA_DIR + read + .json/.jsonl; 写词元降人工)",
+      "envPrefix": "P2P_",
+      "envExact": [
+        "D2D_DATA_DIR"
+      ],
+      "ops": [
+        "read"
+      ],
+      "exts": [
+        ".json",
+        ".jsonl"
+      ],
+      "writeWords": [
+        "write",
+        "append",
+        "chmod",
+        "unlink"
+      ]
+    },
+    {
+      "id": "D-schema-noqa",
+      "type": "manual",
+      "routingSafe": true,
+      "source": "static",
+      "hitCount": 0,
+      "description": "schema.py noqa:S608 误报(绑定来源需源码级判定——运行时恒降人工, 判别式登记留档)",
+      "file": "graphd/gd/schema.py",
+      "noqa": "# noqa: S608"
+    }
+  ]
+}

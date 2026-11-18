@@ -2,10 +2,16 @@
 // 路由: ctx.webServer.register({kind:'prefix', path:'/d2d/api'}) — 与 dsh /api 同一道
 // 浏览器信任栅栏(Host loopback/受信 + sec-fetch-site + Origin 同源), 同源零跨域,
 // token 全程留 host 侧。机制参照 dsh-sidebar-leap 宿主半(生态已验证模式)。
-import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, readModelUsage, transitionFinding, adjudicate, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement, buildStarmap, buildCoverage, buildHypLane, buildCapability, readTransitionFlows, readAuditTail, readToolCalls, buildChain, buildFrontierPool, frontierTransition, readConfigOverview, attachEngCosts } from './snapshot.mjs'
+import { buildSnapshot, createGraphdQuery, readHostToken, readFleet, writeFleet, readRunEvents, readModelUsage, transitionFinding, adjudicate, writeDenylist, readCaps, writeCaps, loadDshCatalog, mergeCredentialRefs, readSelectedEngagement, writeSelectedEngagement, buildStarmap, buildCoverage, buildHypLane, buildCapability, readTransitionFlows, readAuditTail, readToolCalls, buildChain, buildFrontierPool, frontierTransition, readConfigOverview, attachEngCosts, readXringRuns } from './snapshot.mjs'
 import { validateStartRequest } from './start-policy.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
+import { spawn as _spawnImpl } from 'node:child_process'
+
+// E46-XR: X-Ring 手动启动注入面(测试替换 spawn/记录面读取; 生产=真实 spawn+readXringRuns)
+let _xringSpawn = (...a) => _spawnImpl(...a)
+const _xringRead = (opts, fsImpl, env) => readXringRuns(opts, fsImpl, env)
+export const _setXringSpawn = (f) => { _xringSpawn = f }
 
 export const name = 'd2d-panel'
 export const inject = ['webServer'] // 无 sessions 依赖: 快照只读 graphd, 不碰会话存储
@@ -549,6 +555,43 @@ export function apply(ctx, config = {}) {
         } catch (e) {
           return send(503, { ok: false, error: { code: 'graphd-error', message: String(e?.message ?? e).slice(0, 160) } })
         }
+      }
+      // ---- E46-XR: X-Ring 手动启动(用户拍板 2026-11-18 打破 M6 只读——只开"启动", 停止仍 CLI)。
+      // 校验(URL/scope/预算硬上限 6h) → 单活跃守卫(readXringRuns) → detached spawn first-run.mjs
+      // (XR-P4 真编排: runner+monitor+reflow 全链; record-root 指 DATA_DIR/xring=面板记录面)。
+      if (method === 'xring-start') {
+        if (req.method !== 'POST') return send(405, { ok: false, error: { code: 'method-error', message: 'POST required' } })
+        let body
+        try { body = await readBody(req) } catch (e) {
+          return send(400, { ok: false, error: { code: 'bad-request', message: String(e?.message ?? e) } })
+        }
+        const maxHours = Number(body.maxHours ?? 1)
+        // E46-XR: 目标政策复用 start-policy(含点分公网域名校验+FORBIDDEN 环回/私有/元数据黑面
+        // +scope 逐条同 Black 面; 环回旋钮 P2P_START_POLICY_ALLOW_LOOPBACK 同语义——本地 DVWA
+        // 靶场走该旋钮)。instances 恒 1(XRing 单 runner 语义)。target/scope 取规范化返回值。
+        const v = validateStartRequest({ target: body.target, scope: body.scope, instances: '1' })
+        if (!v.ok) return send(400, { ok: false, error: { code: 'bad-request', message: v.error } })
+        const target = v.target
+        const scope = v.scope
+        if (!Number.isFinite(maxHours) || maxHours <= 0 || maxHours > 6) return send(400, { ok: false, error: { code: 'bad-request', message: `maxHours 须在 (0, 6] 内(BUDGET_LIMITS 硬上限): ${body.maxHours}` } })
+        const x = _xringRead({}, fs, process.env)
+        if (x.activeCount > 0) return send(409, { ok: false, error: { code: 'already-active', message: `已有 ${x.activeCount} 个活跃 X-Ring run — 先 CLI stop(node scripts/xring/cli.mjs stop <runDir>)或等预算熔断` } })
+        const dataDir = process.env.D2D_DATA_DIR ?? `${os.homedir()}/.d2d-data`
+        const d2dRoot = process.env.D2D ?? `${os.homedir()}/d2d`
+        const script = `${d2dRoot}/scripts/xring/first-run.mjs`
+        if (!fs.existsSync(script)) return send(500, { ok: false, error: { code: 'script-missing', message: `编排脚本缺失: ${script}` } })
+        const logFile = `${dataDir}/xring-start-${Date.now()}.log`
+        try { fs.mkdirSync(dataDir, { recursive: true }); fs.closeSync(fs.openSync(logFile, 'a')) } catch { /* 日志文件尽力而为 */ }
+        const logFd = fs.openSync(logFile, 'a')
+        const args = [script, '--target', target, '--scope', scope, '--max-hours', String(maxHours),
+          '--record-root', `${dataDir}/xring`, '--skip-reset', '--graphd-url', process.env.P2P_GRAPHD ?? 'http://127.0.0.1:8766']
+        const child = _xringSpawn(process.execPath, args, {
+          detached: true, stdio: ['ignore', logFd, logFd],
+          env: { ...process.env, P2P_HOST_TOKEN_FILE: process.env.P2P_HOST_TOKEN_FILE ?? `${os.homedir()}/.config/d2d/host-token` },
+        })
+        child.unref?.()
+        cache = null
+        return send(200, { ok: true, pid: child.pid ?? null, log: logFile, note: `已拉起 X-Ring 编排(detached, 30s 内记录面出现 run) — 记录面 ${dataDir}/xring; 停止: node scripts/xring/cli.mjs stop <runDir>` })
       }
       // ---- 0906: engagement 启停 — start 写 requested 队列节点(web 宿主调度器 ≤15s 采纳),
       //      stop 置 cancel 令牌(调度器栅栏自停, 走既有 P0 取消流程)。目标政策见 start-policy.mjs。

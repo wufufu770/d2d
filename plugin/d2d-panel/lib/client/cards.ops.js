@@ -4,8 +4,8 @@
       const [custom, setCustom] = useState('')
       const [keyFor, setKeyFor] = useState(null) // 正在补凭据的 provider
       const [keyVal, setKeyVal] = useState('')
-      const [credMsg, setCredMsg] = useState(null)
       const isBackup = slot === 'backup'
+      // E44 清理: Picker 内 credMsg state 已退役(凭据保存提示归 FleetCard 作用域, 0913 修复注记)
       // catalog = dsh 已注册供应商/模型(host 从 settings.yaml + profiles/*/cordis.patch.yml 枚举);
       // models = 历史用过的模型(含手填自定义)。已用但不在 catalog 的单独一组保留, catalog 内的按供应商分组。
       const inCatalog = new Set((catalog ?? []).flatMap((p) => p.models.map((id) => `${p.provider}/${id}`)))
@@ -236,14 +236,20 @@
         Object.entries(fleet.roles).map(([role, m]) => {
           const key = `${role}/primary`
           const keyB = `${role}/backup`
+          // E44-F5: 占位符行显示实际生效模型(policies 模板 <provider>/<model> 不是真相,
+          // 真相=run.resolved 最新派发 model——模型继承链的观测面)。
+          const isPlaceholder = !m.primary || String(m.primary).includes('<')
+          const eff = run?.resolved?.[role] ?? ''
+          const effChip = isPlaceholder && eff ? h('span', { ...panel.chip({ borderColor: 'var(--d2d-ok)', color: 'var(--d2d-ok)' }), style: { fontSize: '9px' }, title: `实际生效(最新派发): ${eff}` }, `生效 ${shortModel(eff)}`) : null
           return h('div', { key: role, style: { display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0 } },
             h('div', { style: { display: 'flex', gap: '5px', alignItems: 'baseline', minWidth: 0, flexWrap: 'wrap' } },
               h('span', panel.chip(), role),
               h('button', {
                 ...panel.btn({ padding: '1px 8px' }),
                 onClick: () => setOpen(open === key ? null : key),
-                title: `主模型: ${m.primary || '(default)'}`,
-              }, m.primary || '(default)', run?.quotaHits?.includes?.(m.primary) ? ' ⚠' : ''),
+                title: `主模型: ${m.primary || '(default)'}${eff ? ` · 实际生效: ${eff}` : ''}`,
+              }, isPlaceholder && eff ? eff : (m.primary || '(default)'), run?.quotaHits?.includes?.(m.primary) ? ' ⚠' : ''),
+              effChip,
               m.backup
                 ? h('button', {
                   ...panel.btn({ padding: '1px 8px', opacity: '.75' }),

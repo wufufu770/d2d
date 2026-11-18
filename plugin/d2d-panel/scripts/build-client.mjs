@@ -20,7 +20,10 @@ export const OUT = path.join(PKG, 'lib', 'client.js')
 
 /** 拼接顺序 = 声明顺序(load-bearing): 共享核心先, 卡片次, 视图装配, 最后 tab 注册。 */
 export const ORDER = [
+  'vendor.echarts.js', // B13 vendored Apache ECharts 5.5.1(1MB, __dshChunks__ 注册形态——生态先例 better-sidebar/mermaid)
+  'chart.js', // B13 echartsApi 懒执行 + EChart 通用组件(热力/桑基/星图重绘)
   'api.js', // 快照拉取 + 写端点
+  'route.js', // B12 hash URL 路由 + 跨页签过滤参数(parseD2dHash/buildD2dHash/useD2dRoute)
   'ui.js', // DSW 令牌样式 / 原语 / 轮询 hook / 格式化
   'cards.engagement.js', // Engagement 管理卡 + CountStrip
   'cards.ops.js', // Fleet / 策略库 / 黑名单 / 环容量 / 用量 / 性价比
@@ -55,7 +58,7 @@ const HEAD = [
   '    const module = { exports: {} }',
   '    const exports = module.exports',
   "    const react = require('react')",
-  '    const { createElement: h, useState, useEffect, useMemo, useCallback } = react',
+  '    const { createElement: h, useState, useEffect, useCallback } = react', // E44: useMemo 解构退役(全片段零使用)
   '',
 ].join('\n') + '\n'
 

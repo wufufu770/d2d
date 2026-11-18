@@ -1,8 +1,8 @@
-    // ══════════ view.xring.js — XR-P2 X-Ring tab: 旁路探索通道只读投影(过程可见, M6) ══════════
+    // ══════════ view.xring.js — XR-P2 X-Ring tab: 旁路探索通道投影(过程可见, M6) ══════════
     // 数据面: snapshot.xring 节(host 侧 readXringRuns 只读聚合记录面, fail-soft) —— view 不直读
-    // 文件系统。红线(拍板 1): 本 tab 零写零动作 —— 无交互控件/无事件处理器/无写端点引用,
-    // 不提供任何干预入口; 停止唯一例外 = CLI(node scripts/xring/cli.mjs stop <runDir> 写
-    // stop-request, 监控进程消费)。空态=尚未跑过任何 run, 合法形态。
+    // 文件系统。红线(拍板 1, **2026-11-18 用户拍板修订**: 手动启动入口开放——仅新增"启动",
+    // 停止仍走 CLI node scripts/xring/cli.mjs stop <runDir>): 启动 = postJson('xring-start')
+    // (host 校验目标政策+单活跃守卫+detached spawn first-run.mjs), 表单默认值跟随选中项目。
 
     /** 秒 → 人读时长(smoke 实测 36.5s ~ 预算上限 6h 全覆盖)。 */
     function xringElapsed(sec) {
@@ -10,6 +10,32 @@
       if (sec < 90) return `${sec}s`
       if (sec < 5400) return `${Math.round(sec / 60)}m`
       return `${(sec / 3600).toFixed(1)}h`
+    }
+
+    /** E46-XR: 手动启动表单(目标/范围/预算小时——默认值跟随选中 engagement; 单活跃由 host 守卫)。 */
+    function XRingStartForm({ snap, refresh }) {
+      const eng = snap?.engagement ?? {}
+      const [target, setTarget] = useState(eng.target ?? '')
+      const [scope, setScope] = useState(eng.scope ?? '')
+      const [hours, setHours] = useState('1')
+      const [busy, setBusy] = useState(false)
+      const [msg, setMsg] = useState(null) // {ok, text}
+      const submit = async () => {
+        setBusy(true); setMsg(null)
+        try {
+          const r = await postJson('xring-start', { target, scope, maxHours: Number(hours) })
+          setMsg({ ok: true, text: r.note ?? '已拉起' })
+          refresh?.()
+        } catch (e) { setMsg({ ok: false, text: String(e?.message ?? e) }) } finally { setBusy(false) }
+      }
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '5px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '6px' } },
+        h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap' } },
+          h('input', { ...panel.input(), style: { ...panel.input().style, flex: '1 1 220px', minWidth: 0 }, placeholder: '目标 URL(如 https://src.example.com)', value: target, onChange: (ev) => setTarget(ev.target.value) }),
+          h('input', { ...panel.input(), style: { ...panel.input().style, flex: '1 1 160px', minWidth: 0 }, placeholder: 'scope(逗号分隔, 留空取目标域名)', value: scope, onChange: (ev) => setScope(ev.target.value) }),
+          h('input', { ...panel.input(), style: { ...panel.input().style, width: '90px' }, title: '预算小时(0-6, BUDGET_LIMITS 硬上限 6h)', value: hours, onChange: (ev) => setHours(ev.target.value) }),
+          h('button', { ...panel.btn({ borderColor: 'var(--d2d-brand)', color: 'var(--d2d-brand)' }), disabled: busy, onClick: submit, title: '手动启动 X-Ring 旁路探索(first-run 编排: runner+预算监控+回流)' }, busy ? '启动中…' : '启动')),
+        msg ? h('div', { style: { fontSize: '10px', color: msg.ok ? 'var(--d2d-ok)' : 'var(--d2d-sev-high)', wordBreak: 'break-all' } }, msg.text) : null,
+        h('div', panel.muted(0.45), '启动 = first-run 编排(detached) — 单活跃; 停止: node scripts/xring/cli.mjs stop <runDir>'))
     }
 
     /** 历史 run 行(也用于当前 run 首行): 时间/状态/标识/耗时/工件计数。 */
@@ -24,7 +50,8 @@
         h('span', panel.muted(0.5), r?.artifacts ? `A:${r.artifacts.A ?? '?'} B:${r.artifacts.B ?? '?'} C:${r.artifacts.C ?? '?'}` : '—'))
     }
 
-    /** X-Ring tab 容器: 当前 run/预算/工件计数/事件尾窗/历史列表 —— 全部只读投影。 */
+    /** X-Ring tab 容器: 启动表单 + 当前 run/预算/工件计数/事件尾窗/历史列表。
+     *  E46-XR: 空态不再只是"无 run 记录"——带启动表单; 活跃 run 存在时表单隐藏(单活跃)。 */
     function XRingView({ visible }) {
       const { snap, err, refresh } = useSnapshot(visible)
       if (err && !snap) return h('div', panel.root, Style(), h(FailClosedBanner, { err, onRetry: refresh }))
@@ -33,10 +60,12 @@
       if (!x?.available || !(x.runs ?? []).length) {
         return h('div', panel.root, Style(),
           h(Card, { title: 'X-Ring', icon: 'cpu' },
-            h('div', panel.muted(0.45), '无 run 记录')))
+            h('div', panel.muted(0.45), '无 run 记录 — 手动启动旁路探索:'),
+            h(XRingStartForm, { key: snap?.engagement?.name ?? 'x', snap, refresh })))
       }
       const cur = x.runs[0]
       const kids = [
+        !x.activeCount ? h(XRingStartForm, { key: `f-${snap?.engagement?.name ?? 'x'}`, snap, refresh }) : null,
         h('div', { key: 'chips', style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'baseline' } },
           h('span', panel.chip({ ...(x.activeCount ? { borderColor: 'var(--d2d-brand)' } : {}) }), `活跃 run ${x.activeCount}`),
           h('span', panel.chip(), `历史 ${x.runs.length}`)),

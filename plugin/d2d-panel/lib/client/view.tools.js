@@ -8,20 +8,27 @@
     function useToolCalls(visible, kind, limit) {
       const [data, setData] = useState(null)
       const [err, setErr] = useState(null)
+      const [rev, setRev] = useState(0)
       useEffect(() => {
-        if (!visible) return
-        let stop = false
+        if (!visible) return undefined
+        // E40-C1: setTimeout 链式(不堆积) + AbortSignal
+        const ac = new AbortController()
+        let alive = true
+        let t = null
         const tick = async () => {
           try {
-            const j = await fetchApi(`toolcalls?limit=${encodeURIComponent(limit)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`)
-            if (!stop) { setData(j); setErr(null) }
-          } catch (e) { if (!stop) setErr(e) }
+            const j = await fetchApi(`toolcalls?limit=${encodeURIComponent(limit)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`, { signal: ac.signal })
+            if (alive) { setData(j); setErr(null) }
+          } catch (e) {
+            if (alive && e?.name !== 'AbortError') setErr(e)
+          } finally {
+            if (alive && !ac.signal.aborted) t = setTimeout(tick, TOOLS_POLL_MS)
+          }
         }
         void tick()
-        const poll = setInterval(tick, TOOLS_POLL_MS)
-        return () => { stop = true; clearInterval(poll) }
-      }, [visible, kind, limit])
-      return { tc: data?.toolcalls ?? null, err }
+        return () => { alive = false; ac.abort(); if (t) clearTimeout(t) }
+      }, [visible, kind, limit, rev])
+      return { tc: data?.toolcalls ?? null, err, refresh: () => setRev((r) => r + 1) }
     }
 
     /** B10 事件行(结构化表格 grid: 100px time | 190px kind tone badge | 140px worker | 1fr detail)。
@@ -44,7 +51,8 @@
       const [limit, setLimit] = useState(200)
       const [q, setQ] = useState('')
       const [sheet, setSheet] = useState(null)
-      const { tc, err } = useToolCalls(visible, kind, limit)
+      const { tc, err, refresh } = useToolCalls(visible, kind, limit)
+      if (err && !tc) return h(FailClosedBanner, { err, onRetry: refresh })
       const events = (tc?.events ?? []).filter((e) => {
         if (!q.trim()) return true
         const blob = `${e.kind} ${e.worker} ${e.tool} ${e.reason} ${e.command} ${e.extra}`.toLowerCase()

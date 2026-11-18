@@ -5,6 +5,450 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [d2d-panel 0.7.4] - 2026-11-18 (E46-XR X-Ring 手动启动——面板开放旁路探索启动入口)
+
+> 触发=用户两问："kuzu 不退役换其他的了吗"(答: 已退役——E39-B1-3 兑现, 缺省引擎=ladybug
+> 0.21.2 PyPI MIT kuzu 社区延续, `import ladybug as kuzu` 别名同形 API 零改动顶替, 显式
+> P2P_GRAPH_ENGINE=kuzu 给退役指引) + "需要 xring 可以手动启动"。
+
+### Added
+- **POST /d2d/api/xring-start**（host 路由）：目标政策复用 validateStartRequest（点分公网域
+  名+FORBIDDEN 环回/私有/元数据黑面+scope 逐条同面；环回旋钮同语义——本地 DVWA 走旋钮；
+  空 scope 合法=回落目标域名）→ 预算硬上限校验（maxHours (0,6] 拒绝不 clamp）→ **单活跃
+  守卫**（readXringRuns activeCount>0 → 409）→ **detached spawn first-run.mjs**（XR-P4 真
+  编排: runner+预算监控+reflow 全链；--record-root 指 DATA_DIR/xring=面板记录面；非 DVWA
+  靶默认 --skip-reset；日志 xring-start-<ts>.log）。spawn/记录面读取双注入面（_setXringSpawn
+  测试钩）。
+- **XRingView 启动表单**（打破 M6 只读——用户拍板仅开"启动", 停止仍 CLI）：目标/scope 默认
+  值跟随选中项目 + 预算小时输入(0-6) + 启动按钮；空态与"有历史无活跃"两形态都挂表单，
+  活跃 run 存在时隐藏（单活跃语义）。
+
+### 测试
+panel 117 passing/0 failing（exit 0）：路由 400 四分型/200 spawn 参数逐项（脚本/record-root/
+skip-reset/detached）+ 表单默认值/提交路径/成功提示（有状态 hook 桩——**桩 hook 计数器须每
+帧复位**, 跨渲染不复位=第二帧全 null 教训）+ 空态启动入口。**d2d-panel 0.7.3→0.7.4**。
+
+## [pentest-dsh 2.0.0] - 2026-11-18 (E48 R-25 资产图补全 + 规划缺口清偿批——11 项一次性)
+
+> 触发=用户令缺口清单"全部都一次性做了"。R-25 资产图补全(M2-M5) + 规划缺口 6 项 + 文档面 2 项
+> + D2-b 写面拆分(部分: dual-sign/frontier 落地, experience 家族留 D2-b2 专项——_inj_sample
+> 闭包耦合需独立批次)。版本 1.9.8→**2.0.0**(R-25 补全=资产图设计五里程碑闭环, 大版本语义)。
+
+### R-25 资产图补全（M2-M5, 设计 docs/asset-graph-design-r25.md §四五）
+- **M2 reflow 接线**：A 级 verify 后 Verification 事件落图(kind=repro/race, verdict=pass/
+  race-win/fail; finding_ref 挂靠 xring finding id, 未入图 finding 亦留事件=台账源) +
+  prevFact 复验失败 → kind=retest verdict=fail(falsified 防复测命中指标源)。服务端
+  VERIFIED_BY/JUDGED_BY 边创建(既有 M1 端点)。
+- **M3 EnvSnapshot 接线**：first-run ECC assess 后 Asset upsert(URL 幂等) + EnvSnapshot
+  落图(raw=assess 实测, cal 留空=校准流程另批; SNAPSHOT 边服务端自建)。
+- **M4 跨 run 资产查询**：graphd-assets.mjs 增 queryAssetLedger(Asset 本体+HOSTS 端点数+
+  快照数+判级漂移+最近快照)。
+- **M5 台账直出**：新增 scripts/xring/ledger.mjs——四指标(L-1 验证率/ECC 假阳率/falsified
+  防复测命中/handoff 复战效用)+竞速胜出+可选单资产溯源面, JSON/markdown 双格式。干净栈实测:
+  验证率 9.1%(3/33)——**第四轮 3 条 verified(1 high+2 medium)确认为 auto-verify 通道首批产物**。
+
+### 规划缺口清偿（6 项）
+- **#3 误报模式表运行时消费**：config/false-positive-patterns.json(6 种子判别式结构化落表)
+  + scripts/ops/fp-router.mjs(热载 mtime 缓存+账本覆盖 ledger>static+逐模式判别式评估:
+  test-ddl/test-urlopen/validator-triple/function-triple/env-read-json/manual+guard 降人工+
+  hitCount 写回工程纪律②)。CLI 全路径实测(low/high/guard/fail-closed)。
+- **#2 repairability 消费接线**（4-4B 段2 兑现）：graphd /write/finding 两路径(main+admit)
+  回填 repairability 列(gates.repairability_classify 服务端判定; why 由读侧 JS 镜像同源词表
+  重算——加列需三处同步另批); findingsList 查询+wire+前端 findings 行 chip 显示。
+- **#5 proposer_reason 策略场景接入**：buildTicket/maybeAsk 增 proposerReason 参数
+  (Gate-P anchor/Task.link_id 透传; 缺省与 intent 同源=零行为变化)。
+- **#7 xring CLI start 接真编排**（"spawn 编排归 P4"骨架兑现）：--target/--scope 必填+
+  detached spawn first-run.mjs(record-root 指 DATA_DIR/xring 面板可见; --skip-reset 非
+  DVWA 缺省; --model 准入校验保留, 实际模型走宿主继承链)。
+- **#6 pytest-cov 接入**：scripts/ops/graphd-cov.sh(--cov=gd --cov=app term-missing;
+  --html 可选; 依赖 pytest-cov --user 安装)——coverage-baseline.md 登记边界兑现。
+- **#11 TRANSPORT 工具化挂账销账**：e34-debt-ledger #3 状态更新(已由 E39-B2-1 兑现——
+  adapter 级重连=指数退避 5 次, wrapper 级并行双层)。
+
+### 文档面
+- **#9 eslint 行号偏移修复**：lint-client.mjs offset→片段映射(双标注 `bundle行(片段:行)`)。
+- **#10 hyg1 活跃面裸 catch 补因**：adapter-dsh×4/scheduler.js×4/loop×1/gates×1 共 10 处
+  (行内注释零行位移, 禁区跳过)。
+- **#4 分层压缩移出缺口清单**：state.md 拍板原文="分层压缩保留编排(本批仅确认现状)"——
+  非缺口, 系 E47 调研误列。
+
+### D2-b 部分落地 + 余项
+- **/write/dual-sign-transition + /write/frontier-transition 拆至 gd/writes_gate.py**
+  (逐字搬移: 函数体/注释零改动, 仅作用域替换 _locked/kuzu/db/_audit_event/_log_transition
+  → d 前缀; gates 纯函数双分支导入; _GD_DEPS 补 _log_transition; app.py 两路由缩为 dispatch)。
+  **experience 家族(experience/experience-transition/experience-consensus)留 D2-b2 专项**:
+  _inj_sample 闭包耦合(app.py do_POST 作用域状态)需独立搬移设计, 零删改红线优先。
+- 宿主须重启载入 graphd 拆分与 repairability 回填(live 栈已重启验证 466 全绿)。
+
+### 测试
+pytest 466/466(含 dual-sign/frontier/admit 全族) + mocha 2309 passing/0 failing(修复
+maybeAsk proposerReason 参数引用笔误——**解构函数内引用 opts 不存在, 测试当场抓**)+ panel
+117/0 + fp-router CLI 全路径 + ledger 干净栈直出实测。
+
+> 触发=用户令"代码全过一遍查死点 bug + 前后端功能点对应 + 前端是否有显示 + 优化点"
+>（E45 覆盖 panel, 本批扩展至 pentest-dsh/graphd/gateway/写端点对应面）。
+
+### 审计方法与结论
+- **179 条内联 Cypher 对真图逐条验证**（scheduler.js/scheduler//domain/adapter 全部模板串,
+  插值替换为真实 eng/参数占位）：17 条失败全部甄别为插值替换假阳性（JS 拼接子句 engAnd()/
+  数字 LIMIT 常量/INT64 时间戳比较——逐一核对插值源确认），**真死点 1 个**。
+- **Asset 死查询清除（E46）**：`tool-policy.mjs loadBaselineHosts` 的 Asset 增强查询
+  （`WHERE a.eng=$e`）恒 Binder 异常——**Asset 表 schema 无 eng 列**（全局资产表, schema.py:65),
+  每 tick 白打一次必败查询被 `catch { /* Asset 标签可选 */ }` 吞掉。Asset 按 URL 幂等共享且无
+  per-eng 维度 → per-eng 基线增强设计上不可用, 待 schema 扩列再做；Endpoint 权威基线不变。
+  防回归测试：Asset 查询不再发起 + 每门恰一次 Endpoint 查询。
+- **graphd 写端点 ↔ 调用面对应**：17 个写端点逐个核对——插件/面板/XRing 工件/经验共识回灌
+  全有消费方；`/write/transition-log` = 设计内人工/工具旁路审计通道（8-1 注释明载）, 零死端点。
+- **死点扫**：pentest-dsh(scheduler//domain/adapter)+gateway 导出符号全仓引用计数——零死导出。
+- **遗留假阳性甄别记录**：LIMIT 插值源全为数字常量（FRONTIER_QUERY_LIMIT/AUTOTRIAGE_BATCH/
+  capacity*4）, INT64 时间戳比较为数字插值——非真失配。
+
+### 测试
+mocha 2307 passing/0 failing（exit 0, 含 E46 防回归断言）+ pytest 466/466 + panel 116/0。
+**pentest-dsh 1.9.8→1.9.9**。宿主重启载入。
+
+### E46-F2 业务闸同因退避（运行时审计发现）
+- 实证 eng-e43b：**111 次 business-gate-blocked 跨 72 分钟**（单任务 97 次）——业务卡未就绪
+  期间同一批 deep-dive 任务每 tick 认领→拦→留 pending→再认领空转，且高优先任务恒占 pending
+  队头（深环饿死风险）。修复：`noteBusinessBlock` 退避记账（P2P_BUSINESS_GATE_RETRY_CAP 缺省
+  5, cap 边界恰一次 capped 信号）→ 沉底 `priority=-1` 让出队头 + 单次告警；**卡就绪首拍
+  unblockBusinessTasks 自动恢复** priority 并清账。防回归测试 2 例（退避语义/接线锚）。
+- 运行时事件流审计：第四轮 1164 事件除业务闸空转外零 error/零 degraded；教学合同端点/字段
+  与 graphd 实参逐字一致（title/severity/repro/severity 枚举）。
+
+> 触发=用户令"代码全过一遍, 查看有没有什么死点和 bug。还有查看前后端功能点是否有对应,
+> 前端是否有显示。全部都检查, 并看看有没有可以优化的地方"。
+
+### 审计方法与结论
+- **查询字段失配系统化检测**：24 条主查询(queries.mjs/viz-data.mjs 全部导出常量)对真图逐
+  eng 展开——**零字段失配**；16 个 GET/POST 路由全 API 面实测——除 anchors(POST-only 设计)
+  外全部 ok；**host 零死导出**（修正版死点扫含自身文件引用）。
+- **wire 断线两处（E44-F7，审计实锤的真 bug）**：`run:` 手动挑字段漏了①`resolved`(E44-F5
+  Fleet 生效模型面——host 有、wire 丢、前端等=三段断链)②`cost`(用量卡 24h 烧速条消费
+  runEvents.cost 的 dispatches24h 形态——顶层 cost 是 costEfficiency 性价比形态，两者不同
+  产物勿混用，修复时第一版错混已当场纠正)。实测：run.resolved 三环生效模型到达、run.cost
+  24h(80 派发/890 分钟/3675 步)首次到达前端。
+- **死代码 10 warn→1 warn**：vizNodePos(B13 退役)/FLOW_FAMILY_COLOR/FLOW_RENDER_NODES/
+  IconPlus/Picker 内 credMsg state/wiPending/hidden/HEAD useMemo 解构——逐个确认后清除；
+  byStatus(view.ops)非死代码而是**漏接**——补渲染前沿池状态计数条(E44-F8)。
+- **stale 显示闭环（E44-F9）**：fail-honest 的诚实显示最后一块——snap.stale 非空时态势页
+  顶部 STALE×N 徽标(hover 列回落键)+说明文案，陈值不再冒充实时。
+- **构建闸自证价值**：清 Picker credMsg 时 Edit 边界误删 isBackup → `no-undef` error 当场
+  抓住（ReferenceError 上浏览器前拦截，静态闸设计目标实证）。
+- **验证结论**：XRing"无 run 记录"=合法空态(`~/.d2d-data/xring/` 未产出，fail-soft 正确)；
+  前沿池 0=真值(Frontier.eng_id 口径核对)；snapshot 80KB/0.28s 无性能问题。
+
+### 测试
+panel 116 passing/0 failing（exit 0）+ lint 0 error/1 warn（余 unused eslint-disable 指令，
+无害）。**d2d-panel 0.7.2→0.7.3**。
+
+### 优化点清单（观察，未实施）
+- snapshot 轮询 2s×18 查询/拍——graphd 轻载下无压力，engagement 多开(>10)时建议合并聚合
+  或 5s 降频（当前规模无需动）。
+- attachEngCosts 每拍读 ≤8 个 model-usage 文件——文件增长后可 mtime 缓存（现量无感）。
+
+## [d2d-panel 0.7.2] - 2026-11-18 (E44 前端数据呈现批——reArtex 模式移植 + 假零诚实化)
+
+> 触发=用户三问（星图点开无内容/图数据与运行对不上/好多数据没体现）+ 调研 reArtex 前端
+> （/home/kali/reArtex，只读未触碰）的呈现模式。
+
+### Added/Fixed（七项清单）
+- **#1 快照 fail-honest**：buildSnapshot 18 查询统一 qSafe 包装——单查询偶发失败不再整页 503
+  （旧 fail-closed 设计）也不再静默假零（workersByEng 旧态，实证卡体 workers=0 vs Workers 卡
+  3/5 同屏矛盾）：回落上拍成功值 + 顶层 `stale` 键列表明示；无上拍值回落空集+stale。
+- **#2 星图双层化**：viz-data 增 starmapEndpoints/starmapAt 查询——**Endpoint 资产节点入图**
+  （旧版星图只有 open 信号，37/612 个端点无图呈现）；AT 关联边接线。
+- **#3 节点标签+图例**：`label.show=true`（端点=host+路径短标签 / 信号=type·id尾4 / 聚合=type×N）
+  + labelLayout hideOverlap 防重叠 + 手绘图例 chips（端点/高权重信号/低权重聚合/意图链边）+
+  布局 circular→force（双层聚类）。
+- **#4 低权重信号折叠**（reArtex digest 折叠同构）：weight<2 open 信号按 type 收进聚合节点，
+  AT 边去重折叠到组、DERIVED 边一端在组内即剔除——大图降噪。
+- **#2' 星图点击 → DetailSheet**（现成组件接入，reArtex NodeDetailSheet 模式）：端点=.url/tech/
+  链/覆盖票/exhausted；信号=evidence 头(160 截断不出全文)/weight/tries/host/ts；边点击不触发。
+- **#5 Fleet 生效模型**：readRunEvents 尾读 model-usage dispatch 行 role→model（后行覆盖=最新
+  派发真相）→ run.resolved；Fleet 卡占位符行（`<provider>/<model>`）显示实际生效模型+生效徽标。
+- **#6 卡体口径明示**：覆盖/活跃/已验证/已交付/开放信号/workers 六项全部加 hover title
+  （"活跃=findings vs 开放信号=signals 两种口径"矛盾感消除）。
+
+### 测试
+panel 116 passing/0 failing（exit 0，含新增 6 探针：双层折叠纯函数/wire 形态/星图 label+pick
+透传/AT 补集/Fleet 生效徽标/口径锚）+ lint 0 error。**d2d-panel 0.7.1→0.7.2**。
+
+### E44-V2b（实施中发现的数据层事实与修复）
+- **Endpoint 节点跨 engagement 共享**（按 URL 幂等，eng 字段=首见归属）：e43b 的 5 条 AT 边
+  指向的端点全部首见于历史项目（79/8r/e42）→ 按 `e.eng=$eng` 过滤取不到 = AT 边全丢
+  （星图 0 边）+ "覆盖端点 0/37" 口径怪异（37 只是本轮首见）。修复：starmapAt 查询自带端点
+  属性 → 不在 eng 集的边指向端点**补集入图**（`firstSeenElsewhere` 溯源标注 tooltip）。
+  实测：星图节点 43（40 端点+3 聚合）、AT 边 3 条全部回归。CDP 全页冒烟 3 canvas 零异常。
+
+## [pentest-dsh 1.9.8] - 2026-11-18 (E43-P0b 认证证据扫描新鲜度修复——auto-verify 最后断点)
+
+> 触发=E43 第三轮战况核查：worker 9/9 信号全带 gate_v 锚且规范使用 `vrq-e43-*` 标记串
+> （最新 60 笔捕获 48 笔含标记——教学完全生效），但 `authenticated` 仍恒 false。
+
+### Fixed
+- **scanAuthEvidence 新鲜度倒挂（一行级根因）**：`files.sort()` 升序 + `maxFiles=40` → 永远
+  只扫目录里**最老的 40 个**证据文件。mitm-enc 三场 engagement 已积累 1500+ 笔，worker 带
+  新 vrq 标记的捕获永远在窗口外 → 认证对账恒 false（gate-v-blocked `anchor-unauthenticated`
+  全部由此）。修复=**降序扫描（最新优先）**+ maxFiles 40→120（120×~100KB 解密 ≈ 毫秒级，
+  可忽略）。回放矩阵：锚/请求/捕获/钥匙/验签五环全部实证在位，此为唯一断点。
+- 回归测试：needle 只在最新文件 + maxFiles=2 → 必须命中（旧升序下该测试必红）。
+
+### 验证
+mocha 2307 passing/0 failing（exit 0）。
+
+## [pentest-dsh 1.9.7] - 2026-11-18 (E43 全量升级批——锚教学闭环 + crash 韧性 + 同因早止)
+
+> 触发=E42 重测战报三问题 → 用户令"全部升级"。
+
+### Added/Fixed
+- **P0 锚教学单面缺口（auto-verify 最后一块结构性拼图）**：实证 eng-e42——4 个 confirmed 全部
+  不带 gate_anchor，根因=锚教学只写在双签复核员 brief（gates.mjs :460/:677），主验证合同
+  （scheduler.js verifyBlock）不教；单厂商配置下双签永不触发 → 没有任何 worker 被教过锚格式
+  （handoff 里 worker 自产"verify-anchor"信号却全场零 gate_v 锚=有意识无格式）。修复：
+  gates.mjs 导出 `GATE_V_ANCHOR_RULES`/`GATE_V_ANCHOR_FIELD`，主验证合同注入锚五字段模板 +
+  **认证对账语义**（基线/差分请求必须在 URL 参数或请求头携带唯一标记串如
+  `?vrq-b=<id>&vrq-d=<id>` 或头 `X-VRQ:`，marker_hit 填实测响应特征串——三针由网关加密捕获
+  检索对账，检索不到=未认证；high/critical 无锚必拦别白跑）。合同行为内追加（单行模板串，
+  禁区锚 [594,642] 零位移）。
+- **P1 transport 重试缺省 3→5**（adapter-dsh.mjs）：两场实战 crash 率 47%→61%（14/23），
+  minimax 传输抖动为主因；指数退避下第 5 次累计等待 ~7min，换取任务免整跑（调度器 failover
+  crash 预算 ≤2 次整跑更贵）。测试套件显式 env 注入不受缺省影响。
+- **P2 Gate-V 同因早止**：连续两次同因 fail（原因指纹=reason 首段，剥离差异化 why 后缀）即
+  视为 cap 到顶——`_capped` 旗标保证恰好一次 capped 事件后全静默；早止线与 cap 线解耦
+  （cap=5 未触顶也早止，实证 eng-e42 同一 finding 四轮同因白烧 ~40min）。结构化锚非空=新
+  证据形态，计数/旗标全重置。新测试 2 例（同因早止/原因变化反例）。
+
+### 验证
+mocha 2306 passing/0 failing（exit 0）+ pytest 466/466 + 受影响七套件全绿。
+
+## [pentest-dsh 1.9.6] - 2026-11-17 (E42 卡点修复批——裁决解析歧义 + 靶场重测)
+
+> 触发=E41 战报四卡点 → 用户令"把卡点都修复了, 然后重新测试这个靶场"。
+
+### Fixed
+- **裁决解析歧义（冤案根因）**：`parseVerifyEvidence` 回退路径(0916 兼容形态)会把「finding:<id>
+  **子项** verdict:refuted(部分不成立)」的子项裁决词当主裁决 → 真 high finding 被自动转
+  rejected（八态机终态，两轮 confirmed 复现也无法翻案）。收紧：①fid 之后的唯一裁决词若与 fid
+  之间出现子项语义词(子项/子命题/子结论/子条件/部分裁决/其一/其中之一/sub-item) = 子项裁决，
+  不作主裁决；②全文 ≥2 互异裁决词 = 冲突；两者都返回 `ambiguous`(retry:false) → 调度器消费 +
+  `verify-verdict-ambiguous` runLog + 通知上浮人工，**绝不拿子项词/冲突词猜主裁决**。主裁决
+  锚定式(紧邻 `finding:<id> verdict:`)与 fid 前置标签式(`结论:suspected 独立复核 f-90`)行为
+  零变化（合同形态/前置式各保持）。worker 合同教学段补子项语法禁令（verdict: 词只能表达主
+  裁决且每信号恰一个）——单行模板串行内追加，禁区锚零位移。
+- **E41-D4 捕获面基础设施豁免**：mitmEncCapture 增 MODEL_HOSTS/OSINT_HOSTS 判定——worker 的
+  LLM/情报流量(头含 API key 凭据)不入证据库（密文落盘虽 at-rest 安全，但证据库只应收目标面）。
+  MITM 常开后新暴露面，重启后实测：捕获 100% 目标流量+全 eng 标签，LLM 零入库。
+
+### 活体部署与靶场重测
+- **宿主重启**（3883139→4064342）：E41 全部修复（心跳/面板阈值/gate-V 退避/证据链）+E42 解析
+  修复随新进程生效；凭据桥同源复制（3 个 API key 经 .credentials.yaml refs shlex 注入，零回显）；
+  P2P_DISTILL_LLM=1 + P2P_WORKER_429_MAX_RETRIES=3 注入 host 与 runner env；服务复用零重复
+  （graphd/OAST 原进程续用）。
+- **靶场重测拉起**：eng-1117-2248-tgt-redacted-e42（requested 节点经 host 调度器自动认领——runner
+  正确让路，`sched-4064342-nrp0` 持租约 epoch=1）。活体自证四连：①心跳前进（identity
+  updated_at 56:01→57:01）②mitm-enc 量产（127+ 密文，85-123KB/笔）③捕获解密 eng 标签命中
+  ④面板 CDP 实测 `LIVE · 3 Workers`+`3 在办`（E41 假零指示死亡确认）。
+- **Druid 冤案处置**：FSM `rejected: ()` 终态无出边（八态机红线不动）→ 裁决标记信号
+  `s-e42-reopen-0863` 留痕（含五段 replay 矩阵引用与重测重新入账路径），重测批次重新发现。
+
+### 验证
+mocha 2304 passing/0 failing（exit 0）+ 新增 E42 解析回归 4 例（冤案信号原样回放/多词冲突/
+前置标签式兼容/主裁决锚定抗干扰）+ 网关三套件 45/45。捕获流重启后 100% 目标流量（LLM 零入库）。
+
+## [pentest-dsh 1.9.5 / d2d-panel 0.7.1] - 2026-11-17 (E41 运行时审计修复批——证据链点亮 + 假零指示修复)
+
+> 触发=用户令"只读查看目前 d2d 的运行有什么问题没, 是否每一个功能点都运行到位, 没有出现虚的情况"
+> 的全功能点实测审计（graphd/egress/worker/租约/调度环/门/面板逐项对照运行时实证）→ 查出四个虚点,
+> 用户令"修一下"。零推送批：全部改动仅工作树+本地分支。
+
+### Fixed（运行时审计四虚点）
+- **D 证据链结构性暗置（最重）**：三层叠加让 Gate-V 认证 HAR 控制（#103）的 auto-verify 通道
+  在默认部署下**从第一天起就不可达**——①`evidence-crypto.mjs keyFromFile` 硬性要求 64-hex,
+  而 graphd host-token 缺省生成是 `token_hex(16)`=**32-hex**（app.py:2361）→ 派生恒抛错
+  （捕获侧拒写 + gate 侧 `_authKey=''` 恒不认证, 两端同源同死）；②网关加密事务捕获只挂在
+  HTTPS 解密分支（mitmHandle）, 纯 http:// 目标（靶场主流形态）从不入捕；③捕获是 opt-in
+  （D2D_EGRESS_MITM 缺省直通）, 而门缺省要求证据 = 互相矛盾。实证：mitm-enc 目录自 11-15
+  零产出、12 条 high/medium 全卡 triaged（0 verified）、f-1794916190863 每 5 分钟重试已 8 轮。
+  修复：keyFromFile 兼容 32-hex（SHA-256 派生不变, 64-hex 存量逐字节兼容）+ `_plainReq`
+  纯 HTTP 加密事务捕获（同旗同 sink 同上限同 fail-closed, engTag 入捕）+ services.mjs
+  插件托管引导缺省注入 `D2D_EGRESS_MITM=1`（显式 =0 优先）。**活体端到端实证**：网关重启后
+  捕获首落盘 → `readEvidenceFile`+host-token 钥匙 GCM 验签解密还原成功（=scanAuthEvidence
+  同源路径）。注：worker 侧结构化锚（gate_anchor.gate_v）靠 gates.mjs 既有教学合同, 锚合规
+  与否是模型行为层——通道已通, verified 与否取决于提交锚+捕获对账。
+- **C per-eng 监听死口泄漏**：refreshScope 尾部对 engScopesLive 只增不删（注释写"原地替换"
+  实为原地累加）→ engagement 冻结后独立监听口与端口表条目永久滞留（实证：eng-1117-1932
+  frozen 后 19001 滞留 1h+）。修复=先摘除后写入; 旧测试经 _setEngScopes 整表清空重建抓不到
+  本洞 → 新增真 refreshScope 回归（globalThis.fetch 打桩——共享进程里 GRAPHS 首导快照指向
+  真图, env 重定向方案在 mocha 全量序下失效）。
+- **A 面板 LIVE/在办假 0（虚指示）**：`ZOMBIE_MS=30s`（纯时钟）vs worker identity 更新节奏
+  （任务迁移级, 分钟; 调度器自身活性窗 30 分钟）→ 在跑 worker 几乎恒被判 zombie → LIVE pill
+  显示 IDLE、「在办」KPI=0。修复双面：scheduler 新增 `scheduler/heartbeat.mjs`
+  （startWorkerHeartbeat——以 state.workers Map（spawn promise pending=存活）为源, 缺省 20s
+  touch `updated_at`, 零 worker 零调用, unref 不阻退出, env P2P_WORKER_HEARTBEAT_MS 可调）+
+  面板 ZOMBIE_MS 30s→90s（容 3+ 心跳拍抖动; 硬杀检测仍 ≤90s——进程退出有 adapter finish()
+  兜底, 面板侧只是冗余安全网）。
+- **B Gate-V 重试空转**：同一 finding 反复 fail 无退避（gate-log/notify/captureFailure 每 5
+  分钟一轮刷屏）。修复=per-finding 计数退避：连续 fail 达上限（P2P_GATEV_RETRY_CAP 缺省 5）
+  后降噪（零 gate-log/notify/capture, 单次 runLog `gate-v-retry-capped` 留痕）; 结构化锚非空
+  =新证据形态, 计数归零（捕获链点亮后新锚不被旧计数误杀）。
+
+### Housekeeping
+- gateway-mitm-merge (d-1) CI 全量序 flaky 根因收口：模块级 30s refreshScope interval 用真图
+  数据覆盖动态集（文件评估期的 `_setPathDeny` 注入被洗掉）→ before()+用例体双处重注入种子。
+- do-not-touch 禁区锚第三次位移重锚 [584,632]→[594,642]（E41-A1 心跳块 +10 行纯插入,
+  golden 同值 16909bd7914f2b78 自证零触碰, 4-3a 通道）。
+
+### 验证
+pytest 466/466 + mocha 2300 passing/0 failing（exit 0）+ panel npm test exit 0/lint 0 error +
+evidence-crypto/mitm-capture/gate-v-auth-har 36/36 + 新增 heartbeat 2 例/退避 2 例/冻结摘除 2 例/
+32-hex 钥匙 1 例。活网关重启后 E41-C1 活体自证：旧泄漏 19001/19002 随 active 集为空全部回收。
+
+## [pentest-dsh 1.9.4 / d2d-panel 0.7.0] - 2026-11-17 (E40 原生 dsh 插件化 + P1 #101-105 修复批)
+
+> 四阶段批：原生插件形态（自动模型继承/Config schema/服务生命周期/d2d_* 标准工具面）+
+> P1 五连修（#101-105 全闭环）+ 面板收尾与静态闸 + snapshot/graphd 模块化拆分。
+> 零推送批：全部改动仅工作树+本地分支（local/e39-wip），远端未动（等指令）。
+
+### Added（E40-A 原生插件形态）
+- **自动模型继承**：`domain/model-source.mjs`（profile patch YAML 缩进感知解析，零依赖）—
+  model-policies.json 严格降级为可选逐角色覆盖，缺省自动继承 DSH 当前配置
+  （agent-default-model + llm-pi-ai providers，mtime 缓存每次认领复解析——dsh Models 页
+  改模型下一个 worker 即跟进）；backup=另一厂商首模型；非宿主进程（无 --profile argv）
+  不启用继承链（测试环境无关性——WD-1/verify-pipeline/xring 夹具实证）。
+- **Cordis Config schema**：index.js 增 `export const Config`（@deepseek-ai/schemastery：
+  graphdUrl/egressUrl/runsBase/manageServices），patch config 从"声明了没人读"升级为
+  声明式可配面（优先级=patch 显式值 > 既有 env > 内置缺省，env 链向后兼容）。
+- **服务生命周期**：`scheduler/services.mjs`（ensureServices/disposeServices）— apply 时
+  探活健康即复用（不与 systemd/start-all 抢实例），不健康且 repo 源码在位才 spawn 兜底；
+  cleanup 只杀自 spawn 子进程；spawn 失败结构化降级不崩宿主。
+- **d2d_* 标准工具面**（host profile，auditedDefineTool 包装+基线钉扎）：`d2d_start`/
+  `d2d_status`/`d2d_findings`/`d2d_adjudicate`/`d2d_stop` — 与 p2p_* 共享单一实现
+  （scheduler/d2d-queries.mjs 纯函数面：枚举白名单+全参数绑定 Cypher+limit 服务端钳制），
+  p2p_* 保留兼容。基线 regen +18 键（62→80）。
+
+### Fixed（E40-B P1 #101-105 全闭环）
+- **#101 归属与授权解耦**：gd/schema.py 增 `write_scope_auth` 纯函数 — 归属
+  （pick_write_eng）只决定数据归谁，载荷 host 逐一对被归属 engagement 的 scope 做
+  host/domain/IP/CIDR 授权（`_host_in_scope_auth`=host_in_scope+CIDR 扩展，本体零改动），
+  越界 403 fail-closed；修掉"恰一个 active 时范围外目标借有效归属入图"授权错配洞。
+- **#102 egress per-eng 隔离**：网关 `makeJudge` 判定器工厂（deny 先于 allow）— `!` 排除
+  条目不再丢弃（hostDenyFromScopeEntry），全部活跃 eng 并集 deny=默认口保守面 + per-eng
+  独立监听口（19001 基口，allow+deny 全集，A 的排除只拦 A 的 worker）；端口表发布
+  DATA_DIR/egress-ports.json，adapter buildWorkerEnv 按-eng 注入专属 http_proxy
+  （adapter egress 强制块语义零改动——仍无条件强制，只换口指向）。
+- **#103 Gate-V 认证 HAR 控制**：high/critical 结构化锚对账升级为 AES-GCM 认证证据
+  （validator evidence/har 密文信封+网关 mitm-enc，密钥=SHA-256(host-token) 主机身份绑定，
+  `scheduler/auth-evidence.mjs` 扫描器）；散文路径对 high/critical 收口（anchor-required-auth）；
+  escape=P2P_GATEV_REQUIRE_AUTH_HAR=0 过渡档；**seam 签名零变更**（gateV 形参/lookup
+  契约不动，返回仅增 authenticated 键）——GW-2 v2 :221 残余登记的"锚真实性对账"兑现。
+- **#104 租约纪元隔离**：Engagement.lease_epoch 列（SCHEMA+ALTER 双迁移）；认领 CAS 后
+  epoch+1；暂停文件绑定 {by, epoch}，graphd `_eng_pause_block_reason` 原子核验
+  （owner≠当前持有者或 epoch 落后 → STALE 放行）——失租自停写的旧暂停文件不再阻塞新持有者；
+  loop 栅栏增纪元比对；**acquireLease fail-open→fail-closed**（graphd 不可达不认领，
+  escape=P2P_LEASE_FAIL_OPEN=1，用户指令 2026-11）；lease-cas-watchdog 原断言按新契约更新。
+- **#105 晋升积分绑内容版本**：知识卡 canonical JSON sha256 12hex（cardVersion）— 计胜
+  节点 id=`card:<bareId>@<ver>`、ver 列同步入写；promote 门禁③只认当前内容哈希的行
+  （currentCardWeightRow）——改稿即换节点，旧胜绩不为新稿背书（"改写一稿重投"白嫖通道闭合）。
+
+### Changed（E40-C/D 面板收尾 + 拆分）
+- 面板：剩余 7 个 setInterval 轮询 → setTimeout 链式+AbortSignal（useFrontier/workitems/
+  chain/approval/audit/config/tools）；FailClosedBanner 补接 chain/tools/workitems；
+  顶栏 LINK DOWN 健康 pill（wiErr 此前解构未渲染）；Sankey 标签中段截断+labelLayout
+  防重叠+tooltip 全名；KPI 数字 clamp；view.viz 两处解释性注记收敛进 title。
+- **ESLint 静态闸**：panel scripts/lint-client.mjs（eslint Linter API，HEAD+非 vendor
+  片段合成目标）— no-undef/no-redeclare/no-dupe-keys 等 error 级接入 npm test
+  （p-is-undefined 整类 ReferenceError 静态捕获——B13 白屏根因的机制性防线；负向探针自证）。
+- **snapshot.mjs 拆分**（1415 行 → lib/host/snapshot/ 10 模块 + barrel re-export）：
+  const/queries/viz-data/graphd-client/caps/fleet/runs-cost/flows-audit/engagement/xring —
+  既有导入路径零改动，Q_VIZ 导出面唯一新增；approvals 兄弟包 import 随拆分修正相对深度。
+- **graphd/app.py 拆分**（2503→2400 行，读面+锚点先行）：/query、/query/experience、
+  /query/frontier → gd/queries_read.py；/write/anchors → gd/anchors.py — 依赖注入命名空间
+  （_GD_DEPS）规避脚本/包双形态双模块实例陷阱；do-not-touch 邻接块（experience/dual-sign
+  等禁区面）**有意留在 app.py**（D2-b 挂账——禁区"既有校验链零删改"红线优先）。
+- do-not-touch.md scheduler.js 禁区锚位移重锚：[570,618]→[584,632]（模型继承链上游纯插入
+  +14 行，区间 sha256 逐字节不变自证零触碰；子锚 :616-625/:610-611/:626-654/:639/:654-660
+  内容实锚更新；守卫 golden 同值）。
+
+### Fixed（E40 追加——布局根因修复）
+- **MainPanelView 渲染尾段结构性重写**：原内联四层嵌套的闭合层数错位把 canvas 塞进了 nav
+  包裹层（flex+alignItems:center）——nav 被 2500px 高的画布垂直居中推到页中（y≈1376）、
+  整页 2722px 内容溢出 1013px 槽被宿主 `overflow:hidden` 裁掉（**整页黑屏右半列+不能下滑**，
+  用户两截图实证）。改为 brandPill/kpiBand/rightSide/appBar/navRow/canvas 显式命名组装 +
+  根四子（Style/appBar/navRow/canvas）。几何实证（headless CDP）：根 4 子、nav y=78、
+  画布 canScroll=true（1249>887）、全 tab 零异常。
+- 教训记账：内联深嵌套 JSX 的闭合层数错误**不会**被 node --check（拼接后整体平衡但结构错位）
+  与 vm 探针（只验注册不验几何）捕获——静态闸 lint 语法平衡过了但 DOM 层级仍错；真几何断言
+  只能靠浏览器探针（本批新增槽位几何探针 /tmp 探针模式：祖先链 computed style+子树 rect）。
+
+### 验证
+- pytest 466/466（447 存量 + write_scope_auth 9 + eng_pause_epoch 10）；
+  mocha 2293 passing/0 failing（exit 0——含新套件 model-source 8/d2d-queries 5/services 6/
+  egress-pereng 10/gate-v-auth-har 9/lease-epoch 4/knowledge-version-credit 9）；
+  panel npm test（lint 0 error + 110/0）；verify-dsh-version exit 0（schemastery pin
+  0.2.2-rc.1 对齐）；align 3/3；headless CDP 全 tab 冒烟 11 点击零异常+可视化 canvas=2；
+  拆分后四路由 HTTP 冒烟（/query 白名单拒//query/frontier host-only//write/anchors
+  400/403 门形态正确）。
+
+## [d2d-panel 0.6.0] - 2026-11-16 (B13 可视化专业重绘 + Dashboard 布局批)
+
+> 用户体验批：vendored Apache ECharts 5.5.1（Apache-2.0，生态先例 better-sidebar/mermaid 同
+> 模式——零 npm 依赖纪律保持，源码拼接单文件投递不变）+ 参考风格 dashboard 布局。
+
+### Added
+- **vendored echarts**：`__dshChunks__` 注册形态（注册零副作用、首图挂载懒执行、chunk 内自建
+  module/exports 走 UMD CJS 分支——不污染插件模块面）+ `EChart` 通用组件（canvas、事件挂接、
+  dispose、resize 自适应）。
+- **可视化专业重绘**：覆盖热力 → echarts heatmap（翡翠色阶/圆角格/0 值暗格/tooltip）；星图 →
+  graph circular（roam 缩放拖拽/邻接高亮/tooltip 全信息）；桑基 → sankey（渐变缎带/邻接 hover/
+  节点圆角描边/点击跨页过滤保持）。
+- **Dashboard 布局**：顶部 KPI 数据大卡（图标+大数字+标签，点击导航）+ 右上 GitHub 仓库徽标与
+  操作员头像；OpsView **两列自适应网格**（auto-fit 380px——窄槽单列、宽容器双列）；项目卡
+  **覆盖进度环**（SVG 环+活跃/验证/交付/信号/workers 计数网格）。
+
+### Fixed
+- 面板根容器 width 100%（内容偏右收窄问题）。
+- **EngagementCard 计数网格 ReferenceError（整槽白屏根因）**：B13 计数网格引用 `p.active/verified/
+  delivered/workers`，但 `p` 只在 EngRow 作用域声明 → 渲染即抛 `ReferenceError: p is not defined`
+  → dsh 槽位捕获 "slot entry crashed in 'main'" → 整个 d2d 控制台黑屏。补 `const p = e?.progress ?? {}`。
+  实证：headless CDP 探针逐 tab 冒烟（11 次点击全组全页签）零异常，可视化 tab canvas=2 真实渲染。
+
+## [1.9.3 / d2d-panel 0.4.1→0.5.0] - 2026-11-16 (B11 修复批 + B12 模型复用/导航批)
+
+> B11（Gemini 报告核对后实证修复）+ B12（模型配置复用+三层导航）双批合并记账。
+> npm 包面变化（gate.mjs/scheduler 无涉——graphd 面 app.py 不入 npm；gate.mjs 入包）→
+> 是否打 tag 发版待指令，默认 main-only。
+
+### Fixed（B11 — 外部报告核对后逐条实证）
+- **graphd**：`_write_token_file` 补 `O_TRUNC`（短 token 覆写残留尾字节 → reader 读坏值）；
+  **函数提升至模块级**（原 `__main__` 块嵌套 def 不可 import 测——安全关键落盘点可测性修复）；
+  **V-11 锁等待超时顶层兜底**：`with _locked().__enter__` 抛 TimeoutError 从各路由逃逸成 500 →
+  do_GET/do_POST wrapper 统一转 503（一处覆盖全部 23 把锁，内层锁内超时处理优先级不变）。
+- **gate.mjs**：限速拒绝**不计熔断失败**（保护行为≠工具失败——连续限速曾误触 60s 全停；
+  scope/denylist 拒绝仍计——越权真信号）；synthCurl `method` 过 `_q` 转义（shell 注入面收口）；
+  `take(n)` 拒绝非正整数/NaN（不入窗不污染滑动窗口）。
+- **d2d-panel**：chipTone fallback `var(var(--d2d-bg-2))` 无效 CSS（neutral 底失效——测试盲区
+  被外部报告抓出，断言已补 background）；fetchSnapshot 非 JSON 200 安全解析；fetchApi/postJson
+  可选 AbortSignal；轮询 setInterval → setTimeout 链式 ×3（慢响应不堆积）；useViz 五路 signal
+  接线；useWiSummary 错误态上浮（不再静默吞错）；badgeState → subscribeBadges pub/sub 响应式；
+  readFleet 与 model-policies 文件解耦（**catalog 连带吞掉修复**——dsh 已配厂商在面板不可见根因）；
+  Sankey 节点长标签截断 + `<title>` 全名。
+
+### Added（B12 — 模型配置复用 + 导航）
+- **worker 直接复用 dsh 模型配置**：start-all 启动幂等镜像 web patch 的 `llm-pi-ai`/
+  `agent-default-model` 段 → headless patch（修因：装配不对称——headless 空 patch 使 worker
+  缺省 deepseek-official 无 key 全灭，tgt-redacted 7 worker 14s 实证）；`provider-keys.env`(0600)
+  注入机制（apiKeyEnv 官方通道，值只落本机）。
+- **Fleet 复用面**：catalog/候选模型/backup 槽直接展示 dsh 已配厂商（minimax-cn 实证上线）。
+- **三层导航**：运行/分诊/系统两行导航（组切换+组内子页签）。
+- **hash URL 路由**：`#d2d?tab=..&k=v` 双向同步（宿主 hash 所有权实证零冲突——970KB bundle
+  hash/pushState 零出现）；KPI/页签点击全走 navigate。
+- **跨页过滤**：桑基节点点击 → `#d2d?tab=findings&state=xxx` → Findings 管线自动筛选。
+
+### Ops
+- start-all：restart 端口释放等待（EADDRINUSE 竞态实证修复）；brain seed 自动安装（策略库
+  恒空修复，42 卡上线）；model-policies 模板兜底。
+
 ## [d2d-panel 0.4.0] - 2026-11-15 (B10 风格对齐+交互层合并批)
 
 > 参考风格 mockup 全量对齐（Shadcn 设计语言移植，组件库不安装——零依赖单文件纪律；呈现层

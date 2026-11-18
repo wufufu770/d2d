@@ -159,7 +159,9 @@
           f.cvss > 0 ? h('span', { ...panel.mono, style: { ...panel.mono.style, color: sevColor(f.severity), fontWeight: 600 } }, f.cvss.toFixed(1)) : null),
         h('div', { style: { display: 'flex', gap: '5px', flexWrap: 'wrap' } },
           h('span', { ...panel.mono, style: { ...panel.mono.style, fontSize: '9px', opacity: '.6' } }, f.state),
-          f.category ? h('span', { style: { fontSize: '9px', opacity: '.5' } }, f.category) : null),
+          f.category ? h('span', { style: { fontSize: '9px', opacity: '.5' } }, f.category) : null,
+          // E46-2: 可修复性三分类显示(E46-2 写入接线后的读面; 旧行 repairability='' 不渲染)
+          f.repairability ? h('span', { style: { fontSize: '9px', opacity: '.6', border: '1px solid var(--d2d-line)', borderRadius: '3px', padding: '0 4px' }, title: { cfg_one_click: '可修复性: 配置一键修复', code_change: '可修复性: 代码修复', arch_change: '可修复性: 架构改造' }[f.repairability] ?? f.repairability }, f.repairability) : null),
         expanded ? h('div', {
           onClick: (ev) => ev.stopPropagation(),
           style: { display: 'flex', flexDirection: 'column', gap: '5px', borderTop: '1px solid var(--d2d-line)', paddingTop: '5px' },
@@ -222,10 +224,15 @@
     }
 
     function FindingsView(props) {
-      const { visible } = props
+      const { visible, routeParams } = props
       const { snap, err, refresh } = useSnapshot(visible)
       const [openId, setOpenId] = useState(null)
-      const [filter, setFilter] = useState(null)
+      // B12: 路由参数初值(hash #d2d?tab=findings&state=xxx — 桑基节点点击跨页带入);
+      // 二次跨页(navigate 同页带新 state)时 effect 跟随更新。
+      const [filter, setFilter] = useState(() => (routeParams?.state != null ? routeParams.state : null))
+      useEffect(() => {
+        if (routeParams?.state != null) setFilter(routeParams.state)
+      }, [routeParams?.state])
       if (err && !snap) return h(FailClosedBanner, { err, onRetry: refresh })
       if (!snap) return h(Skeleton, { rows: 6 })
       const { byState, macro, list } = snap.findings

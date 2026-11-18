@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 
 SCHEMA = [
-    "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, PRIMARY KEY(name))",
+    "CREATE NODE TABLE IF NOT EXISTS Engagement(name STRING, target STRING, scope STRING, auth STRING, status STRING, created_at STRING, leased_by STRING DEFAULT '', lease_at INT64 DEFAULT 0, lease_epoch INT64 DEFAULT 0, cancel STRING DEFAULT 'false', instances INT64 DEFAULT 2, objective STRING DEFAULT '', PRIMARY KEY(name))",
     "CREATE NODE TABLE IF NOT EXISTS Endpoint(id STRING, url STRING, param STRING, method STRING, tech STRING, business_chain STRING, coverage_votes INT64 DEFAULT 0, exhausted BOOL DEFAULT false, eng STRING DEFAULT '', authorized BOOL DEFAULT false, PRIMARY KEY(id))",
     # T1-4-2(门禁结构化锚): gate_anchor — Gate-D1 画像信号(protection-profile)与 Gate-V
     # verify-result 信号共用的可选结构化锚列(列内存 JSON 串, schema 权威定义
@@ -26,7 +26,7 @@ SCHEMA = [
     # 落列占位, 写入接线留后续批次) — 同款三处同步。
     "CREATE NODE TABLE IF NOT EXISTS Finding(id STRING, title STRING, severity STRING, cvss DOUBLE DEFAULT 0.0, evidence_dir STRING, repro STRING, category STRING DEFAULT 'vuln', gate_status STRING DEFAULT 'candidate', ts STRING, verified_at STRING DEFAULT '', verified_log STRING DEFAULT '', notify_sent BOOL DEFAULT false, last_transition STRING DEFAULT '', eng STRING DEFAULT '', dual_sign STRING DEFAULT '', replay_matrix STRING DEFAULT '', content_hash STRING DEFAULT '', source_hash STRING DEFAULT '', evidence_ref STRING DEFAULT '', report_status STRING DEFAULT '', repairability STRING DEFAULT '', PRIMARY KEY(id))",
     "CREATE NODE TABLE IF NOT EXISTS Plan(id STRING, text STRING, score DOUBLE DEFAULT 0.0, status STRING DEFAULT 'chosen', created_at STRING, eng STRING DEFAULT '', PRIMARY KEY(id))",
-    "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, PRIMARY KEY(id))",
+    "CREATE NODE TABLE IF NOT EXISTS ExperienceWeight(id STRING, pattern STRING, stack STRING, prior DOUBLE DEFAULT 1.0, hits INT64 DEFAULT 0, wins INT64 DEFAULT 0, target_type STRING DEFAULT 'web', recipe STRING DEFAULT '', stack_fp STRING DEFAULT '', payload_hint STRING DEFAULT '', cls STRING DEFAULT '', win_day STRING DEFAULT '', wins_today INT64 DEFAULT 0, ver STRING DEFAULT '', PRIMARY KEY(id))",
     # 3.5-1(经验回流子系统 A 数据层): Experience 结构化经验表(方案 v2 逐列 14 列 — id 服务端生成,
     # 写入即隔离 status='quarantined', utility_score FLOAT 默认 0.5 为 EvolveR 冷启动, 时间列
     # DEFAULT epoch('1970-01-01 00:00:00' — kuzu 0.11 DDL 无当前时刻函数默认, 现场实证));
@@ -98,7 +98,9 @@ def init_schema(conn):
     # 列名为字面量枚举(无外部输入可拼入) — 上一版 f-string 写法触发扫描器 SIDI 判定, 改为逐条字面量
     for _ddl in ("ALTER TABLE ExperienceWeight ADD recipe STRING DEFAULT ''",
                  "ALTER TABLE ExperienceWeight ADD stack_fp STRING DEFAULT ''",
-                 "ALTER TABLE ExperienceWeight ADD payload_hint STRING DEFAULT ''"):
+                 "ALTER TABLE ExperienceWeight ADD payload_hint STRING DEFAULT ''",
+                 # E40-B5(#105): ver 列 = 卡内容版本哈希(12 hex) — 计胜节点 id 绑定内容版本
+                 "ALTER TABLE ExperienceWeight ADD ver STRING DEFAULT ''"):
         try:
             conn.execute(_ddl)
         except Exception:
@@ -119,6 +121,9 @@ def init_schema(conn):
     for _ddl in ("ALTER TABLE Engagement ADD cancel STRING DEFAULT 'false'",
                  "ALTER TABLE Engagement ADD leased_by STRING DEFAULT ''",
                  "ALTER TABLE Engagement ADD lease_at INT64 DEFAULT 0",
+                 # E40-B4(#104): 租约纪元列 — 每次认领/接管 +1(接管代数单调递增);
+                 # 暂停文件 owner/epoch 核验与调度器栅栏据此区分新旧纪元, 过期持有者不再阻塞新持有者
+                 "ALTER TABLE Engagement ADD lease_epoch INT64 DEFAULT 0",
                  # 0906 图队列采纳: panel POST /d2d/api/start 写 status='requested' 节点,
                  # web 宿主调度器认领(adopt) — instances/objective 随节点传给 startEngagement
                  "ALTER TABLE Engagement ADD instances INT64 DEFAULT 2",
@@ -495,6 +500,52 @@ def pick_write_eng(explicit, active_rows, hosts) -> str:
         if len(votes) == 1:
             return next(iter(votes))
     return ""
+
+
+def _host_in_scope_auth(host, scope) -> bool:
+    """E40-B1(#101): 授权面匹配器 — host_in_scope 的域名/后缀匹配 + CIDR 扩展(IP host 对
+    IP 段条目)。host_in_scope 本体零改动(投票面等多调用方语义保持)。"""
+    if host_in_scope(host, scope):
+        return True
+    h = re.sub(r"^[a-z][a-z0-9+.-]*://", "", str(host or "").strip().lower()).split("/")[0]
+    if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", h):
+        return False
+    import ipaddress as _ip
+    try:
+        addr = _ip.ip_address(h)
+    except ValueError:
+        return False
+    for a in parse_scope_allows(scope):
+        try:
+            if addr in _ip.ip_network(a, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def write_scope_auth(attributed_eng, hosts, active_rows):
+    """E40-B1(#101): 结构化写面的【正向范围授权】(纯函数) — 归属与授权解耦的第二半:
+    归属(pick_write_eng)只决定数据归谁, 授权由本函数独立裁决(host/domain/IP/CIDR)。
+    ① 载荷无 URL host → 无可授权面, 放行(既有语义: 仅 host 形态载荷受限)
+    ② 无归属(eng='' 或不在 active)→ 载荷不属于任何活跃 scope → 拒(0913 H13 fail-closed 保持)
+    ③ 有归属 → 载荷 host 必须全部落在被归属 engagement 的 scope 内, 越界即拒 —
+       修掉"恰一个 active 时范围外目标借有效归属入图"。
+    返回 (ok, reason); reason 供 403 响应文本。"""
+    if not hosts:
+        return True, ""
+    names = {}
+    for r in active_rows or []:
+        n = r.get("name") if isinstance(r, dict) else r[0]
+        sc = r.get("scope") if isinstance(r, dict) else (r[1] if len(r) > 1 else "")
+        names[str(n)] = str(sc or "")
+    e = str(attributed_eng or "").strip()
+    if not e or e not in names:
+        return False, "write rejected: payload URLs match no active engagement scope (fail-closed)"
+    out = sorted({h for h in hosts if not _host_in_scope_auth(h, names[e])})
+    if out:
+        return False, f"write rejected: payload URLs 越出 {e} 授权范围: {', '.join(out[:3])} (正向范围授权 fail-closed)"
+    return True, ""
 
 
 def _backfill_eng(conn):

@@ -89,11 +89,22 @@
       const [tick, setTick] = useState(0)
       useEffect(() => {
         if (!visible) return undefined
+        // E40-C1: setTimeout 链式(不堆积) + AbortSignal
+        const ac = new AbortController()
         let alive = true
-        const load = () => { fetchApi('workitems').then((j) => { if (alive) { setData(j); setErr(null) } }).catch((e) => { if (alive) setErr(e.message) }) }
-        load()
-        const t = setInterval(load, 4000)
-        return () => { alive = false; clearInterval(t) }
+        let t = null
+        const load = async () => {
+          try {
+            const j = await fetchApi('workitems', { signal: ac.signal })
+            if (alive) { setData(j); setErr(null) }
+          } catch (e) {
+            if (alive && e?.name !== 'AbortError') setErr(e.message)
+          } finally {
+            if (alive && !ac.signal.aborted) t = setTimeout(load, 4000)
+          }
+        }
+        void load()
+        return () => { alive = false; ac.abort(); if (t) clearTimeout(t) }
       }, [visible, tick])
       const act = async (w, to) => {
         setBusy(w.id); setMsg(null)
@@ -103,7 +114,7 @@
         } catch (e) { setMsg(`${w.id} 失败: ${e.message}`) }
         setBusy(null)
       }
-      if (err && !data) return h('div', panel.root, Style(), h('div', panel.card, h('div', { style: { color: 'var(--d2d-sev-high)' } }, '加载失败')))
+      if (err && !data) return h(FailClosedBanner, { err: { message: err }, onRetry: () => setTick((t) => t + 1) })
       if (!data) return h('div', panel.root, Style(), h('div', panel.card, h('div', panel.muted(), '加载中…')))
       const priority = (data.items ?? []).filter((w) => ['needs_human', 'eval_shadowed'].includes(w.status))
       const rest = (data.items ?? []).filter((w) => !['needs_human', 'eval_shadowed'].includes(w.status))

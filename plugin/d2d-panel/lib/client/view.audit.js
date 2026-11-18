@@ -9,16 +9,22 @@
       const [err, setErr] = useState(null)
       useEffect(() => {
         if (!visible) return
-        let stop = false
+        // E40-C1: setTimeout 链式(不堆积) + AbortSignal
+        const ac = new AbortController()
+        let alive = true
+        let t = null
         const tick = async () => {
           try {
-            const j = await fetchApi(`audit?limit=${encodeURIComponent(limit)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`)
-            if (!stop) { setData(j); setErr(null) }
-          } catch (e) { if (!stop) setErr(e) }
+            const j = await fetchApi(`audit?limit=${encodeURIComponent(limit)}${kind ? `&kind=${encodeURIComponent(kind)}` : ''}`, { signal: ac.signal })
+            if (alive) { setData(j); setErr(null) }
+          } catch (e) {
+            if (alive && e?.name !== 'AbortError') setErr(e)
+          } finally {
+            if (alive && !ac.signal.aborted) t = setTimeout(tick, AUDIT_POLL_MS)
+          }
         }
         void tick()
-        const poll = setInterval(tick, AUDIT_POLL_MS)
-        return () => { stop = true; clearInterval(poll) }
+        return () => { alive = false; ac.abort(); if (t) clearTimeout(t) }
       }, [visible, kind, limit])
       return { audit: data?.audit ?? null, err }
     }

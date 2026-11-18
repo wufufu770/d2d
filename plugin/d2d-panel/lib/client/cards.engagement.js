@@ -90,6 +90,7 @@
     }
     function EngagementCard({ snap, refresh }) {
       const e = snap.engagement
+      const p = e?.progress ?? {} // B13 修: 计数网格引用 p.* — 此前 p 只在 EngRow 作用域(ReferenceError → 整槽崩溃白屏)
       const cov = snap.coverage ?? { total: 0, covered: 0 }
       const pct = cov.total > 0 ? Math.round((cov.covered / cov.total) * 100) : null
       const [hoverMs, setHoverMs] = useState(null)
@@ -109,10 +110,25 @@
         e ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px dashed var(--d2d-line)', paddingTop: '6px' } },
           h('div', { ...panel.mono, style: { ...panel.mono.style, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `◆ ${e.name}`),
           h('div', panel.muted(0.55), `${e.target || '?'} · scope: ${e.scope || '?'}`),
-          h('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
-            h('span', { style: { fontSize: '22px', fontWeight: 700, fontVariantNumeric: 'tabular-nums' } },
-              pct === null ? '—' : `${pct}%`),
-            h('span', panel.muted(0.55), `覆盖 ${cov.covered}/${cov.total} 端点`)),
+          // B13: 覆盖进度环(mockup 里程碑环形态)+活跃/交付计数网格(环右)
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' } },
+            h('svg', { width: 64, height: 64, viewBox: '0 0 64 64', style: { flex: '0 0 auto' } },
+              h('circle', { cx: 32, cy: 32, r: 27, fill: 'none', stroke: 'var(--d2d-bg-2)', strokeWidth: 6 }),
+              h('circle', { cx: 32, cy: 32, r: 27, fill: 'none', stroke: 'var(--d2d-ok)', strokeWidth: 6, strokeLinecap: 'round',
+                strokeDasharray: `${((pct ?? 0) / 100) * 169.6} 169.6`, transform: 'rotate(-90 32 32)' }),
+              h('text', { x: 32, y: 36, textAnchor: 'middle', fontSize: 13, fontWeight: 700, fill: 'var(--d2d-text-hi)' }, pct === null ? '—' : `${pct}%`)),
+            h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, auto)', gap: '4px 14px', alignItems: 'baseline' } },
+              // E44-F6: 口径明示(hover title) — "活跃"与"开放信号"是两种计数(findings vs signals),
+              // 覆盖口径=coverage_votes≥2 或 exhausted, 无标注时用户读作矛盾(2026-11-18 调研实证)
+              [['覆盖端点', `${cov.covered}/${cov.total}`, 'covered/total — coverage_votes≥2 或 exhausted 计为 covered'],
+                ['活跃', String(p.active ?? 0), '活跃 findings(candidate+triaged) — 与「开放信号」(signals)是两种口径'],
+                ['已验证', String(p.verified ?? 0), 'verified+isolated findings'],
+                ['已交付', String(p.delivered ?? 0), 'reported+accepted findings'],
+                ['开放信号', String(snap.counts?.signals_open ?? 0), 'status=open 的信号数(发现线索, 非漏洞结论)'],
+                ['workers', String(p.workers ?? 0), 'status=running 的 worker 数(本查询失败时回落上拍值, 见快照 stale 标记)']]
+                .flatMap(([label, v, tip]) => [
+                  h('span', { ...panel.muted(0.55), style: { fontSize: '10px' }, title: tip }, label),
+                  h('span', { style: { fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--d2d-text-hi)' }, title: tip }, v)]))),
           snap.milestones?.length ? h('div', { style: { display: 'flex', alignItems: 'flex-end', gap: '3px', position: 'relative', flexWrap: 'wrap' } },
             snap.milestones.map((m, i) => {
               const isLast = i === snap.milestones.length - 1

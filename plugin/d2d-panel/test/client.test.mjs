@@ -15,7 +15,8 @@ const bundle = fs.readFileSync(OUT, 'utf8')
 /** 在隔离 vm 上下文里执行 bundle, 捕获 __ModuleLoader__.load 注册, 返回 {loaded, materialize}。 */
 function loadBundle() {
   const loaded = []
-  const sandbox = { window: { __ModuleLoader__: { load: (m) => loaded.push(m) } } }
+  // B13: vendored echarts factory 探测 DOM 面 — vm 桩补 navigator/document(window 已有)
+  const sandbox = { window: { __ModuleLoader__: { load: (m) => loaded.push(m) } }, navigator: { userAgent: 'node-test' }, document: { createElement: () => ({ getContext: () => null, style: {} }), documentElement: { style: {} } } }
   vm.runInNewContext(bundle, sandbox, { filename: 'd2d-panel/lib/client.js' })
   const requested = []
   const fakeReact = {
@@ -293,6 +294,39 @@ test('client(bug回归): FleetCard.saveCredential — 成功路径不再引用�
   assert.equal(states[2].value, 'boom', '失败提示置入本组件 err state')
 })
 
+test('client(fleet): E44-F5 占位符行显示实际生效模型(run.resolved) — policies 模板不再裸奔', () => {
+  const states = []
+  const useState = (v) => { const st = { value: v, set: () => {} }; states.push(st); return [st.value, st.set] }
+  const mk = () => {
+    const { h, els } = makeH()
+    const ctx = loadFragment('cards.ops.js', {
+      h, useState,
+      postJson: async () => ({ ok: true }),
+      Card: function Card() {}, FleetModelPicker: function FM() {}, shortModel: (m) => String(m ?? '').split('/').pop(),
+      ...panelStubs(),
+    })
+    return { ctx, els }
+  }
+  const { ctx, els } = mk()
+  const fleet = { roles: { deep: { primary: '<provider>/<model>', backup: '' } }, models: [], catalog: [] }
+  ctx.FleetCard({ fleet, run: { resolved: { deep: 'minimax-cn/MiniMax-M3.1-Flash' } }, refresh: () => {} })
+  const text = JSON.stringify(els)
+  assert.ok(text.includes('MiniMax-M3.1-Flash'), '占位符行显示实际生效模型')
+  assert.ok(text.includes('生效 MiniMax-M3.1-Flash'), '生效徽标在位(chip 文本=生效+短模型名)')
+  // 有真实配置(policies 非占位) → 原样显示, 不画生效徽标
+  const { ctx: ctx2, els: els2 } = mk()
+  ctx2.FleetCard({ fleet: { roles: { deep: { primary: 'minimax-cn/MiniMax-M3.1-Flash', backup: '' } } }, run: { resolved: { deep: 'minimax-cn/MiniMax-M3.1-Flash' } }, refresh: () => {} })
+  assert.equal(JSON.stringify(els2).includes('生效 MiniMax-M3.1-Flash'), false, '非占位配置不画生效徽标(title 里的"实际生效:"不撞 chip 文本)')
+})
+
+test('client(engagement): E44-F6 卡体口径明示 — 覆盖/活跃/开放信号 tooltip 锚在位', () => {
+  // 源级锚(卡体组装单行模板, vm 全量驱动成本高): 三条口径 tip 文案逐字在源
+  const engSrc = fs.readFileSync(path.join(FRAG_DIR, 'cards.engagement.js'), 'utf8')
+  assert.ok(engSrc.includes('coverage_votes≥2 或 exhausted 计为 covered'), '覆盖口径 title')
+  assert.ok(engSrc.includes('candidate+triaged'), '活跃 findings 口径 title')
+  assert.ok(engSrc.includes('两种口径'), '双口径区分说明')
+})
+
 // ══════════ T3-3-1 可视化组件探针: view.viz.js 片段 vm 驱动 — 数据进 vnode 出(纯函数护栏) ══════════
 
 /** view.viz.js 片段加载桩: h 记录器 + 工厂作用域依赖(Card/Style/panel/hooks/localStorage)。 */
@@ -300,26 +334,61 @@ function loadVizFragment() {
   const { h, els } = makeH()
   const ctx = loadFragment('view.viz.js', {
     h,
-    panel: { muted: () => ({ style: {} }), chip: (e) => ({ style: e ?? {} }), btn: (e) => ({ style: e ?? {} }), mono: { style: {} }, root: { className: 'd2d-panel' }, dot: () => ({ style: {} }) },
-    Card: (p, ...children) => h('card', { title: p?.title, extra: p?.extra }, ...(children ?? [])),
+    panel: { muted: () => ({ style: {} }), chip: (e) => ({ style: e ?? {} }), chipTone: (tone, e) => ({ style: { background: `var(--d2d-${tone}-bg)`, border: `1px solid var(--d2d-${tone}-line)`, color: `var(--d2d-${tone})`, ...(e ?? {}) } }), btn: (e) => ({ style: e ?? {} }), input: (e) => ({ style: e ?? {} }), mono: { style: {} }, root: { className: 'd2d-panel' }, dot: () => ({ style: {} }) },
+    Card: (p, ...children) => h('card', { title: p?.title, extra: p?.extra, icon: p?.icon }, ...(children ?? [])),
     Style: () => h('style'),
     useState: (v) => [v, () => {}],
     useEffect: () => {},
     useCallback: (f) => f,
     localStorage: { getItem: () => null, setItem: () => {} },
+    EChart: () => ({ type: 'div', props: {} }), // B13: echarts 组件桩(canvas 挂载在真浏览器)
   })
   return { ctx, els }
 }
 const mkNodes = (n) => Array.from({ length: n }, (_, i) => ({ id: `s${i}`, type: 'asset-perimeter', weight: 1, ts: '2026-10-01', host: 'a.com' }))
 
-test('client(viz): StarMapChart 渲染护栏 — 500 节点输入渲染 ≤200 circle + 超限计数提示(数据不丢)', () => {
+test('client(viz): StarMapChart 渲染护栏 — E44 双层图: 500 节点输入 series data ≤200 + 截断提示', () => {
   const { ctx, els } = loadVizFragment()
   const el = ctx.StarMapChart({ starmap: { nodes: mkNodes(500), edges: [], total: 500, truncated: true, candidates: [] } })
   assert.equal(el.type, 'div')
-  assert.ok(els.some((e) => e.type === 'svg'), '自绘 SVG 在位')
-  const circles = els.filter((e) => e.type === 'circle')
-  assert.ok(circles.length <= 200 && circles.length > 0, `circle 渲染上限(${circles.length})`)
-  assert.ok(JSON.stringify(els).includes('+300 未显示'), '超限计数提示(500-200)——短文案+title 注记')
+  const echartVnode = els.find((e) => e.type === ctx.EChart)
+  assert.ok(echartVnode, 'EChart 组件 vnode 在位(echarts 重绘)')
+  const graphData = echartVnode?.props?.option?.series?.[0]?.data ?? []
+  assert.ok(graphData.length <= 200 && graphData.length > 0, `graph 节点渲染上限(${graphData.length})`)
+  assert.ok(JSON.stringify(els).includes('已截断'), '超限截断提示')
+})
+
+test('client(viz): StarMapChart E44 双层图 — 端点/聚合/信号三类节点 label+富 tooltip+点击 onPick 透传', () => {
+  const { ctx, els } = loadVizFragment()
+  const picks = []
+  const starmap = {
+    nodes: [
+      { kind: 'endpoint', id: 'ep1', url: 'http://a.com/login', label: 'a.com/login', host: 'a.com', tech: 'spring', chain: 'auth', votes: 3, exhausted: false },
+      { kind: 'signal', id: 's-xyz', type: 'sqli', weight: 3.5, tries: 2, ts: 't1', host: 'a.com', evHead: 'union select 命中' },
+      { kind: 'group', id: 'grp-recon', type: 'recon', count: 7, sample: { id: 's-low' } },
+    ],
+    edges: [{ a: 's-xyz', b: 'ep1', kind: 'at' }, { a: 'ep1', b: 'grp-recon', kind: 'at' }],
+    total: 9, epTotal: 1, folded: 8, candidates: [],
+  }
+  ctx.StarMapChart({ starmap, onPick: (n) => picks.push(n) })
+  const vnode = els.find((e) => e.type === ctx.EChart)
+  const data = vnode?.props?.option?.series?.[0]?.data ?? []
+  assert.equal(data.length, 3, '三类节点全渲染')
+  assert.ok(data.every((d) => d.label?.show === true), '全部节点带 label(E44: 告别匿名彩点)')
+  const ep = data.find((d) => d.id === 'ep1')
+  assert.equal(ep.label.formatter, 'a.com/login', '端点 label=短标签')
+  assert.ok(String(ep.tooltip.formatter).includes('覆盖票'), '端点富 tooltip(口径可读)')
+  const sig = data.find((d) => d.id === 's-xyz')
+  assert.ok(String(sig.tooltip.formatter).includes('union select'), '信号 tooltip 带 evidence 头')
+  // 点击透传: click 事件 → node dataType → onPick(完整 payload)
+  const onEvents = vnode?.props?.onEvents
+  assert.equal(typeof onEvents?.click, 'function', 'click 事件在位')
+  onEvents.click({ dataType: 'node', data: { __pick: starmap.nodes[0] } })
+  assert.deepEqual(picks[0].kind, 'endpoint', '点击端点 → onPick(payload)')
+  onEvents.click({ dataType: 'edge', data: {} })
+  assert.equal(picks.length, 1, '边点击不触发')
+  const text = JSON.stringify(els)
+  for (const frag of ['端点', '高权重信号', '低权重聚合', '意图链边', '折叠 8']) assert.ok(text.includes(frag), `图例/统计含「${frag}」`)
 })
 test('client(viz): StarMapChart 空态与候选连线 chip', () => {
   const { ctx, els } = loadVizFragment()
@@ -329,7 +398,7 @@ test('client(viz): StarMapChart 空态与候选连线 chip', () => {
   ctx2.StarMapChart({ starmap: { nodes: mkNodes(2), edges: [], total: 2, truncated: false, candidates: [{ a: 's0', aType: 't1', b: 's1', bType: 't2', host: 'h' }] } })
   assert.ok(JSON.stringify(els2).includes('t1~t2@h'), '候选连线提示 chip')
 })
-test('client(viz): CoverageHeat — 21 格渲染(空格也渲染, title 带格坐标)', () => {
+test('client(viz): CoverageHeat — B13 echarts heatmap: 21 格全量进 option(零格也渲染)', () => {
   const { ctx, els } = loadVizFragment()
   const coverage = {
     surfaces: ['request', 'response', 'js', 'business', 'flow', 'apk', 'mini'],
@@ -338,8 +407,10 @@ test('client(viz): CoverageHeat — 21 格渲染(空格也渲染, title 带格�
     total: 210,
   }
   ctx.CoverageHeat({ coverage })
-  const gridCells = els.filter((e) => typeof e.props?.title === 'string' && e.props.title.includes(' × '))
-  assert.equal(gridCells.length, 21, '21 格全渲染(含零格)')
+  const echartVnode = els.find((e) => e.type === ctx.EChart)
+  const heatData = echartVnode?.props?.option?.series?.[0]?.data ?? []
+  assert.equal(heatData.length, 21, '21 格全量进 heatmap data(含零格)')
+  assert.ok(heatData.every((d) => Array.isArray(d) && d.length === 3), 'heatmap data 形态 [bo, su, n]')
 })
 test('client(viz): HypLaneSwim — 生命周期五列 + 时间窗 chips(localStorage 记忆)', () => {
   const { ctx, els } = loadVizFragment()
@@ -388,6 +459,8 @@ function loadNewFragment(frag, extra = {}) {
       chipTone: (tone, e) => ({ style: { background: `var(--d2d-${tone}-bg)`, border: `1px solid var(--d2d-${tone}-line)`, color: `var(--d2d-${tone})`, ...(e ?? {}) } }) },
     Card: (p, ...children) => h('card', { title: p?.title, extra: p?.extra, icon: p?.icon }, ...(children ?? [])),
     DetailSheet: function DS() {}, // B10: 抽屉桩(容器装配断言 vnode 在位)
+    EChart: () => ({ type: 'div', props: {} }), // B13: echarts 组件桩(canvas 挂载在真浏览器)
+    echartsApi: () => null, // B13: 懒执行桩(探针不触发真渲染)
     IconSearch: () => h('i'), IconCopy: () => h('i'), IconJson: () => h('i'), IconX: () => h('i'), IconChevron: () => h('i'), IconSave: () => h('i'), IconTrash: () => h('i'), TabIcon: () => h('i'),
     Style: () => h('style'),
     useState: (v) => [v, () => {}],
@@ -407,18 +480,21 @@ const mkFlows = () => ({
   windowDays: 7, linesRead: 100, matched: 11, degraded: [],
 })
 
-test('client(sankey): SankeyChart — 双列节点+缎带按 count 缩宽+家族过滤(client 侧零重取)+B10 渐变/命中层', () => {
+test('client(sankey): SankeyChart — B13 echarts sankey: 节点/links 全量进 option + 家族过滤 + 渐变缎带', () => {
   const { ctx, els } = loadNewFragment('view.viz.js')
   ctx.SankeyChart({ flows: mkFlows(), family: 'all' })
-  assert.ok(els.some((e) => e.type === 'svg'), '自绘 SVG 在位')
-  // B10: 每条边 = 透明宽命中路径 + 可见渐变缎带 → 2 边 4 path
-  assert.equal(els.filter((e) => e.type === 'path').length, 4, '两条迁移缎带+各自命中层(hit+visible)')
-  assert.ok(els.some((e) => e.type === 'linearGradient'), '家族级 linearGradient defs 在位')
-  assert.ok(JSON.stringify(els).includes('url(#d2d-flow-g-'), '缎带消费家族渐变')
-  assert.equal(els.filter((e) => e.type === 'rect').length >= 4, true, '左右两列节点')
+  const echartVnode = els.find((e) => e.type === ctx.EChart)
+  assert.ok(echartVnode, 'EChart 组件 vnode 在位(echarts 重绘)')
+  const series = echartVnode?.props?.option?.series?.[0] ?? {}
+  assert.equal(series.type, 'sankey', 'sankey 系列在位')
+  assert.equal(series.data?.length, 4, '去重后节点全量(proposed/verified/accepted/confirmed+)')
+  assert.equal(series.links?.length, 2, '两条迁移缎带')
+  assert.equal(series.lineStyle?.color, 'gradient', '渐变缎带(源→汇)')
+  assert.ok(els.some((e) => e.type === 'linearGradient') === false, '不再自绘 SVG defs(echarts 原生)')
   const { ctx: c2, els: e2 } = loadNewFragment('view.viz.js')
   c2.SankeyChart({ flows: mkFlows(), family: 'finding' })
-  assert.equal(e2.filter((el) => el.type === 'path').length, 2, 'family=finding 只剩漏洞缎带(1 hit+1 visible)')
+  const s2 = e2.find((e) => e.type === c2.EChart)?.props?.option?.series?.[0]
+  assert.equal(s2?.links?.length, 1, 'family=finding 只剩漏洞缎带')
   const { ctx: c3, els: e3 } = loadNewFragment('view.viz.js')
   c3.SankeyChart({ flows: mkFlows(), family: 'experience' })
   assert.ok(JSON.stringify(e3).includes('无迁移事件'), '过滤后空族 → 显式空态')
@@ -437,7 +513,7 @@ test('client(sankey): 空数据/降级注记 + SankeyCard 家族 chips + 侧标�
   const b3 = JSON.stringify(e3)
   for (const f of ['全部', '漏洞', '经验', '前沿']) assert.ok(b3.includes(f), `家族 chip ${f}`)
   const { els: e5 } = (() => { const c5 = loadNewFragment('view.viz.js'); c5.ctx.SankeyChart({ flows: mkFlows(), family: 'all' }); return c5 })()
-  assert.ok(JSON.stringify(e5).includes('迁出') && JSON.stringify(e5).includes('迁入'), '侧标注入图(布局即图例)')
+  assert.ok(JSON.stringify(e5).includes('sankey'), 'B13 echarts sankey 系列在位(布局即图例——节点标签原生)')
   const { ctx: c4, els: e4 } = loadNewFragment('view.viz.js')
   c4.SankeyCard({ flows: mkFlows(), errs: { 'transition-flows': new Error('HTTP 503') } })
   assert.ok(JSON.stringify(e4).includes('不可用'), '路由错误单卡降级提示')
@@ -544,22 +620,58 @@ test('client(config): ConfigView 只读总览(探针降级态) + 写面卡集中
   assert.equal(comps.length, 3, '三个既有写面卡集中(复用不重写, vnode 在位)')
 })
 
-test('client(xring): XRingView 只读投影 — 当前 run/预算/工件/事件尾窗 + 空态; 零动作红线(源码+渲染双面)', () => {
-  // 零动作红线(拍板 1; XR-P3 拍板 7 词表扩宽): 片段源码级 — 无事件处理器/无写端点/
-  // 无 HTTP 动作词/无内容编辑面（B 层复核观察: 守卫窄于红线措辞——本表扩宽收口）
+test('client(xring): XRingView 投影 — 当前 run/预算/工件/事件尾窗 + 启动表单(E46-XR 新契约: 启动唯一写面)', async () => {
+  // E46-XR 新契约(用户拍板 2026-11-18 打破 M6 只读): 写面仅 postJson('xring-start')(启动);
+  // 停止仍 CLI。源码级: postJson 调用恰一次且目标为 xring-start; 停止 CLI 文案在位。
   const src = fs.readFileSync(path.join(FRAG_DIR, 'view.xring.js'), 'utf8')
-  assert.doesNotMatch(src, /onClick|postJson|'button'|addEventListener|XMLHttpRequest|contentEditable|method\s*:\s*['"](POST|PUT|DELETE|PATCH)['"]|\.method\s*=|fetch\(|submit\(|FormData|navigator\.sendBeacon/, '零动作红线: 事件处理器/写端点/HTTP 动作词/编辑面全零引用')
-  assert.match(src, /cli\.mjs stop/, 'CLI 提示文案在位(停止唯一例外=CLI)')
-  // 空/缺记录面 → 合法空态(CLI 提示仍在)
+  const postCalls = src.match(/await postJson\('([^']+)'/g) ?? []
+  assert.deepEqual(postCalls, ["await postJson('xring-start'"], '写面恰一处且目标=xring-start(注释行不计)')
+  assert.match(src, /cli\.mjs stop/, 'CLI 停止文案在位')
+  // 空/缺记录面 → 启动表单 + 空态文案; 表单默认值跟随选中 engagement
+  const posts = []
   const { ctx, els } = loadNewFragment('view.xring.js', {
-    useSnapshot: () => ({ snap: { xring: { available: false, base: '/d2d/xring', activeCount: 0, runs: [], degraded: [] } }, err: null, refresh: () => {} }),
+    useSnapshot: () => ({ snap: { engagement: { name: 'eng-x', target: 'http://t.com', scope: 't.com' }, xring: { available: false, base: '/d2d/xring', activeCount: 0, runs: [], degraded: [] } }, err: null, refresh: () => {} }),
     FailClosedBanner: function F() {}, Skeleton: function S() {},
+    postJson: async (ep, body) => { posts.push([ep, body]); return { ok: true, note: '已拉起 X-Ring 编排' } },
   })
   ctx.XRingView({ visible: true })
   let blob = JSON.stringify(els)
-  assert.ok(blob.includes('无 run 记录'), '空态文案(E39 降噪: 合法空态一句话)')
+  assert.ok(blob.includes('无 run 记录'), '空态文案在位')
   assert.ok(blob.includes('X-Ring'), '卡题在位')
-  // 有 run 数据 → 状态/预算/工件/事件尾窗/degraded
+  assert.ok(blob.includes('手动启动旁路探索'), '空态带启动入口(E46-XR)')
+  // 表单直驱(makeH 不展开子组件 — XRingRunRow 同款口径); 有状态 hook(msg 落地可见)。
+  // 桩 hook 计数器每帧复位(真 React 每帧重置 hook 序——跨渲染不复位会让第二帧拿全 null)。
+  const hookStore = new Map()
+  const hookState = { idx: 0 }
+  const statefulUseState = (init) => {
+    const k = hookState.idx++
+    if (!hookStore.has(k)) hookStore.set(k, init)
+    return [hookStore.get(k), (v) => hookStore.set(k, v)]
+  }
+  const renderForm = () => { hookState.idx = 0; sctx.XRingStartForm({ snap: { engagement: { name: 'eng-x', target: 'http://t.com', scope: 't.com' } }, refresh: () => {} }) }
+  const { h: h2, els: sels } = makeH()
+  const sctx = loadFragment('view.xring.js', {
+    h: h2,
+    panel: { muted: () => ({ style: {} }), chip: (e) => ({ style: e ?? {} }), btn: (e) => ({ style: e ?? {} }), input: (e) => ({ style: e ?? {} }), mono: { style: {} }, root: { className: 'd2d-panel' }, dot: () => ({ style: {} }) },
+    useState: statefulUseState,
+    postJson: async (ep, body) => { posts.push([ep, body]); return { ok: true, note: '已拉起 X-Ring 编排' } },
+  })
+  renderForm()
+  const inputs = sels.filter((e) => e.type === 'input')
+  assert.equal(inputs.filter((i) => i.props.value === 'http://t.com').length, 1, 'target 默认值=选中项目')
+  assert.equal(inputs.filter((i) => i.props.value === 't.com').length, 1, 'scope 默认值=选中项目')
+  // 提交路径: 启动按钮 onClick(异步) → postJson('xring-start', {target, scope, maxHours}) → 成功提示
+  const btn = sels.find((e) => e.type === 'button' && String(e.props?.title ?? '').includes('手动启动'))
+  assert.ok(btn, '启动按钮在位')
+  await btn.props.onClick()
+  assert.equal(posts.length, 1)
+  assert.equal(posts[0][0], 'xring-start')
+  assert.equal(posts[0][1].target, 'http://t.com')
+  assert.equal(posts[0][1].scope, 't.com')
+  assert.equal(posts[0][1].maxHours, 1)
+  renderForm() // 提交后二次渲染(msg 落地)
+  assert.ok(JSON.stringify(sels).includes('已拉起 X-Ring 编排'), '成功提示(有状态 hook 落地)')
+  // 有 run 数据 → 状态/预算/工件/事件尾窗/degraded(activeCount=1 → 表单隐藏, 零按钮)
   const snap = { xring: { available: true, base: '/d2d/xring', activeCount: 1, degraded: ['eng-x/run-2: events.jsonl 不可读(ENOENT)'], runs: [
     { eng: 'eng-x', runId: 'run-1', status: 'running', stopReason: null, startedAt: '2026-10-06T01:00:00.000Z', elapsedSec: 125, mode: 'queue', budget: { maxHours: 3, maxTokens: 1000000 }, lastTick: { ok: true, detail: '0.03h/3h, 12590/1000000 tokens', tokens: 12590, idleMs: 42000 }, artifacts: null, events: [
       { ts: '2026-10-06T01:01:40.000Z', event: 'budget-tick', ok: true, detail: '0.03h/3h, 0/1000000 tokens' },
@@ -661,8 +773,9 @@ test('T3-3-2 禁区 grep: 授权契约链/tier-approval 零出现于 panel 面; 
   assert.deepEqual(hits('auth-contract'), [], '授权契约链(T3-3-3 增量)零出现 — panel 不 import 不消费')
   assert.deepEqual(hits('tier-approval'), [], 'tier-approval.mjs 本体零出现')
   // import 语义形态(带引号的模块路径)只允许既有两处消费(审批路由 + 快照计数), 均先于本批存在
+  // (E40-D1: 快照侧消费点随 snapshot 拆分移至 snapshot/graphd-client.mjs — barrel re-export 面不变)
   const imports = hits("scheduler/approvals.mjs'")
-  assert.deepEqual(imports.sort(), [path.join(libDir, 'host', 'index.mjs'), path.join(libDir, 'host', 'snapshot.mjs')].sort(), 'approvals.mjs import 消费点仅既有两处(消费不改动 — 拍板 4)')
+  assert.deepEqual(imports.sort(), [path.join(libDir, 'host', 'index.mjs'), path.join(libDir, 'host', 'snapshot', 'graphd-client.mjs')].sort(), 'approvals.mjs import 消费点仅既有两处(消费不改动 — 拍板 4)')
   const clientHits = hits('approvals.mjs').filter((f) => f.includes(`${path.sep}client${path.sep}`) || f.endsWith(`${path.sep}client.js`))
   assert.deepEqual(clientHits, [], 'client 半零 approvals 模块引用(纯路由名消费)')
 })
@@ -682,7 +795,7 @@ test('client(ui): B10-A 令牌桥接层与形态原语 — chipTone 五态对色
   }
   assert.ok(src.includes('chipTone: (tone, extra = {})'), 'chipTone 原语定义在位')
   assert.ok(src.includes("['--d2d-danger-bg', '--d2d-danger-line', '--d2d-danger']"), 'danger 三元对色')
-  assert.ok(src.includes("?? ['var(--d2d-bg-2)', '--d2d-line', '--d2d-text-mid']"), '未知 tone 回落 neutral 深底')
+  assert.ok(src.includes("?? ['--d2d-bg-2', '--d2d-line', '--d2d-text-mid']"), '未知 tone 回落 neutral 深底(B11 修复: 不再 var(var())')
   assert.ok(src.includes("background: 'var(--d2d-bg-1)'") || src.includes("background: 'var(--d2d-bg-1)',"), '卡片深底升级')
   // 函数声明落 sloppy 全局 — 图标渲染面可直驱
   const { ctx, els } = loadNewFragment('ui.js')
